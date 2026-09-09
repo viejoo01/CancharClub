@@ -1,0 +1,2141 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { 
+  Building2, 
+  DollarSign, 
+  Calendar, 
+  Plus, 
+  CheckCircle2, 
+  ExternalLink,
+  Search,
+  ShieldCheck,
+  Send,
+  Calculator,
+  Receipt,
+  Pencil,
+  Trash2,
+  Users,
+  UserPlus,
+  Coffee,
+  Copy,
+  Sparkles,
+  MessageSquare,
+  LogIn,
+  Eye,
+  EyeOff,
+  Smartphone
+} from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { formatARS } from '@/lib/utils'
+import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
+import { toast } from 'sonner'
+
+export interface ClubUser {
+  id: string
+  name: string
+  email: string
+  phone: string
+  role: 'TENANT_ADMIN' | 'TENANT_STAFF'
+  tenantId: string
+  tenantName: string
+  tenantSlug: string
+  password: string
+  status: 'ACTIVE' | 'INACTIVE'
+  createdAt: string
+}
+
+export default function SuperadminPage() {
+  const [activeTab, setActiveTab] = useState<'BILLING' | 'TENANTS' | 'USERS'>('USERS')
+
+  // Listado de clubes con sus parámetros para la fórmula proporcional
+  const [tenants, setTenants] = useState([
+    {
+      id: 't1',
+      name: 'Club Pádel Central',
+      slug: 'padel-central',
+      city: 'Yerba Buena, Tucumán',
+      active_courts: 2,
+      highest_slot_price: 30000,
+      total_bookings: 342,
+      mp_connected: true,
+      status: 'ACTIVE',
+      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      last_paid: '2026-08-31',
+    },
+    {
+      id: 't2',
+      name: 'Complejo Deportivo Las Cañas',
+      slug: 'las-canas',
+      city: 'San Miguel de Tucumán',
+      active_courts: 6,
+      highest_slot_price: 32000,
+      total_bookings: 512,
+      mp_connected: true,
+      status: 'ACTIVE',
+      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      last_paid: '2026-08-30',
+    },
+    {
+      id: 't3',
+      name: 'Tucumán Lawn Tennis Padel',
+      slug: 'lawn-tennis',
+      city: 'San Miguel de Tucumán',
+      active_courts: 3,
+      highest_slot_price: 28000,
+      total_bookings: 189,
+      mp_connected: false,
+      status: 'ACTIVE',
+      subscription_status: 'PENDIENTE' as 'AL_DIA' | 'PENDIENTE',
+      last_paid: null,
+    },
+    {
+      id: 't4',
+      name: 'San Martín Arena Pádel',
+      slug: 'san-martin-arena',
+      city: 'San Miguel de Tucumán',
+      active_courts: 1,
+      highest_slot_price: 26000,
+      total_bookings: 120,
+      mp_connected: true,
+      status: 'ACTIVE',
+      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      last_paid: '2026-08-28',
+    }
+  ])
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [newClubName, setNewClubName] = useState('')
+  const [newCity, setNewCity] = useState('San Miguel de Tucumán')
+  const [newCourts, setNewCourts] = useState('2')
+  const [newMaxPrice, setNewMaxPrice] = useState('30000')
+
+  // Estado para modal de edición de club
+  const [editingTenant, setEditingTenant] = useState<{
+    id: string
+    name: string
+    slug: string
+    city: string
+    active_courts: number
+    highest_slot_price: number
+    status: string
+    subscription_status: 'AL_DIA' | 'PENDIENTE'
+    mp_connected: boolean
+  } | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+
+  // Cálculos SaaS basados en la fórmula
+  const tenantsWithPricing = tenants.map(t => {
+    const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price)
+    return { ...t, pricing }
+  })
+
+  const totalMRR = tenantsWithPricing.reduce((acc, t) => acc + t.pricing.monthlyFeeArs, 0)
+  const totalCourts = tenants.reduce((acc, t) => acc + t.active_courts, 0)
+  const upToDateCount = tenants.filter(t => t.subscription_status === 'AL_DIA').length
+  const pendingCount = tenants.filter(t => t.subscription_status === 'PENDIENTE').length
+
+  const filteredTenants = tenantsWithPricing.filter(t => 
+    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.slug.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const handleRegisterPayment = (tenantId: string, clubName: string, amount: number) => {
+    setTenants(prev => prev.map(t => {
+      if (t.id === tenantId) {
+        return {
+          ...t,
+          subscription_status: 'AL_DIA',
+          last_paid: new Date().toISOString().split('T')[0]
+        }
+      }
+      return t
+    }))
+    toast.success(`Pago mensual registrado para ${clubName}`, {
+      description: `Se acreditó la cuota mensual de ${formatARS(amount)}.`
+    })
+  }
+
+  const handleSendPaymentLink = (clubName: string, amount: number) => {
+    toast.info(`Link de cobro generado para ${clubName}`, {
+      description: `Orden de pago de ${formatARS(amount)} copiada al portapapeles para enviar por WhatsApp o email.`
+    })
+  }
+
+  const handleCreateTenant = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newClubName.trim()) return
+
+    const slug = newClubName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const created = {
+      id: `t-${Date.now()}`,
+      name: newClubName,
+      slug,
+      city: newCity,
+      active_courts: Number(newCourts) || 2,
+      highest_slot_price: Number(newMaxPrice) || 30000,
+      total_bookings: 0,
+      mp_connected: false,
+      status: 'ACTIVE',
+      subscription_status: 'PENDIENTE' as const,
+      last_paid: null,
+    }
+
+    setTenants(prev => [...prev, created])
+    setIsModalOpen(false)
+    setNewClubName('')
+    toast.success(`Club "${newClubName}" creado exitosamente`, {
+      description: `Fórmula SaaS: ${calculateSaaSMultiplier(created.active_courts)} turnos ($${(created.highest_slot_price * calculateSaaSMultiplier(created.active_courts)).toLocaleString('es-AR')}/mes).`
+    })
+  }
+
+  const handleOpenEdit = (t: typeof tenants[0]) => {
+    setEditingTenant({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      city: t.city,
+      active_courts: t.active_courts,
+      highest_slot_price: t.highest_slot_price,
+      status: t.status,
+      subscription_status: t.subscription_status,
+      mp_connected: t.mp_connected,
+    })
+    setIsEditModalOpen(true)
+  }
+
+  const handleUpdateTenant = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingTenant || !editingTenant.name.trim()) return
+
+    const sanitizedSlug = editingTenant.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-|-$)/g, '')
+    const activeCourts = Math.max(1, Number(editingTenant.active_courts) || 1)
+    const highestPrice = Math.max(1000, Number(editingTenant.highest_slot_price) || 10000)
+
+    setTenants(prev => prev.map(t => {
+      if (t.id === editingTenant.id) {
+        return {
+          ...t,
+          name: editingTenant.name,
+          slug: sanitizedSlug || t.slug,
+          city: editingTenant.city,
+          active_courts: activeCourts,
+          highest_slot_price: highestPrice,
+          status: editingTenant.status,
+          subscription_status: editingTenant.subscription_status,
+          mp_connected: editingTenant.mp_connected,
+        }
+      }
+      return t
+    }))
+
+    setIsEditModalOpen(false)
+    const newMultiplier = calculateSaaSMultiplier(activeCourts)
+    const newFee = highestPrice * newMultiplier
+
+    toast.success(`Club "${editingTenant.name}" actualizado con éxito`, {
+      description: `Nueva tarifa SaaS: ${newMultiplier}x turnos (${formatARS(newFee)}/mes).`
+    })
+  }
+
+  const handleDeleteTenant = (tenantId: string, clubName: string) => {
+    if (confirm(`¿Estás seguro de que deseas dar de baja o eliminar el club "${clubName}"?`)) {
+      setTenants(prev => prev.filter(t => t.id !== tenantId))
+      setIsEditModalOpen(false)
+      toast.error(`Club "${clubName}" eliminado del sistema SaaS`)
+    }
+  }
+
+  // Listado de usuarios administradores y cancheros por club
+  const [clubUsers, setClubUsers] = useState<ClubUser[]>([
+    {
+      id: 'u-1',
+      name: 'Gonzalo Morales',
+      email: 'admin@padelcentral.com',
+      phone: '+54 9 381 555-0101',
+      role: 'TENANT_ADMIN',
+      tenantId: 't1',
+      tenantName: 'Club Pádel Central',
+      tenantSlug: 'padel-central',
+      password: 'demo123456',
+      status: 'ACTIVE',
+      createdAt: '2026-08-01',
+    },
+    {
+      id: 'u-2',
+      name: 'Martín Sánchez (Canchero)',
+      email: 'mostrador@padelcentral.com',
+      phone: '+54 9 381 555-0102',
+      role: 'TENANT_STAFF',
+      tenantId: 't1',
+      tenantName: 'Club Pádel Central',
+      tenantSlug: 'padel-central',
+      password: 'cajero123',
+      status: 'ACTIVE',
+      createdAt: '2026-08-01',
+    },
+    {
+      id: 'u-3',
+      name: 'Rodrigo Benítez',
+      email: 'rodrigo@lascanas.com',
+      phone: '+54 9 381 555-0201',
+      role: 'TENANT_ADMIN',
+      tenantId: 't2',
+      tenantName: 'Complejo Deportivo Las Cañas',
+      tenantSlug: 'las-canas',
+      password: 'lascanas2026',
+      status: 'ACTIVE',
+      createdAt: '2026-08-05',
+    },
+    {
+      id: 'u-4',
+      name: 'Lucas Pereyra (Canchero)',
+      email: 'canchero@lascanas.com',
+      phone: '+54 9 381 555-0202',
+      role: 'TENANT_STAFF',
+      tenantId: 't2',
+      tenantName: 'Complejo Deportivo Las Cañas',
+      tenantSlug: 'las-canas',
+      password: 'canchero2026',
+      status: 'ACTIVE',
+      createdAt: '2026-08-05',
+    },
+    {
+      id: 'u-5',
+      name: 'Fernando Albornoz',
+      email: 'padel@lawntennis.com',
+      phone: '+54 9 381 555-0301',
+      role: 'TENANT_ADMIN',
+      tenantId: 't3',
+      tenantName: 'Tucumán Lawn Tennis Padel',
+      tenantSlug: 'lawn-tennis',
+      password: 'tennis2026',
+      status: 'ACTIVE',
+      createdAt: '2026-08-10',
+    },
+    {
+      id: 'u-6',
+      name: 'Juan Gómez (Canchero)',
+      email: 'guardia@lawntennis.com',
+      phone: '+54 9 381 555-0302',
+      role: 'TENANT_STAFF',
+      tenantId: 't3',
+      tenantName: 'Tucumán Lawn Tennis Padel',
+      tenantSlug: 'lawn-tennis',
+      password: 'guardia2026',
+      status: 'ACTIVE',
+      createdAt: '2026-08-10',
+    },
+    {
+      id: 'u-7',
+      name: 'Mariano Díaz',
+      email: 'admin@sanmartinarena.com',
+      phone: '+54 9 381 555-0401',
+      role: 'TENANT_ADMIN',
+      tenantId: 't4',
+      tenantName: 'San Martín Arena Pádel',
+      tenantSlug: 'san-martin-arena',
+      password: 'arena2026',
+      status: 'ACTIVE',
+      createdAt: '2026-08-15',
+    }
+  ])
+
+  // Filtros de usuarios
+  const [userSearchTerm, setUserSearchTerm] = useState('')
+  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'TENANT_ADMIN' | 'TENANT_STAFF'>('ALL')
+  const [userClubFilter, setUserClubFilter] = useState<string>('ALL')
+
+  // Modales de usuario individual
+  const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false)
+  const [newUserTenantId, setNewUserTenantId] = useState('t1')
+  const [newUserRole, setNewUserRole] = useState<'TENANT_ADMIN' | 'TENANT_STAFF'>('TENANT_ADMIN')
+  const [newUserName, setNewUserName] = useState('')
+  const [newUserEmail, setNewUserEmail] = useState('')
+  const [newUserPhone, setNewUserPhone] = useState('')
+  const [newUserPassword, setNewUserPassword] = useState('club2026')
+
+  // Edición de usuario
+  const [editingUser, setEditingUser] = useState<ClubUser | null>(null)
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
+
+  // Revelar contraseñas
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({})
+
+  // Modal Alta Rápida 3-en-1 (Club + Dueño + Canchero)
+  const [isQuickWizardModalOpen, setIsQuickWizardModalOpen] = useState(false)
+  const [wizardClubName, setWizardClubName] = useState('')
+  const [wizardCity, setWizardCity] = useState('San Miguel de Tucumán')
+  const [wizardCourts, setWizardCourts] = useState('2')
+  const [wizardMaxPrice, setWizardMaxPrice] = useState('30000')
+
+  const [wizardOwnerName, setWizardOwnerName] = useState('')
+  const [wizardOwnerEmail, setWizardOwnerEmail] = useState('')
+  const [wizardOwnerPhone, setWizardOwnerPhone] = useState('')
+  const [wizardOwnerPassword, setWizardOwnerPassword] = useState('admin123')
+
+  const [wizardStaffName, setWizardStaffName] = useState('')
+  const [wizardStaffEmail, setWizardStaffEmail] = useState('')
+  const [wizardStaffPhone, setWizardStaffPhone] = useState('')
+  const [wizardStaffPassword, setWizardStaffPassword] = useState('canchero123')
+
+  const [wizardResult, setWizardResult] = useState<{
+    clubName: string
+    owner: ClubUser
+    staff: ClubUser
+  } | null>(null)
+  const [isWizardResultModalOpen, setIsWizardResultModalOpen] = useState(false)
+
+  const handleTogglePassword = (userId: string) => {
+    setRevealedPasswords(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }))
+  }
+
+  const handleCopyWhatsAppMessage = (user: ClubUser) => {
+    const roleTitle = user.role === 'TENANT_ADMIN' ? 'Dueño del Club (Administrador)' : 'Canchero (Turnos y Cantina)'
+    const rolePermissions = user.role === 'TENANT_ADMIN'
+      ? 'Control total del predio: canchas, reglas de precios, reportes de ocupación y facturación SaaS.'
+      : 'Control operativo: calendario de turnos en vivo, turnos fijos de abonados, cantina/kiosco y caja diaria.'
+
+    const message = `🎾 *¡Hola ${user.name}! Te damos la bienvenida a Canchar Club.*
+
+Tu usuario para gestionar *${user.tenantName}* ya está activo:
+🔗 *Portal de Acceso:* https://cancharclub.com.ar/auth/login
+👤 *Email:* ${user.email}
+🔑 *Contraseña:* ${user.password}
+🛡️ *Rol asignado:* ${roleTitle}
+
+📌 *Tus funciones habilitadas:*
+${rolePermissions}
+
+Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A romperla en la cancha!`
+
+    navigator.clipboard.writeText(message)
+    toast.success(`Datos de acceso de ${user.name} copiados`, {
+      description: 'Mensaje formateado listo para enviar por WhatsApp.'
+    })
+  }
+
+  const handleLoginAsUser = (user: ClubUser) => {
+    document.cookie = `demo_user_role=${user.role}; path=/; max-age=86400`
+    document.cookie = `demo_user_name=${encodeURIComponent(user.name)}; path=/; max-age=86400`
+    document.cookie = `demo_tenant_name=${encodeURIComponent(user.tenantName)}; path=/; max-age=86400`
+    document.cookie = `demo_tenant_slug=${encodeURIComponent(user.tenantSlug)}; path=/; max-age=86400`
+    toast.success(`Iniciando sesión como ${user.name}`, {
+      description: `Rol: ${user.role === 'TENANT_ADMIN' ? 'Dueño del Club' : 'Canchero (Turnos y Cantina)'}`
+    })
+    window.location.href = '/dashboard'
+  }
+
+  const handleToggleUserStatus = (userId: string) => {
+    setClubUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const nextStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+        toast.info(`Usuario ${u.name} ahora está ${nextStatus === 'ACTIVE' ? 'Activo' : 'Inactivo'}`)
+        return { ...u, status: nextStatus }
+      }
+      return u
+    }))
+  }
+
+  const handleCreateUser = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
+      toast.error('Completá los campos obligatorios.')
+      return
+    }
+
+    const assignedTenant = tenants.find(t => t.id === newUserTenantId) || tenants[0]
+    const newUser: ClubUser = {
+      id: `u-${Date.now()}`,
+      name: newUserName.trim(),
+      email: newUserEmail.trim().toLowerCase(),
+      phone: newUserPhone.trim() || '+54 9 381 000-0000',
+      role: newUserRole,
+      tenantId: assignedTenant.id,
+      tenantName: assignedTenant.name,
+      tenantSlug: assignedTenant.slug,
+      password: newUserPassword.trim(),
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString().split('T')[0]
+    }
+
+    setClubUsers(prev => [newUser, ...prev])
+    setIsCreateUserModalOpen(false)
+    setNewUserName('')
+    setNewUserEmail('')
+    setNewUserPhone('')
+    setNewUserPassword('club2026')
+
+    toast.success(`Usuario "${newUser.name}" creado con éxito`, {
+      description: `Asignado a ${newUser.tenantName} como ${newUser.role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'}.`
+    })
+  }
+
+  const handleOpenEditUser = (user: ClubUser) => {
+    setEditingUser({ ...user })
+    setIsEditUserModalOpen(true)
+  }
+
+  const handleUpdateUser = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUser) return
+
+    const assignedTenant = tenants.find(t => t.id === editingUser.tenantId) || tenants[0]
+    const updated: ClubUser = {
+      ...editingUser,
+      tenantName: assignedTenant.name,
+      tenantSlug: assignedTenant.slug,
+    }
+
+    setClubUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
+    setIsEditUserModalOpen(false)
+    toast.success(`Usuario "${updated.name}" actualizado correctamente`)
+  }
+
+  const handleDeleteUser = (userId: string, userName: string) => {
+    if (confirm(`¿Estás seguro de eliminar el usuario "${userName}"?`)) {
+      setClubUsers(prev => prev.filter(u => u.id !== userId))
+      toast.error(`Usuario "${userName}" eliminado`)
+    }
+  }
+
+  const handleQuickWizardSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!wizardClubName.trim() || !wizardOwnerName.trim() || !wizardOwnerEmail.trim()) {
+      toast.error('Completá los datos del club y del dueño.')
+      return
+    }
+
+    const tenantSlug = wizardClubName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const newTenantId = `t-${Date.now()}`
+    const activeCourts = Math.max(1, Number(wizardCourts) || 2)
+    const highestPrice = Math.max(1000, Number(wizardMaxPrice) || 30000)
+
+    const createdTenant = {
+      id: newTenantId,
+      name: wizardClubName.trim(),
+      slug: tenantSlug,
+      city: wizardCity.trim(),
+      active_courts: activeCourts,
+      highest_slot_price: highestPrice,
+      total_bookings: 0,
+      mp_connected: false,
+      status: 'ACTIVE',
+      subscription_status: 'PENDIENTE' as const,
+      last_paid: null,
+    }
+
+    const createdOwner: ClubUser = {
+      id: `u-${Date.now()}-1`,
+      name: wizardOwnerName.trim(),
+      email: wizardOwnerEmail.trim().toLowerCase(),
+      phone: wizardOwnerPhone.trim() || '+54 9 381 555-0001',
+      role: 'TENANT_ADMIN',
+      tenantId: newTenantId,
+      tenantName: createdTenant.name,
+      tenantSlug: createdTenant.slug,
+      password: wizardOwnerPassword.trim() || 'admin123',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString().split('T')[0]
+    }
+
+    const staffName = wizardStaffName.trim() || `Canchero ${createdTenant.name}`
+    const staffEmail = wizardStaffEmail.trim().toLowerCase() || `canchero@${createdTenant.slug}.com`
+    const createdStaff: ClubUser = {
+      id: `u-${Date.now()}-2`,
+      name: staffName,
+      email: staffEmail,
+      phone: wizardStaffPhone.trim() || '+54 9 381 555-0002',
+      role: 'TENANT_STAFF',
+      tenantId: newTenantId,
+      tenantName: createdTenant.name,
+      tenantSlug: createdTenant.slug,
+      password: wizardStaffPassword.trim() || 'canchero123',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString().split('T')[0]
+    }
+
+    setTenants(prev => [createdTenant, ...prev])
+    setClubUsers(prev => [createdOwner, createdStaff, ...prev])
+    setIsQuickWizardModalOpen(false)
+
+    setWizardResult({
+      clubName: createdTenant.name,
+      owner: createdOwner,
+      staff: createdStaff
+    })
+    setIsWizardResultModalOpen(true)
+
+    // Reset wizard fields
+    setWizardClubName('')
+    setWizardOwnerName('')
+    setWizardOwnerEmail('')
+    setWizardOwnerPhone('')
+    setWizardStaffName('')
+    setWizardStaffEmail('')
+    setWizardStaffPhone('')
+
+    toast.success(`¡Club "${createdTenant.name}", Dueño y Canchero creados!`, {
+      description: 'Ya podés copiar los accesos para enviar por WhatsApp.'
+    })
+  }
+
+  // Filtrado de usuarios
+  const filteredUsers = clubUsers.filter(u => {
+    const matchesSearch = 
+      u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+      u.email.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+      u.tenantName.toLowerCase().includes(userSearchTerm.toLowerCase())
+    
+    const matchesRole = userRoleFilter === 'ALL' || u.role === userRoleFilter
+    const matchesClub = userClubFilter === 'ALL' || u.tenantId === userClubFilter
+
+    return matchesSearch && matchesRole && matchesClub
+  })
+
+  const ownerCount = clubUsers.filter(u => u.role === 'TENANT_ADMIN').length
+  const staffCount = clubUsers.filter(u => u.role === 'TENANT_STAFF').length
+  const activeUserCount = clubUsers.filter(u => u.status === 'ACTIVE').length
+
+  return (
+    <div className="space-y-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wider uppercase mb-1">
+            <ShieldCheck className="w-4 h-4" />
+            Panel Superadministrador SaaS
+          </div>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            Gestión de Clubes, Dueños y Cancheros
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Administrá predios inquilinos, asigná accesos independientes a dueños y cancheros, y controlá la facturación mensual.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            onClick={() => setIsQuickWizardModalOpen(true)}
+            className="bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-900/30 rounded-xl text-xs font-bold px-3.5 py-2"
+          >
+            <Sparkles className="w-4 h-4 mr-1.5 text-yellow-300" />
+            ⚡ Alta Rápida de Club Completo
+          </Button>
+          <Button 
+            onClick={() => setIsCreateUserModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 rounded-xl text-xs font-semibold px-3 py-2"
+          >
+            <UserPlus className="w-4 h-4 mr-1.5" />
+            Crear Usuario
+          </Button>
+          <Button 
+            onClick={() => setIsModalOpen(true)}
+            variant="outline"
+            className="border-slate-800 hover:border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white rounded-xl text-xs px-3 py-2"
+          >
+            <Plus className="w-4 h-4 mr-1.5 text-indigo-400" />
+            Registrar Club
+          </Button>
+        </div>
+      </div>
+
+      {/* Regla de Negocio Destacada */}
+      <div className="p-4 rounded-2xl bg-linear-to-r from-indigo-950/60 via-slate-900/60 to-purple-950/40 border border-indigo-800/40 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+            <Calculator className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">
+              Fórmula de Facturación SaaS y Roles de la Plataforma
+            </h3>
+            <p className="text-xs text-slate-300">
+              <span className="text-indigo-400 font-mono font-medium">Cuota Mensual = Turno Más Caro × (0.5 × Canchas + 0.5)</span>
+              {' '}— Los <strong className="text-emerald-400">Dueños</strong> gestionan canchas, precios y reportes. Los <strong className="text-amber-400">Cancheros</strong> controlan turnos, cantina/kiosco y caja diaria.
+            </p>
+          </div>
+        </div>
+        <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs px-3 py-1">
+          Panel de Control B2B
+        </Badge>
+      </div>
+
+      {/* Métricas Globales */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              MRR SaaS Proyectado
+            </CardTitle>
+            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+              <DollarSign className="w-4 h-4" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-white tracking-tight">
+              {formatARS(totalMRR)}
+            </div>
+            <p className="text-xs text-indigo-400 font-medium mt-1">
+              {upToDateCount} clubes al día • {pendingCount} pendientes
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Clubes Registrados
+            </CardTitle>
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+              <Building2 className="w-4 h-4" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-white tracking-tight">
+              {tenants.length}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              {totalCourts} canchas activas en total
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Usuarios Asignados
+            </CardTitle>
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+              <Users className="w-4 h-4" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-emerald-400">{ownerCount}</span>
+              <span className="text-xs text-slate-400">dueños</span>
+              <span className="text-slate-600">/</span>
+              <span className="text-2xl font-bold text-amber-400">{staffCount}</span>
+              <span className="text-xs text-slate-400">cancheros</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              {activeUserCount} usuarios activos en total
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Turnos en Plataforma
+            </CardTitle>
+            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+              <Calendar className="w-4 h-4" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-white tracking-tight">
+              {tenants.reduce((acc, t) => acc + t.total_bookings, 0)}
+            </div>
+            <p className="text-xs text-purple-400 font-medium mt-1">
+              Reservas procesadas este mes
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab('USERS')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'USERS'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Usuarios & Accesos (Dueños y Cancheros)
+            <Badge className="ml-1 bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
+              {clubUsers.length}
+            </Badge>
+          </button>
+          <button
+            onClick={() => setActiveTab('BILLING')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'BILLING'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            Facturación y Cobros Mensuales SaaS
+          </button>
+          <button
+            onClick={() => setActiveTab('TENANTS')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'TENANTS'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            Directorio de Clubes y Portales
+            <Badge className="ml-1 bg-slate-800 text-slate-300 text-[10px] px-1.5 py-0 border border-slate-700">
+              {tenants.length}
+            </Badge>
+          </button>
+        </div>
+
+        {activeTab === 'USERS' && (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setIsCreateUserModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5 mr-1" />
+              Crear Usuario
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Pestaña: FACTURACIÓN Y COBROS SAAS */}
+      {activeTab === 'BILLING' && (
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
+          <CardHeader className="border-b border-slate-800/80 p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base font-bold text-white">
+                  Matriz de Facturación Mensual por Club
+                </CardTitle>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Liquidación de cuotas proporcionales a pagar a fin de mes.
+                </p>
+              </div>
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Input 
+                  placeholder="Buscar club..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="p-4 pl-6">Club / Inquilino</th>
+                    <th className="p-4 text-center">Canchas (N)</th>
+                    <th className="p-4 text-right">Turno Más Caro</th>
+                    <th className="p-4 text-center">Multiplicador (M)</th>
+                    <th className="p-4 text-right">Cuota Mensual Final</th>
+                    <th className="p-4 text-center">Vencimiento</th>
+                    <th className="p-4 text-center">Estado</th>
+                    <th className="p-4 pr-6 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-xs">
+                  {filteredTenants.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
+                      <td className="p-4 pl-6">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">{t.name}</span>
+                          {t.pricing.planName && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              {t.pricing.planName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400">{t.city}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-300 font-mono text-xs">
+                          {t.active_courts} {t.active_courts === 1 ? 'cancha' : 'canchas'}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-right font-medium text-slate-200 font-mono">
+                        {formatARS(t.highest_slot_price)}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="font-semibold text-indigo-400 font-mono bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
+                          {t.pricing.multiplier}x
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="font-extrabold text-sm text-emerald-400 font-mono">
+                          {formatARS(t.pricing.monthlyFeeArs)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {t.pricing.formulaDescription}
+                        </div>
+                      </td>
+                      <td className="p-4 text-center text-slate-400 text-xs font-mono">
+                        {t.pricing.nextDueDate}
+                      </td>
+                      <td className="p-4 text-center">
+                        {t.subscription_status === 'AL_DIA' ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                            Al Día
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                            Pendiente
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-4 pr-6 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenEdit(t)}
+                            className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5"
+                            title="Editar datos del club y cuota"
+                          >
+                            <Pencil className="w-3.5 h-3.5 mr-1 text-indigo-400" />
+                            Editar
+                          </Button>
+                          {t.subscription_status === 'PENDIENTE' ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
+                                className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white"
+                                title="Generar link de pago"
+                              >
+                                <Send className="w-3.5 h-3.5 mr-1" />
+                                Link
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
+                                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                Registrar Cobro
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="text-[11px] text-emerald-400/80 font-medium flex items-center gap-1 ml-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Pagado el {t.last_paid}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pestaña: DIRECTORIO DE CLUBES */}
+      {activeTab === 'TENANTS' && (
+        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
+          <CardHeader className="border-b border-slate-800/80 p-5">
+            <CardTitle className="text-base font-bold text-white">
+              Directorio de Clubes y Subdominios
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="p-4 pl-6">Club</th>
+                    <th className="p-4">Ubicación</th>
+                    <th className="p-4">Slug / Portal</th>
+                    <th className="p-4 text-center">Mercado Pago</th>
+                    <th className="p-4 pr-6 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-xs">
+                  {filteredTenants.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
+                      <td className="p-4 pl-6 font-semibold text-white">
+                        {t.name}
+                      </td>
+                      <td className="p-4 text-slate-400">
+                        {t.city}
+                      </td>
+                      <td className="p-4 font-mono text-indigo-400">
+                        /club/{t.slug}
+                      </td>
+                      <td className="p-4 text-center">
+                        {t.mp_connected ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                            Conectado
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px]">
+                            Sin Configurar
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-4 pr-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenEdit(t)}
+                            className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5"
+                            title="Editar parámetros del club"
+                          >
+                            <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
+                            Editar
+                          </Button>
+                          <Link 
+                            href={`/club/${t.slug}`} 
+                            target="_blank"
+                            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium px-2 py-1 rounded-lg hover:bg-indigo-950/40"
+                          >
+                            Ver Portal <ExternalLink className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pestaña: USUARIOS & ACCESOS (DUEÑOS Y CANCHEROS) */}
+      {activeTab === 'USERS' && (
+        <div className="space-y-6">
+          {/* Banner explicativo de roles */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-800/40 backdrop-blur-md flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">Rol: Dueño del Club</h4>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
+                    TENANT_ADMIN
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Acceso y administración total del club: configuración de canchas, reglas de tarifas/precios, reportes de ocupación y facturación de la cuota SaaS mensual.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-800/40 backdrop-blur-md flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                <Coffee className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">Rol: Canchero / Mostrador</h4>
+                  <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0 border border-amber-500/30">
+                    TENANT_STAFF
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Operativa diaria en cancha: Calendario de turnos en vivo, turnos fijos de abonados, cantina & kiosco, y apertura/cierre de caja diaria. No accede a finanzas SaaS ni precios.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Usuarios */}
+          <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
+            <CardHeader className="border-b border-slate-800/80 p-5">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-400" />
+                    Directorio de Usuarios por Club
+                  </CardTitle>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Gestioná credenciales de acceso, roles asignados y generá mensajes de WhatsApp para entregar a cada usuario.
+                  </p>
+                </div>
+
+                {/* Filtros */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <Input 
+                      placeholder="Buscar por nombre, email o club..."
+                      value={userSearchTerm}
+                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                      className="pl-9 h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                    />
+                  </div>
+
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value as 'ALL' | 'TENANT_ADMIN' | 'TENANT_STAFF')}
+                    className="h-9 rounded-xl border border-slate-800 bg-slate-950 text-xs px-3 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="ALL">Todos los roles</option>
+                    <option value="TENANT_ADMIN">Solo Dueños (Admin)</option>
+                    <option value="TENANT_STAFF">Solo Cancheros (Operativo)</option>
+                  </select>
+
+                  <select
+                    value={userClubFilter}
+                    onChange={(e) => setUserClubFilter(e.target.value)}
+                    className="h-9 rounded-xl border border-slate-800 bg-slate-950 text-xs px-3 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="ALL">Todos los clubes</option>
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+
+                  <Button
+                    size="sm"
+                    onClick={() => setIsCreateUserModalOpen(true)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs h-9 px-3"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 mr-1" />
+                    Nuevo Usuario
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                      <th className="p-4 pl-6">Usuario / Contacto</th>
+                      <th className="p-4">Club Asignado</th>
+                      <th className="p-4 text-center">Rol en Plataforma</th>
+                      <th className="p-4">Alcance Operativo</th>
+                      <th className="p-4 text-center">Contraseña</th>
+                      <th className="p-4 text-center">Estado</th>
+                      <th className="p-4 pr-6 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {filteredUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-slate-400">
+                          <p className="font-semibold text-slate-300">No se encontraron usuarios con esos filtros.</p>
+                          <p className="text-xs mt-1">Probá cambiando el término de búsqueda o el club seleccionado.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredUsers.map((user) => (
+                        <tr key={user.id} className="hover:bg-slate-800/20 transition-colors">
+                          <td className="p-4 pl-6">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                user.role === 'TENANT_ADMIN'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              }`}>
+                                {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-white flex items-center gap-1.5">
+                                  {user.name}
+                                  {user.role === 'TENANT_ADMIN' ? (
+                                    <span title="Dueño / Administrador del Club">
+                                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                    </span>
+                                  ) : (
+                                    <span title="Canchero (Turnos y Cantina)">
+                                      <Coffee className="w-3.5 h-3.5 text-amber-400" />
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                                  <span>{user.email}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(user.email)
+                                      toast.success('Email copiado al portapapeles')
+                                    }}
+                                    className="text-slate-500 hover:text-slate-300 ml-0.5"
+                                    title="Copiar email"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                                  <Smartphone className="w-2.5 h-2.5" />
+                                  {user.phone}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="font-medium text-slate-200">{user.tenantName}</div>
+                            <Link
+                              href={`/club/${user.tenantSlug}`}
+                              target="_blank"
+                              className="text-[10px] text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-0.5 mt-0.5"
+                            >
+                              /club/{user.tenantSlug}
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </Link>
+                          </td>
+                          <td className="p-4 text-center">
+                            {user.role === 'TENANT_ADMIN' ? (
+                              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] px-2 py-0.5">
+                                <ShieldCheck className="w-3 h-3 mr-1" />
+                                Dueño del Club
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] px-2 py-0.5">
+                                <Coffee className="w-3 h-3 mr-1" />
+                                Canchero
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-4 max-w-[220px]">
+                            {user.role === 'TENANT_ADMIN' ? (
+                              <div className="text-[11px] text-slate-300 leading-tight">
+                                <strong className="text-emerald-400">Total:</strong> Canchas, Precios, Reportes, Ocupación y Facturación SaaS.
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-300 leading-tight">
+                                <strong className="text-amber-400">Operativo:</strong> Calendario de turnos, turnos fijos, cantina/kiosco y caja diaria.
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-4 text-center">
+                            <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                              <span>
+                                {revealedPasswords[user.id] ? user.password : '••••••••'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePassword(user.id)}
+                                className="text-slate-500 hover:text-slate-300 ml-1"
+                                title={revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave'}
+                              >
+                                {revealedPasswords[user.id] ? (
+                                  <EyeOff className="w-3 h-3" />
+                                ) : (
+                                  <Eye className="w-3 h-3" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(user.password)
+                                  toast.success('Contraseña copiada al portapapeles')
+                                }}
+                                className="text-slate-500 hover:text-slate-300"
+                                title="Copiar contraseña"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleUserStatus(user.id)}
+                              className="cursor-pointer"
+                              title="Click para cambiar estado"
+                            >
+                              {user.status === 'ACTIVE' ? (
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
+                                  Activo
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-400 text-[10px]">
+                                  Inactivo
+                                </Badge>
+                              )}
+                            </button>
+                          </td>
+                          <td className="p-4 pr-6 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                onClick={() => handleCopyWhatsAppMessage(user)}
+                                className="h-7 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium px-2.5 rounded-lg shadow-xs"
+                                title="Copiar mensaje de bienvenida con link y accesos para WhatsApp"
+                              >
+                                <MessageSquare className="w-3 h-3 mr-1" />
+                                WhatsApp
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleLoginAsUser(user)}
+                                className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg"
+                                title="Ingresar directamente al panel como este usuario"
+                              >
+                                <LogIn className="w-3 h-3 mr-1" />
+                                Probar
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenEditUser(user)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-white"
+                                title="Editar datos del usuario"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteUser(user.id, user.name)}
+                                className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30"
+                                title="Eliminar usuario"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal: Registrar Nuevo Club */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white">
+              Dar de Alta Nuevo Club
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Registra un nuevo inquilino B2B en la plataforma y configura sus parámetros de facturación.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateTenant} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300">Nombre del Club / Complejo</Label>
+              <Input 
+                required
+                placeholder="Ej. Pádel Point Tucumán"
+                value={newClubName}
+                onChange={(e) => setNewClubName(e.target.value)}
+                className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300">Ciudad / Localidad</Label>
+              <Input 
+                required
+                placeholder="Ej. San Miguel de Tucumán"
+                value={newCity}
+                onChange={(e) => setNewCity(e.target.value)}
+                className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Cantidad de Canchas</Label>
+                <Input 
+                  type="number"
+                  min="1"
+                  max="50"
+                  required
+                  value={newCourts}
+                  onChange={(e) => setNewCourts(e.target.value)}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Turno Más Caro (ARS)</Label>
+                <Input 
+                  type="number"
+                  min="1000"
+                  step="1000"
+                  required
+                  value={newMaxPrice}
+                  onChange={(e) => setNewMaxPrice(e.target.value)}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Vista Previa de la Cuota Calculada */}
+            <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-xs">
+              <div className="text-indigo-300 font-semibold mb-1">
+                Cuota Mensual Proyectada:
+              </div>
+              <div className="text-lg font-bold text-emerald-400 font-mono">
+                {formatARS(
+                  Number(newMaxPrice) * calculateSaaSMultiplier(Number(newCourts) || 1)
+                )} / mes
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Multiplicador: {calculateSaaSMultiplier(Number(newCourts) || 1)}x turnos
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-xl border-slate-800 text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button 
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs"
+              >
+                Registrar y Activar Club
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar Club / Inquilino */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-indigo-400" />
+              Editar Parámetros del Club
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Modifica la información del predio, cantidad de canchas y turno más caro para recalcular la cuota mensual SaaS.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingTenant && (
+            <form onSubmit={handleUpdateTenant} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Nombre del Club / Complejo</Label>
+                <Input 
+                  required
+                  value={editingTenant.name}
+                  onChange={(e) => setEditingTenant({ ...editingTenant, name: e.target.value })}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Slug / URL (/club/...)</Label>
+                  <Input 
+                    required
+                    value={editingTenant.slug}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, slug: e.target.value })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Ciudad / Ubicación</Label>
+                  <Input 
+                    required
+                    value={editingTenant.city}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, city: e.target.value })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Cantidad de Canchas (N)</Label>
+                  <Input 
+                    type="number"
+                    min="1"
+                    max="50"
+                    required
+                    value={editingTenant.active_courts}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, active_courts: Number(e.target.value) })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Turno Más Caro (ARS)</Label>
+                  <Input 
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    required
+                    value={editingTenant.highest_slot_price}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, highest_slot_price: Number(e.target.value) })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Estado Suscripción</Label>
+                  <select
+                    value={editingTenant.subscription_status}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, subscription_status: e.target.value as 'AL_DIA' | 'PENDIENTE' })}
+                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="AL_DIA">Al Día (Sin deuda)</option>
+                    <option value="PENDIENTE">Pendiente de Pago</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Mercado Pago Split</Label>
+                  <select
+                    value={editingTenant.mp_connected ? 'true' : 'false'}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, mp_connected: e.target.value === 'true' })}
+                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="true">Conectado (OAuth)</option>
+                    <option value="false">Sin Configurar</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Recálculo en Vivo de la Cuota SaaS */}
+              <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-xs space-y-1">
+                <div className="flex items-center justify-between text-indigo-300 font-semibold">
+                  <span>Nueva Cuota Recalculada:</span>
+                  <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/20 text-indigo-300 font-mono text-[11px]">
+                    {calculateSaaSMultiplier(Number(editingTenant.active_courts) || 1)}x turnos
+                  </Badge>
+                </div>
+                <div className="text-xl font-extrabold text-emerald-400 font-mono">
+                  {formatARS(
+                    (Number(editingTenant.highest_slot_price) || 0) * calculateSaaSMultiplier(Number(editingTenant.active_courts) || 1)
+                  )} / mes
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Fórmula: {Number(editingTenant.highest_slot_price) ? formatARS(editingTenant.highest_slot_price) : '$0'} × {calculateSaaSMultiplier(Number(editingTenant.active_courts) || 1)} turnos
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between">
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  onClick={() => handleDeleteTenant(editingTenant.id, editingTenant.name)}
+                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Eliminar Club
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="rounded-xl border-slate-800 text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs"
+                  >
+                    Guardar Cambios
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Crear Usuario Individual (Dueño o Canchero) */}
+      <Dialog open={isCreateUserModalOpen} onOpenChange={setIsCreateUserModalOpen}>
+        <DialogContent className="sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-emerald-400" />
+              Crear Usuario para Club
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Generá las credenciales para el Dueño (administración total) o para el Canchero (control de turnos, cantina y caja).
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateUser} className="space-y-4 py-2">
+            {/* Club asignado */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300">Club / Predio al que pertenece</Label>
+              <select
+                value={newUserTenantId}
+                onChange={(e) => setNewUserTenantId(e.target.value)}
+                className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {tenants.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.city})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Selector de Rol interactivo */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300">Rol y Nivel de Acceso</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setNewUserRole('TENANT_ADMIN')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    newUserRole === 'TENANT_ADMIN'
+                      ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-emerald-400">
+                      <ShieldCheck className="w-4 h-4" />
+                      Dueño del Club
+                    </span>
+                    {newUserRole === 'TENANT_ADMIN' && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-tight">
+                    Administración general, canchas, precios, reportes y finanzas SaaS.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNewUserRole('TENANT_STAFF')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    newUserRole === 'TENANT_STAFF'
+                      ? 'bg-amber-950/40 border-amber-500 text-white shadow-md shadow-amber-950/40'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-amber-400">
+                      <Coffee className="w-4 h-4" />
+                      Canchero / Mostrador
+                    </span>
+                    {newUserRole === 'TENANT_STAFF' && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-tight">
+                    Operación de turnos en vivo, turnos fijos, cantina/kiosco y caja diaria.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            {/* Nombre y Apellido */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300">Nombre Completo</Label>
+              <Input
+                required
+                placeholder="Ej. Lucas Pereyra"
+                value={newUserName}
+                onChange={(e) => setNewUserName(e.target.value)}
+                className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Email */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Email de Acceso</Label>
+                <Input
+                  type="email"
+                  required
+                  placeholder="ejemplo@club.com"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                />
+              </div>
+
+              {/* Teléfono */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">WhatsApp / Teléfono</Label>
+                <Input
+                  placeholder="+54 9 381 555-1234"
+                  value={newUserPhone}
+                  onChange={(e) => setNewUserPhone(e.target.value)}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Contraseña */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-slate-300">Contraseña Inicial</Label>
+                <button
+                  type="button"
+                  onClick={() => setNewUserPassword(`club${Math.floor(1000 + Math.random() * 9000)}`)}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+                >
+                  ⚡ Generar aleatoria
+                </button>
+              </div>
+              <Input
+                required
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setIsCreateUserModalOpen(false)}
+                className="rounded-xl border-slate-800 text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button 
+                type="submit"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold"
+              >
+                Crear Usuario y Generar Credenciales
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar Usuario */}
+      <Dialog open={isEditUserModalOpen} onOpenChange={setIsEditUserModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-indigo-400" />
+              Editar Usuario
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Modificá los datos de acceso, club asignado o rol de este usuario.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingUser && (
+            <form onSubmit={handleUpdateUser} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Nombre Completo</Label>
+                <Input
+                  required
+                  value={editingUser.name}
+                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Email</Label>
+                  <Input
+                    type="email"
+                    required
+                    value={editingUser.email}
+                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">WhatsApp / Teléfono</Label>
+                  <Input
+                    value={editingUser.phone}
+                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Club Asignado</Label>
+                  <select
+                    value={editingUser.tenantId}
+                    onChange={(e) => setEditingUser({ ...editingUser, tenantId: e.target.value })}
+                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Rol</Label>
+                  <select
+                    value={editingUser.role}
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'TENANT_ADMIN' | 'TENANT_STAFF' })}
+                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="TENANT_ADMIN">Dueño del Club (Admin)</option>
+                    <option value="TENANT_STAFF">Canchero (Turnos y Cantina)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Contraseña</Label>
+                  <Input
+                    required
+                    value={editingUser.password}
+                    onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300">Estado</Label>
+                  <select
+                    value={editingUser.status}
+                    onChange={(e) => setEditingUser({ ...editingUser, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}
+                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="ACTIVE">Activo</option>
+                    <option value="INACTIVE">Inactivo</option>
+                  </select>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between">
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  onClick={() => handleDeleteUser(editingUser.id, editingUser.name)}
+                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Eliminar Usuario
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setIsEditUserModalOpen(false)}
+                    className="rounded-xl border-slate-800 text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold"
+                  >
+                    Guardar Cambios
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Alta Rápida 3-en-1 */}
+      <Dialog open={isQuickWizardModalOpen} onOpenChange={setIsQuickWizardModalOpen}>
+        <DialogContent className="sm:max-w-2xl bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-extrabold text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-yellow-400" />
+              Alta Rápida de Club Completo (Club + Dueño + Canchero)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              En un solo paso, creá el club nuevo y asignale inmediatamente el usuario al Dueño y al Canchero con sus claves para WhatsApp.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleQuickWizardSubmit} className="space-y-6 py-2">
+            {/* 1. Datos del Club */}
+            <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                <Building2 className="w-4 h-4" />
+                1. Datos del Club / Predio
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Nombre del Complejo</Label>
+                  <Input
+                    required
+                    placeholder="Ej. Smash Padel Club"
+                    value={wizardClubName}
+                    onChange={(e) => setWizardClubName(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Ciudad / Localidad</Label>
+                  <Input
+                    required
+                    value={wizardCity}
+                    onChange={(e) => setWizardCity(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Cantidad de Canchas</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    required
+                    value={wizardCourts}
+                    onChange={(e) => setWizardCourts(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Turno Más Caro (ARS)</Label>
+                  <Input
+                    type="number"
+                    step="1000"
+                    required
+                    value={wizardMaxPrice}
+                    onChange={(e) => setWizardMaxPrice(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-400 bg-indigo-950/30 p-2 rounded-xl border border-indigo-900/30 flex items-center justify-between">
+                <span>Cuota SaaS calculada:</span>
+                <strong className="text-emerald-400 font-mono">
+                  {formatARS(Number(wizardMaxPrice || 0) * calculateSaaSMultiplier(Number(wizardCourts) || 1))}/mes
+                </strong>
+              </div>
+            </div>
+
+            {/* 2. Usuario Dueño */}
+            <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-800/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                  <ShieldCheck className="w-4 h-4" />
+                  2. Usuario Dueño del Club (Admin Total)
+                </div>
+                <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">TENANT_ADMIN</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Nombre del Dueño</Label>
+                  <Input
+                    required
+                    placeholder="Ej. Carlos Albarracín"
+                    value={wizardOwnerName}
+                    onChange={(e) => setWizardOwnerName(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Email de Acceso</Label>
+                  <Input
+                    type="email"
+                    required
+                    placeholder="carlos@smashpadel.com"
+                    value={wizardOwnerEmail}
+                    onChange={(e) => setWizardOwnerEmail(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">WhatsApp del Dueño</Label>
+                  <Input
+                    placeholder="+54 9 381 555-8888"
+                    value={wizardOwnerPhone}
+                    onChange={(e) => setWizardOwnerPhone(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Contraseña Asignada</Label>
+                  <Input
+                    required
+                    value={wizardOwnerPassword}
+                    onChange={(e) => setWizardOwnerPassword(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Usuario Canchero */}
+            <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-800/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                  <Coffee className="w-4 h-4" />
+                  3. Usuario Canchero (Turnos y Cantina)
+                </div>
+                <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">TENANT_STAFF</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Nombre del Canchero</Label>
+                  <Input
+                    placeholder="Ej. Pedro (Mostrador)"
+                    value={wizardStaffName}
+                    onChange={(e) => setWizardStaffName(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Email de Acceso</Label>
+                  <Input
+                    type="email"
+                    placeholder="mostrador@smashpadel.com"
+                    value={wizardStaffEmail}
+                    onChange={(e) => setWizardStaffEmail(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">WhatsApp del Canchero</Label>
+                  <Input
+                    placeholder="+54 9 381 555-9999"
+                    value={wizardStaffPhone}
+                    onChange={(e) => setWizardStaffPhone(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Contraseña Asignada</Label>
+                  <Input
+                    required
+                    value={wizardStaffPassword}
+                    onChange={(e) => setWizardStaffPassword(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setIsQuickWizardModalOpen(false)}
+                className="rounded-xl border-slate-800 text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button 
+                type="submit"
+                className="bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold px-4"
+              >
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                Crear Club + Dueño + Canchero en 1 Click
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Resultado de Alta Rápida con botones para WhatsApp */}
+      <Dialog open={isWizardResultModalOpen} onOpenChange={setIsWizardResultModalOpen}>
+        <DialogContent className="sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              ¡Club y Usuarios Creados con Éxito!
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              {wizardResult?.clubName} ya está activo. Copiá y enviá las credenciales a cada uno:
+            </DialogDescription>
+          </DialogHeader>
+
+          {wizardResult && (
+            <div className="space-y-4 py-2">
+              {/* Tarjeta Dueño */}
+              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-emerald-400 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" />
+                    Dueño: {wizardResult.owner.name}
+                  </div>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">Admin Total</Badge>
+                </div>
+                <div className="text-xs text-slate-300 font-mono space-y-0.5">
+                  <div>Email: <span className="text-white">{wizardResult.owner.email}</span></div>
+                  <div>Clave: <span className="text-white">{wizardResult.owner.password}</span></div>
+                </div>
+                <Button
+                  onClick={() => handleCopyWhatsAppMessage(wizardResult.owner)}
+                  className="w-full h-8 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                  Copiar Mensaje de WhatsApp (Dueño)
+                </Button>
+              </div>
+
+              {/* Tarjeta Canchero */}
+              <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
+                    <Coffee className="w-4 h-4" />
+                    Canchero: {wizardResult.staff.name}
+                  </div>
+                  <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">Turnos y Cantina</Badge>
+                </div>
+                <div className="text-xs text-slate-300 font-mono space-y-0.5">
+                  <div>Email: <span className="text-white">{wizardResult.staff.email}</span></div>
+                  <div>Clave: <span className="text-white">{wizardResult.staff.password}</span></div>
+                </div>
+                <Button
+                  onClick={() => handleCopyWhatsAppMessage(wizardResult.staff)}
+                  className="w-full h-8 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                  Copiar Mensaje de WhatsApp (Canchero)
+                </Button>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  onClick={() => {
+                    setIsWizardResultModalOpen(false)
+                    setActiveTab('USERS')
+                  }}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl"
+                >
+                  Ver en el Listado de Usuarios
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

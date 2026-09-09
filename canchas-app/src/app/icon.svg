@@ -1,0 +1,58 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cancharBgGrad" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <linearGradient id="cancharBorderGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#059669" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.9" />
+    </linearGradient>
+
+    <linearGradient id="cancharCGrad" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <linearGradient id="cancharTurfGrad" x1="20" y1="20" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#065f46" />
+      <stop offset="100%" stop-color="#022c22" />
+    </linearGradient>
+
+    <radialGradient id="cancharBallGrad" cx="44" cy="18" r="5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#bef264" />
+      <stop offset="50%" stop-color="#84cc16" />
+      <stop offset="100%" stop-color="#65a30d" />
+    </radialGradient>
+  </defs>
+
+  <!-- Badge redondeado deportivo -->
+  <rect x="3" y="3" width="58" height="58" rx="17" fill="url(#cancharBgGrad)" stroke="url(#cancharBorderGrad)" stroke-width="1.8" />
+
+  <!-- Halo de luz suave -->
+  <circle cx="32" cy="32" r="16" fill="#10b981" fill-opacity="0.1" />
+
+  <!-- Trazo Curvo "C" Dinámico (Crest / Canchar Club) -->
+  <path d="M45 18C41.5 14 36.2 12.5 30.5 12.5C19.5 12.5 12 20.8 12 32C12 43.2 19.5 51.5 30.5 51.5C37 51.5 42.2 49 46 44.5" 
+        stroke="url(#cancharCGrad)" stroke-width="4.8" stroke-linecap="round" />
+
+  <!-- Pista de juego / Cancha interior -->
+  <rect x="22" y="21" width="22" height="22" rx="4" fill="url(#cancharTurfGrad)" stroke="#34d399" stroke-width="1.6" stroke-opacity="0.9" />
+
+  <!-- Línea de Red / División central -->
+  <line x1="33" y1="21" x2="33" y2="43" stroke="#f8fafc" stroke-width="1.5" stroke-dasharray="2 1.5" stroke-opacity="0.9" />
+
+  <!-- Línea horizontal central (mitad de campo) -->
+  <line x1="22" y1="32" x2="44" y2="32" stroke="#a7f3d0" stroke-width="1.2" stroke-opacity="0.8" />
+
+  <!-- Punto de servicio / centro -->
+  <circle cx="33" cy="32" r="1.5" fill="#f8fafc" />
+
+  <!-- Pelota Neón deportiva en juego -->
+  <path d="M37 15C40 16 42 17 44 18" stroke="#bef264" stroke-width="1" stroke-opacity="0.5" stroke-linecap="round" />
+  <circle cx="44" cy="18" r="4.2" fill="url(#cancharBallGrad)" stroke="#14532d" stroke-width="0.8" />
+  <path d="M42.5 16C43.5 17.2 44.5 17.5 45.8 17.2" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" />
+</svg>

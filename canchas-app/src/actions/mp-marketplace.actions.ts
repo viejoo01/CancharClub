@@ -1,7 +1,7 @@
 'use server'
 // src/actions/mp-marketplace.actions.ts
 // ==============================================================================
-// SERVER ACTIONS — Mercado Pago Marketplace (OAuth Connect y Split de Comisiones)
+// SERVER ACTIONS — Mercado Pago Connect Directo al Club
 // ==============================================================================
 
 import { createServiceClient } from '@/lib/supabase/server'

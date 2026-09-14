@@ -596,7 +596,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white">Transferencia Bancaria / CVU Directo</span>
                   <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[9px] px-1.5 py-0">
-                    Sin comisión
+                    Acreditación Inmediata
                   </Badge>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">

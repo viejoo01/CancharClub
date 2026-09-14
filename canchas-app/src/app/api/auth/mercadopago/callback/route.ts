@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
         mp_refresh_token: refreshToken,
         mp_collector_id: collectorId,
         mp_connected_at: new Date().toISOString(),
-        mp_marketplace_fee_pct: 0, // 0% de comisión - La plataforma no retiene comisiones por alquiler
+        mp_marketplace_fee_pct: 0, // 0% fee - La plataforma no retiene cargos por reserva
       })
       .eq('id', tenantId)
 

@@ -125,7 +125,6 @@ export function WaitlistModal({
                 <Label htmlFor="wlName" className="text-xs text-slate-300">Tu Nombre Completo</Label>
                 <Input
                   id="wlName"
-                  placeholder="Ej: Rodrigo De Paul"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   className="bg-slate-950 border-slate-800 text-xs mt-1"

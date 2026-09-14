@@ -152,28 +152,30 @@ export function CalendarGrid({
   }, [selectedDate])
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col h-full space-y-3 sm:space-y-4">
       {/* Barra de Control y Filtros */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
         {/* Selector de Fecha */}
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleToday} className="text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleToday} className="text-xs h-9 px-3">
             Hoy
           </Button>
-          <div className="flex items-center bg-slate-950 rounded-xl border border-slate-800 p-1">
+          <div className="flex items-center bg-slate-950 rounded-xl border border-slate-800 p-0.5 sm:p-1">
             <button
               onClick={handlePrevDay}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label="Día anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="px-3 py-1 text-sm font-semibold text-white capitalize flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4 text-emerald-400" />
-              <span>{formattedDateTitle}</span>
+            <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-white capitalize flex items-center gap-1.5 sm:gap-2">
+              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
+              <span className="truncate max-w-35 sm:max-w-none">{formattedDateTitle}</span>
             </div>
             <button
               onClick={handleNextDay}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label="Día siguiente"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -182,60 +184,73 @@ export function CalendarGrid({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-9 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            className="h-9 rounded-xl border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
           />
         </div>
 
-        {/* Filtros de deporte */}
-        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-          <button
-            onClick={() => setSelectedSport('ALL')}
-            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-              selectedSport === 'ALL'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Todas
-          </button>
-          {sports.map((sp) => (
+        {/* Filtros de deporte y acciones */}
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+          {/* Filtros de deporte con scroll horizontal suave */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
             <button
-              key={sp}
-              onClick={() => setSelectedSport(sp)}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                selectedSport === sp
+              onClick={() => setSelectedSport('ALL')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
+                selectedSport === 'ALL'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {sp}
+              Todas
             </button>
-          ))}
-        </div>
+            {sports.map((sp) => (
+              <button
+                key={sp}
+                onClick={() => setSelectedSport(sp)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
+                  selectedSport === sp
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {sp}
+              </button>
+            ))}
+          </div>
 
-        <div className="flex items-center gap-2">
-          {/* Botón de Emergencia Protocolo Lluvia (Mejora 1B) */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsRainModalOpen(true)}
-            className="text-xs bg-blue-950/40 border-blue-500/40 text-blue-300 hover:bg-blue-900/60 hover:text-white gap-1.5"
-          >
-            <CloudRain className="w-3.5 h-3.5 text-blue-400" />
-            <span>Protocolo Lluvia</span>
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Botón de Emergencia Protocolo Lluvia */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRainModalOpen(true)}
+              className="text-xs bg-blue-950/40 border-blue-500/40 text-blue-300 hover:bg-blue-900/60 hover:text-white gap-1.5 h-8 px-2.5"
+            >
+              <CloudRain className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">Protocolo</span> Lluvia
+            </Button>
 
-          {/* Indicador Realtime */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Sincronización en Vivo</span>
+            {/* Indicador Realtime */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-400 font-semibold shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="hidden sm:inline">Sincronización en Vivo</span>
+              <span className="sm:hidden">En Vivo</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Matriz de Calendario */}
-      <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl">
-        <div className="min-w-[800px]">
+      {/* Indicador para móviles de desplazamiento horizontal de canchas */}
+      <div className="md:hidden flex items-center justify-between px-2 py-0.5 text-[11px] text-slate-400 select-none">
+        <span className="flex items-center gap-1">
+          <span>👉</span>
+          <span>Deslizá para ver todas las canchas</span>
+        </span>
+        <span className="text-emerald-400 font-semibold">{filteredCourts.length} canchas</span>
+      </div>
+
+      {/* Matriz de Calendario con scroll táctil suave */}
+      <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar touch-momentum">
+        <div className="min-w-180 sm:min-w-200">
           {/* Header de Canchas (Columnas) */}
           <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-20 bg-slate-950">
             <div className="p-3 text-center text-xs font-bold text-slate-500 border-r border-slate-800 flex items-center justify-center">

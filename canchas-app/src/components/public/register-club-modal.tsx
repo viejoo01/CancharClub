@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import { registerClub } from '@/actions/auth.actions'
 import { toast } from 'sonner'
+import { setClientCookie } from '@/lib/utils'
 
 interface RegisterClubModalProps {
   open: boolean
@@ -66,8 +67,13 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
 
     // Si es demo o falla por falta de supabase configurado en local
     if (email.includes('demo') || password === 'demo123456') {
-      toast.success('¡Club registrado con éxito en modo demostración!')
-      window.location.href = '/dashboard'
+      setClientCookie('demo_is_active', 'false')
+      setClientCookie('demo_tenant_name', encodeURIComponent(clubName))
+      setClientCookie('demo_user_role', 'TENANT_ADMIN')
+      setClientCookie('demo_user_name', encodeURIComponent('Dueño ' + clubName))
+      setClientCookie('demo_plan_id', 'CHICO_1')
+      toast.success('¡Club registrado! Tu cuenta está pendiente de activación.')
+      window.location.assign('/dashboard')
       return
     }
 

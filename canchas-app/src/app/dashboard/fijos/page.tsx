@@ -1,21 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   Repeat, 
   Plus, 
   Calendar, 
   Clock, 
   Phone, 
-  DollarSign, 
   CheckCircle2, 
   XCircle, 
-  MessageCircle,
-  AlertCircle,
-  Loader2,
-  CalendarDays,
-  ShieldAlert,
-  Sparkles
+  MessageCircle, 
+  Loader2, 
+  CalendarDays, 
+  ShieldAlert 
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,6 +35,7 @@ import {
   checkAndReleaseOverdueRecurringSlots, 
   updateRecurringSlotStatus 
 } from '@/actions/recurring-slots.actions'
+import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
 
@@ -64,21 +62,35 @@ export default function TurnosFijosPage() {
   const [monthlyPrice, setMonthlyPrice] = useState('56000')
   const [paymentDueDay, setPaymentDueDay] = useState(10)
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    setLoading(true)
+  const loadData = useCallback(async () => {
     try {
       const data = await getRecurringSlots(DEMO_TENANT_ID)
       setSlots(data)
     } catch {
-      toast.error('Error al cargar turnos fijos')
-    } finally {
-      setLoading(false)
+      toast.error('Error al actualizar turnos fijos')
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    getRecurringSlots(DEMO_TENANT_ID)
+      .then((data) => {
+        if (isMounted) {
+          setSlots(data)
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          toast.error('Error al cargar turnos fijos')
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const handleToggleStatus = async (slotId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
@@ -314,6 +326,33 @@ export default function TurnosFijosPage() {
                     >
                       <CalendarDays className="w-3.5 h-3.5 mr-1 text-purple-400" />
                       {actionSlotId === slot.id ? 'Generando...' : 'Generar Mes'}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const d = new Date()
+                        const diff = (slot.day_of_week - d.getDay() + 7) % 7
+                        d.setDate(d.getDate() + diff)
+                        const nextDate = d.toISOString().split('T')[0]
+                        const rruleDays = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+
+                        downloadIcs({
+                          title: `Abono: ${slot.customer_name} - ${courtName}`,
+                          description: `Turno semanal fijo.\nCliente: ${slot.customer_name}\nHorario: ${slot.start_time} a ${slot.end_time} hs`,
+                          location: courtName,
+                          date: nextDate,
+                          startTime: slot.start_time,
+                          endTime: slot.end_time,
+                          rrule: `FREQ=WEEKLY;BYDAY=${rruleDays[slot.day_of_week]}`,
+                        }, `abono-${slot.customer_name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.ics`)
+                        toast.success('Archivo .ics de abono recurrente descargado')
+                      }}
+                      className="h-8 px-2 text-[11px] border-slate-700 bg-slate-900 text-slate-300 hover:text-white"
+                      title="Exportar calendario recurrente (.ics)"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-blue-400" />
                     </Button>
 
                     <a

@@ -14,6 +14,7 @@ export type SaaSFeatureKey =
   | 'protocolo_lluvia'
   | 'lista_espera'
   | 'turnos_fijos'
+  | 'control_luces'
   | 'multiusuario'
   | 'reportes_ocupacion'
   | 'sin_limite_canchas'
@@ -124,6 +125,7 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
       'protocolo_lluvia',
       'lista_espera',
       'turnos_fijos',
+      'control_luces',
       'multiusuario',
       'reportes_ocupacion',
     ],
@@ -156,6 +158,7 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
       'protocolo_lluvia',
       'lista_espera',
       'turnos_fijos',
+      'control_luces',
       'multiusuario',
       'reportes_ocupacion',
       'sin_limite_canchas',

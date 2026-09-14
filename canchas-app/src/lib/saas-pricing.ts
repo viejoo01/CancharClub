@@ -54,10 +54,13 @@ export function calculateClubSaaSFee(
   const monthlyFeeArs = Math.round(safePrice * multiplier)
   const plan = getPlanByCourtsCount(safeCourts)
 
-  // Próximo vencimiento: último día del mes corriente
+  // Próximo vencimiento: día 7 del mes (ventana de cobro del 1 al 7 de cada mes)
   const now = new Date()
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  const nextDueDate = lastDayOfMonth.toISOString().split('T')[0]
+  const nextDueDateObj = new Date(now.getFullYear(), now.getMonth(), 7)
+  if (now.getDate() > 7) {
+    nextDueDateObj.setMonth(nextDueDateObj.getMonth() + 1)
+  }
+  const nextDueDate = nextDueDateObj.toISOString().split('T')[0]
 
   return {
     courtsCount: safeCourts,

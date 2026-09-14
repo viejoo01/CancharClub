@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp } from 'lucide-react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { InflationAdjustModal } from '@/components/dashboard/inflation-adjust-modal'
+import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-modal'
 import { formatARS } from '@/lib/utils'
 import { createPriceRule } from '@/actions/club.actions'
 import { toast } from 'sonner'
@@ -53,6 +54,7 @@ export default function PreciosPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isInflationModalOpen, setIsInflationModalOpen] = useState(false)
+  const [isDynamicModalOpen, setIsDynamicModalOpen] = useState(false)
   const [name, setName] = useState('')
   const [timeFrom, setTimeFrom] = useState('18:00')
   const [timeTo, setTimeTo] = useState('00:00')
@@ -108,6 +110,15 @@ export default function PreciosPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsDynamicModalOpen(true)}
+            className="border-purple-500/30 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 font-bold gap-2 text-xs rounded-xl"
+          >
+            <Sparkles className="w-4 h-4 text-purple-400" />
+            <span>Tarifas Dinámicas (IA)</span>
+          </Button>
+
           <Button
             variant="outline"
             onClick={() => setIsInflationModalOpen(true)}
@@ -265,6 +276,12 @@ export default function PreciosPage() {
             price_ars: u.price_ars,
           })))
         }}
+      />
+
+      {/* Modal Tarifas Dinámicas y Yield Management (Mejora 14) */}
+      <DynamicPricingModal
+        open={isDynamicModalOpen}
+        onOpenChange={setIsDynamicModalOpen}
       />
     </div>
   )

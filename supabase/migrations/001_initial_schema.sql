@@ -1,4 +1,4 @@
-﻿-- =============================================================================
+-- =============================================================================
 -- SISTEMA CLUB - SaaS Multi-Tenant para Gestión de Canchas Deportivas
 -- Migración: 001_initial_schema.sql
 -- Descripción: Schema DDL completo con RLS y restricciones de concurrencia
@@ -225,15 +225,16 @@ ALTER TABLE public.bookings
     public.booking_is_active(status)
   ) STORED;
 
--- ÍNDICE DE EXCLUSIÓN ANTI-OVERBOOKING
-CREATE UNIQUE INDEX excl_bookings_no_overlap
-  ON public.bookings USING GIST (
+-- EXCLUSIÓN ANTI-OVERBOOKING (constraint de exclusión GIST)
+ALTER TABLE public.bookings
+  ADD CONSTRAINT excl_bookings_no_overlap
+  EXCLUDE USING GIST (
     court_id      WITH =,
     booked_at     WITH &&
   )
-  WHERE is_active_slot = TRUE;
+  WHERE (is_active_slot = TRUE);
 
-COMMENT ON INDEX excl_bookings_no_overlap IS
+COMMENT ON CONSTRAINT excl_bookings_no_overlap ON public.bookings IS
   'Garantiza que no haya dos reservas activas en la misma cancha con rangos temporales solapados.';
 
 -- ---------------------------------------------------------------------------

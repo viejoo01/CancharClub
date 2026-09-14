@@ -1,25 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   Trophy, 
   Plus, 
-  Calendar, 
   Users, 
   Swords, 
   Share2, 
-  CheckCircle2, 
-  Clock, 
-  Play, 
   ExternalLink,
-  ChevronRight,
-  ShieldCheck,
   Medal,
   Sparkles,
   Loader2,
-  Copy
 } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -38,6 +31,7 @@ import {
   createTournament, 
   addTeamToCategory, 
   generatePlayoffBracket, 
+  generateGroupStageAndPlayoffs,
   updateMatchScore,
   type TournamentWithDetails 
 } from '@/actions/tournament.actions'
@@ -62,8 +56,8 @@ export default function TorneosDashboardPage() {
   // Form crear torneo
   const [newTourName, setNewTourName] = useState('')
   const [newTourSport, setNewTourSport] = useState('PADEL')
-  const [newTourStart, setNewTourStart] = useState(new Date().toISOString().split('T')[0])
-  const [newTourEnd, setNewTourEnd] = useState(new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0])
+  const [newTourStart, setNewTourStart] = useState(() => new Date().toISOString().split('T')[0])
+  const [newTourEnd, setNewTourEnd] = useState(() => new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0])
   const [newTourCats, setNewTourCats] = useState('4ta Caballeros, 6ta Damas, Suma 11')
 
   // Form inscribir equipo
@@ -77,29 +71,7 @@ export default function TorneosDashboardPage() {
   const [scoreB, setScoreB] = useState('')
   const [winnerId, setWinnerId] = useState('')
 
-  useEffect(() => {
-    loadTournaments()
-  }, [])
-
-  const loadTournaments = async () => {
-    setLoading(true)
-    try {
-      const list = await getTournaments(DEMO_TENANT_ID)
-      setTournaments(list)
-      if (list.length > 0) {
-        await loadTournamentDetails(list[0].id)
-      } else {
-        // Si no hay torneos en DB, inicializar mock o dejar vacío
-        setSelectedTournament(null)
-      }
-    } catch {
-      toast.error('Error al cargar torneos')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadTournamentDetails = async (id: string) => {
+  const loadTournamentDetails = useCallback(async (id: string) => {
     try {
       const details = await getTournamentById(id)
       setSelectedTournament(details)
@@ -109,7 +81,31 @@ export default function TorneosDashboardPage() {
     } catch {
       toast.error('Error al cargar detalle del torneo')
     }
-  }
+  }, [])
+
+  const loadTournaments = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await getTournaments(DEMO_TENANT_ID)
+      setTournaments(list)
+      if (list.length > 0) {
+        await loadTournamentDetails(list[0].id)
+      } else {
+        setSelectedTournament(null)
+      }
+    } catch {
+      toast.error('Error al cargar torneos')
+    } finally {
+      setLoading(false)
+    }
+  }, [loadTournamentDetails])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTournaments()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadTournaments])
 
   const handleCreateTournament = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -203,6 +199,26 @@ export default function TorneosDashboardPage() {
     }
   }
 
+  const handleGenerateGroups = async () => {
+    if (!selectedCategoryId) return
+    setActionLoading(true)
+    try {
+      const res = await generateGroupStageAndPlayoffs(selectedCategoryId)
+      if (res.success) {
+        toast.success(`¡Fase de grupos y playoffs generados (${res.matchesCount} partidos)!`)
+        if (selectedTournament) {
+          await loadTournamentDetails(selectedTournament.id)
+        }
+      } else {
+        toast.error(res.error || 'Error al armar grupos')
+      }
+    } catch {
+      toast.error('Error al generar fase de grupos')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleSaveScore = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedMatch || !selectedCategoryId) return
@@ -242,15 +258,18 @@ export default function TorneosDashboardPage() {
   const teamsMap = new Map<string, TournamentTeam>()
   activeCategory?.teams.forEach((t) => teamsMap.set(t.id, t))
 
+  const grupoAMatches = activeCategory?.matches.filter((m) => m.round === 'GRUPO_A') || []
+  const grupoBMatches = activeCategory?.matches.filter((m) => m.round === 'GRUPO_B') || []
   const cuartosMatches = activeCategory?.matches.filter((m) => m.round === 'CUARTOS') || []
   const semisMatches = activeCategory?.matches.filter((m) => m.round === 'SEMIFINAL') || []
   const finalMatches = activeCategory?.matches.filter((m) => m.round === 'FINAL') || []
+  const hasGroupMatches = grupoAMatches.length > 0 || grupoBMatches.length > 0
 
   const copyPublicLink = () => {
     if (!selectedTournament) return
-    const url = `${window.location.origin}/club/central-tucuman/torneos/${selectedTournament.id}`
+    const url = `${window.location.origin}/torneo/${selectedTournament.id}`
     navigator.clipboard.writeText(url)
-    toast.success('Enlace público copiado al portapapeles')
+    toast.success('¡Enlace público copiado al portapapeles!')
   }
 
   return (
@@ -274,14 +293,25 @@ export default function TorneosDashboardPage() {
 
         <div className="flex items-center gap-2">
           {selectedTournament && (
-            <Button
-              variant="outline"
-              onClick={copyPublicLink}
-              className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
-            >
-              <Share2 className="w-4 h-4 text-amber-400" />
-              <span>Link Público</span>
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={copyPublicLink}
+                className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+              >
+                <Share2 className="w-4 h-4 text-amber-400" />
+                <span>Link Público</span>
+              </Button>
+              <a
+                href={`/torneo/${selectedTournament.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md border border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ver en Vivo</span>
+              </a>
+            </>
           )}
           <Button
             onClick={() => setIsCreateOpen(true)}
@@ -372,15 +402,145 @@ export default function TorneosDashboardPage() {
 
                   <Button
                     size="sm"
+                    variant="outline"
+                    onClick={handleGenerateGroups}
+                    disabled={actionLoading}
+                    className="border-amber-500/40 bg-amber-950/20 hover:bg-amber-950/40 text-amber-300 font-bold text-xs gap-1"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Grupos + Playoffs</span>
+                  </Button>
+
+                  <Button
+                    size="sm"
                     onClick={handleGenerateBracket}
                     disabled={actionLoading}
                     className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs gap-1 shadow-md shadow-amber-950/40"
                   >
                     <Swords className="w-3.5 h-3.5" />
-                    <span>Armar Cuadro (Playoffs)</span>
+                    <span>Playoffs Directo</span>
                   </Button>
                 </div>
               </div>
+
+              {/* Vista Fase de Grupos (si existen) */}
+              {hasGroupMatches && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-400" />
+                      Fase de Grupos en Vivo: {activeCategory?.name}
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      Cargá marcadores para definir clasificados a la fase final
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Zona A */}
+                    <Card className="bg-slate-900/80 border-slate-800">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">Zona A</span>
+                          <Badge variant="secondary" className="text-[10px]">{grupoAMatches.length} partidos</Badge>
+                        </div>
+                        <div className="space-y-2">
+                          {grupoAMatches.map((m) => {
+                            const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null
+                            const teamB = m.team_b_id ? teamsMap.get(m.team_b_id) : null
+                            const isFinished = m.status === 'FINISHED'
+                            return (
+                              <div key={m.id} className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                                  <span>Partido #{m.match_number}</span>
+                                  <span className={isFinished ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                    {isFinished ? 'Finalizado' : 'Pendiente'}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 text-xs">
+                                  <div className={`flex justify-between ${m.winner_team_id === m.team_a_id ? 'text-emerald-400 font-bold' : 'text-slate-200'}`}>
+                                    <span className="truncate">{teamA?.name || 'Equipo A'}</span>
+                                    <span className="font-mono font-black">{m.score_team_a || '-'}</span>
+                                  </div>
+                                  <div className={`flex justify-between ${m.winner_team_id === m.team_b_id ? 'text-emerald-400 font-bold' : 'text-slate-200'}`}>
+                                    <span className="truncate">{teamB?.name || 'Equipo B'}</span>
+                                    <span className="font-mono font-black">{m.score_team_b || '-'}</span>
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedMatch(m)
+                                    setScoreA(m.score_team_a || '')
+                                    setScoreB(m.score_team_b || '')
+                                    setWinnerId(m.winner_team_id || '')
+                                    setIsScoreOpen(true)
+                                  }}
+                                  className="w-full h-6 text-[11px] border-slate-700 text-slate-300 hover:text-white"
+                                >
+                                  {isFinished ? 'Modificar Marcador' : 'Cargar Marcador'}
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Zona B */}
+                    <Card className="bg-slate-900/80 border-slate-800">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Zona B</span>
+                          <Badge variant="secondary" className="text-[10px]">{grupoBMatches.length} partidos</Badge>
+                        </div>
+                        <div className="space-y-2">
+                          {grupoBMatches.map((m) => {
+                            const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null
+                            const teamB = m.team_b_id ? teamsMap.get(m.team_b_id) : null
+                            const isFinished = m.status === 'FINISHED'
+                            return (
+                              <div key={m.id} className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                                  <span>Partido #{m.match_number}</span>
+                                  <span className={isFinished ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                    {isFinished ? 'Finalizado' : 'Pendiente'}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 text-xs">
+                                  <div className={`flex justify-between ${m.winner_team_id === m.team_a_id ? 'text-emerald-400 font-bold' : 'text-slate-200'}`}>
+                                    <span className="truncate">{teamA?.name || 'Equipo A'}</span>
+                                    <span className="font-mono font-black">{m.score_team_a || '-'}</span>
+                                  </div>
+                                  <div className={`flex justify-between ${m.winner_team_id === m.team_b_id ? 'text-emerald-400 font-bold' : 'text-slate-200'}`}>
+                                    <span className="truncate">{teamB?.name || 'Equipo B'}</span>
+                                    <span className="font-mono font-black">{m.score_team_b || '-'}</span>
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedMatch(m)
+                                    setScoreA(m.score_team_a || '')
+                                    setScoreB(m.score_team_b || '')
+                                    setWinnerId(m.winner_team_id || '')
+                                    setIsScoreOpen(true)
+                                  }}
+                                  className="w-full h-6 text-[11px] border-slate-700 text-slate-300 hover:text-white"
+                                >
+                                  {isFinished ? 'Modificar Marcador' : 'Cargar Marcador'}
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              )}
 
               {/* Vista del Cuadro de Playoffs Eliminatorio */}
               {activeCategory && activeCategory.matches.length > 0 ? (
@@ -610,6 +770,17 @@ export default function TorneosDashboardPage() {
                       <Plus className="w-3.5 h-3.5 mr-1" />
                       Inscribir Pareja
                     </Button>
+                    {(activeCategory?.teams.length || 0) >= 4 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleGenerateGroups}
+                        className="border-amber-500/40 bg-amber-950/20 hover:bg-amber-950/40 text-amber-300 font-bold text-xs"
+                      >
+                        <Users className="w-3.5 h-3.5 mr-1" />
+                        Grupos + Playoffs
+                      </Button>
+                    )}
                     {(activeCategory?.teams.length || 0) >= 2 && (
                       <Button
                         size="sm"
@@ -617,7 +788,7 @@ export default function TorneosDashboardPage() {
                         className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold"
                       >
                         <Swords className="w-3.5 h-3.5 mr-1" />
-                        Armar Llave
+                        Playoffs Directo
                       </Button>
                     )}
                   </div>

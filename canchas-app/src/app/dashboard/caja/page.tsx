@@ -1,68 +1,82 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  Banknote, 
-  ArrowRightLeft, 
-  CreditCard, 
-  Calendar as CalendarIcon, 
-  Printer, 
+import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import {
+  Banknote,
+  ArrowRightLeft,
+  CreditCard,
+  Calendar as CalendarIcon,
+  Printer,
   TrendingUp,
-  Download
+  Download,
+  Landmark,
+  Loader2,
+  Receipt,
+  CheckCircle2,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, formatTime } from '@/lib/utils'
+import { formatARS } from '@/lib/utils'
+import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
 
+const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+
+function methodLabel(method: string): string {
+  if (method === 'CASH') return 'Efectivo'
+  if (method === 'TRANSFER') return 'Transferencia'
+  if (method === 'MERCADOPAGO') return 'Mercado Pago'
+  return method
+}
+
+function methodIcon(method: string) {
+  if (method === 'CASH') return <Banknote className="w-4 h-4 text-emerald-400" />
+  if (method === 'TRANSFER') return <ArrowRightLeft className="w-4 h-4 text-sky-400" />
+  if (method === 'MERCADOPAGO') return <CreditCard className="w-4 h-4 text-cyan-400" />
+  return <CreditCard className="w-4 h-4 text-slate-400" />
+}
+
+function methodBadgeVariant(method: string): 'default' | 'info' | 'secondary' {
+  if (method === 'CASH') return 'default'
+  if (method === 'TRANSFER') return 'info'
+  return 'secondary'
+}
+
+function formatTime(iso: string): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  } catch {
+    return iso
+  }
+}
+
 export default function CajaPage() {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const today = new Date().toISOString().split('T')[0]
+  const [selectedDate, setSelectedDate] = useState(today)
+  const [report, setReport] = useState<DailyCashReport | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Pagos del día de muestra para visualización premium
-  const [payments] = useState([
-    {
-      id: 'p1',
-      customer_name: 'Gonzalo Morales',
-      court_name: 'Cancha 1 (Panorámica)',
-      amount_ars: 14000,
-      payment_method: 'CASH',
-      created_at: `${new Date().toISOString().split('T')[0]}T19:35:00Z`,
-      notes: 'Pago total en mostrador',
-    },
-    {
-      id: 'p2',
-      customer_name: 'Matías Fernández',
-      court_name: 'Cancha 2 (Techada)',
-      amount_ars: 7000,
-      payment_method: 'MERCADOPAGO',
-      created_at: `${new Date().toISOString().split('T')[0]}T18:10:00Z`,
-      notes: 'Seña online Checkout Pro',
-    },
-    {
-      id: 'p3',
-      customer_name: 'Lucas Benítez',
-      court_name: 'Fútbol 5 (Sintético)',
-      amount_ars: 15000,
-      payment_method: 'TRANSFER',
-      created_at: `${new Date().toISOString().split('T')[0]}T17:45:00Z`,
-      notes: 'Transferencia Alias: club.padel.tuc',
-    },
-    {
-      id: 'p4',
-      customer_name: 'Esteban Alderete',
-      court_name: 'Cancha 3 (Blindex)',
-      amount_ars: 5000,
-      payment_method: 'CASH',
-      created_at: `${new Date().toISOString().split('T')[0]}T16:20:00Z`,
-      notes: 'Saldo pendiente abonado',
-    },
-  ])
+  const loadReport = useCallback(async (date: string) => {
+    setLoading(true)
+    try {
+      const data = await getDailyCashReport(DEMO_TENANT_ID, date)
+      setReport(data)
+    } catch {
+      toast.error('Error al cargar el reporte de caja')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const totalCash = payments.filter(p => p.payment_method === 'CASH').reduce((a, b) => a + b.amount_ars, 0)
-  const totalTransfer = payments.filter(p => p.payment_method === 'TRANSFER').reduce((a, b) => a + b.amount_ars, 0)
-  const totalMP = payments.filter(p => p.payment_method === 'MERCADOPAGO').reduce((a, b) => a + b.amount_ars, 0)
-  const totalGeneral = totalCash + totalTransfer + totalMP
+  useEffect(() => {
+    loadReport(selectedDate)
+  }, [selectedDate, loadReport])
+
+  const entries: DailyCashEntry[] = report?.entries ?? []
 
   const handlePrint = () => {
     toast.success('Generando reporte de arqueo para impresión...')
@@ -70,27 +84,31 @@ export default function CajaPage() {
   }
 
   const handleExportCSV = () => {
-    const headers = ['ID', 'Cliente', 'Cancha/Concepto', 'Metodo', 'Monto_ARS', 'Fecha_Hora', 'Notas']
-    const rows = payments.map(p => [
-      p.id,
-      `"${p.customer_name}"`,
-      `"${p.court_name}"`,
-      p.payment_method,
-      p.amount_ars,
-      p.created_at,
-      `"${p.notes || ''}"`
+    if (!entries.length) {
+      toast.error('No hay movimientos para exportar')
+      return
+    }
+    const headers = ['ID', 'Cliente', 'Cancha', 'Tipo', 'Metodo', 'Monto_ARS', 'Hora', 'Notas']
+    const rows = entries.map(e => [
+      e.id,
+      `"${e.customer_name}"`,
+      `"${e.court_name}"`,
+      e.payment_type === 'DEPOSIT' ? 'Seña' : 'Saldo',
+      methodLabel(e.payment_method),
+      e.amount_ars,
+      formatTime(e.paid_at),
+      `"${e.notes || ''}"`,
     ])
-
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
+    const csv = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.setAttribute('download', `arqueo-caja-${selectedDate}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    toast.success('Reporte CSV descargado con éxito')
+    toast.success('CSV descargado')
   }
 
   return (
@@ -98,21 +116,32 @@ export default function CajaPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white">
-            Caja Diaria & Arqueo
-          </h2>
+          <h2 className="text-xl font-bold tracking-tight text-white">Caja Diaria &amp; Arqueo</h2>
           <p className="text-xs text-slate-400">
             Control de ingresos, cobros en mostrador, transferencias y pagos online de Mercado Pago.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60 text-xs"
+          >
+            <Link href="/dashboard/cobros">
+              <Landmark className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Configurar Cuentas de Cobro</span>
+            </Link>
+          </Button>
+
+          {/* Selector de fecha */}
           <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 gap-2">
             <CalendarIcon className="w-4 h-4 text-emerald-400" />
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={e => setSelectedDate(e.target.value)}
               className="bg-transparent text-xs text-slate-200 focus:outline-none"
             />
           </div>
@@ -121,9 +150,9 @@ export default function CajaPage() {
             onClick={handleExportCSV}
             variant="outline"
             size="sm"
-            className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white"
+            className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs"
           >
-            <Download className="w-4 h-4 text-emerald-400" />
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
             <span>Exportar CSV</span>
           </Button>
 
@@ -131,9 +160,9 @@ export default function CajaPage() {
             onClick={handlePrint}
             variant="outline"
             size="sm"
-            className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white"
+            className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="w-3.5 h-3.5" />
             <span>Imprimir Cierre</span>
           </Button>
         </div>
@@ -148,11 +177,11 @@ export default function CajaPage() {
               <TrendingUp className="w-4 h-4" />
             </div>
             <CardTitle className="text-2xl font-black text-white mt-1">
-              {formatARS(totalGeneral)}
+              {loading ? '—' : formatARS(report?.totalGeneral ?? 0)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-[11px] text-emerald-300/80">
-            {payments.length} transacciones registradas hoy
+            {loading ? 'Cargando...' : `${entries.length} transacciones registradas`}
           </CardContent>
         </Card>
 
@@ -163,12 +192,10 @@ export default function CajaPage() {
               <Banknote className="w-4 h-4 text-emerald-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {formatARS(totalCash)}
+              {loading ? '—' : formatARS(report?.totalCash ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">
-            Dinero físico en cajón de mostrador
-          </CardContent>
+          <CardContent className="text-[11px] text-slate-400">Dinero físico en cajón de mostrador</CardContent>
         </Card>
 
         <Card className="border-slate-800 bg-slate-900/60">
@@ -178,12 +205,10 @@ export default function CajaPage() {
               <ArrowRightLeft className="w-4 h-4 text-sky-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {formatARS(totalTransfer)}
+              {loading ? '—' : formatARS(report?.totalTransfer ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">
-            Acreditado en cuenta bancaria del club
-          </CardContent>
+          <CardContent className="text-[11px] text-slate-400">Acreditado en cuenta bancaria del club</CardContent>
         </Card>
 
         <Card className="border-slate-800 bg-slate-900/60">
@@ -193,16 +218,14 @@ export default function CajaPage() {
               <CreditCard className="w-4 h-4 text-cyan-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {formatARS(totalMP)}
+              {loading ? '—' : formatARS(report?.totalMP ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">
-            Señas y pagos online de jugadores
-          </CardContent>
+          <CardContent className="text-[11px] text-slate-400">Señas y pagos online de jugadores</CardContent>
         </Card>
       </div>
 
-      {/* Lista de Transacciones */}
+      {/* Lista de transacciones */}
       <Card className="border-slate-800 bg-slate-900/60 overflow-hidden">
         <CardHeader className="border-b border-slate-800/80 pb-4">
           <div className="flex items-center justify-between">
@@ -213,57 +236,69 @@ export default function CajaPage() {
           </div>
         </CardHeader>
 
-        <div className="divide-y divide-slate-800/60">
-          {payments.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center justify-between p-4 hover:bg-slate-800/30 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
-                  {p.payment_method === 'CASH' && <Banknote className="w-4 h-4 text-emerald-400" />}
-                  {p.payment_method === 'TRANSFER' && <ArrowRightLeft className="w-4 h-4 text-sky-400" />}
-                  {p.payment_method === 'MERCADOPAGO' && <CreditCard className="w-4 h-4 text-cyan-400" />}
+        {loading ? (
+          <div className="flex items-center justify-center gap-3 py-16 text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Cargando movimientos...</span>
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-500">
+            <Receipt className="w-10 h-10 opacity-30" />
+            <p className="text-sm">No se registraron cobros el {selectedDate}</p>
+            <p className="text-xs text-slate-600">
+              Los pagos aparecen aquí cuando se confirma una seña o saldo de una reserva.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-800/60">
+            {entries.map(e => (
+              <div
+                key={e.id}
+                className="flex items-center justify-between p-4 hover:bg-slate-800/30 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
+                    {methodIcon(e.payment_method)}
+                  </div>
+
+                  <div>
+                    <div className="font-semibold text-sm text-slate-100">{e.customer_name}</div>
+                    <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span>{e.court_name}</span>
+                      <span>•</span>
+                      <span>{formatTime(e.paid_at)} hs</span>
+                      {e.payment_type === 'BALANCE' && (
+                        <>
+                          <span>•</span>
+                          <span className="text-amber-400/80">Saldo restante</span>
+                        </>
+                      )}
+                      {e.notes && (
+                        <>
+                          <span>•</span>
+                          <span className="italic text-slate-500">{e.notes}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <div className="font-semibold text-sm text-slate-100">
-                    {p.customer_name}
+                <div className="text-right shrink-0 ml-4">
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-base font-bold text-emerald-400">+{formatARS(e.amount_ars)}</span>
                   </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                    <span>{p.court_name}</span>
-                    <span>•</span>
-                    <span>{formatTime(p.created_at)} hs</span>
-                    {p.notes && (
-                      <>
-                        <span>•</span>
-                        <span className="italic text-slate-500">{p.notes}</span>
-                      </>
-                    )}
-                  </div>
+                  <Badge
+                    variant={methodBadgeVariant(e.payment_method)}
+                    className="text-[10px] mt-1"
+                  >
+                    {methodLabel(e.payment_method)}
+                  </Badge>
                 </div>
               </div>
-
-              <div className="text-right">
-                <div className="text-base font-bold text-emerald-400">
-                  +{formatARS(p.amount_ars)}
-                </div>
-                <Badge
-                  variant={
-                    p.payment_method === 'CASH'
-                      ? 'default'
-                      : p.payment_method === 'TRANSFER'
-                      ? 'info'
-                      : 'secondary'
-                  }
-                  className="text-[10px] mt-1"
-                >
-                  {p.payment_method === 'CASH' ? 'Efectivo' : p.payment_method === 'TRANSFER' ? 'Transferencia' : 'Mercado Pago'}
-                </Badge>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   )

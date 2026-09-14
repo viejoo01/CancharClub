@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Módulo de Torneos y Cuadros Exprés (Playoffs Cuartos, Semis, Final)
 // ==============================================================================
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { 
   Tournament, 
@@ -23,7 +23,7 @@ export interface TournamentWithDetails extends Tournament {
 /** Obtener torneos de un tenant */
 export async function getTournaments(tenantId: string): Promise<Tournament[]> {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('tournaments')
       .select('*')
@@ -104,7 +104,7 @@ export async function createTournament(payload: {
   categories: { name: string; max_teams: number }[]
 }): Promise<{ success: boolean; tournament_id?: string; error?: string }> {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     const { data: tournament, error: tError } = await supabase
       .from('tournaments')
@@ -407,3 +407,120 @@ export async function updateMatchScore(payload: {
     return { success: false, error: 'Error al actualizar marcador' }
   }
 }
+
+/**
+ * Generar fase de grupos (Zonas A y B) + Semifinales y Gran Final (Mejora 10)
+ */
+export async function generateGroupStageAndPlayoffs(
+  categoryId: string
+): Promise<{ success: boolean; matchesCount?: number; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+
+    // 1. Obtener equipos inscriptos
+    const { data: teams, error: tErr } = await supabase
+      .from('tournament_teams')
+      .select('*')
+      .eq('category_id', categoryId)
+      .order('created_at', { ascending: true })
+
+    if (tErr || !teams || teams.length < 4) {
+      return {
+        success: false,
+        error: 'Se necesitan al menos 4 equipos inscriptos para el formato de Fase de Grupos + Playoffs.',
+      }
+    }
+
+    // 2. Limpiar partidos existentes
+    await supabase.from('tournament_matches').delete().eq('category_id', categoryId)
+
+    // 3. Dividir en Grupo A y Grupo B
+    const groupA = teams.filter((_, idx) => idx % 2 === 0)
+    const groupB = teams.filter((_, idx) => idx % 2 !== 0)
+
+    const matchesToInsert: Array<{
+      category_id: string
+      round: string
+      match_number: number
+      team_a_id: string | null
+      team_b_id: string | null
+      status: string
+      scheduled_time: string
+      court_name: string
+    }> = []
+
+    // Helper para round-robin en un grupo
+    const buildRoundRobin = (groupTeams: typeof teams, roundName: string, courtName: string) => {
+      let matchNum = 1
+      for (let i = 0; i < groupTeams.length; i++) {
+        for (let j = i + 1; j < groupTeams.length; j++) {
+          matchesToInsert.push({
+            category_id: categoryId,
+            round: roundName,
+            match_number: matchNum++,
+            team_a_id: groupTeams[i].id,
+            team_b_id: groupTeams[j].id,
+            status: 'SCHEDULED',
+            scheduled_time: `Jornada ${matchNum - 1} - 18:${(matchNum * 15) % 60 || '00'}`,
+            court_name: courtName,
+          })
+        }
+      }
+    }
+
+    buildRoundRobin(groupA, 'GRUPO_A', 'Cancha 1')
+    buildRoundRobin(groupB, 'GRUPO_B', 'Cancha 2')
+
+    // 4. Semifinales
+    matchesToInsert.push(
+      {
+        category_id: categoryId,
+        round: 'SEMIFINAL',
+        match_number: 1,
+        team_a_id: null, // 1° Grupo A
+        team_b_id: null, // 2° Grupo B
+        status: 'SCHEDULED',
+        scheduled_time: 'Domingo 17:00',
+        court_name: 'Cancha 1 (Semis)',
+      },
+      {
+        category_id: categoryId,
+        round: 'SEMIFINAL',
+        match_number: 2,
+        team_a_id: null, // 1° Grupo B
+        team_b_id: null, // 2° Grupo A
+        status: 'SCHEDULED',
+        scheduled_time: 'Domingo 18:30',
+        court_name: 'Cancha 2 (Semis)',
+      }
+    )
+
+    // 5. Gran Final
+    matchesToInsert.push({
+      category_id: categoryId,
+      round: 'FINAL',
+      match_number: 1,
+      team_a_id: null,
+      team_b_id: null,
+      status: 'SCHEDULED',
+      scheduled_time: 'Domingo 20:30',
+      court_name: 'Cancha Central',
+    })
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('tournament_matches')
+      .insert(matchesToInsert)
+      .select('id')
+
+    if (insertErr) {
+      return { success: false, error: insertErr.message }
+    }
+
+    revalidatePath('/dashboard/torneos')
+    return { success: true, matchesCount: inserted?.length }
+  } catch (err) {
+    console.error('[generateGroupStageAndPlayoffs] Error:', err)
+    return { success: false, error: 'Error al generar formato de grupos' }
+  }
+}
+

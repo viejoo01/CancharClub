@@ -4,9 +4,10 @@
 // SERVER ACTIONS — Gestión del Club: Canchas, Precios, Calendario y Caja
 // ==============================================================================
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
+import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory } from '@/config/clubs-catalog'
 
 // ─── CANCHAS ──────────────────────────────────────────────────────────────────
 
@@ -410,4 +411,121 @@ export async function applyBulkInflationPriceAdjustment(
     message: `Se actualizaron ${updatedCount} tarifas con un aumento del ${percentage}%`,
   }
 }
+
+// ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
+
+export async function getClubPublicData(slug: string): Promise<ClubData> {
+  const normalizedSlug = (slug || '').trim().toLowerCase()
+  const fallback = getClubBySlug(normalizedSlug)
+
+  try {
+    const supabase = await createServiceClient()
+
+    // 1. Consultar tenant real en Supabase por slug
+    const { data: tenant, error: tenantErr } = await supabase
+      .from('tenants')
+      .select(`
+        id,
+        name,
+        slug,
+        address,
+        phone,
+        is_active,
+        plan_id,
+        bank_alias,
+        bank_cbu,
+        bank_holder,
+        bank_name,
+        mp_access_token
+      `)
+      .eq('slug', normalizedSlug)
+      .maybeSingle()
+
+    if (tenantErr || !tenant) {
+      return fallback
+    }
+
+    // 2. Consultar canchas activas del tenant
+    const { data: courts } = await supabase
+      .from('courts')
+      .select('id, name, sport, slot_duration, surface, is_indoor, has_lighting, is_active, display_order')
+      .eq('tenant_id', tenant.id)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    // 3. Consultar reglas de precios del tenant
+    const { data: priceRules } = await supabase
+      .from('price_rules')
+      .select('court_id, price_ars, is_default')
+      .eq('tenant_id', tenant.id)
+
+    const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)
+      ? courts.map((c) => {
+          const rule = (priceRules || []).find((r) => r.court_id === c.id) ||
+            (priceRules || []).find((r) => r.is_default)
+
+          const pricePerHour = Number(rule?.price_ars || 18000)
+
+          const features: string[] = []
+          if (c.is_indoor) features.push('Techada')
+          if (c.has_lighting) features.push('Iluminación LED')
+          if (c.surface) features.push(c.surface)
+
+          return {
+            id: c.id,
+            name: c.name,
+            sport: (c.sport as SportCategory) || 'PADEL',
+            features: features.length > 0 ? features : ['Césped Sintético'],
+            pricePerHour,
+            depositPercentage: 0.5,
+          }
+        })
+      : fallback.courts
+
+    // Determinar deportes únicos
+    const sports = Array.from(new Set(courtsMapped.map((c) => c.sport))) as SportCategory[]
+
+    // Calcular precio inicial más bajo
+    const startingPrice = courtsMapped.reduce(
+      (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
+      courtsMapped[0]?.pricePerHour || 16000
+    )
+
+    return {
+      id: tenant.id,
+      name: tenant.name || fallback.name,
+      slug: tenant.slug || normalizedSlug,
+      address: tenant.address || fallback.address,
+      city: fallback.city,
+      phone: tenant.phone || fallback.phone,
+      whatsappPhone: tenant.phone ? tenant.phone.replace(/\D/g, '') : fallback.whatsappPhone,
+      sports: sports.length > 0 ? sports : fallback.sports,
+      courtsCount: courtsMapped.length,
+      startingPrice,
+      hasLighting: courtsMapped.some((c) => c.features.includes('Iluminación LED')),
+      isIndoor: courtsMapped.some((c) => c.features.includes('Techada')),
+      hasCantina: fallback.hasCantina,
+      hasParking: fallback.hasParking,
+      rating: fallback.rating,
+      reviewsCount: fallback.reviewsCount,
+      availableToday: true,
+      openHours: fallback.openHours,
+      courts: courtsMapped,
+      bankDetails: tenant.bank_alias
+        ? {
+            bankName: tenant.bank_name || 'Mercado Pago',
+            accountHolder: tenant.bank_holder || tenant.name,
+            alias: tenant.bank_alias,
+            cbu: tenant.bank_cbu || '',
+          }
+        : fallback.bankDetails,
+      paymentMethods: tenant.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
+      mpConnected: Boolean(tenant.mp_access_token),
+    }
+  } catch (err) {
+    console.error('[getClubPublicData] Exception:', err)
+    return fallback
+  }
+}
+
 

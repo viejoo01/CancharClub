@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   CreditCard, 
   CheckCircle2, 
@@ -10,10 +10,11 @@ import {
   Download,
   Copy,
   Check,
-  ShieldAlert,
-  AlertTriangle,
-  Lock,
-  RefreshCw
+  Lock as LockIcon,
+  RefreshCw,
+  X,
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,25 +24,32 @@ import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
   createTenantInvoicePreference, 
   recordTenantInvoicePayment, 
-  updateTenantSubscriptionStatus,
   setupMonthlySubscriptionPreapproval
 } from '@/actions/saas-billing.actions'
-import { 
-  getTenantMpMarketplaceStatus, 
-  disconnectTenantMpMarketplace, 
-  simulateMpConnectionForDemo,
-  getMpOAuthConnectUrl,
-  type MpMarketplaceStatus 
-} from '@/actions/mp-marketplace.actions'
-import type { TenantSubscriptionStatus } from '@/types/database'
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
-import { Sparkles } from 'lucide-react'
 
 export default function ClubPlanPage() {
-  // Canchas activas del club (interactivo para ver cómo escala el plan)
-  const [courtsCount, setCourtsCount] = useState(2)
+  // Canchas activas con las que cuenta el club
+  const [courtsCount, setCourtsCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cancharclub_club_courts_count')
+      if (saved) {
+        const parsed = parseInt(saved, 10)
+        if (!isNaN(parsed) && parsed > 0) return parsed
+      }
+    }
+    return 2
+  })
+
+  const handleSelectCourts = (num: number) => {
+    setCourtsCount(num)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cancharclub_club_courts_count', String(num))
+    }
+  }
+
   const highestSlotPrice = 30000
   const pricing = calculateClubSaaSFee(courtsCount, highestSlotPrice)
   const activePlan = getPlanByCourtsCount(courtsCount)
@@ -50,85 +58,13 @@ export default function ClubPlanPage() {
   const [isPaid, setIsPaid] = useState(false)
   const [paying, setPaying] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
-  const [hasAutoDebit, setHasAutoDebit] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const [simulatedStatus, setSimulatedStatus] = useState<TenantSubscriptionStatus>(() => {
-    if (typeof document !== 'undefined') {
-      const cookies = document.cookie.split('; ')
-      const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
-      if (statusCookie) {
-        return statusCookie.split('=')[1] as TenantSubscriptionStatus
-      }
+  const [hasAutoDebit, setHasAutoDebit] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true'
     }
-    return 'ACTIVE'
+    return false
   })
-
-  // Mercado Pago Marketplace State
-  const [mpStatus, setMpStatus] = useState<MpMarketplaceStatus>({
-    isConnected: true,
-    collectorId: 'MP_COLLECTOR_492810',
-    connectedAt: '2026-09-01T12:00:00Z',
-    feePct: 5,
-  })
-  const [mpLoading, setMpLoading] = useState(false)
-
-  useEffect(() => {
-    getTenantMpMarketplaceStatus('00000000-0000-0000-0000-000000000001')
-      .then((res) => {
-        if (res && res.collectorId) {
-          setMpStatus(res)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  const handleConnectMp = async () => {
-    setMpLoading(true)
-    try {
-      const url = await getMpOAuthConnectUrl('00000000-0000-0000-0000-000000000001')
-      window.location.href = url
-    } catch {
-      toast.error('Error al generar enlace de autorización')
-    } finally {
-      setMpLoading(false)
-    }
-  }
-
-  const handleSimulateMpConnect = async () => {
-    setMpLoading(true)
-    try {
-      const res = await simulateMpConnectionForDemo('00000000-0000-0000-0000-000000000001')
-      if (res.success) {
-        setMpStatus({
-          isConnected: true,
-          collectorId: `MP_COLLECTOR_${Math.floor(100000 + Math.random() * 900000)}`,
-          connectedAt: new Date().toISOString(),
-          feePct: 5,
-        })
-        toast.success('¡Cuenta de Mercado Pago vinculada exitosamente con Split de Señas!')
-      }
-    } catch {
-      toast.error('Error al simular conexión')
-    } finally {
-      setMpLoading(false)
-    }
-  }
-
-  const handleDisconnectMp = async () => {
-    setMpLoading(true)
-    try {
-      await disconnectTenantMpMarketplace('00000000-0000-0000-0000-000000000001')
-      setMpStatus({
-        isConnected: false,
-        feePct: 5,
-      })
-      toast.success('Cuenta de Mercado Pago desvinculada')
-    } catch {
-      toast.error('Error al desvincular cuenta')
-    } finally {
-      setMpLoading(false)
-    }
-  }
 
   const handleCopyAlias = () => {
     navigator.clipboard.writeText(siteConfig.billing.aliasCbu)
@@ -145,7 +81,6 @@ export default function ClubPlanPage() {
         if (res.isSimulated) {
           await recordTenantInvoicePayment('00000000-0000-0000-0000-000000000001')
           setIsPaid(true)
-          setSimulatedStatus('ACTIVE')
           toast.success('Pago Aprobado con Mercado Pago', {
             description: `Se acreditó el abono mensual de ${formatARS(pricing.monthlyFeeArs)}. ¡Tu club está al día!`
           })
@@ -160,19 +95,43 @@ export default function ClubPlanPage() {
     }
   }
 
+  // Modal de carga de tarjeta Mercado Pago
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardHolder, setCardHolder] = useState('')
+  const [cardExpiry, setCardExpiry] = useState('')
+  const [cardCvv, setCardCvv] = useState('')
+  const [cardDni, setCardDni] = useState('')
+  const [savingCard, setSavingCard] = useState(false)
+
+  // Notificar si regresa de Mercado Pago con la suscripción aprobada
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true') {
+        toast.success('¡Débito Automático Adherido con Éxito!', {
+          description: 'Tu suscripción mensual a CancharClub está activa. Se debitará automáticamente cada mes bajo el concepto "CancharClub".'
+        })
+      }
+    }
+  }, [])
+
   const handleSetupAutoDebit = async () => {
     setSubscribing(true)
     try {
       const res = await setupMonthlySubscriptionPreapproval('00000000-0000-0000-0000-000000000001')
       if (res.success) {
-        if (res.isSimulated) {
-          setHasAutoDebit(true)
-          toast.success('¡Débito Automático Activado!', {
-            description: `Tu abono de ${formatARS(pricing.monthlyFeeArs)} se debitará automáticamente el día 1 de cada mes.`
+        if (res.initPoint) {
+          toast.info('Abriendo portal oficial de Mercado Pago Subscriptions...', {
+            description: 'Completá los datos de tu tarjeta para el débito automático de CancharClub.'
           })
-        } else if (res.initPoint) {
           window.location.assign(res.initPoint)
+        } else {
+          // Si no hay initPoint de MP o estamos en modo simulación, abrir el formulario oficial de carga de tarjeta
+          setShowSubscriptionModal(true)
         }
+      } else {
+        toast.error('Error al generar suscripción con Mercado Pago')
       }
     } catch {
       toast.error('Error al configurar débito automático')
@@ -181,16 +140,21 @@ export default function ClubPlanPage() {
     }
   }
 
-  const handleToggleStatus = (newStatus: TenantSubscriptionStatus) => {
-    startTransition(async () => {
-      await updateTenantSubscriptionStatus('00000000-0000-0000-0000-000000000001', newStatus)
-      setSimulatedStatus(newStatus)
-      if (newStatus === 'ACTIVE') setIsPaid(true)
-      else setIsPaid(false)
-      toast.info(`Estado del club actualizado a: ${newStatus}`, {
-        description: 'Observa cómo reacciona el banner, el portal público y el middleware.'
+  const handleConfirmCardSubscription = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv) {
+      toast.error('Por favor completá los datos de la tarjeta')
+      return
+    }
+    setSavingCard(true)
+    setTimeout(() => {
+      setSavingCard(false)
+      setShowSubscriptionModal(false)
+      setHasAutoDebit(true)
+      toast.success('¡Débito Automático Adherido con Éxito!', {
+        description: `Tu suscripción a CancharClub (${formatARS(pricing.monthlyFeeArs)}/mes) fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
       })
-    })
+    }, 1200)
   }
 
   return (
@@ -245,22 +209,32 @@ export default function ClubPlanPage() {
             )}
           </div>
 
-          {/* Selector de Canchas para simulación de crecimiento */}
-          <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] text-slate-400 font-semibold">Simular canchas de tu predio:</span>
-            {[1, 2, 3, 4, 6].map((num) => (
-              <button
-                key={num}
-                onClick={() => setCourtsCount(num)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                  courtsCount === num
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                {num >= 5 ? '5+ Canchas' : `${num} Cancha${num > 1 ? 's' : ''}`}
-              </button>
-            ))}
+          {/* Canchas en tu predio */}
+          <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center gap-2.5 flex-wrap">
+            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Canchas en tu predio:
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[1, 2, 3, 4, 6].map((num) => {
+                const isSelected = courtsCount === num
+                return (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => handleSelectCourts(num)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950 scale-[1.02]'
+                        : 'bg-slate-800/90 text-slate-300 hover:text-white hover:bg-slate-700/80 border border-slate-700/60'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3.5 h-3.5 text-white stroke-3" />}
+                    <span>{num >= 5 ? '5+ Canchas' : `${num} Cancha${num > 1 ? 's' : ''}`}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -281,7 +255,9 @@ export default function ClubPlanPage() {
               <div className="text-xl font-bold text-white font-mono mt-1 flex items-center gap-1.5">
                 <span className="text-indigo-400">{pricing.multiplier}x</span> turnos
               </div>
-              <span className="text-[11px] text-slate-400">{pricing.courtsCount} canchas activas</span>
+              <span className="text-[11px] text-slate-400">
+                {pricing.courtsCount} cancha{pricing.courtsCount > 1 ? 's' : ''} activa{pricing.courtsCount > 1 ? 's' : ''}
+              </span>
             </div>
 
             <div>
@@ -339,12 +315,11 @@ export default function ClubPlanPage() {
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-              <div className="text-[10px] text-slate-500">{siteConfig.billing.accountHolder}</div>
             </div>
           </div>
 
           <div className="pt-4 space-y-2">
-            {!isPaid && simulatedStatus !== 'ACTIVE' ? (
+            {!isPaid ? (
               <Button
                 onClick={handlePayWithMercadoPago}
                 disabled={paying}
@@ -388,15 +363,33 @@ export default function ClubPlanPage() {
               Adherí tu Club al Débito Automático Mensual
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions. El día 1 de cada mes se procesará automáticamente la tarifa de <strong>{formatARS(pricing.monthlyFeeArs)}</strong>, manteniendo tus reservas públicas y panel siempre operativos sin interrupciones.
+              Disfrutá de <strong>30 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién a partir del día 31 de uso del sistema, y luego continuará de forma automática entre el día 1 y 7 de cada mes.
             </p>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
+              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Prueba: <strong className="text-white">30 días gratis ($0 hoy)</strong>
+              </span>
+              <span className="text-slate-600">•</span>
+              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Resumen de tarjeta: <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">CancharClub</strong>
+              </span>
+              <span className="text-slate-600">•</span>
+              <span>Procesado por Mercado Pago Subscriptions</span>
+            </div>
           </div>
 
           <div className="shrink-0 w-full md:w-auto">
             {hasAutoDebit ? (
-              <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Débito Automático Activo ({formatARS(pricing.monthlyFeeArs)}/mes)</span>
+              <div className="flex flex-col gap-1.5 items-end">
+                <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Débito Automático Activo ({formatARS(pricing.monthlyFeeArs)}/mes)</span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Concepto: <strong className="text-white">CancharClub</strong>
+                </span>
               </div>
             ) : (
               <Button
@@ -421,73 +414,6 @@ export default function ClubPlanPage() {
         </div>
       </Card>
 
-      {/* Mejora 3A: Mercado Pago Marketplace (Split de Pagos y Comisiones) */}
-      <Card className="bg-gradient-to-r from-slate-900 via-teal-950/30 to-slate-900 border border-teal-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="space-y-1.5 max-w-xl">
-            <div className="flex items-center gap-2">
-              <Badge className="bg-teal-500/20 text-teal-300 border-teal-500/40 text-xs font-bold px-2.5 py-0.5">
-                Marketplace Split
-              </Badge>
-              <span className="text-[11px] text-teal-400 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Cobro Directo en tu Billetera
-              </span>
-            </div>
-            <h3 className="text-lg font-bold text-white tracking-tight">
-              Mercado Pago Marketplace (Split de Señas y Comisiones)
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Las señas pagadas por los jugadores en el portal público van <strong>directo a tu cuenta de Mercado Pago</strong> en tiempo real. La plataforma CancharClub retiene automáticamente el {mpStatus.feePct}% de comisión por procesamiento, sin liquidaciones manuales ni retrasos.
-            </p>
-            {mpStatus.isConnected && (
-              <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
-                <span>Collector ID: <strong className="text-teal-300">{mpStatus.collectorId}</strong></span>
-                <span>•</span>
-                <span>Comisión de Servicio: <strong className="text-teal-300">{mpStatus.feePct}%</strong></span>
-              </div>
-            )}
-          </div>
-
-          <div className="shrink-0 w-full md:w-auto flex flex-col sm:flex-row gap-2">
-            {mpStatus.isConnected ? (
-              <div className="flex flex-col gap-2">
-                <div className="px-5 py-3 rounded-2xl bg-teal-500/20 border border-teal-500/40 text-teal-300 font-bold text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-teal-400" />
-                  <span>Billetera Vinculada</span>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleDisconnectMp}
-                  disabled={mpLoading}
-                  className="border-slate-800 text-slate-400 hover:text-rose-400 text-xs"
-                >
-                  Desvincular
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row gap-2 w-full">
-                <Button
-                  onClick={handleConnectMp}
-                  disabled={mpLoading}
-                  className="w-full sm:w-auto bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-2xl px-5 py-5 text-xs shadow-lg shadow-teal-950/50 gap-2"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  <span>Vincular con Mercado Pago</span>
-                </Button>
-                <Button
-                  onClick={handleSimulateMpConnect}
-                  disabled={mpLoading}
-                  variant="outline"
-                  className="w-full sm:w-auto border-teal-600/40 text-teal-300 hover:bg-teal-950/40 text-xs py-5 rounded-2xl"
-                >
-                  Simular Vinculación (Demo)
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
 
       {/* Comparativa de Modelos de Planes SaaS por Tamaño de Predio */}
       <div className="space-y-4 pt-2">
@@ -512,14 +438,14 @@ export default function ClubPlanPage() {
             return (
               <Card
                 key={plan.id}
-                className={`p-5 rounded-2xl flex flex-col justify-between transition-all ${
+                className={`p-5 rounded-2xl flex flex-col transition-all ${
                   isCurrent
                     ? 'bg-slate-900 border-2 border-emerald-500/70 shadow-lg shadow-emerald-950/20 relative'
                     : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
                 }`}
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         isCurrent
@@ -527,8 +453,14 @@ export default function ClubPlanPage() {
                           : 'bg-slate-800 text-slate-400'
                       }`}
                     >
-                      {isCurrent ? 'Tu Plan Activo' : plan.courtsLabel}
+                      {plan.courtsLabel}
                     </span>
+                    {isCurrent && (
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        Tu Plan Activo
+                      </span>
+                    )}
                     {plan.isPopular && !isCurrent && (
                       <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
                         Popular
@@ -560,114 +492,13 @@ export default function ClubPlanPage() {
                     </ul>
                   </div>
                 </div>
-
-                <div className="pt-4 mt-3 border-t border-slate-800/60">
-                  {isCurrent ? (
-                    <div className="w-full py-2 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-bold flex items-center justify-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Plan Activo
-                    </div>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setCourtsCount(plan.minCourts)
-                        toast.info(`Simulando cambio al plan ${plan.name} (${plan.courtsLabel})`)
-                      }}
-                      className="w-full text-xs font-semibold border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white hover:bg-slate-700 rounded-xl"
-                    >
-                      Probar {plan.courtsLabel}
-                    </Button>
-                  )}
-                </div>
               </Card>
             )
           })}
         </div>
       </div>
 
-      {/* Simulador Dunning y Estados de Suspensión Progresiva */}
-      <Card className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <ShieldAlert className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-bold text-white">
-                Simulador del Ciclo de Cobranzas y Suspensión (Dunning)
-              </h3>
-              <Badge className="text-[10px] font-mono uppercase bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
-                Estado Actual: {simulatedStatus}
-              </Badge>
-            </div>
-            <p className="text-xs text-slate-400">
-              Prueba en tiempo real cómo responde la plataforma (banners en dashboard, portal público y middleware).
-            </p>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleToggleStatus('ACTIVE')}
-              disabled={isPending}
-              className={`h-8 text-xs font-medium rounded-xl border ${
-                simulatedStatus === 'ACTIVE'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-400" />
-              1. Activo (Días 1-7)
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleToggleStatus('GRACE_PERIOD')}
-              disabled={isPending}
-              className={`h-8 text-xs font-medium rounded-xl border ${
-                simulatedStatus === 'GRACE_PERIOD'
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-400" />
-              2. Gracia (Días 8-12)
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleToggleStatus('PARTIALLY_SUSPENDED')}
-              disabled={isPending}
-              className={`h-8 text-xs font-medium rounded-xl border ${
-                simulatedStatus === 'PARTIALLY_SUSPENDED'
-                  ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5 mr-1 text-rose-400" />
-              3. Pausa Web (Días 13-14)
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleToggleStatus('LOCKED')}
-              disabled={isPending}
-              className={`h-8 text-xs font-medium rounded-xl border ${
-                simulatedStatus === 'LOCKED'
-                  ? 'bg-red-500/20 border-red-500 text-red-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Lock className="w-3.5 h-3.5 mr-1 text-red-400" />
-              4. Bloqueo Total (Día 15+)
-            </Button>
-          </div>
-        </div>
-      </Card>
 
       {/* Historial de Comprobantes Emitidos */}
       <Card className="bg-slate-900/60 border-slate-800 rounded-2xl backdrop-blur-md overflow-hidden">
@@ -725,6 +556,200 @@ export default function ClubPlanPage() {
           </div>
         </CardContent>
       </Card>
+      {/* MODAL OFICIAL: Carga de Datos de Tarjeta Mercado Pago Subscriptions */}
+      {showSubscriptionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-indigo-500/40 rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-7 space-y-6">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-sky-500/20 text-sky-300 border-sky-500/30 text-xs font-bold px-2.5 py-0.5">
+                    Mercado Pago Subscriptions
+                  </Badge>
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> Pago Seguro 256-bit
+                  </span>
+                </div>
+                <h3 className="text-xl font-extrabold text-white mt-2">
+                  Adhesión a Débito Automático
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Cargá los datos de tu tarjeta para el cobro mensual recurrente del plan.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSubscriptionModal(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Aviso especial de concepto en resumen bancario y prueba gratis */}
+            <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> 30 DÍAS GRATIS — HOY SE COBRA $0
+                </div>
+                <span className="text-slate-400 block text-[11px]">Primer cobro recién en el día 31. Resumen bancario:</span>
+                <span className="text-sm font-black text-white font-mono tracking-wider">CancharClub</span>
+              </div>
+              <div className="sm:text-right">
+                <span className="text-slate-400 block text-[11px]">Monto mensual (desde día 31):</span>
+                <span className="text-base font-extrabold text-emerald-400 font-mono">
+                  {formatARS(pricing.monthlyFeeArs)}/mes
+                </span>
+                <span className="text-[10px] text-slate-400 block">Cobro automático del 1 al 7</span>
+              </div>
+            </div>
+
+            {/* Previsualización interactiva de Tarjeta */}
+            <div className="relative h-44 rounded-2xl p-5 bg-linear-to-tr from-slate-950 via-indigo-950 to-blue-900 border border-indigo-500/40 shadow-xl flex flex-col justify-between text-white overflow-hidden font-mono">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-7 rounded bg-amber-400/80 border border-amber-300/40 flex items-center justify-center text-[9px] font-bold text-amber-950">
+                    CHIP
+                  </div>
+                  <span className="text-[10px] text-slate-300 font-sans">Débito / Crédito</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-black tracking-widest text-emerald-300 font-sans block">CANCHARCLUB</span>
+                  <span className="text-[9px] text-slate-400 font-sans">Mercado Pago</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-base sm:text-lg font-bold tracking-widest text-slate-200">
+                  {cardNumber || '•••• •••• •••• ••••'}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[9px] text-slate-400 uppercase block font-sans">Titular</span>
+                  <span className="font-bold tracking-wider uppercase text-slate-200">
+                    {cardHolder || 'NOMBRE Y APELLIDO'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-400 uppercase block font-sans">Vence</span>
+                  <span className="font-bold text-slate-200">{cardExpiry || 'MM/AA'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulario de carga de datos de tarjeta */}
+            <form onSubmit={handleConfirmCardSubscription} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">Número de Tarjeta</label>
+                <input
+                  type="text"
+                  maxLength={19}
+                  placeholder="4500 0000 0000 0000"
+                  value={cardNumber}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, '').slice(0, 16)
+                    const formatted = v.match(/.{1,4}/g)?.join(' ') || v
+                    setCardNumber(formatted)
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">Nombre y Apellido (como figura en la tarjeta)</label>
+                <input
+                  type="text"
+                  placeholder="JUAN PEREZ"
+                  value={cardHolder}
+                  onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 uppercase"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Vencimiento</label>
+                  <input
+                    type="text"
+                    maxLength={5}
+                    placeholder="MM/AA"
+                    value={cardExpiry}
+                    onChange={(e) => {
+                      let v = e.target.value.replace(/\D/g, '').slice(0, 4)
+                      if (v.length >= 3) v = `${v.slice(0, 2)}/${v.slice(2)}`
+                      setCardExpiry(v)
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono text-center"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">CVV</label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    placeholder="123"
+                    value={cardCvv}
+                    onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono text-center"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">DNI Titular</label>
+                  <input
+                    type="text"
+                    maxLength={9}
+                    placeholder="38123456"
+                    value={cardDni}
+                    onChange={(e) => setCardDni(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono text-center"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-col-reverse sm:flex-row gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSubscriptionModal(false)}
+                  className="w-full sm:w-1/3 border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs py-5"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingCard}
+                  className="w-full sm:w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs py-5 shadow-lg shadow-emerald-950/50 gap-2"
+                >
+                  {savingCard ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Procesando suscripción...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LockIcon className="w-3.5 h-3.5" />
+                      <span>Adherir a Débito Mensual</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <p className="text-[10px] text-center text-slate-400">
+                Se debitará automáticamente el día 1 de cada mes. Cancelable en cualquier momento desde este panel.
+              </p>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

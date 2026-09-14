@@ -1,36 +1,55 @@
 'use client'
 
-import { Plus, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Plus, CheckCircle2, AlertCircle, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
+import { VenueSwitcher } from './venue-switcher'
 
 interface HeaderProps {
   onQuickBookClick?: () => void
+  onToggleMobileMenu?: () => void
   mpConnected?: boolean
   userName?: string
 }
 
 export function Header({
   onQuickBookClick,
+  onToggleMobileMenu,
   mpConnected = true,
   userName = 'Administrador'
 }: HeaderProps) {
   return (
-    <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md">
-      <div className="flex items-center gap-4">
-        <h1 className="text-base font-semibold text-slate-100 hidden sm:block">
+    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md z-20">
+      <div className="flex items-center gap-2.5 sm:gap-4">
+        {/* Botón menú hamburguesa para celulares */}
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
+            aria-label="Abrir menú de navegación"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+
+        <h1 className="text-sm sm:text-base font-semibold text-slate-100 hidden lg:block">
           Gestión Operativa
         </h1>
+
+        {/* Mejora 19: Selector de Sede / Sucursal Multisede */}
+        <VenueSwitcher />
+
         {mpConnected ? (
-          <Badge variant="default" className="gap-1.5 py-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex">
+            <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
             <span className="hidden md:inline">Mercado Pago</span> Activo
           </Badge>
         ) : (
-          <Badge variant="warning" className="gap-1.5 py-1">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-            MP Desconectado
+          <Badge variant="warning" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex">
+            <AlertCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">MP</span> Desconectado
           </Badge>
         )}
       </div>

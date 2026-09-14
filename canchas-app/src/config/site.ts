@@ -31,9 +31,9 @@ export const siteConfig = {
 
   // Datos bancarios para liquidación de abonos SaaS
   billing: {
-    aliasCbu: 'cancharclub.saas.mp',
+    aliasCbu: 'cancharclub.mp',
     cbuNumber: '0000003100012345678901',
-    accountHolder: 'CancharClub SaaS B2B Argentina',
+    accountHolder: 'CancharClub',
   },
 
   // Navegación principal del portal

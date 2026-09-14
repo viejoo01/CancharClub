@@ -7,6 +7,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { formatARS, formatTime, buildWhatsAppLink } from '@/lib/utils'
+import { notifyRainCancellation } from '@/lib/whatsapp'
 import type { CustomerCredit, BookingStatus } from '@/types/database'
 
 export interface RainCancellationResult {
@@ -111,6 +112,17 @@ export async function executeRainCancellation(params: {
       const whatsAppUrl = b.customer_phone
         ? buildWhatsAppLink(b.customer_phone, messageText)
         : ''
+
+      if (b.customer_phone) {
+        notifyRainCancellation({
+          phone: b.customer_phone,
+          customerName: b.customer_name,
+          clubName,
+          courtName,
+          timeStr,
+          creditAmountARS: creditedAmount,
+        }).catch((err: unknown) => console.error('[RainWhatsApp Error]', err))
+      }
 
       notifications.push({
         bookingId: b.id,

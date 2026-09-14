@@ -7,6 +7,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { buildWhatsAppLink } from '@/lib/utils'
+import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import type { WaitlistEntry } from '@/types/database'
 
 export interface WaitlistNotificationResult {
@@ -141,6 +142,13 @@ export async function processWaitlistOnCancellation(params: {
     const messageText = `¡Buenas noticias ${waitlist.customer_name}! Se liberó un turno para hoy a las ${params.timeSlot} hs en ${clubName}. Tenés 10 minutos de prioridad exclusiva para confirmar tu reserva en este link: ${claimUrl}`
 
     const whatsAppUrl = buildWhatsAppLink(waitlist.customer_phone, messageText)
+
+    // Despacho automático no-bloqueante por WhatsApp API si está configurada
+    if (waitlist.customer_phone) {
+      sendWhatsAppMessage(waitlist.customer_phone, messageText).catch(err =>
+        console.error('[Waitlist WhatsApp AutoSend Error]', err)
+      )
+    }
 
     return {
       hasWaitlistMatch: true,

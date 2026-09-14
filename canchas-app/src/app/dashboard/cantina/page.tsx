@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   Coffee, 
   Plus, 
@@ -16,7 +16,8 @@ import {
   Printer,
   AlertTriangle,
   TrendingUp,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,15 @@ import { Input } from '@/components/ui/input'
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import { toast } from 'sonner'
+import {
+  createCourtOrder,
+  updateOrderStatus as dbUpdateOrderStatus,
+  getDailyOrders,
+  type CourtOrder,
+  type OrderStatus,
+} from '@/actions/cantina.actions'
+
+const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 interface Product {
   id: string
@@ -35,16 +45,8 @@ interface Product {
   emoji: string
 }
 
-interface CourtOrderData {
-  id: string
-  court_name: string
-  customer_name: string
-  total_ars: number
-  status: 'PENDING' | 'PREPARING' | 'DELIVERED'
-  created_at: string
-  items: Array<{ name: string; quantity: number; unit_price: number; subtotal: number }>
-  notes?: string
-}
+
+
 
 const CANTINA_PRODUCTS: Product[] = [
   { id: 'p1', name: 'Gatorade / Powerade 500ml', category: 'BEBIDAS', price: 2500, stock: 48, emoji: '⚡' },
@@ -59,55 +61,28 @@ const CANTINA_PRODUCTS: Product[] = [
 
 export default function CantinaPage() {
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS'>('POS')
-  const [courtOrders, setCourtOrders] = useState<CourtOrderData[]>([
-    {
-      id: 'ord-101',
-      court_name: 'Cancha 1 (Panorámica)',
-      customer_name: 'Martín Palermo',
-      total_ars: 5000,
-      status: 'PENDING',
-      created_at: '20:15 hs',
-      items: [
-        { name: 'Gatorade / Powerade 500ml', quantity: 2, unit_price: 2500, subtotal: 5000 }
-      ],
-      notes: 'Bien frías por favor',
-    },
-    {
-      id: 'ord-102',
-      court_name: 'Cancha 2 (Techada)',
-      customer_name: 'Gonzalo Higuaín',
-      total_ars: 16200,
-      status: 'PREPARING',
-      created_at: '20:05 hs',
-      items: [
-        { name: 'Tubo Pelotas Pádel x3 (Bullpadel)', quantity: 1, unit_price: 14000, subtotal: 14000 },
-        { name: 'Overgrip Wilson / Bullpadel', quantity: 1, unit_price: 2200, subtotal: 2200 }
-      ],
-    }
-  ])
+  const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
 
-  useEffect(() => {
-    // Sincronizar comandas creadas por jugadores desde sus celulares de forma asíncrona
-    if (typeof window !== 'undefined') {
-      const timer = setTimeout(() => {
-        const stored = localStorage.getItem('canchar_court_orders')
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setCourtOrders(prev => {
-                const combined = [...parsed, ...prev.filter(p => !parsed.some((x: { id: string }) => x.id === p.id))]
-                return combined
-              })
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }, 50)
-      return () => clearTimeout(timer)
+  const loadOrders = useCallback(async () => {
+    setOrdersLoading(true)
+    try {
+      const orders = await getDailyOrders(DEMO_TENANT_ID)
+      setCourtOrders(orders)
+    } catch {
+      // silently ignore
+    } finally {
+      setOrdersLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    loadOrders()
+    // Recargar cada 30 segundos para ver nuevos pedidos del QR
+    const interval = setInterval(loadOrders, 30_000)
+    return () => clearInterval(interval)
+  }, [loadOrders])
 
   const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
@@ -116,7 +91,7 @@ export default function CantinaPage() {
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QR_MP' | 'TRANSFER'>('CASH')
 
   // Estados para Impresión Térmica (Mejora 1C)
-  const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrderData | null>(null)
+  const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
 
   // Datos para Alerta Predictiva de Stock (Mejora 3C)
@@ -133,9 +108,14 @@ export default function CantinaPage() {
     `\n\n¿Nos podrán entregar antes del viernes a las 18 hs? ¡Muchas gracias!`
   )
 
-  const handleUpdateOrderStatus = (orderId: string, nextStatus: 'PENDING' | 'PREPARING' | 'DELIVERED') => {
+  const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    // Optimistic update
     setCourtOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o))
-    if (nextStatus === 'DELIVERED') {
+    const result = await dbUpdateOrderStatus(orderId, nextStatus)
+    if (!result.success) {
+      toast.error('Error al actualizar el estado del pedido')
+      loadOrders() // revertir con datos reales
+    } else if (nextStatus === 'DELIVERED') {
       toast.success('¡Comanda despachada a la cancha!')
     } else {
       toast.info('Comanda marcada en preparación')
@@ -180,22 +160,49 @@ export default function CantinaPage() {
 
   const cartTotal = cart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return
+    setCheckoutLoading(true)
+    try {
+      const items = cart.map(c => ({
+        product_id: c.product.id,
+        name: c.product.name,
+        quantity: c.quantity,
+        unit_price: c.product.price,
+        subtotal: c.product.price * c.quantity,
+      }))
 
-    if (assignToCourt !== 'NONE') {
-      toast.success('Consumo cargado a la cancha', {
-        description: `Se agregaron ${formatARS(cartTotal)} a la cuenta de la Cancha ${assignToCourt}. Se abonará al finalizar el turno.`
+      const courtLabel = assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Mostrador'
+      const result = await createCourtOrder({
+        tenant_id: DEMO_TENANT_ID,
+        court_name: courtLabel,
+        customer_name: 'Mostrador',
+        items,
+        total_ars: cartTotal,
+        notes: paymentMethod === 'CASH' ? 'Efectivo' : paymentMethod === 'QR_MP' ? 'MP QR' : 'Transferencia',
       })
-    } else {
-      const methodLabel = paymentMethod === 'CASH' ? 'Efectivo' : paymentMethod === 'QR_MP' ? 'Mercado Pago QR' : 'Transferencia'
-      toast.success(`Venta de cantina cobrada (${methodLabel})`, {
-        description: `Se registraron ${formatARS(cartTotal)} en la caja del club exitosamente.`
-      })
+
+      if (result.success) {
+        if (assignToCourt !== 'NONE') {
+          toast.success('Consumo cargado a la cancha', {
+            description: `Se agregaron ${formatARS(cartTotal)} a la cuenta de la Cancha ${assignToCourt}.`
+          })
+        } else {
+          const methodLbl = paymentMethod === 'CASH' ? 'Efectivo' : paymentMethod === 'QR_MP' ? 'Mercado Pago QR' : 'Transferencia'
+          toast.success(`Venta cobrada (${methodLbl})`, {
+            description: `${formatARS(cartTotal)} registrados en caja.`
+          })
+        }
+        clearCart()
+        setAssignToCourt('NONE')
+        // Actualizar lista de pedidos
+        if (result.order) setCourtOrders(prev => [result.order!, ...prev])
+      } else {
+        toast.error('Error al registrar la venta', { description: result.error })
+      }
+    } finally {
+      setCheckoutLoading(false)
     }
-
-    clearCart()
-    setAssignToCourt('NONE')
   }
 
   const pendingOrdersCount = courtOrders.filter(o => o.status === 'PENDING').length
@@ -608,7 +615,7 @@ export default function CantinaPage() {
               subtotal: it.subtotal,
             })),
             totalAmount: selectedPrintOrder.total_ars,
-            notes: selectedPrintOrder.notes,
+            notes: selectedPrintOrder.notes ?? undefined,
           }}
         />
       )}

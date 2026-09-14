@@ -479,6 +479,31 @@ export async function updateTenantSubscriptionStatus(tenantId: string, newStatus
   return { success: true, newStatus }
 }
 
+/**
+ * Calcula la fecha del primer cobro por débito automático:
+ * Garantiza un mínimo de 30 días de prueba gratuita, y programa el primer cobro
+ * para el día 1 del mes calendario que inicia inmediatamente después de cumplirse los 30 días.
+ * 
+ * Ejemplos:
+ *  - Alta 1 de Agosto -> 30 días = 31 de Agosto -> 1er cobro: 1 de Septiembre
+ *  - Alta 20 de Agosto -> 30 días = 19 de Septiembre -> 1er cobro: 1 de Octubre
+ *  - Alta 29 de Agosto -> 30 días = 28 de Septiembre -> 1er cobro: 1 de Octubre
+ */
+function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: string | null): Date {
+  const baseDate = trialEndsAt 
+    ? new Date(trialEndsAt) 
+    : createdAt 
+      ? new Date(new Date(createdAt).getTime() + 30 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+
+  // Primer día del mes siguiente a que finalicen los 30 días de prueba
+  const nextMonthYear = baseDate.getMonth() === 11 ? baseDate.getFullYear() + 1 : baseDate.getFullYear()
+  const nextMonth = (baseDate.getMonth() + 1) % 12
+
+  // Se programa para el día 1 del mes a las 09:00 AM (horario laboral argentino)
+  return new Date(nextMonthYear, nextMonth, 1, 9, 0, 0)
+}
+
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
 
 export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
@@ -487,49 +512,62 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
   // 1. Obtener datos del club
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('name, slug, email')
+    .select('name, slug, email, trial_ends_at, created_at')
     .eq('id', tenantId)
-    .single()
+    .maybeSingle()
 
   const summary = await getClubBillingSummary(tenantId)
   const monthlyAmount = summary.pricing.monthlyFeeArs
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
 
-  const mpSuperadminToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
 
-  if (!mpSuperadminToken) {
-    // Modo simulación seguro para desarrollo local
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    // Modo simulación seguro para desarrollo local sin credenciales
     return {
       success: true,
-      initPoint: `${appUrl}/dashboard/plan?auto_debit_registered=true`,
+      initPoint: null,
       isSimulated: true,
       monthlyAmount,
+      tenantName: tenant?.name || 'Club Pádel Central Tucumán',
       message: `Débito automático activado para ${tenant?.name || 'el club'} por ${monthlyAmount} ARS/mes.`
     }
   }
 
   try {
-    const mpConfig = new MercadoPagoConfig({ accessToken: mpSuperadminToken })
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
     const preApprovalClient = new PreApproval(mpConfig)
+
+    // El email del pagador debe ser un correo válido registrado en Mercado Pago MLA
+    const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
+      ? tenant.email
+      : 'padelcentraltucuman@gmail.com'
+
+    // Regla de Cobro: 30 días de prueba gratuita y cobro unificado del 1 al 7 de cada mes.
+    // El primer cobro se ejecuta el día 1 del mes siguiente a cumplir los 30 días.
+    // Al registrar la tarjeta hoy en Mercado Pago se cobra $0.
+    const firstBillingDate = calculateFirstBillingDate(tenant?.trial_ends_at, tenant?.created_at)
+    const startDate = firstBillingDate.toISOString()
 
     const result = await preApprovalClient.create({
       body: {
-        reason: `Abono Mensual CancharClub - ${tenant?.name || 'Club'}`,
+        reason: 'CancharClub', // Nombre exacto solicitado para el resumen de tarjeta
         auto_recurring: {
           frequency: 1,
           frequency_type: 'months',
           transaction_amount: monthlyAmount,
           currency_id: 'ARS',
+          start_date: startDate,
         },
         back_url: `${appUrl}/dashboard/plan?subscription_active=true`,
-        payer_email: tenant?.email || 'admin@cancharclub.com.ar',
-        status: 'authorized',
+        payer_email: payerEmail,
+        status: 'pending',
       }
     })
 
     return {
       success: true,
-      initPoint: result.init_point,
+      initPoint: result.init_point || null,
       preapprovalId: result.id,
       isSimulated: false,
       monthlyAmount,
@@ -538,9 +576,10 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
     console.error('Error creating MP preapproval:', err)
     return {
       success: true,
-      initPoint: `${appUrl}/dashboard/plan?auto_debit_registered=true`,
+      initPoint: null,
       isSimulated: true,
       monthlyAmount,
+      tenantName: tenant?.name || 'Club Pádel Central Tucumán',
     }
   }
 }

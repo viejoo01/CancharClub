@@ -77,6 +77,8 @@ export interface Tenant {
   google_maps_url: string | null
   status: TenantStatus
   subscription_status?: TenantSubscriptionStatus
+  is_active?: boolean
+  plan_id?: 'CHICO_1' | 'MEDIANO_2' | 'CONSOLIDADO_3_4' | 'GRANDE_5_PLUS' | null
   base_slots_plan?: number
   minimum_floor_ars?: number
   current_balance?: number
@@ -89,11 +91,19 @@ export interface Tenant {
   min_deposit_amount_ars: number | null
   business_hours: BusinessHours
   // mp_access_token: NUNCA se envía al cliente
+  mp_access_token?: string | null
   mp_public_key: string | null
   mp_marketplace_fee_pct: number
   mp_collector_id?: string | null
   mp_connected_at?: string | null
   mp_refresh_token?: string | null
+  // Datos bancarios y de cobro propios del club para señas directas
+  bank_name?: string | null
+  bank_account_holder?: string | null
+  bank_cbu?: string | null
+  bank_alias?: string | null
+  bank_cuit?: string | null
+  payment_methods?: ('TRANSFER' | 'MERCADOPAGO')[]
   created_at: string
   updated_at: string
 }
@@ -361,7 +371,7 @@ export interface TournamentTeam {
 export interface TournamentMatch {
   id: string
   category_id: string
-  round: 'CUARTOS' | 'SEMIFINAL' | 'FINAL'
+  round: 'GRUPO_A' | 'GRUPO_B' | 'CUARTOS' | 'SEMIFINAL' | 'FINAL' | string
   match_number: number
   team_a_id?: string | null
   team_b_id?: string | null
@@ -442,6 +452,7 @@ export interface BookingWithDetails extends Booking {
 export interface CreateBookingPayload {
   tenant_id: string
   court_id: string
+  court_name?: string
   customer_name: string
   customer_phone?: string
   customer_email?: string
@@ -453,6 +464,7 @@ export interface CreateBookingPayload {
   internal_notes?: string
   customer_notes?: string
   price_rule_id?: string
+  payment_method?: 'TRANSFER' | 'MERCADOPAGO'
 }
 
 /** Respuesta del Server Action de checkout */
@@ -461,6 +473,18 @@ export interface CheckoutResponse {
   booking_id?: string
   mp_preference_id?: string
   mp_init_point?: string  // URL de redirección a MP
+  total_amount_ars?: number
+  deposit_amount_ars?: number
+  lock_expires_at?: string
+  payment_type?: 'TRANSFER' | 'MERCADOPAGO'
+  bank_details?: {
+    bank_name: string
+    account_holder: string
+    cbu: string
+    alias: string
+    cuit?: string
+    whatsapp_phone?: string
+  }
   error?: string
   error_code?: 'SLOT_UNAVAILABLE' | 'LOCK_FAILED' | 'MP_ERROR' | 'VALIDATION_ERROR' | 'CLUB_SUSPENDED_DUNNING'
 }

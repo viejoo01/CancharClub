@@ -6,6 +6,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const PUBLIC_PATHS = [
+  '/sumar-club',        // Landing para dueños de clubes
+  '/mis-reservas',      // Consulta de reservas de jugadores
   '/club',              // Portal público por slug
   '/reserva',           // Confirmación y estado público de reservas
   '/auth',              // Login/Register/Callback
@@ -24,6 +26,14 @@ export async function middleware(request: NextRequest) {
   // Simulación rápida en modo demo mediante cookie o query param (útil para tests locales)
   const demoStatusOverride = request.nextUrl.searchParams.get('simulate_status') || 
                              request.cookies.get('demo_subscription_status')?.value
+
+  const demoUserRole = request.cookies.get('demo_user_role')?.value
+
+  // Permitir la página de inicio ('/') y todas las rutas públicas sin redirección
+  const isPublicPath = pathname === '/' || PUBLIC_PATHS.some(p => pathname.startsWith(p))
+  if (isPublicPath) {
+    return response
+  }
 
   // ─── 1. MODO DEMO LOCAL SIN BASE DE DATOS ACTIVA ───────────────────────────
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('tu-proyecto') || supabaseUrl.includes('placeholder')) {
@@ -63,24 +73,9 @@ export async function middleware(request: NextRequest) {
   // Refrescar la sesión
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Permitir rutas públicas sin autenticación
-  const isPublicPath = PUBLIC_PATHS.some(p => pathname.startsWith(p))
-
-  // Ruta raíz: redirigir según estado de auth
-  if (pathname === '/') {
-    if (!user) {
-      return NextResponse.redirect(new URL('/auth/login', request.url))
-    }
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  if (isPublicPath) {
-    return response
-  }
-
   // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS ───────────────────────────────────────
   if (pathname.startsWith('/dashboard') || pathname.startsWith('/superadmin')) {
-    if (!user) {
+    if (!user && !demoUserRole) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       url.searchParams.set('redirectTo', pathname)
@@ -90,16 +85,33 @@ export async function middleware(request: NextRequest) {
 
   // ─── 4. PROTECCIÓN DEL PANEL SUPERADMIN ────────────────────────────────────
   if (pathname.startsWith('/superadmin')) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user!.id)
-      .single()
-
-    if (profile?.role !== 'SUPERADMIN') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+    // 4.a Modo demo con rol SUPERADMIN
+    if (demoUserRole === 'SUPERADMIN') {
+      return response
     }
-    return response
+
+    // 4.b Usuario real en Supabase
+    if (user) {
+      const isSuperadminId = Boolean(process.env.SUPERADMIN_USER_ID && user.id === process.env.SUPERADMIN_USER_ID)
+      const isSuperadminEmail = user.email === 'santi.alonsoleal@gmail.com' || user.email === 'superadmin@cancharclub.com.ar'
+
+      if (isSuperadminId || isSuperadminEmail) {
+        return response
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.role === 'SUPERADMIN') {
+        return response
+      }
+    }
+
+    // Si no tiene permisos de superadmin, enviar al panel de club
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // ─── 5. EVALUACIÓN DEL ESTADO DE DUNNING DEL CLUB (TENANT) ────────────────

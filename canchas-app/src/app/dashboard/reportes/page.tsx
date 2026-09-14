@@ -1,27 +1,25 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   BarChart3, 
   Flame, 
   TrendingUp, 
   AlertTriangle, 
   DollarSign, 
-  Sparkles, 
-  Share2, 
-  Clock, 
   Calendar, 
-  CheckCircle2, 
   Lightbulb, 
-  ArrowRight,
   MessageCircle,
-  Loader2
+  Loader2,
+  Printer,
+  FileSpreadsheet
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, buildWhatsAppLink } from '@/lib/utils'
+import { formatARS } from '@/lib/utils'
 import { getOccupancyReport, type OccupancyReportData, type PricingRecommendation } from '@/actions/analytics.actions'
+import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
 
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
@@ -40,13 +38,8 @@ const DAYS_HEADER = [
 export default function ReportesPage() {
   const [data, setData] = useState<OccupancyReportData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'DEAD_HOURS'>('ALL')
 
-  useEffect(() => {
-    loadReport()
-  }, [])
-
-  const loadReport = async () => {
+  const loadReport = useCallback(async () => {
     setLoading(true)
     try {
       const res = await getOccupancyReport(DEMO_TENANT_ID)
@@ -56,6 +49,68 @@ export default function ReportesPage() {
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    getOccupancyReport(DEMO_TENANT_ID)
+      .then((res) => {
+        if (isMounted) {
+          setData(res)
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          toast.error('Error al cargar reporte de ocupación')
+          setLoading(false)
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const handleExportCsv = () => {
+    if (!data) return
+    const headers = ['Franja Horaria', ...DAYS_HEADER]
+    const rows = SLOTS_HEADER.map((slot) => {
+      const dayValues = DAYS_HEADER.map((dayName) => {
+        const cell = data.heatmap.find((h) => h.dayName === dayName && h.slotKey === slot.key)
+        return cell ? `${cell.occupancyPct}%` : '0%'
+      })
+      return [slot.label, ...dayValues]
+    })
+    exportToCsv({
+      title: 'Reporte de Ocupación Semanal',
+      filename: `reporte-ocupacion-${new Date().toISOString().split('T')[0]}.csv`,
+      headers,
+      rows,
+    })
+    toast.success('Reporte CSV exportado')
+  }
+
+  const handlePrintPdf = () => {
+    if (!data) return
+    const headers = ['Franja Horaria', ...DAYS_HEADER]
+    const rows = SLOTS_HEADER.map((slot) => {
+      const dayValues = DAYS_HEADER.map((dayName) => {
+        const cell = data.heatmap.find((h) => h.dayName === dayName && h.slotKey === slot.key)
+        return cell ? `${cell.occupancyPct}%` : '0%'
+      })
+      return [slot.label, ...dayValues]
+    })
+    printCleanPdfReport({
+      title: 'Reporte de Ocupación y Demanda',
+      subtitle: 'Club Pádel Central - Mapa de Ocupación Semanal',
+      headers,
+      rows,
+      summaryKpis: [
+        { label: 'Ocupación Promedio', value: `${data.weeklyAverageOccupancy}%` },
+        { label: 'Horario Pico', value: data.peakSlot },
+        { label: 'Horarios Muertos', value: `${data.deadHoursCount} franjas` }
+      ]
+    })
   }
 
   const getCellColor = (pct: number) => {
@@ -96,6 +151,28 @@ export default function ReportesPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={loading || !data}
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Excel / CSV</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handlePrintPdf}
+            disabled={loading || !data}
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+          >
+            <Printer className="w-3.5 h-3.5 text-blue-400" />
+            <span>Imprimir / PDF</span>
+          </Button>
+
           <Button
             size="sm"
             variant="outline"
@@ -223,7 +300,7 @@ export default function ReportesPage() {
                       <div className="text-[10px] text-slate-500">{slot.range}</div>
                     </div>
 
-                    {DAYS_HEADER.map((dayName, dayIndex) => {
+                    {DAYS_HEADER.map((dayName) => {
                       // Buscar celda en heatmap
                       const cell = data.heatmap.find(
                         (h) => h.dayName === dayName && h.slotKey === slot.key

@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Mercado Pago Marketplace (OAuth Connect y Split de Comisiones)
 // ==============================================================================
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export interface MpMarketplaceStatus {
@@ -44,7 +44,7 @@ export async function getTenantMpMarketplaceStatus(tenantId: string): Promise<Mp
     if (error || !tenant) {
       return {
         isConnected: false,
-        feePct: 5,
+        feePct: 0,
       }
     }
 
@@ -52,13 +52,13 @@ export async function getTenantMpMarketplaceStatus(tenantId: string): Promise<Mp
       isConnected: Boolean(tenant.mp_access_token && tenant.mp_collector_id),
       collectorId: tenant.mp_collector_id,
       connectedAt: tenant.mp_connected_at,
-      feePct: Number(tenant.mp_marketplace_fee_pct ?? 5),
+      feePct: Number(tenant.mp_marketplace_fee_pct ?? 0),
     }
   } catch (err) {
     console.error('[getTenantMpMarketplaceStatus] Error:', err)
     return {
       isConnected: false,
-      feePct: 5,
+      feePct: 0,
     }
   }
 }
@@ -103,7 +103,7 @@ export async function simulateMpConnectionForDemo(tenantId: string): Promise<{ s
         mp_access_token: demoToken,
         mp_collector_id: demoCollectorId,
         mp_connected_at: new Date().toISOString(),
-        mp_marketplace_fee_pct: 5,
+        mp_marketplace_fee_pct: 0,
       })
       .eq('id', tenantId)
 

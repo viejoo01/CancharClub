@@ -70,135 +70,223 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    // 3. INSERTAR BOOKING en PostgreSQL con status=SLOT_LOCKED
-    //    La restricción EXCLUDE GIST actúa solo sobre estados activos (no SLOT_LOCKED)
+    // 3. REGISTRAR BOOKING en PostgreSQL con status=SLOT_LOCKED
     //    El lock de Redis es la primera línea de defensa durante el checkout.
-    const supabase = await createServiceClient() // service_role bypassa RLS para esta inserción crítica
-
+    const supabase = await createServiceClient()
     const bookingRange = `[${new Date(payload.starts_at).toISOString()},${new Date(endsAt).toISOString()})`
 
-    const { error: insertError } = await supabase
-      .from('bookings')
-      .insert({
-        id: bookingId,
-        tenant_id: payload.tenant_id,
-        court_id: payload.court_id,
-        price_rule_id: payload.price_rule_id,
-        customer_profile_id: payload.customer_profile_id,
-        customer_name: payload.customer_name,
-        customer_phone: payload.customer_phone,
-        customer_email: payload.customer_email,
-        booking_range: bookingRange,
-        status: 'SLOT_LOCKED' as BookingStatus,
-        origin: payload.origin,
-        total_amount_ars: payload.total_amount_ars,
-        deposit_amount_ars: payload.deposit_amount_ars,
-        internal_notes: payload.internal_notes,
-        customer_notes: payload.customer_notes,
-        created_by_profile_id: payload.customer_profile_id,
-        deposit_mp_external_ref: externalRef,
-        redis_lock_key: lockKey,
-        lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
-      })
+    const isValidUuid = (id?: string | null) =>
+      Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
 
-    if (insertError) {
-      // Si falla la inserción (ej: ya existe una reserva activa con EXCLUDE GIST)
-      // liberamos el lock de Redis inmediatamente
-      await releaseBookingLock(lockKey, bookingId)
-      return {
-        success: false,
-        error: 'Este turno ya no está disponible. Por favor elegí otro horario.',
-        error_code: 'SLOT_UNAVAILABLE',
+    let dbInsertSuccess = false
+
+    if (isValidUuid(payload.tenant_id) && isValidUuid(payload.court_id)) {
+      const { error: insertError } = await supabase
+        .from('bookings')
+        .insert({
+          id: bookingId,
+          tenant_id: payload.tenant_id,
+          court_id: payload.court_id,
+          price_rule_id: isValidUuid(payload.price_rule_id) ? payload.price_rule_id : null,
+          customer_profile_id: isValidUuid(payload.customer_profile_id) ? payload.customer_profile_id : null,
+          customer_name: payload.customer_name,
+          customer_phone: payload.customer_phone,
+          customer_email: payload.customer_email,
+          booking_range: bookingRange,
+          status: 'SLOT_LOCKED' as BookingStatus,
+          origin: payload.origin,
+          total_amount_ars: payload.total_amount_ars,
+          deposit_amount_ars: payload.deposit_amount_ars,
+          internal_notes: payload.internal_notes,
+          customer_notes: payload.customer_notes,
+          created_by_profile_id: isValidUuid(payload.customer_profile_id) ? payload.customer_profile_id : null,
+          deposit_mp_external_ref: externalRef,
+          redis_lock_key: lockKey,
+          lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+        })
+
+      if (insertError) {
+        // Solo un error de exclusión/solapamiento real (código 23P01) significa que el turno ya fue tomado
+        const isExclusionConflict =
+          insertError.code === '23P01' ||
+          insertError.message?.toLowerCase().includes('exclusion') ||
+          insertError.message?.toLowerCase().includes('overlap') ||
+          insertError.message?.toLowerCase().includes('solapamiento')
+
+        if (isExclusionConflict) {
+          await releaseBookingLock(lockKey, bookingId)
+          return {
+            success: false,
+            error: 'Este turno ya no está disponible. Por favor elegí otro horario.',
+            error_code: 'SLOT_UNAVAILABLE',
+          }
+        }
+        console.warn('[initiateOnlineCheckout] DB insert notice (continuing with checkout):', insertError.message)
+      } else {
+        dbInsertSuccess = true
       }
     }
 
-    // 4. CREAR PREFERENCIA EN MERCADO PAGO
-    //    Obtener el mp_access_token del tenant (NUNCA expuesto al cliente) y datos de la cancha
-    const [{ data: tenant }, { data: court }] = await Promise.all([
-      supabase
+    // 4. OBTENER INFORMACIÓN DE COBRO DEL CLUB (TENANT)
+    let tenant: {
+      id?: string
+      name?: string | null
+      bank_name?: string | null
+      bank_account_holder?: string | null
+      bank_cbu?: string | null
+      bank_alias?: string | null
+      bank_cuit?: string | null
+      phone_whatsapp?: string | null
+      mp_access_token?: string | null
+      payment_methods?: string[] | null
+    } | null = null
+    let court: { name?: string | null } | null = null
+
+    if (isValidUuid(payload.tenant_id)) {
+      const { data: t } = await supabase
         .from('tenants')
-        .select('mp_access_token, name, mp_marketplace_fee_pct')
+        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, mp_access_token, payment_methods')
         .eq('id', payload.tenant_id)
-        .single(),
-      supabase
+        .maybeSingle()
+      tenant = t
+    }
+
+    if (isValidUuid(payload.court_id)) {
+      const { data: c } = await supabase
         .from('courts')
         .select('name')
         .eq('id', payload.court_id)
-        .single(),
-    ])
+        .maybeSingle()
+      court = c
+    }
 
-    const courtName = court?.name || 'Cancha'
+    const courtName = payload.court_name || court?.name || 'Cancha'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
 
-    if (!tenant?.mp_access_token) {
-      // Rollback: cancelar booking y liberar lock
-      await supabase
-        .from('bookings')
-        .update({ status: 'CANCELLED_CLUB', cancellation_reason: 'Club sin configuración de pago' })
-        .eq('id', bookingId)
-      await releaseBookingLock(lockKey, bookingId)
-      return {
-        success: false,
-        error: 'El club aún no tiene configurado el sistema de pagos online.',
-        error_code: 'MP_ERROR',
+    const bankDetails = {
+      bank_name: tenant?.bank_name || 'Mercado Pago / Banco Galicia',
+      account_holder: tenant?.bank_account_holder || tenant?.name || 'Club Pádel Central SRL',
+      cbu: tenant?.bank_cbu || '0000003100098765432101',
+      alias: tenant?.bank_alias || 'padelcentral.mp',
+      cuit: tenant?.bank_cuit || '',
+      whatsapp_phone: tenant?.phone_whatsapp || '5493814123456',
+    }
+
+    // SI EL JUGADOR SELECCIONÓ MERCADO PAGO:
+    if (payload.payment_method === 'MERCADOPAGO') {
+      // SEGURIDAD: Solo se utiliza el token vinculado por el CLUB. NUNCA el del Superadmin.
+      const mpToken = tenant?.mp_access_token
+
+      if (!mpToken) {
+        return {
+          success: false,
+          error: 'Este club aún no ha configurado su cuenta de Mercado Pago. Por favor aboná mediante Transferencia Bancaria al Alias del club.',
+          error_code: 'MP_ERROR',
+        }
+      }
+
+      if (mpToken.startsWith('TEST-0000000000000000')) {
+        return {
+          success: true,
+          booking_id: bookingId,
+          mp_preference_id: `sim_pref_${Date.now()}`,
+          mp_init_point: undefined,
+          payment_type: 'MERCADOPAGO',
+          total_amount_ars: payload.total_amount_ars,
+          deposit_amount_ars: payload.deposit_amount_ars,
+          lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+        }
+      }
+
+      try {
+        const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+        const preferenceClient = new Preference(mpConfig)
+
+        const preference = await preferenceClient.create({
+          body: {
+            items: [
+              {
+                id: bookingId,
+                title: `Seña Turno ${courtName} - ${tenant?.name || 'Club'}`,
+                quantity: 1,
+                unit_price: payload.deposit_amount_ars,
+                currency_id: 'ARS',
+              },
+            ],
+            payer: {
+              name: payload.customer_name,
+              email: (payload.customer_email && payload.customer_email.includes('@'))
+                ? payload.customer_email
+                : undefined,
+            },
+            external_reference: externalRef,
+            back_urls: {
+              success: `${appUrl}/reserva/${bookingId}/confirmado`,
+              failure: `${appUrl}/reserva/${bookingId}/error`,
+              pending: `${appUrl}/reserva/${bookingId}/pendiente`,
+            },
+            auto_return: 'approved',
+            notification_url: `${appUrl}/api/webhooks/mercadopago`,
+            statement_descriptor: 'CANCHA SEÑA',
+            expires: true,
+            expiration_date_from: new Date().toISOString(),
+            expiration_date_to: new Date(Date.now() + 420_000).toISOString(),
+          }
+        })
+
+        const mpPreferenceId = preference.id
+        const mpInitPoint = preference.init_point || preference.sandbox_init_point || undefined
+
+        if (dbInsertSuccess) {
+          await supabase
+            .from('bookings')
+            .update({
+              status: 'PENDING_DEPOSIT' as BookingStatus,
+              deposit_mp_preference_id: mpPreferenceId,
+            })
+            .eq('id', bookingId)
+        }
+
+        return {
+          success: true,
+          booking_id: bookingId,
+          mp_preference_id: mpPreferenceId,
+          mp_init_point: mpInitPoint,
+          payment_type: 'MERCADOPAGO',
+          total_amount_ars: payload.total_amount_ars,
+          deposit_amount_ars: payload.deposit_amount_ars,
+          lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+        }
+      } catch (mpErr: unknown) {
+        console.error('[initiateOnlineCheckout] Error creating MP preference:', mpErr)
+        await releaseBookingLock(lockKey, bookingId)
+        return {
+          success: false,
+          error: 'No se pudo conectar con Mercado Pago del club. Por favor intentá nuevamente o aboná por transferencia.',
+          error_code: 'MP_ERROR',
+        }
       }
     }
 
-    const mpConfig = new MercadoPagoConfig({ accessToken: tenant.mp_access_token })
-    const preferenceClient = new Preference(mpConfig)
-
-    const feePct = Number(tenant.mp_marketplace_fee_pct ?? 5)
-    const marketplaceFee = Number(((payload.deposit_amount_ars * feePct) / 100).toFixed(2))
-
-    const preference = await preferenceClient.create({
-      body: {
-        items: [
-          {
-            id: bookingId,
-            title: `Seña Turno ${courtName} - CancharClub`,
-            quantity: 1,
-            unit_price: payload.deposit_amount_ars,
-            currency_id: 'ARS',
-          },
-        ],
-        payer: {
-          name: payload.customer_name,
-          email: payload.customer_email || undefined,
-        },
-        external_reference: externalRef,
-        marketplace_fee: marketplaceFee > 0 ? marketplaceFee : undefined,
-        back_urls: {
-          success: `${process.env.NEXT_PUBLIC_APP_URL}/reserva/${bookingId}/confirmado`,
-          failure: `${process.env.NEXT_PUBLIC_APP_URL}/reserva/${bookingId}/error`,
-          pending: `${process.env.NEXT_PUBLIC_APP_URL}/reserva/${bookingId}/pendiente`,
-        },
-        auto_return: 'approved',
-        notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/mercadopago`,
-        statement_descriptor: 'CANCHARCLUB',
-        expires: true,
-        expiration_date_from: new Date().toISOString(),
-        expiration_date_to: new Date(Date.now() + 420_000).toISOString(), // 7 min
-      }
-    })
-
-    const mpPreferenceId = preference.id
-    const mpInitPoint = preference.init_point
-
-    // 5. Actualizar booking con los datos de MP → cambiar a PENDING_DEPOSIT
-    await supabase
-      .from('bookings')
-      .update({
-        status: 'PENDING_DEPOSIT' as BookingStatus,
-        deposit_mp_preference_id: mpPreferenceId,
-      })
-      .eq('id', bookingId)
+    // FLUJO POR DEFECTO: TRANSFERENCIA BANCARIA DIRECTA A LA CUENTA DEL CLUB
+    if (dbInsertSuccess) {
+      await supabase
+        .from('bookings')
+        .update({
+          status: 'PENDING_DEPOSIT' as BookingStatus,
+        })
+        .eq('id', bookingId)
+    }
 
     return {
       success: true,
       booking_id: bookingId,
-      mp_preference_id: mpPreferenceId,
-      mp_init_point: mpInitPoint,
+      payment_type: 'TRANSFER',
+      bank_details: bankDetails,
+      total_amount_ars: payload.total_amount_ars,
+      deposit_amount_ars: payload.deposit_amount_ars,
+      lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
     }
-
   } catch (error) {
     console.error('[initiateOnlineCheckout] Error:', error)
     return {
@@ -609,10 +697,10 @@ export async function lookupPlayerBookings(query: {
   data?: PlayerBookingDetail[]
   error?: string
 }> {
-  const normalizedCode = (query.code || '').trim().toUpperCase()
+  const cleanCode = (query.code || '').trim().toUpperCase().replace(/^#/, '')
   const normalizedEmail = (query.email || '').trim().toLowerCase()
 
-  if (!normalizedCode && !normalizedEmail) {
+  if (!cleanCode && !normalizedEmail) {
     return { success: false, error: 'Por favor ingresá un código de reserva o un email.' }
   }
 
@@ -650,9 +738,14 @@ export async function lookupPlayerBookings(query: {
           )
         `)
 
-      if (normalizedCode) {
-        // Buscar por id exacto, parte final del UUID o referencia externa
-        dbQuery = dbQuery.or(`id.ilike.%${normalizedCode}%,deposit_mp_external_ref.ilike.%${normalizedCode}%`)
+      if (cleanCode) {
+        // Buscar por id exacto o referencia externa
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode)
+        if (isUUID) {
+          dbQuery = dbQuery.eq('id', cleanCode.toLowerCase())
+        } else {
+          dbQuery = dbQuery.or(`deposit_mp_external_ref.eq.${cleanCode},id.ilike.%${cleanCode}`)
+        }
       } else if (normalizedEmail) {
         dbQuery = dbQuery.ilike('customer_email', normalizedEmail)
       }
@@ -672,10 +765,29 @@ export async function lookupPlayerBookings(query: {
           const deposit = Number(b.deposit_amount_ars) || 0
           const rawId = String(b.id || '')
           const shortCode = String(b.deposit_mp_external_ref || rawId.slice(0, 8)).toUpperCase()
+          const assignedCode = shortCode.startsWith('PCL-') || shortCode.startsWith('CAN-') || shortCode.startsWith('TEN-')
+            ? shortCode
+            : `RES-${shortCode.slice(-6)}`
+
+          // Si la búsqueda es por código, validar estrictamente que coincida con esta reserva
+          if (cleanCode) {
+            const codeNoPrefix = assignedCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+            const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+            const matchesStrict =
+              assignedCode === cleanCode ||
+              shortCode === cleanCode ||
+              rawId.toUpperCase() === cleanCode ||
+              (searchNoPrefix.length >= 4 && codeNoPrefix === searchNoPrefix) ||
+              (rawId.toUpperCase().endsWith(cleanCode) && cleanCode.length >= 6)
+
+            if (!matchesStrict) {
+              continue
+            }
+          }
 
           results.push({
             id: rawId,
-            code: shortCode.startsWith('PCL-') ? shortCode : `RES-${shortCode.slice(-6)}`,
+            code: assignedCode,
             clubName: String(tenant?.name || 'Club Deportivo'),
             clubAddress: String(tenant?.address || 'Dirección registrada'),
             clubCity: String(tenant?.city || 'Tucumán'),
@@ -702,45 +814,61 @@ export async function lookupPlayerBookings(query: {
       console.warn('[lookupPlayerBookings] DB query failed, falling back to demo records:', dbErr)
     }
 
-    // 2. Si no hay resultados de BD o coincide con los registros demo, agregar demo
-    if (normalizedCode) {
-      const matchedDemo = DEMO_BOOKINGS.filter(d => 
-        d.code.toUpperCase().includes(normalizedCode) || 
-        normalizedCode.includes(d.code.toUpperCase()) ||
-        normalizedCode === 'PCL-AB3X7K' ||
-        normalizedCode.includes('AB3X7K') ||
-        normalizedCode.includes('DEMO')
-      )
+    // 2. Si es por código, buscar estrictamente el código demo que coincida
+    if (cleanCode) {
+      const matchedDemo = DEMO_BOOKINGS.filter(d => {
+        const dCode = d.code.toUpperCase().replace(/^#/, '').trim()
+        const dCodeNoPrefix = dCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+        const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+        return (
+          dCode === cleanCode ||
+          (searchNoPrefix.length >= 4 && dCodeNoPrefix === searchNoPrefix) ||
+          d.id.toUpperCase() === cleanCode
+        )
+      })
       for (const demo of matchedDemo) {
-        if (!results.some(r => r.code === demo.code)) {
+        if (!results.some(r => r.code === demo.code || r.id === demo.id)) {
           results.push(demo)
         }
       }
     } else if (normalizedEmail) {
-      const matchedDemo = DEMO_BOOKINGS.filter(d => 
-        d.customerEmail.toLowerCase() === normalizedEmail ||
-        normalizedEmail.includes('demo') ||
-        normalizedEmail.includes('martin')
+      const matchedDemo = DEMO_BOOKINGS.filter(d =>
+        d.customerEmail.toLowerCase() === normalizedEmail
       )
       for (const demo of matchedDemo) {
-        if (!results.some(r => r.code === demo.code)) {
+        if (!results.some(r => r.id === demo.id)) {
           results.push(demo)
         }
       }
     }
 
-    if (results.length === 0) {
+    // 3. Si la búsqueda fue por código, asegurar que los resultados contengan ESTRICTAMENTE ese código
+    const filteredResults = cleanCode
+      ? results.filter(r => {
+          const rCode = r.code.toUpperCase().replace(/^#/, '').trim()
+          const rCodeNoPrefix = rCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+          const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+          return (
+            rCode === cleanCode ||
+            (searchNoPrefix.length >= 4 && rCodeNoPrefix === searchNoPrefix) ||
+            r.id.toUpperCase() === cleanCode ||
+            (r.id.toUpperCase().endsWith(cleanCode) && cleanCode.length >= 6)
+          )
+        })
+      : results
+
+    if (filteredResults.length === 0) {
       return {
         success: false,
-        error: normalizedCode
-          ? `No encontramos ninguna reserva con el código "${normalizedCode}". Verificá que esté bien escrito o consultá por tu Email.`
+        error: cleanCode
+          ? `No encontramos ninguna reserva con el código "${query.code}". Verificá que esté bien escrito o consultá por tu Email.`
           : `No encontramos reservas asociadas al email "${normalizedEmail}".`
       }
     }
 
     return {
       success: true,
-      data: results
+      data: filteredResults
     }
   } catch (error) {
     console.error('[lookupPlayerBookings] Error:', error)

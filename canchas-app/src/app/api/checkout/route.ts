@@ -144,7 +144,8 @@ export async function POST(req: NextRequest) {
       const itemTitle = `Seña Turno ${payload.court_name} - CancharClub`
       const externalRef = `cancharclub_booking_${payload.booking_id}`
 
-      const tenantToken = tenant?.mp_access_token || process.env.MP_ACCESS_TOKEN
+      // Seguridad: Solo usar el token del club (NUNCA el del Superadmin)
+      const tenantToken = tenant?.mp_access_token
 
       if (!tenantToken || tenantToken.includes('MOCK') || tenantToken.length < 10) {
         const simulatedUrl = `${baseUrl}/reserva/${payload.booking_id}/confirmado?simulated=true`

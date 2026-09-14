@@ -25,7 +25,8 @@ import {
   LogIn,
   Eye,
   EyeOff,
-  Smartphone
+  Smartphone,
+  CreditCard
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,8 +41,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS } from '@/lib/utils'
+import { formatARS, setClientCookie } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
+import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
+import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -61,8 +64,22 @@ export interface ClubUser {
 export default function SuperadminPage() {
   const [activeTab, setActiveTab] = useState<'BILLING' | 'TENANTS' | 'USERS'>('USERS')
 
-  // Listado de clubes con sus parámetros para la fórmula proporcional
-  const [tenants, setTenants] = useState([
+  // Listado de clubes con sus parámetros para la fórmula proporcional y plan asignado
+  const [tenants, setTenants] = useState<Array<{
+    id: string
+    name: string
+    slug: string
+    city: string
+    active_courts: number
+    highest_slot_price: number
+    total_bookings: number
+    mp_connected: boolean
+    status: string
+    subscription_status: 'AL_DIA' | 'PENDIENTE'
+    last_paid: string | null
+    plan_id: SaaSPlanId
+    is_active: boolean
+  }>>([
     {
       id: 't1',
       name: 'Club Pádel Central',
@@ -73,8 +90,10 @@ export default function SuperadminPage() {
       total_bookings: 342,
       mp_connected: true,
       status: 'ACTIVE',
-      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      subscription_status: 'AL_DIA',
       last_paid: '2026-08-31',
+      plan_id: 'MEDIANO_2',
+      is_active: true,
     },
     {
       id: 't2',
@@ -86,8 +105,10 @@ export default function SuperadminPage() {
       total_bookings: 512,
       mp_connected: true,
       status: 'ACTIVE',
-      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      subscription_status: 'AL_DIA',
       last_paid: '2026-08-30',
+      plan_id: 'GRANDE_5_PLUS',
+      is_active: true,
     },
     {
       id: 't3',
@@ -99,8 +120,10 @@ export default function SuperadminPage() {
       total_bookings: 189,
       mp_connected: false,
       status: 'ACTIVE',
-      subscription_status: 'PENDIENTE' as 'AL_DIA' | 'PENDIENTE',
+      subscription_status: 'PENDIENTE',
       last_paid: null,
+      plan_id: 'CONSOLIDADO_3_4',
+      is_active: true,
     },
     {
       id: 't4',
@@ -112,8 +135,10 @@ export default function SuperadminPage() {
       total_bookings: 120,
       mp_connected: true,
       status: 'ACTIVE',
-      subscription_status: 'AL_DIA' as 'AL_DIA' | 'PENDIENTE',
+      subscription_status: 'AL_DIA',
       last_paid: '2026-08-28',
+      plan_id: 'CHICO_1',
+      is_active: true,
     }
   ])
 
@@ -123,6 +148,7 @@ export default function SuperadminPage() {
   const [newCity, setNewCity] = useState('San Miguel de Tucumán')
   const [newCourts, setNewCourts] = useState('2')
   const [newMaxPrice, setNewMaxPrice] = useState('30000')
+  const [newPlanId, setNewPlanId] = useState<SaaSPlanId>('MEDIANO_2')
 
   // Estado para modal de edición de club
   const [editingTenant, setEditingTenant] = useState<{
@@ -135,13 +161,22 @@ export default function SuperadminPage() {
     status: string
     subscription_status: 'AL_DIA' | 'PENDIENTE'
     mp_connected: boolean
+    plan_id: SaaSPlanId
+    is_active: boolean
   } | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
-  // Cálculos SaaS basados en la fórmula
+  // Cálculos SaaS basados en la fórmula y plan asignado
   const tenantsWithPricing = tenants.map(t => {
     const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price)
-    return { ...t, pricing }
+    return { 
+      ...t, 
+      pricing: {
+        ...pricing,
+        planId: t.plan_id || pricing.planId,
+        planName: (t.plan_id ? SAAS_PLANS[t.plan_id]?.name : null) || pricing.planName
+      } 
+    }
   })
 
   const totalMRR = tenantsWithPricing.reduce((acc, t) => acc + t.pricing.monthlyFeeArs, 0)
@@ -181,25 +216,28 @@ export default function SuperadminPage() {
     if (!newClubName.trim()) return
 
     const slug = newClubName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const courtsNum = Number(newCourts) || 2
     const created = {
       id: `t-${Date.now()}`,
       name: newClubName,
       slug,
       city: newCity,
-      active_courts: Number(newCourts) || 2,
+      active_courts: courtsNum,
       highest_slot_price: Number(newMaxPrice) || 30000,
       total_bookings: 0,
       mp_connected: false,
       status: 'ACTIVE',
       subscription_status: 'PENDIENTE' as const,
       last_paid: null,
+      plan_id: newPlanId || getPlanByCourtsCount(courtsNum).id,
+      is_active: true,
     }
 
     setTenants(prev => [...prev, created])
     setIsModalOpen(false)
     setNewClubName('')
     toast.success(`Club "${newClubName}" creado exitosamente`, {
-      description: `Fórmula SaaS: ${calculateSaaSMultiplier(created.active_courts)} turnos ($${(created.highest_slot_price * calculateSaaSMultiplier(created.active_courts)).toLocaleString('es-AR')}/mes).`
+      description: `Plan: ${SAAS_PLANS[created.plan_id]?.name || created.plan_id}. Fórmula: ${calculateSaaSMultiplier(created.active_courts)} turnos ($${(created.highest_slot_price * calculateSaaSMultiplier(created.active_courts)).toLocaleString('es-AR')}/mes).`
     })
   }
 
@@ -214,11 +252,13 @@ export default function SuperadminPage() {
       status: t.status,
       subscription_status: t.subscription_status,
       mp_connected: t.mp_connected,
+      plan_id: t.plan_id || getPlanByCourtsCount(t.active_courts).id,
+      is_active: t.is_active !== false,
     })
     setIsEditModalOpen(true)
   }
 
-  const handleUpdateTenant = (e: React.FormEvent) => {
+  const handleUpdateTenant = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingTenant || !editingTenant.name.trim()) return
 
@@ -238,17 +278,36 @@ export default function SuperadminPage() {
           status: editingTenant.status,
           subscription_status: editingTenant.subscription_status,
           mp_connected: editingTenant.mp_connected,
+          plan_id: editingTenant.plan_id,
+          is_active: editingTenant.is_active,
         }
       }
       return t
     }))
 
+    try {
+      const supabase = createClient()
+      await supabase
+        .from('tenants')
+        .update({
+          name: editingTenant.name,
+          slug: sanitizedSlug || editingTenant.slug,
+          city: editingTenant.city,
+          plan_id: editingTenant.plan_id,
+          is_active: editingTenant.is_active,
+        })
+        .eq('id', editingTenant.id)
+    } catch {
+      // Ignorar en modo local/demo
+    }
+
     setIsEditModalOpen(false)
+    const planDef = SAAS_PLANS[editingTenant.plan_id]
     const newMultiplier = calculateSaaSMultiplier(activeCourts)
     const newFee = highestPrice * newMultiplier
 
     toast.success(`Club "${editingTenant.name}" actualizado con éxito`, {
-      description: `Nueva tarifa SaaS: ${newMultiplier}x turnos (${formatARS(newFee)}/mes).`
+      description: `Plan: ${planDef?.name || editingTenant.plan_id} (${editingTenant.is_active ? 'Habilitado' : 'Bloqueado/Pendiente'}). Tarifa: ${formatARS(newFee)}/mes.`
     })
   }
 
@@ -382,6 +441,7 @@ export default function SuperadminPage() {
   const [wizardCity, setWizardCity] = useState('San Miguel de Tucumán')
   const [wizardCourts, setWizardCourts] = useState('2')
   const [wizardMaxPrice, setWizardMaxPrice] = useState('30000')
+  const [wizardPlanId, setWizardPlanId] = useState<SaaSPlanId>('MEDIANO_2')
 
   const [wizardOwnerName, setWizardOwnerName] = useState('')
   const [wizardOwnerEmail, setWizardOwnerEmail] = useState('')
@@ -433,14 +493,32 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }
 
   const handleLoginAsUser = (user: ClubUser) => {
-    document.cookie = `demo_user_role=${user.role}; path=/; max-age=86400`
-    document.cookie = `demo_user_name=${encodeURIComponent(user.name)}; path=/; max-age=86400`
-    document.cookie = `demo_tenant_name=${encodeURIComponent(user.tenantName)}; path=/; max-age=86400`
-    document.cookie = `demo_tenant_slug=${encodeURIComponent(user.tenantSlug)}; path=/; max-age=86400`
+    const assignedTenant = tenants.find(t => t.id === user.tenantId || t.slug === user.tenantSlug)
+    setClientCookie('demo_user_role', user.role)
+    setClientCookie('demo_user_name', encodeURIComponent(user.name))
+    setClientCookie('demo_tenant_name', encodeURIComponent(user.tenantName))
+    setClientCookie('demo_tenant_slug', encodeURIComponent(user.tenantSlug))
+    if (assignedTenant) {
+      setClientCookie('demo_plan_id', assignedTenant.plan_id)
+      setClientCookie('demo_is_active', assignedTenant.is_active !== false ? 'true' : 'false')
+    }
     toast.success(`Iniciando sesión como ${user.name}`, {
-      description: `Rol: ${user.role === 'TENANT_ADMIN' ? 'Dueño del Club' : 'Canchero (Turnos y Cantina)'}`
+      description: `Rol: ${user.role === 'TENANT_ADMIN' ? 'Dueño del Club' : 'Canchero (Turnos y Caja)'}`
     })
-    window.location.href = '/dashboard'
+    window.location.assign('/dashboard')
+  }
+
+  const handleSimulateClub = (t: typeof tenants[0], role: 'TENANT_ADMIN' | 'TENANT_STAFF' = 'TENANT_ADMIN') => {
+    setClientCookie('demo_user_role', role)
+    setClientCookie('demo_user_name', encodeURIComponent(role === 'TENANT_ADMIN' ? 'Dueño ' + t.name : 'Canchero ' + t.name))
+    setClientCookie('demo_tenant_name', encodeURIComponent(t.name))
+    setClientCookie('demo_tenant_slug', encodeURIComponent(t.slug))
+    setClientCookie('demo_plan_id', t.plan_id)
+    setClientCookie('demo_is_active', t.is_active !== false ? 'true' : 'false')
+    toast.success(`Ingresando a ${t.name}`, {
+      description: `Modo: ${role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'} | Plan: ${SAAS_PLANS[t.plan_id]?.name || t.plan_id} (${t.is_active !== false ? 'Activo' : 'Pendiente'})`
+    })
+    window.location.assign('/dashboard')
   }
 
   const handleToggleUserStatus = (userId: string) => {
@@ -481,7 +559,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     setNewUserName('')
     setNewUserEmail('')
     setNewUserPhone('')
-    setNewUserPassword('club2026')
+    setNewUserPassword('')
 
     toast.success(`Usuario "${newUser.name}" creado con éxito`, {
       description: `Asignado a ${newUser.tenantName} como ${newUser.role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'}.`
@@ -540,6 +618,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       status: 'ACTIVE',
       subscription_status: 'PENDIENTE' as const,
       last_paid: null,
+      plan_id: getPlanByCourtsCount(activeCourts).id,
+      is_active: true,
     }
 
     const createdOwner: ClubUser = {
@@ -591,6 +671,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     setWizardStaffName('')
     setWizardStaffEmail('')
     setWizardStaffPhone('')
+    setWizardPlanId('MEDIANO_2')
 
     toast.success(`¡Club "${createdTenant.name}", Dueño y Canchero creados!`, {
       description: 'Ya podés copiar los accesos para enviar por WhatsApp.'
@@ -623,36 +704,38 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             <ShieldCheck className="w-4 h-4" />
             Panel Superadministrador SaaS
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Gestión de Clubes, Dueños y Cancheros
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Administrá predios inquilinos, asigná accesos independientes a dueños y cancheros, y controlá la facturación mensual.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <Button
             onClick={() => setIsQuickWizardModalOpen(true)}
-            className="bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-900/30 rounded-xl text-xs font-bold px-3.5 py-2"
+            className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-900/30 rounded-xl text-xs font-bold px-3.5 py-2 cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 mr-1.5 text-yellow-300" />
-            ⚡ Alta Rápida de Club Completo
+            <Sparkles className="w-4 h-4 mr-1.5 text-yellow-300 shrink-0" />
+            <span>⚡ Alta Rápida Completa</span>
           </Button>
-          <Button 
-            onClick={() => setIsCreateUserModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 rounded-xl text-xs font-semibold px-3 py-2"
-          >
-            <UserPlus className="w-4 h-4 mr-1.5" />
-            Crear Usuario
-          </Button>
-          <Button 
-            onClick={() => setIsModalOpen(true)}
-            variant="outline"
-            className="border-slate-800 hover:border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white rounded-xl text-xs px-3 py-2"
-          >
-            <Plus className="w-4 h-4 mr-1.5 text-indigo-400" />
-            Registrar Club
-          </Button>
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+            <Button 
+              onClick={() => setIsCreateUserModalOpen(true)}
+              className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 rounded-xl text-xs font-semibold px-3 py-2 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4 mr-1.5 shrink-0" />
+              <span>Crear Usuario</span>
+            </Button>
+            <Button 
+              onClick={() => setIsModalOpen(true)}
+              variant="outline"
+              className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center border-slate-800 hover:border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white rounded-xl text-xs px-3 py-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 mr-1.5 text-indigo-400 shrink-0" />
+              <span>Nuevo Club</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -760,56 +843,59 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         </Card>
       </div>
 
-      {/* Tabs Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Tabs Switcher con scroll horizontal fluido y sin barra molesta */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1 -mx-3 px-3 sm:mx-0 sm:px-0 max-w-full">
           <button
             onClick={() => setActiveTab('USERS')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'USERS'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <Users className="w-4 h-4" />
-            Usuarios & Accesos (Dueños y Cancheros)
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Usuarios & Accesos (Dueños y Cancheros)</span>
+            <span className="sm:hidden">Usuarios</span>
             <Badge className="ml-1 bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
               {clubUsers.length}
             </Badge>
           </button>
           <button
             onClick={() => setActiveTab('BILLING')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'BILLING'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <Receipt className="w-4 h-4" />
-            Facturación y Cobros Mensuales SaaS
+            <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Facturación y Cobros Mensuales SaaS</span>
+            <span className="sm:hidden">Facturación</span>
           </button>
           <button
             onClick={() => setActiveTab('TENANTS')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'TENANTS'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <Building2 className="w-4 h-4" />
-            Directorio de Clubes y Portales
-            <Badge className="ml-1 bg-slate-800 text-slate-300 text-[10px] px-1.5 py-0 border border-slate-700">
+            <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Directorio de Clubes y Portales</span>
+            <span className="sm:hidden">Clubes ({tenants.length})</span>
+            <Badge className="ml-1 bg-slate-800 text-slate-300 text-[10px] px-1.5 py-0 border border-slate-700 hidden sm:inline-flex">
               {tenants.length}
             </Badge>
           </button>
         </div>
 
         {activeTab === 'USERS' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <Button
               size="sm"
               onClick={() => setIsCreateUserModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5 mr-1" />
               Crear Usuario
@@ -843,7 +929,108 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            {/* VISTA MÓVIL: Tarjetas de Facturación (<md) */}
+            <div className="md:hidden divide-y divide-slate-800/80 p-3 space-y-3">
+              {filteredTenants.length === 0 ? (
+                <div className="p-6 text-center text-slate-400">
+                  <p className="font-semibold text-slate-300">No se encontraron clubes.</p>
+                </div>
+              ) : (
+                filteredTenants.map((t) => (
+                  <div key={t.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-sm text-white">{t.name}</span>
+                          {t.pricing.planName && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              {t.pricing.planName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">{t.city}</div>
+                      </div>
+                      <div className="shrink-0">
+                        {t.subscription_status === 'AL_DIA' ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                            Al Día
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                            Pendiente
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Fila con métricas de la cuota */}
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Cuota Mensual</span>
+                        <span className="text-emerald-400 font-extrabold text-base font-mono">
+                          {formatARS(t.pricing.monthlyFeeArs)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {t.pricing.formulaDescription}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Canchas & Mult.</span>
+                        <span className="text-slate-200 font-medium">
+                          {t.active_courts} canchas • <strong className="text-indigo-400">{t.pricing.multiplier}x</strong>
+                        </span>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+                          Vence: {t.pricing.nextDueDate}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Botones de acción móvil */}
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEdit(t)}
+                        className="flex-1 h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl"
+                      >
+                        <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
+                        Editar
+                      </Button>
+
+                      {t.subscription_status === 'PENDIENTE' ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
+                            className="flex-1 h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl"
+                          >
+                            <Send className="w-3 h-3 mr-1" />
+                            Link
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
+                            className="flex-1 h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs"
+                          >
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Cobrar
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="flex-1 text-[11px] text-emerald-400/80 font-medium flex items-center justify-end gap-1 px-2">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Pagado {t.last_paid}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* VISTA DESKTOP: Tabla completa (>=md) */}
+            <div className="hidden md:block overflow-x-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -965,12 +1152,105 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            {/* VISTA MÓVIL: Tarjetas de Clubes (<md) */}
+            <div className="md:hidden divide-y divide-slate-800/80 p-3 space-y-3">
+              {filteredTenants.length === 0 ? (
+                <div className="p-6 text-center text-slate-400">
+                  <p className="font-semibold text-slate-300">No se encontraron clubes.</p>
+                </div>
+              ) : (
+                filteredTenants.map((t) => (
+                  <div key={t.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-sm text-white block">{t.name}</span>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">{t.city}</span>
+                      </div>
+                      <div className="shrink-0">
+                        {t.is_active !== false ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                            ✅ Habilitado
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                            ⏳ Pendiente
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Plan Contratado</span>
+                        <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[11px] font-medium mt-1">
+                          {SAAS_PLANS[t.plan_id]?.name || t.plan_id}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Mercado Pago</span>
+                        <div className="mt-1">
+                          {t.mp_connected ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                              Conectado
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px]">
+                              Sin Configurar
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-span-2 pt-1 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Portal Público:</span>
+                        <span className="font-mono text-indigo-400">/club/{t.slug}</span>
+                      </div>
+                    </div>
+
+                    {/* Botones de acción móvil */}
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSimulateClub(t, 'TENANT_ADMIN')}
+                        className="flex-1 h-8 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white rounded-xl gap-1"
+                      >
+                        <LogIn className="w-3 h-3" />
+                        <span>Panel Club</span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEdit(t)}
+                        className="flex-1 h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl gap-1"
+                      >
+                        <Pencil className="w-3 h-3 text-indigo-400" />
+                        <span>Editar</span>
+                      </Button>
+
+                      <Link 
+                        href={`/club/${t.slug}`} 
+                        target="_blank"
+                        className="h-8 px-3 text-xs text-indigo-300 hover:text-white font-medium bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl inline-flex items-center gap-1"
+                      >
+                        <span>Ver</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* VISTA DESKTOP: Tabla completa (>=md) */}
+            <div className="hidden md:block overflow-x-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                     <th className="p-4 pl-6">Club</th>
                     <th className="p-4">Ubicación</th>
+                    <th className="p-4 text-center">Plan Contratado</th>
+                    <th className="p-4 text-center">Estado Acceso</th>
                     <th className="p-4">Slug / Portal</th>
                     <th className="p-4 text-center">Mercado Pago</th>
                     <th className="p-4 pr-6 text-right">Acciones</th>
@@ -984,6 +1264,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 text-slate-400">
                         {t.city}
+                      </td>
+                      <td className="p-4 text-center">
+                        <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-[11px] font-medium">
+                          {SAAS_PLANS[t.plan_id]?.name || t.plan_id}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-center">
+                        {t.is_active !== false ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                            ✅ Habilitado
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                            ⏳ Pendiente
+                          </Badge>
+                        )}
                       </td>
                       <td className="p-4 font-mono text-indigo-400">
                         /club/{t.slug}
@@ -1000,13 +1296,23 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         )}
                       </td>
                       <td className="p-4 pr-6 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSimulateClub(t, 'TENANT_ADMIN')}
+                            className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg"
+                            title="Ingresar directamente al panel de este club con su plan asignado"
+                          >
+                            <LogIn className="w-3 h-3 mr-1" />
+                            Panel Club
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => handleOpenEdit(t)}
                             className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5"
-                            title="Editar parámetros del club"
+                            title="Editar parámetros del club y plan SaaS"
                           >
                             <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
                             Editar
@@ -1016,7 +1322,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             target="_blank"
                             className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium px-2 py-1 rounded-lg hover:bg-indigo-950/40"
                           >
-                            Ver Portal <ExternalLink className="w-3.5 h-3.5" />
+                            Portal <ExternalLink className="w-3 h-3" />
                           </Link>
                         </div>
                       </td>
@@ -1129,7 +1435,167 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             </CardHeader>
 
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/* VISTA MÓVIL: Tarjetas de Usuarios (<md) */}
+              <div className="md:hidden divide-y divide-slate-800/80 p-3 space-y-3">
+                {filteredUsers.length === 0 ? (
+                  <div className="p-6 text-center text-slate-400">
+                    <p className="font-semibold text-slate-300">No se encontraron usuarios.</p>
+                  </div>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <div key={user.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                      {/* Header de la tarjeta */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                            user.role === 'TENANT_ADMIN'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm text-white flex items-center gap-1.5">
+                              {user.name}
+                              {user.role === 'TENANT_ADMIN' ? (
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              ) : (
+                                <Coffee className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-medium">
+                              {user.tenantName}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUserStatus(user.id)}
+                          className="cursor-pointer shrink-0"
+                          title="Click para cambiar estado"
+                        >
+                          {user.status === 'ACTIVE' ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
+                              Activo
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-400 text-[10px]">
+                              Inactivo
+                            </Badge>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Detalles: Rol, Email y Contraseña */}
+                      <div className="space-y-2 text-xs bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-500 uppercase font-bold">Rol:</span>
+                          {user.role === 'TENANT_ADMIN' ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] px-1.5 py-0">
+                              <ShieldCheck className="w-3 h-3 mr-1" />
+                              Dueño (Admin Total)
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0">
+                              <Coffee className="w-3 h-3 mr-1" />
+                              Canchero (Operativo)
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/50">
+                          <div>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Email</span>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-slate-200 font-mono text-[11px] truncate">{user.email}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(user.email)
+                                  toast.success('Email copiado al portapapeles')
+                                }}
+                                className="text-slate-500 hover:text-slate-300 shrink-0"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Contraseña</span>
+                            <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px] text-slate-300">
+                              <span>{revealedPasswords[user.id] ? user.password : '••••••••'}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePassword(user.id)}
+                                className="text-slate-500 hover:text-slate-300"
+                              >
+                                {revealedPasswords[user.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(user.password)
+                                  toast.success('Contraseña copiada al portapapeles')
+                                }}
+                                className="text-slate-500 hover:text-slate-300"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción móvil */}
+                      <div className="flex items-center justify-between gap-1.5 pt-1">
+                        <Button
+                          size="sm"
+                          onClick={() => handleCopyWhatsAppMessage(user)}
+                          className="flex-1 h-8 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium rounded-xl gap-1 shadow-xs"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleLoginAsUser(user)}
+                          className="flex-1 h-8 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white rounded-xl gap-1"
+                        >
+                          <LogIn className="w-3.5 h-3.5" />
+                          <span>Probar</span>
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenEditUser(user)}
+                          className="h-8 w-8 p-0 text-slate-400 hover:text-white rounded-xl"
+                          title="Editar usuario"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteUser(user.id, user.name)}
+                          className="h-8 w-8 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-xl"
+                          title="Eliminar usuario"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* VISTA DESKTOP: Tabla completa (>=md) */}
+              <div className="hidden md:block overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -1337,8 +1803,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Registrar Nuevo Club */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white">
               Dar de Alta Nuevo Club
             </DialogTitle>
@@ -1370,7 +1836,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-300">Cantidad de Canchas</Label>
                 <Input 
@@ -1379,7 +1845,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   max="50"
                   required
                   value={newCourts}
-                  onChange={(e) => setNewCourts(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setNewCourts(val)
+                    const count = Number(val) || 1
+                    setNewPlanId(getPlanByCourtsCount(count).id)
+                  }}
                   className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
                 />
               </div>
@@ -1397,6 +1868,24 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+                <span>Plan SaaS Inicial Asignado</span>
+                <span className="text-[10px] text-indigo-400 font-normal">Módulos permitidos</span>
+              </Label>
+              <select
+                value={newPlanId}
+                onChange={(e) => setNewPlanId(e.target.value as SaaSPlanId)}
+                className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+              >
+                {SAAS_PLANS_LIST.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.courtsLabel}) — {p.priceTurnosLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Vista Previa de la Cuota Calculada */}
             <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-xs">
               <div className="text-indigo-300 font-semibold mb-1">
@@ -1412,18 +1901,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </div>
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button 
                 type="button" 
                 variant="outline" 
                 onClick={() => setIsModalOpen(false)}
-                className="rounded-xl border-slate-800 text-xs"
+                className="rounded-xl border-slate-800 text-xs flex-1 sm:flex-initial"
               >
                 Cancelar
               </Button>
               <Button 
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs flex-1 sm:flex-initial"
               >
                 Registrar y Activar Club
               </Button>
@@ -1434,8 +1923,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Editar Club / Inquilino */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-xl bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
               <Pencil className="w-4 h-4 text-indigo-400" />
               Editar Parámetros del Club
@@ -1457,7 +1946,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Slug / URL (/club/...)</Label>
                   <Input 
@@ -1478,7 +1967,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Cantidad de Canchas (N)</Label>
                   <Input 
@@ -1505,7 +1994,60 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Asignación de Plan SaaS */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-indigo-300">
+                    <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
+                    Plan SaaS Asignado (Módulos visibles)
+                  </span>
+                  <span className="text-[10px] text-indigo-400 font-normal">Editable por Superadmin</span>
+                </Label>
+                <select
+                  value={editingTenant.plan_id}
+                  onChange={(e) => setEditingTenant({ ...editingTenant, plan_id: e.target.value as SaaSPlanId })}
+                  className="w-full h-9 rounded-xl border border-indigo-700/60 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                >
+                  {SAAS_PLANS_LIST.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.courtsLabel}) — {p.priceTurnosLabel}
+                    </option>
+                  ))}
+                </select>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] leading-relaxed">
+                  <div className="text-slate-400 font-semibold mb-0.5">Módulos habilitados para el club:</div>
+                  {editingTenant.plan_id === 'CHICO_1' && (
+                    <span className="text-emerald-400 font-medium">📅 Calendario, 💰 Caja Diaria, ⚙️ Canchas, 💵 Reglas Precios, 📋 Mi Plan SaaS. (Solo dueño, sin multiusuario ni cantina)</span>
+                  )}
+                  {editingTenant.plan_id === 'MEDIANO_2' && (
+                    <span className="text-emerald-400 font-medium">📅 Calendario, ☕ Cantina & Kiosco, 💰 Caja Diaria, ⚙️ Canchas, 💵 Reglas Precios, 📋 Mi Plan SaaS.</span>
+                  )}
+                  {editingTenant.plan_id === 'CONSOLIDADO_3_4' && (
+                    <span className="text-emerald-400 font-medium">📅 Calendario, 📅 Turnos Fijos (Abonados), ☕ Cantina & Kiosco, 💰 Caja, ⚡ Control Luces, 📊 Reportes Ocupación, ⚙️ Canchas, 💵 Precios.</span>
+                  )}
+                  {editingTenant.plan_id === 'GRANDE_5_PLUS' && (
+                    <span className="text-emerald-400 font-medium">🏆 Torneos y Cuadros, 📅 Turnos Fijos, ☕ Cantina, 💰 Caja, ⚡ Control Luces, 📊 Reportes Ocupación, ⚙️ Canchas + Módulos Ilimitados.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Estado de Activación y Acceso */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+                  <span>Habilitación y Acceso al Dashboard</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Control de activación</span>
+                </Label>
+                <select
+                  value={editingTenant.is_active ? 'true' : 'false'}
+                  onChange={(e) => setEditingTenant({ ...editingTenant, is_active: e.target.value === 'true' })}
+                  className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                >
+                  <option value="true">✅ Habilitado / Activo (Acceso completo según su plan)</option>
+                  <option value="false">⏳ Pendiente de Activación (Panel bloqueado con pantalla a WhatsApp)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Estado Suscripción</Label>
                   <select
@@ -1548,28 +2090,28 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between">
+              <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mt-2">
                 <Button 
                   type="button" 
                   variant="ghost" 
                   onClick={() => handleDeleteTenant(editingTenant.id, editingTenant.name)}
-                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs"
+                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-center sm:justify-start"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1" />
                   Eliminar Club
                 </Button>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 justify-end">
                   <Button 
                     type="button" 
                     variant="outline" 
                     onClick={() => setIsEditModalOpen(false)}
-                    className="rounded-xl border-slate-800 text-xs"
+                    className="rounded-xl border-slate-800 text-xs flex-1 sm:flex-initial"
                   >
                     Cancelar
                   </Button>
                   <Button 
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex-1 sm:flex-initial"
                   >
                     Guardar Cambios
                   </Button>
@@ -1582,8 +2124,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Crear Usuario Individual (Dueño o Canchero) */}
       <Dialog open={isCreateUserModalOpen} onOpenChange={setIsCreateUserModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-emerald-400" />
               Crear Usuario para Club
@@ -1613,7 +2155,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             {/* Selector de Rol interactivo */}
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-300">Rol y Nivel de Acceso</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setNewUserRole('TENANT_ADMIN')}
@@ -1674,7 +2216,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Email */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-300">Email de Acceso</Label>
@@ -1720,18 +2262,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               />
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button 
                 type="button" 
                 variant="outline" 
                 onClick={() => setIsCreateUserModalOpen(false)}
-                className="rounded-xl border-slate-800 text-xs"
+                className="rounded-xl border-slate-800 text-xs flex-1 sm:flex-initial"
               >
                 Cancelar
               </Button>
               <Button 
                 type="submit"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial"
               >
                 Crear Usuario y Generar Credenciales
               </Button>
@@ -1742,8 +2284,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Editar Usuario */}
       <Dialog open={isEditUserModalOpen} onOpenChange={setIsEditUserModalOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
               <Pencil className="w-4 h-4 text-indigo-400" />
               Editar Usuario
@@ -1765,7 +2307,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Email</Label>
                   <Input
@@ -1786,7 +2328,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Club Asignado</Label>
                   <select
@@ -1813,7 +2355,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300">Contraseña</Label>
                   <Input
@@ -1836,28 +2378,28 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <DialogFooter className="pt-2 flex items-center justify-between sm:justify-between">
+              <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mt-2">
                 <Button 
                   type="button" 
                   variant="ghost" 
                   onClick={() => handleDeleteUser(editingUser.id, editingUser.name)}
-                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs cursor-pointer"
+                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs cursor-pointer justify-center sm:justify-start"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1" />
                   Eliminar Usuario
                 </Button>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 justify-end">
                   <Button 
                     type="button" 
                     variant="outline" 
                     onClick={() => setIsEditUserModalOpen(false)}
-                    className="rounded-xl border-slate-800 text-xs"
+                    className="rounded-xl border-slate-800 text-xs flex-1 sm:flex-initial"
                   >
                     Cancelar
                   </Button>
                   <Button 
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial"
                   >
                     Guardar Cambios
                   </Button>
@@ -1931,128 +2473,179 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   />
                 </div>
               </div>
-              <div className="text-[11px] text-slate-400 bg-indigo-950/30 p-2 rounded-xl border border-indigo-900/30 flex items-center justify-between">
-                <span>Cuota SaaS calculada:</span>
-                <strong className="text-emerald-400 font-mono">
-                  {formatARS(Number(wizardMaxPrice || 0) * calculateSaaSMultiplier(Number(wizardCourts) || 1))}/mes
-                </strong>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+                  <span>Plan SaaS Inicial Asignado</span>
+                  <span className="text-[10px] text-indigo-400 font-normal">Auto-detectado según canchas</span>
+                </Label>
+                <select
+                  value={wizardPlanId}
+                  onChange={(e) => setWizardPlanId(e.target.value as SaaSPlanId)}
+                  className="w-full h-9 rounded-xl border border-slate-800 bg-slate-950 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                >
+                  {SAAS_PLANS_LIST.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.courtsLabel}) — {p.priceTurnosLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Vista previa cuota */}
+              <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-xs">
+                <div className="flex items-center justify-between text-indigo-300 font-semibold">
+                  <span>Cuota SaaS Proyectada:</span>
+                  <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/20 text-indigo-300 font-mono text-[11px]">
+                    {calculateSaaSMultiplier(Number(wizardCourts) || 1)}x turnos
+                  </Badge>
+                </div>
+                <div className="text-lg font-bold text-emerald-400 font-mono mt-0.5">
+                  {formatARS(
+                    Number(wizardMaxPrice) * calculateSaaSMultiplier(Number(wizardCourts) || 1)
+                  )} / mes
+                </div>
               </div>
             </div>
 
-            {/* 2. Usuario Dueño */}
-            <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-800/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+            {/* 2. Usuario Dueño del Club */}
+            <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-900/40 space-y-3">
+              <div className="flex items-center justify-between text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                <span className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4" />
-                  2. Usuario Dueño del Club (Admin Total)
-                </div>
+                  2. Credenciales del Dueño (Admin Total)
+                </span>
                 <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">TENANT_ADMIN</Badge>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Nombre del Dueño</Label>
-                  <Input
+                  <Label className="text-xs text-slate-300">Nombre Completo</Label>
+                  <Input 
                     required
-                    placeholder="Ej. Carlos Albarracín"
+                    placeholder="Ej. Carlos Dueño"
                     value={wizardOwnerName}
                     onChange={(e) => setWizardOwnerName(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Email de Acceso</Label>
-                  <Input
-                    type="email"
-                    required
-                    placeholder="carlos@smashpadel.com"
-                    value={wizardOwnerEmail}
-                    onChange={(e) => setWizardOwnerEmail(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">WhatsApp del Dueño</Label>
-                  <Input
-                    placeholder="+54 9 381 555-8888"
+                  <Label className="text-xs text-slate-300">WhatsApp / Celular</Label>
+                  <Input 
+                    placeholder="+54 9 381 555-1111"
                     value={wizardOwnerPhone}
                     onChange={(e) => setWizardOwnerPhone(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Email de Ingreso</Label>
+                  <Input 
+                    type="email"
+                    required
+                    placeholder="carlos@padelcentral.com"
+                    value={wizardOwnerEmail}
+                    onChange={(e) => setWizardOwnerEmail(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Contraseña Asignada</Label>
-                  <Input
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-slate-300">Contraseña</Label>
+                    <button
+                      type="button"
+                      onClick={() => setWizardOwnerPassword(`admin${Math.floor(1000 + Math.random() * 9000)}`)}
+                      className="text-[10px] text-emerald-400 hover:underline"
+                    >
+                      ⚡ Random
+                    </button>
+                  </div>
+                  <Input 
                     required
                     value={wizardOwnerPassword}
                     onChange={(e) => setWizardOwnerPassword(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                 </div>
               </div>
             </div>
 
             {/* 3. Usuario Canchero */}
-            <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-800/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+            <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-900/40 space-y-3">
+              <div className="flex items-center justify-between text-amber-400 font-bold text-xs uppercase tracking-wider">
+                <span className="flex items-center gap-2">
                   <Coffee className="w-4 h-4" />
-                  3. Usuario Canchero (Turnos y Cantina)
-                </div>
+                  3. Credenciales del Canchero (Mostrador)
+                </span>
                 <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">TENANT_STAFF</Badge>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Nombre del Canchero</Label>
-                  <Input
-                    placeholder="Ej. Pedro (Mostrador)"
+                  <Label className="text-xs text-slate-300">Nombre Completo</Label>
+                  <Input 
+                    required
+                    placeholder="Ej. Lucas Canchero"
                     value={wizardStaffName}
                     onChange={(e) => setWizardStaffName(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Email de Acceso</Label>
-                  <Input
-                    type="email"
-                    placeholder="mostrador@smashpadel.com"
-                    value={wizardStaffEmail}
-                    onChange={(e) => setWizardStaffEmail(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">WhatsApp del Canchero</Label>
-                  <Input
-                    placeholder="+54 9 381 555-9999"
+                  <Label className="text-xs text-slate-300">WhatsApp / Celular</Label>
+                  <Input 
+                    placeholder="+54 9 381 555-2222"
                     value={wizardStaffPhone}
                     onChange={(e) => setWizardStaffPhone(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-300">Email de Ingreso</Label>
+                  <Input 
+                    type="email"
+                    required
+                    placeholder="mostrador@padelcentral.com"
+                    value={wizardStaffEmail}
+                    onChange={(e) => setWizardStaffEmail(e.target.value)}
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Contraseña Asignada</Label>
-                  <Input
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-slate-300">Contraseña</Label>
+                    <button
+                      type="button"
+                      onClick={() => setWizardStaffPassword(`staff${Math.floor(1000 + Math.random() * 9000)}`)}
+                      className="text-[10px] text-amber-400 hover:underline"
+                    >
+                      ⚡ Random
+                    </button>
+                  </div>
+                  <Input 
                     required
                     value={wizardStaffPassword}
                     onChange={(e) => setWizardStaffPassword(e.target.value)}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                 </div>
               </div>
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button 
                 type="button" 
                 variant="outline" 
                 onClick={() => setIsQuickWizardModalOpen(false)}
-                className="rounded-xl border-slate-800 text-xs"
+                className="rounded-xl border-slate-800 text-xs flex-1 sm:flex-initial"
               >
                 Cancelar
               </Button>
               <Button 
                 type="submit"
-                className="bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold px-4"
+                className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-extrabold rounded-xl text-xs flex-1 sm:flex-initial"
               >
                 <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                 Crear Club + Dueño + Canchero en 1 Click
@@ -2064,8 +2657,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Resultado de Alta Rápida con botones para WhatsApp */}
       <Dialog open={isWizardResultModalOpen} onOpenChange={setIsWizardResultModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-lg bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+          <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               ¡Club y Usuarios Creados con Éxito!

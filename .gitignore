@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+canchas-app/node_modules/
+
+# Next.js build outputs
+.next/
+canchas-app/.next/
+out/
+canchas-app/out/
+build/
+canchas-app/build/
+
+# Environment files
+.env*
+canchas-app/.env*
+!.env.example
+!canchas-app/.env.example
+
+# Temporary and local data
+.temp/
+*.temp/
+supabase/.temp/
+canchas-app/supabase/.temp/
+supabase/supabase/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

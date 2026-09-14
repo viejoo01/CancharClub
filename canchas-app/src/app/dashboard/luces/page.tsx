@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { CourtLightConfig } from '@/types/database'
+import { toggleCourtLight } from '@/actions/lights.actions'
 
 export default function LucesPage() {
   const [courts, setCourts] = useState<CourtLightConfig[]>([
@@ -61,22 +62,45 @@ export default function LucesPage() {
     },
   ])
 
-  const handleToggleLight = (courtId: string, current: boolean) => {
+  const handleToggleLight = async (courtId: string, current: boolean) => {
+    const command = current ? 'off' : 'on'
+    // Optimistic update
     setCourts(prev => prev.map(c => {
       if (c.court_id === courtId) {
-        const next = !current
         return {
           ...c,
-          is_on: next,
+          is_on: !current,
           last_state_change: `${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs (Acción manual del operador)`,
         }
       }
       return c
     }))
 
-    toast.success(current ? 'Iluminación de cancha apagada' : 'Iluminación encendida', {
-      description: 'Comando enviado al relé IoT exitosamente.'
-    })
+    // Obtener IP del relé para esta cancha
+    const court = courts.find(c => c.court_id === courtId)
+    const relayIp = court?.relay_ip_or_id?.split(' ')[0] // Ej: "192.168.1.120"
+
+    const result = await toggleCourtLight(courtId, command, relayIp)
+
+    if (result.success) {
+      if (result.isMock) {
+        toast.success(current ? 'Iluminación apagada (simulado)' : 'Iluminación encendida (simulado)', {
+          description: 'Configura la IP del relé IoT para control real.'
+        })
+      } else {
+        toast.success(current ? 'Iluminación de cancha apagada' : 'Iluminación encendida', {
+          description: 'Comando enviado al relé IoT exitosamente.'
+        })
+      }
+    } else {
+      // Revertir optimistic update si falló
+      setCourts(prev => prev.map(c =>
+        c.court_id === courtId ? { ...c, is_on: current } : c
+      ))
+      toast.error('Error al controlar el relé', {
+        description: result.error ?? 'No se pudo conectar al dispositivo IoT.'
+      })
+    }
   }
 
   const handleToggleMode = (courtId: string, currentAuto: boolean) => {

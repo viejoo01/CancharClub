@@ -25,157 +25,8 @@ import { ClubLoginModal } from '@/components/public/club-login-modal'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 
-// Tipos de Deportes soportados
-type SportCategory = 'PADEL' | 'FUTBOL' | 'TENIS' | 'BASQUET'
+import { CLUBS_DATABASE, type SportCategory } from '@/config/clubs-catalog'
 
-interface ClubItem {
-  id: string
-  name: string
-  slug: string
-  address: string
-  city: string
-  sports: SportCategory[]
-  courtsCount: number
-  startingPrice: number
-  hasLighting: boolean
-  isIndoor: boolean
-  hasCantina: boolean
-  rating: number
-  reviewsCount: number
-  availableToday: boolean
-}
-
-// Catálogo de Clubes
-const CLUBS_DATABASE: ClubItem[] = [
-  {
-    id: 'c1',
-    name: 'Club Pádel Central',
-    slug: 'padel-central',
-    address: 'Av. Aconquija 2400',
-    city: 'Yerba Buena, Tucumán',
-    sports: ['PADEL'],
-    courtsCount: 3,
-    startingPrice: 18000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    rating: 4.9,
-    reviewsCount: 142,
-    availableToday: true,
-  },
-  {
-    id: 'c2',
-    name: 'Complejo Deportivo Las Cañas',
-    slug: 'las-canas',
-    address: 'Av. Perón y Bascary',
-    city: 'Yerba Buena, Tucumán',
-    sports: ['PADEL', 'FUTBOL'],
-    courtsCount: 8,
-    startingPrice: 16000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    rating: 4.8,
-    reviewsCount: 230,
-    availableToday: true,
-  },
-  {
-    id: 'c3',
-    name: 'Tucumán Lawn Tennis Club',
-    slug: 'lawn-tennis',
-    address: 'Parque 9 de Julio',
-    city: 'San Miguel de Tucumán',
-    sports: ['TENIS', 'PADEL'],
-    courtsCount: 6,
-    startingPrice: 14000,
-    hasLighting: true,
-    isIndoor: false,
-    hasCantina: true,
-    rating: 4.9,
-    reviewsCount: 310,
-    availableToday: true,
-  },
-  {
-    id: 'c4',
-    name: 'San Martín Arena Pádel',
-    slug: 'san-martin-arena',
-    address: 'Bolívar 1960',
-    city: 'San Miguel de Tucumán',
-    sports: ['PADEL'],
-    courtsCount: 2,
-    startingPrice: 15000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    rating: 4.7,
-    reviewsCount: 98,
-    availableToday: true,
-  },
-  {
-    id: 'c5',
-    name: 'Predio Golazo Fútbol',
-    slug: 'golazo-futbol',
-    address: 'Ruta 9 Km 1302',
-    city: 'Tafí Viejo, Tucumán',
-    sports: ['FUTBOL'],
-    courtsCount: 4,
-    startingPrice: 22000,
-    hasLighting: true,
-    isIndoor: false,
-    hasCantina: true,
-    rating: 4.6,
-    reviewsCount: 85,
-    availableToday: true,
-  },
-  {
-    id: 'c6',
-    name: 'Club Atlético & Social Villa Luján',
-    slug: 'villa-lujan-basquet',
-    address: 'Don Bosco 2280',
-    city: 'San Miguel de Tucumán',
-    sports: ['BASQUET', 'FUTBOL'],
-    courtsCount: 3,
-    startingPrice: 20000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    rating: 4.8,
-    reviewsCount: 112,
-    availableToday: true,
-  },
-  {
-    id: 'c7',
-    name: 'Complejo El Rincón Tenis',
-    slug: 'el-rincon-tenis',
-    address: 'Camino del Perú 1050',
-    city: 'Yerba Buena, Tucumán',
-    sports: ['TENIS'],
-    courtsCount: 4,
-    startingPrice: 15000,
-    hasLighting: true,
-    isIndoor: false,
-    hasCantina: true,
-    rating: 4.7,
-    reviewsCount: 76,
-    availableToday: true,
-  },
-  {
-    id: 'c8',
-    name: 'Estadio Polideportivo Central',
-    slug: 'polideportivo-central',
-    address: 'Av. Benjamín Aráoz 800',
-    city: 'San Miguel de Tucumán',
-    sports: ['BASQUET', 'FUTBOL'],
-    courtsCount: 2,
-    startingPrice: 24000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    rating: 4.5,
-    reviewsCount: 64,
-    availableToday: true,
-  }
-]
 
 // Componentes de Íconos Vectoriales Estilizados (Fieles a la Referencia)
 
@@ -448,7 +299,7 @@ export default function HomePage() {
           </div>
 
           {/* Selector de Deporte Rápido (Tabs / Pills) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar touch-momentum pb-1">
             <span className="text-xs text-slate-400 font-semibold mr-1">Deporte:</span>
             {SPORTS_LIST.map(sport => (
               <button
@@ -550,7 +401,7 @@ export default function HomePage() {
                       </span>
                     </div>
 
-                    <Link href={`/club/${club.slug}`}>
+                    <Link href={`/club/${club.slug}${selectedSport ? `?sport=${selectedSport}` : ''}`}>
                       <Button
                         size="sm"
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 gap-1.5"

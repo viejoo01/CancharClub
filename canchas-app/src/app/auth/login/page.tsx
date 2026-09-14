@@ -22,15 +22,52 @@ export default function LoginPage() {
     e.preventDefault()
     setErrorMessage(null)
 
-    if (!email.trim() || !password.trim()) {
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanPassword = password.trim()
+
+    if (!cleanEmail || !cleanPassword) {
       setErrorMessage('Por favor completá tu email y contraseña.')
       return
     }
 
     setIsLoading(true)
 
-    // Fallback rápido demostrativo para desarrollo y testing
-    if (email === 'mostrador@padelcentral.com' || email.includes('canchero') || email.includes('mostrador')) {
+    // 1. Acceso Superadmin (Demo o Local)
+    if (
+      cleanEmail === 'superadmin@cancharclub.com.ar' ||
+      cleanEmail.includes('superadmin')
+    ) {
+      document.cookie = 'demo_user_role=SUPERADMIN; path=/; max-age=86400'
+      document.cookie = 'demo_user_name=Superadmin Plataforma; path=/; max-age=86400'
+      toast.success('¡Bienvenido Superadmin!')
+
+      const formData = new FormData()
+      formData.append('email', cleanEmail === 'superadmin@cancharclub.com.ar' ? 'superadmin@cancharclub.com.ar' : email.trim())
+      formData.append('password', cleanPassword)
+
+      try {
+        const res = await loginWithEmail(formData)
+        if (res && !res.success) {
+          // Si Supabase no responde o falla pero es la credencial local conocida, permitimos entrar en modo demo
+          if (cleanEmail === 'superadmin@cancharclub.com.ar' && (cleanPassword === 'superadmin123' || cleanPassword === 'demo123456')) {
+            window.location.href = '/superadmin'
+            return
+          }
+          setErrorMessage(res.error || 'Credenciales incorrectas.')
+          setIsLoading(false)
+          return
+        }
+      } catch {
+        // Redirección manejada por Next.js
+        window.location.href = '/superadmin'
+        return
+      }
+      window.location.href = '/superadmin'
+      return
+    }
+
+    // 2. Fallback rápido Mostrador / Canchero
+    if (cleanEmail === 'mostrador@padelcentral.com' || cleanEmail.includes('canchero') || cleanEmail.includes('mostrador')) {
       document.cookie = 'demo_user_role=TENANT_STAFF; path=/; max-age=86400'
       document.cookie = 'demo_user_name=Canchero (Turnos y Cantina); path=/; max-age=86400'
       toast.success('¡Bienvenido Canchero!', {
@@ -40,10 +77,11 @@ export default function LoginPage() {
       return
     }
 
+    // 3. Fallback rápido Dueño del Club
     if (
-      email === 'admin@padelcentral.com' ||
-      email === 'demo@cancharclub.com' ||
-      password === 'demo123456'
+      cleanEmail === 'admin@padelcentral.com' ||
+      cleanEmail === 'demo@cancharclub.com' ||
+      cleanPassword === 'demo123456'
     ) {
       document.cookie = 'demo_user_role=TENANT_ADMIN; path=/; max-age=86400'
       document.cookie = 'demo_user_name=Dueño del Club; path=/; max-age=86400'
@@ -52,16 +90,9 @@ export default function LoginPage() {
       return
     }
 
-    if (email === 'superadmin@cancharclub.com.ar' && password === 'superadmin123') {
-      document.cookie = 'demo_user_role=SUPERADMIN; path=/; max-age=86400'
-      document.cookie = 'demo_user_name=Superadmin Plataforma; path=/; max-age=86400'
-      toast.success('¡Bienvenido Superadmin!')
-      window.location.href = '/superadmin'
-      return
-    }
-
+    // 4. Login real en Supabase
     const formData = new FormData()
-    formData.append('email', email)
+    formData.append('email', email.trim())
     formData.append('password', password)
 
     try {

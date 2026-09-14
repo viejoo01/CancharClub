@@ -15,57 +15,111 @@ import {
   CreditCard,
   Repeat,
   Zap,
-  BarChart3
+  BarChart3,
+  Lock,
+  X,
+  Landmark,
+  Users,
+  UserCheck,
+  Receipt,
+  Monitor
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
+
+interface NavItem {
+  title: string
+  href: string
+  icon: React.ElementType
+  exact?: boolean
+  roles: string[]
+  requiredFeature?: SaaSFeatureKey   // qué feature del plan habilita este ítem
+  staffVisible?: boolean              // si el canchero siempre lo ve (independiente del plan)
+}
 
 interface SidebarProps {
   tenantName?: string
   tenantSlug?: string
   userRole?: string
+  isActive?: boolean
+  planId?: SaaSPlanId
+  isMobile?: boolean
+  onClose?: () => void
 }
 
 export function Sidebar({ 
   tenantName = 'Club Deportivo', 
   tenantSlug = 'demo-club',
-  userRole = 'ADMIN' 
+  userRole = 'ADMIN',
+  isActive = true,
+  planId,
+  isMobile = false,
+  onClose,
 }: SidebarProps) {
   const pathname = usePathname()
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       title: 'Calendario de Turnos',
       href: '/dashboard',
       icon: CalendarDays,
       exact: true,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,   // SIEMPRE visible para el canchero
+      // Sin requiredFeature → siempre disponible para admins también
     },
     {
       title: 'Turnos Fijos (Abonados)',
       href: '/dashboard/fijos',
       icon: Repeat,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      badge: 'Plan 3c+',
+      requiredFeature: 'turnos_fijos',
     },
     {
       title: 'Cantina & Kiosco',
       href: '/dashboard/cantina',
       icon: Coffee,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      badge: 'Plan 2c+',
+      requiredFeature: 'cantina_kiosco',
     },
     {
       title: 'Caja Diaria',
       href: '/dashboard/caja',
       icon: Wallet,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,   // SIEMPRE visible para el canchero
+    },
+    {
+      title: 'Reputación de Jugadores',
+      href: '/dashboard/jugadores',
+      icon: Users,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,
+    },
+    {
+      title: 'Equipo & Staff',
+      href: '/dashboard/equipo',
+      icon: UserCheck,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+    },
+    {
+      title: 'Cuentas de Cobro',
+      href: '/dashboard/cobros',
+      icon: Landmark,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+    },
+    {
+      title: 'Facturación AFIP',
+      href: '/dashboard/facturacion',
+      icon: Receipt,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
     },
     {
       title: 'Control de Luces',
       href: '/dashboard/luces',
       icon: Zap,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      badge: 'Plan 3c+',
+      requiredFeature: 'control_luces',
     },
     {
       title: 'Canchas',
@@ -84,14 +138,14 @@ export function Sidebar({
       href: '/dashboard/torneos',
       icon: Trophy,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      badge: 'Plan 5c+',
+      requiredFeature: 'torneos_expres',
     },
     {
       title: 'Reportes de Ocupación',
       href: '/dashboard/reportes',
       icon: BarChart3,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
-      badge: 'Plan 3c+',
+      requiredFeature: 'reportes_ocupacion',
     },
     {
       title: 'Mi Plan SaaS',
@@ -99,76 +153,128 @@ export function Sidebar({
       icon: CreditCard,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
     },
+    {
+      title: 'Tótem / Kiosco Mostrador',
+      href: '/totem',
+      icon: Monitor,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,
+    },
   ]
 
+  const isStaff = userRole === 'TENANT_STAFF'
+  const isSuperadmin = userRole === 'SUPERADMIN'
+  const planAllowedFeatures = planId ? SAAS_PLANS[planId]?.allowedModules ?? [] : null
+
   const filteredNavItems = navItems.filter(item => {
-    if (!item.roles) return true
-    return item.roles.includes(userRole)
+    // Filtrar por rol
+    if (!item.roles.includes(userRole)) return false
+
+    // TENANT_STAFF: solo ve ítems marcados como staffVisible
+    if (isStaff) return item.staffVisible === true
+
+    // SUPERADMIN: ve todo
+    if (isSuperadmin) return true
+
+    // Sin plan asignado o sin requiredFeature: siempre visible para admins
+    if (!planAllowedFeatures || !item.requiredFeature) return true
+
+    // TENANT_ADMIN: solo ve ítems cuyo feature está en el plan
+    return planAllowedFeatures.includes(item.requiredFeature)
   })
 
   return (
-    <aside className="w-64 shrink-0 flex flex-col bg-slate-950 border-r border-slate-800/80 select-none">
+    <aside className={cn(
+      "flex flex-col bg-slate-950 select-none",
+      isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-800/80"
+    )}>
       {/* Brand Header */}
-      <div className="h-16 flex items-center gap-3 px-5 border-b border-slate-800/80 bg-slate-950/50">
-        <div className="w-9 h-9 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
-          <Trophy className="w-5 h-5 text-white" />
+      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950/50">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
+            <Trophy className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex flex-col overflow-hidden">
+            <span className="font-bold text-sm text-white truncate tracking-tight">
+              {tenantName}
+            </span>
+            {isStaff ? (
+              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Canchero (Turnos y Caja)
+              </span>
+            ) : isSuperadmin ? (
+              <span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                Superadmin Plataforma
+              </span>
+            ) : (
+              <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Dueño del Club
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex flex-col overflow-hidden">
-          <span className="font-bold text-sm text-white truncate tracking-tight">
-            {tenantName}
-          </span>
-          {userRole === 'TENANT_STAFF' ? (
-            <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Canchero (Turnos y Cantina)
-            </span>
-          ) : userRole === 'SUPERADMIN' ? (
-            <span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-              Superadmin Plataforma
-            </span>
-          ) : (
-            <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Dueño del Club
-            </span>
-          )}
-        </div>
+
+        {/* Botón de cerrar drawer móvil */}
+        {isMobile && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
+            aria-label="Cerrar menú"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
         <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          {userRole === 'TENANT_STAFF' ? 'Operaciones de Canchero' : 'Operaciones'}
+          {isStaff ? 'Operaciones de Canchero' : 'Operaciones'}
         </div>
 
         {filteredNavItems.map((item) => {
-          const isActive = item.exact 
+          const isActive_item = item.exact 
             ? pathname === item.href 
             : pathname.startsWith(item.href)
 
           const Icon = item.icon
 
+          if (!isActive) {
+            // Club pendiente de activación: mostrar ítem deshabilitado
+            return (
+              <div
+                key={item.href}
+                className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium opacity-35 cursor-not-allowed select-none"
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className="w-4 h-4 text-slate-600" />
+                  <span className="text-slate-600">{item.title}</span>
+                </div>
+                <Lock className="w-3 h-3 text-slate-700" />
+              </div>
+            )
+          }
+
           return (
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onClose?.()}
               className={cn(
-                'flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
-                isActive
+                'flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium transition-all duration-150',
+                isActive_item
                   ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-950/20'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               )}
             >
               <div className="flex items-center gap-3">
-                <Icon className={cn('w-4 h-4', isActive ? 'text-emerald-400' : 'text-slate-400')} />
+                <Icon className={cn('w-4 h-4', isActive_item ? 'text-emerald-400' : 'text-slate-400')} />
                 <span>{item.title}</span>
               </div>
-              {'badge' in item && item.badge && (
-                <span className="text-[9px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 px-1.5 py-0.5 rounded">
-                  {item.badge}
-                </span>
-              )}
             </Link>
           )
         })}
@@ -180,7 +286,8 @@ export function Sidebar({
         <Link
           href={`/club/${tenantSlug}`}
           target="_blank"
-          className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 transition-colors group"
+          onClick={() => onClose?.()}
+          className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 transition-colors group"
         >
           <div className="flex items-center gap-3">
             <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 transition-colors" />
@@ -191,14 +298,15 @@ export function Sidebar({
           </span>
         </Link>
 
-        {userRole === 'SUPERADMIN' && (
+        {isSuperadmin && (
           <>
             <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-purple-400">
               SaaS Admin
             </div>
             <Link
               href="/superadmin"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-purple-400 hover:bg-purple-950/30 border border-purple-900/30 transition-colors"
+              onClick={() => onClose?.()}
+              className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-purple-400 hover:bg-purple-950/30 border border-purple-900/30 transition-colors"
             >
               <ShieldCheck className="w-4 h-4 text-purple-400" />
               <span>Superadmin Panel</span>
@@ -207,12 +315,12 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Footer Profile & Logout */}
+      {/* Footer Logout */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/60">
-        <form action="/auth/logout" method="post">
+        <form action="/auth/logout" method="post" onSubmit={() => onClose?.()}>
           <button
             type="submit"
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Cerrar Sesión</span>

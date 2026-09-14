@@ -18,9 +18,9 @@ export default function SumarClubLandingPage() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
 
   const whatsappUrl =
-    'https://wa.me/5493814889900?text=Hola!%20Quiero%20sumar%20mi%20club%20a%20Canchar%20Club'
+    'https://wa.me/543816839320?text=Hola%20me%20llamo%20...%20quisiera%20agregar%20mi%20club%20a%20CancharClub%2C%20me%20podr%C3%ADas%20comentar%20un%20poco%20m%C3%A1s%20sobre%20c%C3%B3mo%20funciona%20el%20sistema%3F'
   const emailUrl =
-    'mailto:contacto@cancharclub.com?subject=Quiero%20sumar%20mi%20club%20a%20Canchar%20Club&body=Hola!%20Tengo%20un%20club%20o%20complejo%20deportivo%20y%20me%20gustar%C3%ADa%20sumarlo%20a%20Canchar%20Club.%20Mi%20tel%C3%A9fono%20es:'
+    'mailto:cancharclub@gmail.com?subject=Quiero%20sumar%20mi%20club%20a%20CancharClub&body=Hola%20me%20llamo%20...%20quisiera%20agregar%20mi%20club%20a%20CancharClub%2C%20me%20podr%C3%ADas%20comentar%20un%20poco%20m%C3%A1s%20sobre%20c%C3%B3mo%20funciona%20el%20sistema%3F'
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col transition-colors duration-200 selection:bg-emerald-500 selection:text-white font-sans">

@@ -9,6 +9,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function setClientCookie(name: string, value: string, maxAge = 86400) {
+  if (typeof document !== 'undefined') {
+    document.cookie = `${name}=${value}; path=/; max-age=${maxAge}`
+  }
+}
+
 // ─── Formato de fechas ────────────────────────────────────────────────────────
 
 export function formatDate(iso: string, pattern = 'dd/MM/yyyy') {

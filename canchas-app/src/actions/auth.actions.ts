@@ -2,9 +2,10 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 
 export async function loginWithEmail(formData: FormData) {
-  const email = formData.get('email') as string
+  const email = (formData.get('email') as string)?.trim()
   const password = formData.get('password') as string
 
   if (!email || !password) {
@@ -24,12 +25,30 @@ export async function loginWithEmail(formData: FormData) {
   // Comprobar rol de usuario
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, full_name')
     .eq('id', data.user.id)
     .single()
 
-  if (profile?.role === 'SUPERADMIN') {
+  const isSuperadmin = 
+    profile?.role === 'SUPERADMIN' ||
+    Boolean(process.env.SUPERADMIN_USER_ID && data.user.id === process.env.SUPERADMIN_USER_ID) ||
+    data.user.email === 'santi.alonsoleal@gmail.com' ||
+    data.user.email === 'superadmin@cancharclub.com.ar'
+
+  const cookieStore = await cookies()
+
+  if (isSuperadmin) {
+    cookieStore.set('demo_user_role', 'SUPERADMIN', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_name', profile?.full_name || 'Superadmin Plataforma', { path: '/', maxAge: 86400 })
     redirect('/superadmin')
+  }
+
+  if (profile?.role === 'TENANT_STAFF') {
+    cookieStore.set('demo_user_role', 'TENANT_STAFF', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_name', profile.full_name || 'Canchero (Mostrador)', { path: '/', maxAge: 86400 })
+  } else {
+    cookieStore.set('demo_user_role', 'TENANT_ADMIN', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', { path: '/', maxAge: 86400 })
   }
 
   redirect('/dashboard')
@@ -65,7 +84,7 @@ export async function registerClub(formData: FormData) {
 
   // 2. Crear Tenant
   const slug = clubName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-  const { data: tenant, error: tenantError } = await supabase
+  const { data: tenant } = await supabase
     .from('tenants')
     .insert({
       name: clubName,
@@ -74,6 +93,8 @@ export async function registerClub(formData: FormData) {
       contact_phone: phone,
       city: 'San Miguel de Tucumán',
       province: 'Tucumán',
+      is_active: false,  // Requiere activación manual por CancharClub
+      plan_id: 'CHICO_1', // Plan inicial por defecto
     })
     .select()
     .single()
@@ -95,5 +116,12 @@ export async function registerClub(formData: FormData) {
 export async function logout() {
   const supabase = await createClient()
   await supabase.auth.signOut()
+  const cookieStore = await cookies()
+  cookieStore.delete('demo_user_role')
+  cookieStore.delete('demo_user_name')
+  cookieStore.delete('demo_subscription_status')
+  cookieStore.delete('demo_plan_id')
+  cookieStore.delete('demo_tenant_name')
+  cookieStore.delete('demo_tenant_slug')
   redirect('/auth/login')
 }

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Printer, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatARS } from '@/lib/utils'
@@ -41,6 +41,7 @@ interface ThermalReceiptModalProps {
   type: ReceiptType
   bookingData?: BookingReceiptData
   cantinaData?: CantinaReceiptData
+  autoPrint?: boolean
 }
 
 export function ThermalReceiptModal({
@@ -49,8 +50,19 @@ export function ThermalReceiptModal({
   type,
   bookingData,
   cantinaData,
+  autoPrint = false,
 }: ThermalReceiptModalProps) {
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm')
+
+  // Disparo automático de impresión para experiencia ultra fluida
+  useEffect(() => {
+    if (isOpen && autoPrint) {
+      const timer = setTimeout(() => {
+        window.print()
+      }, 350)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen, autoPrint])
 
   const handlePrint = () => {
     window.print()
@@ -58,7 +70,7 @@ export function ThermalReceiptModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[420px] bg-slate-900 border-slate-800 text-slate-100 p-4">
+      <DialogContent className="sm:max-w-105 bg-slate-900 border-slate-800 text-slate-100 p-4">
         <DialogHeader className="print:hidden pb-2 border-b border-slate-800 flex flex-row items-center justify-between">
           <DialogTitle className="text-sm font-bold flex items-center gap-2">
             <Printer className="w-4 h-4 text-emerald-400" />
@@ -89,7 +101,7 @@ export function ThermalReceiptModal({
           <div
             id="thermal-receipt-container"
             className={`bg-white text-black font-mono text-xs p-4 shadow-xl border border-slate-300 rounded ${
-              paperWidth === '80mm' ? 'w-[300px]' : 'w-[230px] text-[11px] p-2'
+              paperWidth === '80mm' ? 'w-75' : 'w-57.5 text-[11px] p-2'
             }`}
           >
             {/* ENCABEZADO */}
@@ -120,7 +132,7 @@ export function ThermalReceiptModal({
                 </div>
                 <div className="flex justify-between">
                   <span>CLIENTE:</span>
-                  <span className="font-bold truncate max-w-[140px]">{bookingData.customerName}</span>
+                  <span className="font-bold truncate max-w-35">{bookingData.customerName}</span>
                 </div>
                 {bookingData.customerPhone && (
                   <div className="flex justify-between text-[10px]">

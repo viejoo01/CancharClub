@@ -38,12 +38,25 @@ import {
 import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
+import { DEFAULT_VENUES, VENUES_COURTS } from '@/config/venues-data'
 
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 const DAYS_NAME = [
   'Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'
 ]
+
+function getCourtNameById(id: string): string {
+  for (const courts of Object.values(VENUES_COURTS)) {
+    const found = courts.find((c) => c.id === id)
+    if (found) return found.name
+  }
+  if (id === 'c1' || id === 'c1-1') return 'Cancha 1 (Panorámica)'
+  if (id === 'c2' || id === 'c1-2') return 'Cancha 2 (Techada)'
+  if (id === 'c3' || id === 'c1-3') return 'Cancha 3 (Blindex)'
+  if (id === 'c4') return 'Fútbol 5 (Sintético)'
+  return 'Cancha'
+}
 
 export default function TurnosFijosPage() {
   const [slots, setSlots] = useState<RecurringSlot[]>([])
@@ -130,6 +143,7 @@ export default function TurnosFijosPage() {
 
       if (res.success && res.slot) {
         toast.success('¡Abonado recurrente registrado y turnos del mes generados!')
+        setSlots((prev) => [res.slot!, ...prev.filter((s) => s.id !== res.slot!.id)])
         setIsModalOpen(false)
         setCustomerName('')
         setCustomerPhone('')
@@ -257,7 +271,7 @@ export default function TurnosFijosPage() {
           </div>
         ) : (
           slots.map((slot) => {
-            const courtName = slot.court?.name || 'Cancha 1'
+            const courtName = slot.court?.name || getCourtNameById(slot.court_id)
             const isPaused = slot.status !== 'ACTIVE'
             const waMsg = `Hola ${slot.customer_name}, te escribimos desde el club sobre tu abono semanal de los ${DAYS_NAME[slot.day_of_week]} a las ${slot.start_time} hs en ${courtName}. Recordá que el día de corte de pago mensual es el ${slot.payment_due_day}.`
             const waLink = buildWhatsAppLink(slot.customer_phone, waMsg)
@@ -394,9 +408,18 @@ export default function TurnosFijosPage() {
                   onChange={(e) => setCourtId(e.target.value)}
                   className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
                 >
-                  <option value="c1">Cancha 1 (Panorámica)</option>
-                  <option value="c2">Cancha 2 (Techada)</option>
-                  <option value="c3">Cancha 3 (Blindex)</option>
+                  {DEFAULT_VENUES.map((v) => {
+                    const courts = VENUES_COURTS[v.id] || []
+                    return (
+                      <optgroup key={v.id} label={v.branchName}>
+                        {courts.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.sport})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
                 </select>
               </div>
 

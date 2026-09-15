@@ -20,7 +20,7 @@ export function Header({
   userName = 'Administrador'
 }: HeaderProps) {
   return (
-    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md z-20">
+    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
       <div className="flex items-center gap-2.5 sm:gap-4">
         {/* Botón menú hamburguesa para celulares */}
         {onToggleMobileMenu && (

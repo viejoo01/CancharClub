@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useSyncExternalStore } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Building2, 
   MapPin, 
@@ -14,64 +15,72 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { DEFAULT_VENUES, type VenueItem } from '@/config/venues-data'
 
-export interface VenueItem {
-  id: string
-  name: string
-  branchName: string
-  address: string
-  city: string
-  courtsCount: number
-  sports: string[]
-  isPrimary?: boolean
+export type { VenueItem }
+
+function setClientCookie(name: string, value: string, days = 30) {
+  if (typeof document !== 'undefined') {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString()
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`
+  }
 }
 
-const DEFAULT_VENUES: VenueItem[] = [
-  {
-    id: 'venue-yb',
-    name: 'Club Pádel Central',
-    branchName: 'Sede Yerba Buena (Central)',
-    address: 'Av. Aconquija 2400',
-    city: 'Yerba Buena, Tucumán',
-    courtsCount: 3,
-    sports: ['Pádel'],
-    isPrimary: true
-  },
-  {
-    id: 'venue-bs',
-    name: 'Club Pádel Central',
-    branchName: 'Sede Barrio Sur (Indoor)',
-    address: 'General Paz 850',
-    city: 'San Miguel de Tucumán',
-    courtsCount: 4,
-    sports: ['Pádel'],
-    isPrimary: false
-  },
-  {
-    id: 'venue-canas',
-    name: 'Complejo Las Cañas',
-    branchName: 'Sede Country & Predio',
-    address: 'Av. Perón y Bascary',
-    city: 'Yerba Buena, Tucumán',
-    courtsCount: 8,
-    sports: ['Fútbol', 'Pádel'],
-    isPrimary: false
+function subscribeStorage(callback: () => void) {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener('storage', callback)
+  window.addEventListener('canchar:venue-changed', callback)
+  return () => {
+    window.removeEventListener('storage', callback)
+    window.removeEventListener('canchar:venue-changed', callback)
   }
-]
+}
+
+function getStoredVenueId(): string {
+  try {
+    return localStorage.getItem('canchar_active_venue_id') || DEFAULT_VENUES[0].id
+  } catch {
+    return DEFAULT_VENUES[0].id
+  }
+}
+
+function getStoredCustomVenuesJson(): string {
+  try {
+    return localStorage.getItem('canchar_custom_venues') || '[]'
+  } catch {
+    return '[]'
+  }
+}
+
+const getServerVenueId = () => DEFAULT_VENUES[0].id
+const getServerCustomVenues = () => '[]'
 
 export function VenueSwitcher({ className }: { className?: string }) {
-  const [venues, setVenues] = useState<VenueItem[]>(DEFAULT_VENUES)
-  const [activeVenueId, setActiveVenueId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('canchar_active_venue_id')
-        if (saved && DEFAULT_VENUES.some(v => v.id === saved)) {
-          return saved
-        }
-      } catch {}
+  const router = useRouter()
+  const activeVenueId = useSyncExternalStore(
+    subscribeStorage,
+    getStoredVenueId,
+    getServerVenueId
+  )
+  const customVenuesJson = useSyncExternalStore(
+    subscribeStorage,
+    getStoredCustomVenuesJson,
+    getServerCustomVenues
+  )
+
+  const customVenues = useMemo(() => {
+    try {
+      const parsed = JSON.parse(customVenuesJson)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
     }
-    return DEFAULT_VENUES[0].id
-  })
+  }, [customVenuesJson])
+
+  const venues = useMemo(() => {
+    return customVenues.length > 0 ? [...DEFAULT_VENUES, ...customVenues] : DEFAULT_VENUES
+  }, [customVenues])
+
   const [isOpen, setIsOpen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [newBranchName, setNewBranchName] = useState('')
@@ -81,12 +90,15 @@ export function VenueSwitcher({ className }: { className?: string }) {
   const activeVenue = venues.find(v => v.id === activeVenueId) || venues[0]
 
   const handleSelectVenue = (venue: VenueItem) => {
-    setActiveVenueId(venue.id)
     setIsOpen(false)
     try {
       localStorage.setItem('canchar_active_venue_id', venue.id)
       localStorage.setItem('canchar_active_venue_name', venue.branchName)
+      setClientCookie('canchar_active_venue_id', venue.id)
+      setClientCookie('canchar_active_venue_name', encodeURIComponent(venue.branchName))
+      window.dispatchEvent(new CustomEvent('canchar:venue-changed', { detail: venue }))
     } catch {}
+    router.refresh()
     toast.success(`Sede cambiada a: ${venue.branchName}`)
   }
 
@@ -108,22 +120,25 @@ export function VenueSwitcher({ className }: { className?: string }) {
       isPrimary: false
     }
 
-    const updated = [...venues, newVenue]
-    setVenues(updated)
-    setActiveVenueId(newVenue.id)
+    const updatedCustom = [...customVenues, newVenue]
     try {
       localStorage.setItem('canchar_active_venue_id', newVenue.id)
       localStorage.setItem('canchar_active_venue_name', newVenue.branchName)
+      localStorage.setItem('canchar_custom_venues', JSON.stringify(updatedCustom))
+      setClientCookie('canchar_active_venue_id', newVenue.id)
+      setClientCookie('canchar_active_venue_name', encodeURIComponent(newVenue.branchName))
+      window.dispatchEvent(new CustomEvent('canchar:venue-changed', { detail: newVenue }))
     } catch {}
 
     setShowAddModal(false)
     setNewBranchName('')
     setNewAddress('')
+    router.refresh()
     toast.success(`¡Nueva sede "${newVenue.branchName}" agregada con éxito!`)
   }
 
   return (
-    <div className={`relative ${className || ''}`}>
+    <div className={`relative z-50 ${className || ''}`}>
       {/* Botón Selector de Sede */}
       <button
         type="button"
@@ -138,7 +153,10 @@ export function VenueSwitcher({ className }: { className?: string }) {
           <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider leading-none">
             Sede Activa
           </span>
-          <span className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors max-w-[140px] sm:max-w-[180px] truncate leading-tight">
+          <span 
+            suppressHydrationWarning
+            className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors max-w-35 sm:max-w-45 truncate leading-tight"
+          >
             {activeVenue.branchName}
           </span>
         </div>
@@ -149,7 +167,7 @@ export function VenueSwitcher({ className }: { className?: string }) {
       {isOpen && (
         <>
           <div 
-            className="fixed inset-0 z-40 bg-black/20" 
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" 
             onClick={() => setIsOpen(false)} 
           />
           <div className="absolute left-0 mt-2 w-72 sm:w-80 rounded-2xl bg-slate-950 border border-slate-800 p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">

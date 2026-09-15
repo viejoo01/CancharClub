@@ -8,6 +8,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
+export type CantinaPaymentMethod = 'TRANSFER' | 'CASH' | 'QR_MP'
+export type CantinaPaymentStatus = 'PAID' | 'PENDING'
 
 export interface OrderItem {
   product_id: string
@@ -26,6 +28,8 @@ export interface CourtOrder {
   items: OrderItem[]
   total_ars: number
   status: OrderStatus
+  payment_method?: CantinaPaymentMethod
+  payment_status?: CantinaPaymentStatus
   notes: string | null
   created_at: string
   updated_at: string
@@ -38,7 +42,19 @@ export interface CreateOrderPayload {
   customer_name: string
   items: OrderItem[]
   total_ars: number
+  payment_method?: CantinaPaymentMethod
+  payment_status?: CantinaPaymentStatus
   notes?: string | null
+}
+
+function extractPaymentMethod(order: { notes?: string | null; payment_method?: string }): CantinaPaymentMethod {
+  if (order.payment_method === 'TRANSFER' || order.payment_method === 'CASH' || order.payment_method === 'QR_MP') {
+    return order.payment_method
+  }
+  const notes = order.notes || ''
+  if (notes.includes('TRANSFER') || notes.toLowerCase().includes('transferencia')) return 'TRANSFER'
+  if (notes.includes('QR_MP') || notes.toLowerCase().includes('mp') || notes.toLowerCase().includes('mercado pago')) return 'QR_MP'
+  return 'CASH'
 }
 
 // ─── Crear nuevo pedido ───────────────────────────────────────────────────────
@@ -48,10 +64,38 @@ export async function createCourtOrder(
 ): Promise<{ success: boolean; order?: CourtOrder; error?: string }> {
   try {
     const supabase = await createServiceClient()
+    const method = payload.payment_method || 'CASH'
+    const statusPayment = payload.payment_status || (method === 'TRANSFER' ? 'PAID' : 'PENDING')
+    
+    // Incluir tag en notas para compatibilidad retroactiva garantizada
+    const paymentTag = `[PAGO: ${method}]`
+    const combinedNotes = payload.notes 
+      ? (payload.notes.includes('[PAGO:') ? payload.notes : `${paymentTag} ${payload.notes}`)
+      : paymentTag
 
-    const { data, error } = await supabase
+    // Intentar insertar con columnas payment_method y payment_status
+    const insertData: Record<string, unknown> = {
+      tenant_id:     payload.tenant_id,
+      court_id:      payload.court_id ?? null,
+      court_name:    payload.court_name,
+      customer_name: payload.customer_name,
+      items:         payload.items,
+      total_ars:     payload.total_ars,
+      status:        'PENDING',
+      payment_method: method,
+      payment_status: statusPayment,
+      notes:         combinedNotes,
+    }
+
+    let { data, error } = await supabase
       .from('court_orders')
-      .insert({
+      .insert(insertData)
+      .select()
+      .single()
+
+    // Si falla porque las columnas nuevas no están creadas en Postgres, fallback a campos estándar
+    if (error && (error.message.includes('payment_method') || error.message.includes('column'))) {
+      const fallbackData = {
         tenant_id:     payload.tenant_id,
         court_id:      payload.court_id ?? null,
         court_name:    payload.court_name,
@@ -59,18 +103,30 @@ export async function createCourtOrder(
         items:         payload.items,
         total_ars:     payload.total_ars,
         status:        'PENDING',
-        notes:         payload.notes ?? null,
-      })
-      .select()
-      .single()
+        notes:         combinedNotes,
+      }
+      const retry = await supabase
+        .from('court_orders')
+        .insert(fallbackData)
+        .select()
+        .single()
+      data = retry.data
+      error = retry.error
+    }
 
     if (error) {
       console.error('[createCourtOrder] Error:', error.message)
       return { success: false, error: error.message }
     }
 
+    const createdOrder = data as unknown as CourtOrder
+    if (createdOrder && !createdOrder.payment_method) {
+      createdOrder.payment_method = method
+      createdOrder.payment_status = statusPayment
+    }
+
     revalidatePath('/dashboard/cantina')
-    return { success: true, order: data as unknown as CourtOrder }
+    return { success: true, order: createdOrder }
   } catch (err) {
     console.error('[createCourtOrder] Unexpected:', err)
     return { success: false, error: 'Error al crear el pedido' }
@@ -130,7 +186,13 @@ export async function getDailyOrders(
       return []
     }
 
-    return (data as unknown as CourtOrder[]) ?? []
+    const orders = ((data as unknown as CourtOrder[]) ?? []).map(o => ({
+      ...o,
+      payment_method: o.payment_method || extractPaymentMethod(o),
+      payment_status: o.payment_status || (extractPaymentMethod(o) === 'TRANSFER' ? 'PAID' : 'PENDING'),
+    }))
+
+    return orders
   } catch {
     return []
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use } from 'react'
+import { useState, use, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { 
   ShoppingBag, 
@@ -9,20 +9,21 @@ import {
   ArrowLeft, 
   CheckCircle2, 
   Coffee, 
-  Sparkles,
-  DollarSign,
-  QrCode,
-  Loader2
+  Loader2,
+  Copy,
+  Check,
+  CreditCard,
+  Banknote,
+  UtensilsCrossed
 } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { formatARS } from '@/lib/utils'
-import { siteConfig } from '@/config/site'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
+import { createCourtOrder, type CantinaPaymentMethod } from '@/actions/cantina.actions'
 
 interface Product {
   id: string
@@ -43,6 +44,8 @@ const CANTINA_ITEMS: Product[] = [
   { id: 'p8', name: 'Papas Fritas Lays / Maní', category: 'SNACKS', price: 1800, emoji: '🥜' },
 ]
 
+const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+
 export default function CourtOrderPage({
   params,
 }: {
@@ -50,13 +53,22 @@ export default function CourtOrderPage({
 }) {
   const resolvedParams = use(params)
   const searchParams = useSearchParams()
-  const courtName = searchParams.get('cancha') || 'Cancha Principal'
+
+  const rawMesa = searchParams.get('mesa') || searchParams.get('cancha') || ''
+  const initialTable = rawMesa ? (rawMesa.toLowerCase().startsWith('cancha') ? 'Mesa' : rawMesa) : 'Mesa'
+
+  const club = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
+  const bankDetails = useMemo(() => getClubBankDetails(club), [club])
 
   const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
   const [customerName, setCustomerName] = useState('')
+  const [tableName, setTableName] = useState(initialTable)
+  const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('TRANSFER')
   const [notes, setNotes] = useState('')
+  const [copiedAlias, setCopiedAlias] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [orderConfirmed, setOrderConfirmed] = useState(false)
+  const [confirmedOrderId, setConfirmedOrderId] = useState<string>('')
 
   const addToCart = (product: Product) => {
     setCart((prev) => {
@@ -89,6 +101,13 @@ export default function CourtOrderPage({
   const totalArs = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0)
   const itemsCount = cart.reduce((acc, item) => acc + item.quantity, 0)
 
+  const handleCopyAlias = () => {
+    navigator.clipboard.writeText(bankDetails.alias)
+    setCopiedAlias(true)
+    toast.success('Alias copiado al portapapeles')
+    setTimeout(() => setCopiedAlias(false), 2000)
+  }
+
   const handleSendOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (cart.length === 0) {
@@ -96,38 +115,90 @@ export default function CourtOrderPage({
       return
     }
     if (!customerName.trim()) {
-      toast.error('Ingresá tu nombre para identificarte en la cancha')
+      toast.error('Ingresá tu nombre para identificarte en el mostrador')
       return
     }
 
     setIsSubmitting(true)
-    // Simular creación del pedido y broadcast a cantina
-    setTimeout(() => {
-      // Guardar pedido en localStorage para sincronizar con la cantina del club
-      const existingOrders = JSON.parse(localStorage.getItem('canchar_court_orders') || '[]')
-      const newOrder = {
-        id: `ord-${Date.now()}`,
-        court_name: courtName,
-        customer_name: customerName,
-        total_ars: totalArs,
-        status: 'PENDING',
-        created_at: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-        items: cart.map(i => ({
-          name: i.product.name,
-          quantity: i.quantity,
-          unit_price: i.product.price,
-          subtotal: i.product.price * i.quantity,
-        })),
-        notes,
-      }
-      localStorage.setItem('canchar_court_orders', JSON.stringify([newOrder, ...existingOrders]))
+    try {
+      const destination = tableName.trim() || 'Mesa Cantina'
+      const orderItems = cart.map(i => ({
+        product_id: i.product.id,
+        name: i.product.name,
+        quantity: i.quantity,
+        unit_price: i.product.price,
+        subtotal: i.product.price * i.quantity,
+      }))
 
-      setIsSubmitting(false)
+      // Guardar en base de datos vía Server Action
+      const result = await createCourtOrder({
+        tenant_id: DEMO_TENANT_ID,
+        court_name: destination,
+        customer_name: customerName.trim(),
+        items: orderItems,
+        total_ars: totalArs,
+        payment_method: paymentMethod,
+        payment_status: paymentMethod === 'TRANSFER' ? 'PAID' : 'PENDING',
+        notes: notes.trim() || undefined,
+      })
+
+      const finalId = result.order?.id || 'ord-comanda'
+      setConfirmedOrderId(finalId)
+
+      // Emitir en BroadcastChannel para notificación instantánea en la cantina (0ms)
+      try {
+        const bc = new BroadcastChannel('canchar_cantina_orders')
+        bc.postMessage({
+          type: 'NEW_ORDER',
+          order: {
+            id: finalId,
+            tenant_id: DEMO_TENANT_ID,
+            court_name: destination,
+            customer_name: customerName.trim(),
+            items: orderItems,
+            total_ars: totalArs,
+            status: 'PENDING',
+            payment_method: paymentMethod,
+            payment_status: paymentMethod === 'TRANSFER' ? 'PAID' : 'PENDING',
+            created_at: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+            notes: notes.trim() || null,
+          }
+        })
+        bc.close()
+      } catch (bcErr) {
+        console.warn('BroadcastChannel error:', bcErr)
+      }
+
+      // Guardar en localStorage para persistencia y respaldo offline
+      try {
+        const existingOrders = JSON.parse(localStorage.getItem('canchar_court_orders') || '[]')
+        const newLocalOrder = {
+          id: finalId,
+          court_name: destination,
+          customer_name: customerName.trim(),
+          total_ars: totalArs,
+          status: 'PENDING',
+          payment_method: paymentMethod,
+          payment_status: paymentMethod === 'TRANSFER' ? 'PAID' : 'PENDING',
+          created_at: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+          items: orderItems,
+          notes: notes.trim() || null,
+        }
+        localStorage.setItem('canchar_court_orders', JSON.stringify([newLocalOrder, ...existingOrders]))
+      } catch (lsErr) {
+        console.warn('LocalStorage error:', lsErr)
+      }
+
       setOrderConfirmed(true)
       toast.success('¡Pedido enviado a la cantina!', {
-        description: 'Enseguida te lo alcanzamos a la cancha.'
+        description: 'Acercate a la barra a retirar cuando desees.'
       })
-    }, 600)
+    } catch (err) {
+      console.error('Error al enviar pedido:', err)
+      toast.error('Hubo un error al enviar el pedido. Por favor intentá nuevamente.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (orderConfirmed) {
@@ -137,19 +208,62 @@ export default function CourtOrderPage({
           <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
             <CheckCircle2 className="w-8 h-8" />
           </div>
+
           <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-            ¡Comanda Recibida en Kiosco!
+            ¡Comanda Recibida en Cantina!
           </Badge>
+
           <h2 className="text-xl font-bold text-white">
-            ¡Marchando a {courtName}!
+            ¡Tu pedido está en marcha!
           </h2>
+
+          <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-center gap-2">
+            <UtensilsCrossed className="w-4 h-4 text-emerald-400" />
+            <span>Retirá tu pedido por el mostrador de la cantina</span>
+          </div>
+
           <p className="text-xs text-slate-400 leading-relaxed">
-            Hola <strong className="text-slate-200">{customerName}</strong>, recibimos tu pedido de{' '}
-            <strong className="text-emerald-400">{formatARS(totalArs)}</strong>. El personal del club te lo llevará a la cancha en breve.
+            Hola <strong className="text-slate-200">{customerName}</strong>, recibimos tu pedido por un total de{' '}
+            <strong className="text-emerald-400">{formatARS(totalArs)}</strong>.
           </p>
 
+          {/* Información del Medio de Pago */}
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-left text-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-bold uppercase text-[10px]">Medio de Pago:</span>
+              <Badge className={paymentMethod === 'TRANSFER' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'}>
+                {paymentMethod === 'TRANSFER' ? 'Transferencia Bancaria' : 'Efectivo en Mostrador'}
+              </Badge>
+            </div>
+
+            {paymentMethod === 'TRANSFER' ? (
+              <div className="text-[11px] text-slate-300 space-y-1 pt-1 border-t border-slate-800/80">
+                <p className="text-purple-300 font-medium">
+                  💳 <strong>Transferencia bancaria informada:</strong>
+                </p>
+                <p className="text-slate-400">
+                  Mostrá tu comprobante de transferencia al retirar en la barra.
+                </p>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Alias del Club:</span>
+                    <span className="font-mono text-emerald-400 font-bold">{bankDetails.alias}</span>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={handleCopyAlias} className="h-7 text-xs text-slate-300">
+                    {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-amber-300 pt-1 border-t border-slate-800/80">
+                💵 <strong>Pago en efectivo:</strong> Abonás los <strong className="text-white">{formatARS(totalArs)}</strong> directamente en la barra al retirar.
+              </p>
+            )}
+          </div>
+
+          {/* Detalle de Artículos */}
           <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-left text-xs space-y-1.5">
-            <div className="text-slate-400 font-bold uppercase text-[10px]">Detalle del Pedido:</div>
+            <div className="text-slate-400 font-bold uppercase text-[10px]">Detalle del Pedido #{confirmedOrderId.slice(-4)}:</div>
             {cart.map((item) => (
               <div key={item.product.id} className="flex justify-between text-slate-300">
                 <span>{item.quantity}x {item.product.name}</span>
@@ -157,10 +271,6 @@ export default function CourtOrderPage({
               </div>
             ))}
           </div>
-
-          <p className="text-[11px] text-slate-500">
-            Podés abonar el consumo en efectivo, Mercado Pago o sumarlo a la cuenta del turno al finalizar.
-          </p>
 
           <div className="pt-2">
             <Button
@@ -180,7 +290,7 @@ export default function CourtOrderPage({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-28">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-32">
       {/* Header Mobile Sticky */}
       <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
         <div className="max-w-md mx-auto flex items-center justify-between">
@@ -196,7 +306,7 @@ export default function CourtOrderPage({
               Cantina & Kiosco
             </div>
             <h1 className="text-sm font-bold text-white flex items-center gap-1.5 justify-center">
-              <span>{courtName}</span>
+              <span>{club.name}</span>
             </h1>
           </div>
 
@@ -213,7 +323,7 @@ export default function CourtOrderPage({
         </div>
       </header>
 
-      {/* Hero Banner */}
+      {/* Hero Banner Pedidos en Mesa */}
       <div className="max-w-md mx-auto px-4 pt-4">
         <div className="p-4 rounded-2xl bg-gradient-to-tr from-emerald-950/60 to-slate-900 border border-emerald-500/20 shadow-lg">
           <div className="flex items-center gap-3">
@@ -221,8 +331,8 @@ export default function CourtOrderPage({
               <Coffee className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xs font-bold text-white">Pedí directo desde tu cancha</h2>
-              <p className="text-[11px] text-slate-400">Bebidas frías, pelotas y overgrips sin cortar el partido.</p>
+              <h2 className="text-xs font-bold text-white">Pedí desde tu mesa y retirá en cantina</h2>
+              <p className="text-[11px] text-slate-400">Elegí tus bebidas o snacks, pagá con transferencia o efectivo y retirás en el mostrador.</p>
             </div>
           </div>
         </div>
@@ -294,6 +404,7 @@ export default function CourtOrderPage({
       {cart.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4">
           <div className="max-w-md mx-auto space-y-3">
+            {/* Datos del Cliente y Mesa */}
             <div className="grid grid-cols-2 gap-2">
               <Input
                 placeholder="Tu nombre (Ej: Juan)"
@@ -303,16 +414,83 @@ export default function CourtOrderPage({
                 required
               />
               <Input
-                placeholder="Aclaración (Ej: fría)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Mesa (Ej: Mesa 1)"
+                value={tableName}
+                onChange={(e) => setTableName(e.target.value)}
                 className="h-9 text-xs bg-slate-900 border-slate-700"
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3">
+            {/* Selector de Método de Pago */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-300 block">
+                Forma de pago al pedir:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('TRANSFER')}
+                  className={`p-2 rounded-xl text-left border text-xs transition-all flex items-center gap-2 ${
+                    paymentMethod === 'TRANSFER'
+                      ? 'bg-purple-600/20 border-purple-500 text-purple-300 font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4 text-purple-400 shrink-0" />
+                  <div>
+                    <div className="text-[11px] leading-tight">Transferencia</div>
+                    <div className="text-[9px] opacity-75 font-normal">Alias / CBU</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('CASH')}
+                  className={`p-2 rounded-xl text-left border text-xs transition-all flex items-center gap-2 ${
+                    paymentMethod === 'CASH'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Banknote className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <div className="text-[11px] leading-tight">Efectivo</div>
+                    <div className="text-[9px] opacity-75 font-normal">Pagar al retirar</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Ficha de Transferencia si está seleccionado */}
+            {paymentMethod === 'TRANSFER' && (
+              <div className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 text-[11px] space-y-1 text-slate-300">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-purple-300 font-bold">Datos para transferir:</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyAlias}
+                    className="text-[10px] font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1"
+                  >
+                    {copiedAlias ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedAlias ? 'Copiado' : 'Copiar Alias'}</span>
+                  </button>
+                </div>
+                <div className="font-mono text-purple-200 font-bold text-xs">{bankDetails.alias}</div>
+                <div className="text-[10px] text-slate-400">Titular: {bankDetails.accountHolder}</div>
+              </div>
+            )}
+
+            <Input
+              placeholder="Aclaración opcional (Ej: bien fría, sin hielo)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="h-8 text-xs bg-slate-900 border-slate-700"
+            />
+
+            {/* Total y Botón de Envío */}
+            <div className="flex items-center justify-between gap-3 pt-1">
               <div>
-                <div className="text-[10px] text-slate-400 uppercase font-medium">Total Pedido:</div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Total:</div>
                 <div className="text-base font-extrabold text-emerald-400">
                   {formatARS(totalArs)}
                 </div>
@@ -321,12 +499,12 @@ export default function CourtOrderPage({
               <Button
                 onClick={handleSendOrder}
                 disabled={isSubmitting}
-                className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/40"
+                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/40"
               >
                 {isSubmitting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <span>Pedir a {courtName}</span>
+                  <span>Pedir y Retirar en Cantina</span>
                 )}
               </Button>
             </div>

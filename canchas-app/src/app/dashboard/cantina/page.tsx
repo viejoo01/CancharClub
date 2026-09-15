@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   Coffee, 
   Plus, 
@@ -12,19 +12,23 @@ import {
   Search, 
   Clock,
   ChefHat,
-  SendHorizontal,
   Printer,
   AlertTriangle,
   TrendingUp,
   MessageSquare,
-  Loader2
+  Loader2,
+  X,
+  Banknote
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
+import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
 import { formatARS, buildWhatsAppLink } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import {
   createCourtOrder,
@@ -32,6 +36,7 @@ import {
   getDailyOrders,
   type CourtOrder,
   type OrderStatus,
+  type CantinaPaymentMethod,
 } from '@/actions/cantina.actions'
 
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
@@ -45,9 +50,6 @@ interface Product {
   emoji: string
 }
 
-
-
-
 const CANTINA_PRODUCTS: Product[] = [
   { id: 'p1', name: 'Gatorade / Powerade 500ml', category: 'BEBIDAS', price: 2500, stock: 48, emoji: '⚡' },
   { id: 'p2', name: 'Agua Mineral 500ml', category: 'BEBIDAS', price: 1500, stock: 60, emoji: '💧' },
@@ -59,54 +61,248 @@ const CANTINA_PRODUCTS: Product[] = [
   { id: 'p8', name: 'Papas Fritas / Maní Snack', category: 'SNACKS', price: 1800, stock: 20, emoji: '🥜' },
 ]
 
+// Singleton reutilizable para el contexto de audio (previene memory leaks y bloqueos del navegador)
+let sharedAudioCtx: AudioContext | null = null
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) return null
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioContextClass()
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {})
+    }
+    return sharedAudioCtx
+  } catch {
+    return null
+  }
+}
+
+// Campanilla sonora nítida sintetizada con Web Audio API de alto rendimiento
+function playOrderChime() {
+  try {
+    const ctx = getAudioContext()
+    if (!ctx) return
+    const now = ctx.currentTime
+
+    const osc1 = ctx.createOscillator()
+    const osc2 = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(659.25, now) // E5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15) // A5
+
+    osc2.type = 'triangle'
+    osc2.frequency.setValueAtTime(880, now + 0.15)
+    osc2.frequency.exponentialRampToValueAtTime(1318.51, now + 0.35) // E6
+
+    gain.gain.setValueAtTime(0.35, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9)
+
+    osc1.connect(gain)
+    osc2.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc1.start(now)
+    osc2.start(now + 0.15)
+    osc1.stop(now + 0.45)
+    osc2.stop(now + 0.9)
+  } catch (e) {
+    console.warn('Audio chime warning:', e)
+  }
+}
+
 export default function CantinaPage() {
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS'>('POS')
   const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
-  const loadOrders = useCallback(async () => {
+  // Cola de pedidos entrantes concurrentes (soporta 1 o más pedidos simultáneos)
+  const [incomingAlerts, setIncomingAlerts] = useState<CourtOrder[]>([])
+  const activeIncomingAlert = incomingAlerts[0] || null
+
+  const [activeLinkedOrder, setActiveLinkedOrder] = useState<CourtOrder | null>(null)
+  const [isTableQrOpen, setIsTableQrOpen] = useState(false)
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false)
+  const knownOrderIdsRef = useRef<Set<string>>(new Set())
+
+  // Carrito de ventas POS
+  const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
+  const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
+
+  // Estados para Impresión Térmica
+  const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
+
+  // Armar automáticamente el carrito con los productos del pedido
+  const loadOrderIntoCart = useCallback((order: CourtOrder) => {
+    setActiveTab('POS')
+    setActiveLinkedOrder(order)
+    setAssignToCourt(order.court_name)
+    setPaymentMethod(order.payment_method === 'TRANSFER' ? 'TRANSFER' : 'CASH')
+
+    const newItems: Array<{ product: Product; quantity: number }> = []
+    order.items.forEach((it, idx) => {
+      const match = CANTINA_PRODUCTS.find(
+        (p) => p.name.toLowerCase() === it.name.toLowerCase() || p.id === it.product_id
+      )
+      if (match) {
+        newItems.push({ product: match, quantity: it.quantity })
+      } else {
+        newItems.push({
+          product: {
+            id: it.product_id || `prod-custom-${idx}`,
+            name: it.name,
+            category: 'SNACKS',
+            price: it.unit_price,
+            stock: 99,
+            emoji: '🍽️',
+          },
+          quantity: it.quantity,
+        })
+      }
+    })
+    setCart(newItems)
+    toast.success(`¡Carrito cargado con el pedido de ${order.customer_name}!`, {
+      description: `${order.court_name} • ${order.payment_method === 'TRANSFER' ? 'Pagado con Transferencia' : 'Abona en Efectivo'}`
+    })
+  }, [])
+
+  const loadOrders = useCallback(async (isInitial = false) => {
     setOrdersLoading(true)
     try {
       const orders = await getDailyOrders(DEMO_TENANT_ID)
       setCourtOrders(orders)
+
+      // Detectar nuevos pedidos para reproducir sonido y encolar alerta
+      orders.forEach((order) => {
+        if (!knownOrderIdsRef.current.has(order.id)) {
+          knownOrderIdsRef.current.add(order.id)
+          if (!isInitial && order.status === 'PENDING') {
+            playOrderChime()
+            setIncomingAlerts((prev) => {
+              if (prev.some((o) => o.id === order.id)) return prev
+              return [order, ...prev]
+            })
+            toast.success('🔔 ¡Nuevo pedido de mesa!', {
+              description: `${order.customer_name} • ${order.court_name} (${formatARS(order.total_ars)})`,
+              action: {
+                label: 'Cargar al carrito',
+                onClick: () => loadOrderIntoCart(order),
+              },
+            })
+          }
+        }
+      })
     } catch {
       // silently ignore
     } finally {
       setOrdersLoading(false)
     }
-  }, [])
+  }, [loadOrderIntoCart])
 
   useEffect(() => {
-    loadOrders()
-    // Recargar cada 30 segundos para ver nuevos pedidos del QR
-    const interval = setInterval(loadOrders, 30_000)
-    return () => clearInterval(interval)
-  }, [loadOrders])
+    // Carga inicial diferida
+    const initTimer = setTimeout(() => {
+      loadOrders(true)
+    }, 0)
 
-  const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QR_MP' | 'TRANSFER'>('CASH')
+    // Listener BroadcastChannel para sincronización instantánea entre pestañas / pantallas
+    let bc: BroadcastChannel | null = null
+    try {
+      bc = new BroadcastChannel('canchar_cantina_orders')
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'NEW_ORDER' && event.data.order) {
+          const newOrder: CourtOrder = event.data.order
+          setCourtOrders((prev) => {
+            if (prev.some((o) => o.id === newOrder.id)) return prev
+            return [newOrder, ...prev]
+          })
+          knownOrderIdsRef.current.add(newOrder.id)
+          playOrderChime()
+          setIncomingAlerts((prev) => {
+            if (prev.some((o) => o.id === newOrder.id)) return prev
+            return [newOrder, ...prev]
+          })
+          toast.success('🔔 ¡Nuevo pedido de mesa!', {
+            description: `${newOrder.customer_name} • ${newOrder.court_name} (${formatARS(newOrder.total_ars)})`,
+            action: {
+              label: 'Ver y armar carrito',
+              onClick: () => loadOrderIntoCart(newOrder),
+            },
+          })
+        }
+      }
+    } catch (bcErr) {
+      console.warn('BroadcastChannel error:', bcErr)
+    }
 
-  // Estados para Impresión Térmica (Mejora 1C)
-  const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
+    // Suscripción Supabase Realtime para notificaciones push sin recargar
+    let supabaseChannel: RealtimeChannel | null = null
+    try {
+      const supabase = createClient()
+      supabaseChannel = supabase
+        .channel('court_orders_live_feed')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'court_orders',
+          },
+          () => {
+            loadOrders(false)
+          }
+        )
+        .subscribe()
+    } catch (realtimeErr) {
+      console.warn('Supabase Realtime fallback:', realtimeErr)
+    }
 
-  // Datos para Alerta Predictiva de Stock (Mejora 3C)
-  const weekendPredictions = [
+    // Polling inteligente de bajo consumo: sólo cuando la pestaña está visible
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      loadOrders(false)
+    }, 6000)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadOrders(false)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearTimeout(initTimer)
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      bc?.close()
+      if (supabaseChannel) {
+        createClient().removeChannel(supabaseChannel)
+      }
+    }
+  }, [loadOrders, loadOrderIntoCart])
+
+  // Datos para Alerta Predictiva de Stock memoizados
+  const weekendPredictions = useMemo(() => [
     { product: CANTINA_PRODUCTS[0], currentStock: 48, projectedDemand: 95, deficit: 47 },
     { product: CANTINA_PRODUCTS[1], currentStock: 60, projectedDemand: 80, deficit: 20 },
     { product: CANTINA_PRODUCTS[3], currentStock: 15, projectedDemand: 24, deficit: 9 },
-  ]
+  ], [])
 
-  const distributorWhatsAppUrl = buildWhatsAppLink(
+  const distributorWhatsAppUrl = useMemo(() => buildWhatsAppLink(
     '5493815009988',
     `¡Hola Distribuidora Bebidas y Deportes! Te paso el pedido de reposición preventiva de CancharClub para el fin de semana:\n\n` +
     weekendPredictions.map(p => `• ${p.deficit}x ${p.product.name} (Faltante p/ fin de semana)`).join('\n') +
     `\n\n¿Nos podrán entregar antes del viernes a las 18 hs? ¡Muchas gracias!`
-  )
+  ), [weekendPredictions])
 
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
     // Optimistic update
@@ -116,17 +312,20 @@ export default function CantinaPage() {
       toast.error('Error al actualizar el estado del pedido')
       loadOrders() // revertir con datos reales
     } else if (nextStatus === 'DELIVERED') {
-      toast.success('¡Comanda despachada a la cancha!')
+      toast.success('¡Pedido entregado y registrado!')
     } else {
       toast.info('Comanda marcada en preparación')
     }
   }
 
-  const filteredProducts = CANTINA_PRODUCTS.filter(p => {
-    const matchesCat = selectedCategory === 'ALL' || p.category === selectedCategory
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesCat && matchesSearch
-  })
+  const filteredProducts = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim()
+    return CANTINA_PRODUCTS.filter(p => {
+      const matchesCat = selectedCategory === 'ALL' || p.category === selectedCategory
+      const matchesSearch = !term || p.name.toLowerCase().includes(term)
+      return matchesCat && matchesSearch
+    })
+  }, [selectedCategory, searchTerm])
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -156,50 +355,87 @@ export default function CantinaPage() {
     })
   }
 
-  const clearCart = () => setCart([])
+  const clearCart = () => {
+    setCart([])
+    setActiveLinkedOrder(null)
+  }
 
-  const cartTotal = cart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)
+  const cartTotal = useMemo(() => {
+    return cart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)
+  }, [cart])
 
-  const handleCheckout = async () => {
+  // Registro de venta fluida con impresión térmica automática
+  const handleRegisterSale = async () => {
     if (cart.length === 0) return
     setCheckoutLoading(true)
     try {
-      const items = cart.map(c => ({
-        product_id: c.product.id,
-        name: c.product.name,
-        quantity: c.quantity,
-        unit_price: c.product.price,
-        subtotal: c.product.price * c.quantity,
-      }))
+      let completedOrder: CourtOrder | null = activeLinkedOrder
+      const effectiveTotal = cartTotal
 
-      const courtLabel = assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Mostrador'
-      const result = await createCourtOrder({
-        tenant_id: DEMO_TENANT_ID,
-        court_name: courtLabel,
-        customer_name: 'Mostrador',
-        items,
-        total_ars: cartTotal,
-        notes: paymentMethod === 'CASH' ? 'Efectivo' : paymentMethod === 'QR_MP' ? 'MP QR' : 'Transferencia',
+      if (activeLinkedOrder) {
+        // 1. Registrar venta interna actualizando estado a DELIVERED
+        await handleUpdateOrderStatus(activeLinkedOrder.id, 'DELIVERED')
+        completedOrder = { 
+          ...activeLinkedOrder, 
+          status: 'DELIVERED',
+          payment_status: 'PAID'
+        }
+      } else {
+        // Registrar venta de mostrador
+        const items = cart.map(c => ({
+          product_id: c.product.id,
+          name: c.product.name,
+          unit_price: c.product.price,
+          quantity: c.quantity,
+          subtotal: c.product.price * c.quantity,
+        }))
+        const res = await createCourtOrder({
+          tenant_id: DEMO_TENANT_ID,
+          court_name: assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Venta Mostrador',
+          customer_name: 'Cliente Mostrador',
+          items,
+          total_ars: effectiveTotal,
+          payment_method: paymentMethod,
+          payment_status: 'PAID',
+        })
+        if (res.success && res.order) {
+          completedOrder = res.order
+        } else {
+          completedOrder = {
+            id: `ord-${Date.now()}`,
+            tenant_id: DEMO_TENANT_ID,
+            court_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            court_name: assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Venta Mostrador',
+            customer_name: 'Cliente Mostrador',
+            items,
+            total_ars: effectiveTotal,
+            status: 'DELIVERED',
+            payment_method: paymentMethod,
+            payment_status: 'PAID',
+            notes: null,
+          }
+        }
+      }
+
+      // 2. Notificar éxito interno
+      toast.success('¡Venta registrada con éxito!', {
+        description: `Total: ${formatARS(effectiveTotal)}`
       })
 
-      if (result.success) {
-        if (assignToCourt !== 'NONE') {
-          toast.success('Consumo cargado a la cancha', {
-            description: `Se agregaron ${formatARS(cartTotal)} a la cuenta de la Cancha ${assignToCourt}.`
-          })
-        } else {
-          const methodLbl = paymentMethod === 'CASH' ? 'Efectivo' : paymentMethod === 'QR_MP' ? 'Mercado Pago QR' : 'Transferencia'
-          toast.success(`Venta cobrada (${methodLbl})`, {
-            description: `${formatARS(cartTotal)} registrados en caja.`
-          })
-        }
-        clearCart()
-        setAssignToCourt('NONE')
-        // Actualizar lista de pedidos
-        if (result.order) setCourtOrders(prev => [result.order!, ...prev])
-      } else {
-        toast.error('Error al registrar la venta', { description: result.error })
+      // 3. Abrir automáticamente modal con impresión térmica instantánea
+      if (completedOrder) {
+        setSelectedPrintOrder(completedOrder)
+        setAutoPrintReceipt(true)
+        setIsPrintModalOpen(true)
       }
+
+      // 4. Dejar el carrito limpio para la siguiente venta
+      clearCart()
+      loadOrders()
+    } catch {
+      toast.error('Error al procesar venta')
     } finally {
       setCheckoutLoading(false)
     }
@@ -209,21 +445,94 @@ export default function CantinaPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-wider uppercase mb-1">
-          <Coffee className="w-4 h-4" />
-          Punto de Venta & Kiosco del Club
+      {/* Header con botón para generar QR de Mesas */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-wider uppercase mb-1">
+            <Coffee className="w-4 h-4" />
+            Punto de Venta & Kiosco del Club
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Cantina y Pedidos de Mesa
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Venta en mostrador, recepción de pedidos QR de mesas, armado ágil del carrito y ticket térmico.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Cantina y Pedidos de Cancha
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Venta en mostrador, despacho de pedidos QR en cancha y cobro directo al turno.
-        </p>
+
+        <Button
+          onClick={() => setIsTableQrOpen(true)}
+          className="bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 text-xs font-bold rounded-xl gap-2 h-9 self-start sm:self-auto shadow-sm"
+        >
+          <QrCode className="w-4 h-4 text-emerald-400" />
+          <span>Imprimir QR para Mesas</span>
+        </Button>
       </div>
 
-      {/* Alerta de Control Predictivo de Stock (Mejora 3C) */}
+      {/* Alerta flotante animada al recibir nuevo pedido de mesa (con soporte multisesión / cola) */}
+      {activeIncomingAlert && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full bg-slate-900/95 border-2 border-emerald-500 rounded-3xl p-4 shadow-2xl shadow-emerald-950/60 backdrop-blur-xl animate-in slide-in-from-bottom-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-xl shrink-0 animate-bounce">
+                🔔
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                    ¡NUEVO PEDIDO DE MESA!
+                  </Badge>
+                  {incomingAlerts.length > 1 && (
+                    <Badge variant="outline" className="bg-purple-500/20 text-purple-300 border-purple-500/40 text-[10px] font-extrabold animate-pulse">
+                      +{incomingAlerts.length - 1} en espera
+                    </Badge>
+                  )}
+                </div>
+                <h4 className="text-white font-bold text-sm mt-0.5">
+                  {activeIncomingAlert.customer_name} • {activeIncomingAlert.court_name}
+                </h4>
+                <p className="text-xs text-slate-300">
+                  Total: <strong className="text-emerald-400 font-extrabold">{formatARS(activeIncomingAlert.total_ars)}</strong>
+                  {' • '}
+                  Pago: <strong className={activeIncomingAlert.payment_method === 'TRANSFER' ? 'text-purple-300' : 'text-emerald-300'}>
+                    {activeIncomingAlert.payment_method === 'TRANSFER' ? 'Transferencia' : 'Efectivo'}
+                  </strong>
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIncomingAlerts(prev => prev.filter(o => o.id !== activeIncomingAlert.id))} 
+              className="text-slate-400 hover:text-white p-1"
+              aria-label="Cerrar alerta"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Button
+              onClick={() => {
+                loadOrderIntoCart(activeIncomingAlert)
+                setIncomingAlerts(prev => prev.filter(o => o.id !== activeIncomingAlert.id))
+              }}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md h-9 gap-1.5"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Ver pedido y armar carrito</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIncomingAlerts(prev => prev.filter(o => o.id !== activeIncomingAlert.id))}
+              className="text-xs text-slate-400 hover:text-white h-9 rounded-xl"
+            >
+              {incomingAlerts.length > 1 ? 'Siguiente' : 'Descartar'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Alerta de Control Predictivo de Stock */}
       <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -251,7 +560,7 @@ export default function CantinaPage() {
         </a>
       </div>
 
-      {/* Tabs Selector (Mejora 2D) */}
+      {/* Tabs Selector */}
       <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
         <button
           onClick={() => setActiveTab('POS')}
@@ -263,6 +572,11 @@ export default function CantinaPage() {
         >
           <Coffee className="w-4 h-4" />
           <span>Punto de Venta (Mostrador)</span>
+          {activeLinkedOrder && (
+            <span className="px-2 py-0.5 rounded-full bg-purple-500 text-white font-bold text-[10px]">
+              Pedido activo: {activeLinkedOrder.customer_name}
+            </span>
+          )}
         </button>
 
         <button
@@ -274,7 +588,10 @@ export default function CantinaPage() {
           }`}
         >
           <QrCode className="w-4 h-4" />
-          <span>Comandas en Cancha (QR)</span>
+          <span>Comandas de Mesa y Cancha (QR)</span>
+          {ordersLoading && (
+            <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+          )}
           {pendingOrdersCount > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] animate-pulse">
               {pendingOrdersCount} Nuevas
@@ -283,7 +600,7 @@ export default function CantinaPage() {
         </button>
       </div>
 
-      {/* VISTA 1: COMANDAS EN CANCHA (QR) */}
+      {/* VISTA 1: COMANDAS EN VIVO */}
       {activeTab === 'ORDERS' ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -307,18 +624,29 @@ export default function CantinaPage() {
                 >
                   <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-start justify-between">
                     <div>
-                      <Badge 
-                        className={`text-[10px] font-bold ${
-                          order.status === 'PENDING'
-                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                            : order.status === 'PREPARING'
-                            ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                        }`}
-                      >
-                        {order.status === 'PENDING' ? '⏳ PENDIENTE' : order.status === 'PREPARING' ? '🔥 EN PREPARACIÓN' : '✅ DESPACHADO'}
-                      </Badge>
-                      <h3 className="font-bold text-sm text-white mt-1.5">{order.court_name}</h3>
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <Badge 
+                          className={`text-[10px] font-bold ${
+                            order.status === 'PENDING'
+                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              : order.status === 'PREPARING'
+                              ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          }`}
+                        >
+                          {order.status === 'PENDING' ? '⏳ PENDIENTE' : order.status === 'PREPARING' ? '🔥 EN PREPARACIÓN' : '✅ ENTREGADO'}
+                        </Badge>
+                        <Badge 
+                          className={`text-[10px] font-semibold ${
+                            order.payment_method === 'TRANSFER'
+                              ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          }`}
+                        >
+                          {order.payment_method === 'TRANSFER' ? '💳 Transferencia' : '💵 Efectivo'}
+                        </Badge>
+                      </div>
+                      <h3 className="font-bold text-sm text-white mt-1">{order.court_name}</h3>
                       <p className="text-xs text-slate-400">Cliente: <strong className="text-slate-200">{order.customer_name}</strong></p>
                     </div>
                     <div className="text-right">
@@ -343,16 +671,17 @@ export default function CantinaPage() {
 
                     {order.notes && (
                       <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
-                        <strong>Nota del jugador:</strong> {order.notes}
+                        <strong>Nota del cliente:</strong> {order.notes}
                       </div>
                     )}
 
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-end gap-2">
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => {
                           setSelectedPrintOrder(order)
+                          setAutoPrintReceipt(false)
                           setIsPrintModalOpen(true)
                         }}
                         className="h-8 text-xs border-slate-700 text-slate-300 hover:bg-slate-800 rounded-xl gap-1"
@@ -361,32 +690,19 @@ export default function CantinaPage() {
                         <span>Ticket</span>
                       </Button>
 
-                      {order.status === 'PENDING' && (
+                      {order.status !== 'DELIVERED' ? (
                         <Button
                           size="sm"
-                          onClick={() => handleUpdateOrderStatus(order.id, 'PREPARING')}
-                          className="h-8 text-xs bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl gap-1.5"
-                        >
-                          <ChefHat className="w-3.5 h-3.5" />
-                          <span>Marchar / Preparar</span>
-                        </Button>
-                      )}
-
-                      {order.status === 'PREPARING' && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleUpdateOrderStatus(order.id, 'DELIVERED')}
+                          onClick={() => loadOrderIntoCart(order)}
                           className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl gap-1.5"
                         >
-                          <SendHorizontal className="w-3.5 h-3.5" />
-                          <span>Despachar a Cancha</span>
+                          <ShoppingBag className="w-3.5 h-3.5" />
+                          <span>Armar Carrito POS</span>
                         </Button>
-                      )}
-
-                      {order.status === 'DELIVERED' && (
+                      ) : (
                         <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          Entregado en Cancha
+                          Venta Registrada
                         </span>
                       )}
                     </div>
@@ -459,12 +775,14 @@ export default function CantinaPage() {
             </div>
           </div>
 
-          {/* Carrito de Venta */}
+          {/* Carrito de Venta y Cobro */}
           <Card className="bg-slate-900/80 border-slate-800 p-5 rounded-3xl sticky top-6 shadow-xl">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="w-5 h-5 text-emerald-400" />
-                <CardTitle className="text-base text-white">Comprobante de Venta</CardTitle>
+                <CardTitle className="text-base text-white">
+                  {activeLinkedOrder ? `Comanda de ${activeLinkedOrder.customer_name}` : 'Comprobante de Venta'}
+                </CardTitle>
               </div>
               {cart.length > 0 && (
                 <button
@@ -479,7 +797,7 @@ export default function CantinaPage() {
 
             {cart.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs">
-                El carrito está vacío. Hacé click en un producto para agregarlo.
+                El carrito está vacío. Hacé click en un producto para agregarlo o cargá un pedido de mesa desde las comandas.
               </div>
             ) : (
               <div className="space-y-4 pt-4">
@@ -498,94 +816,183 @@ export default function CantinaPage() {
                           onClick={() => updateQuantity(item.product.id, -1)}
                           className="w-6 h-6 rounded-md bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
                         >
-                          <Minus className="w-3 h-3" />
+                          <Minus className="w-3.5 h-3.5" />
                         </button>
                         <span className="w-4 text-center font-bold text-white text-xs">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(item.product.id, 1)}
                           className="w-6 h-6 rounded-md bg-emerald-600 flex items-center justify-center text-white"
                         >
-                          <Plus className="w-3 h-3" />
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {/* Destino de la Venta */}
-                <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
-                  <label className="text-slate-400 font-semibold block">Asignar a Cancha / Turno:</label>
-                  <select
-                    value={assignToCourt}
-                    onChange={(e) => setAssignToCourt(e.target.value)}
-                    className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="NONE">Venta Inmediata de Mostrador</option>
-                    <option value="1">Cancha 1 (Panorámica)</option>
-                    <option value="2">Cancha 2 (Techada)</option>
-                    <option value="3">Cancha 3 (Blindex)</option>
-                    <option value="4">Fútbol 5 (Sintético)</option>
-                  </select>
-                </div>
+                {/* Si el pedido proviene de una mesa cargada */}
+                {activeLinkedOrder ? (
+                  <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
+                    {activeLinkedOrder.payment_method === 'TRANSFER' ? (
+                      <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 text-purple-200 space-y-1">
+                        <div className="flex items-center gap-2 font-bold text-purple-300">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>Pagado con Transferencia Bancaria</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300">
+                          Cliente: <strong className="text-white">{activeLinkedOrder.customer_name}</strong> • Destino: <strong className="text-white">{activeLinkedOrder.court_name}</strong>
+                        </p>
+                        <div className="text-[10px] text-purple-400">
+                          Retira por el mostrador • Comprobante digital verificado
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-amber-200 space-y-1">
+                        <div className="flex items-center gap-2 font-bold text-amber-300">
+                          <Banknote className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>Cobro en Efectivo al Retirar: {formatARS(cartTotal)}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300">
+                          Cliente: <strong className="text-white">{activeLinkedOrder.customer_name}</strong> • Destino: <strong className="text-white">{activeLinkedOrder.court_name}</strong>
+                        </p>
+                      </div>
+                    )}
 
-                {/* Medio de Pago */}
-                {assignToCourt === 'NONE' && (
-                  <div className="space-y-2 text-xs">
-                    <label className="text-slate-400 font-semibold block">Medio de Cobro:</label>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="flex justify-between items-center text-[11px] text-slate-400 pt-1">
+                      <span>Pedido #{activeLinkedOrder.id.slice(-4)}</span>
                       <button
-                        type="button"
-                        onClick={() => setPaymentMethod('CASH')}
-                        className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
-                          paymentMethod === 'CASH'
-                            ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => {
+                          setActiveLinkedOrder(null)
+                          clearCart()
+                        }}
+                        className="text-rose-400 hover:text-rose-300 font-semibold text-[11px]"
                       >
-                        Efectivo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('QR_MP')}
-                        className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
-                          paymentMethod === 'QR_MP'
-                            ? 'bg-sky-600/20 border-sky-500 text-sky-400'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        QR MP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('TRANSFER')}
-                        className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
-                          paymentMethod === 'TRANSFER'
-                            ? 'bg-purple-600/20 border-purple-500 text-purple-400'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Transf.
+                        Desvincular Pedido
                       </button>
                     </div>
                   </div>
+                ) : (
+                  /* Venta Mostrador Regular */
+                  <>
+                    <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
+                      <label className="text-slate-400 font-semibold block">Asignar a Cancha / Turno:</label>
+                      <select
+                        value={assignToCourt}
+                        onChange={(e) => setAssignToCourt(e.target.value)}
+                        className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="NONE">Venta Inmediata de Mostrador</option>
+                        <option value="1">Cancha 1 (Panorámica)</option>
+                        <option value="2">Cancha 2 (Techada)</option>
+                        <option value="3">Cancha 3 (Blindex)</option>
+                        <option value="4">Fútbol 5 (Sintético)</option>
+                      </select>
+                    </div>
+
+                    {assignToCourt === 'NONE' && (
+                      <div className="space-y-2 text-xs">
+                        <label className="text-slate-400 font-semibold block">Medio de Cobro:</label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('CASH')}
+                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                              paymentMethod === 'CASH'
+                                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Efectivo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('QR_MP')}
+                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                              paymentMethod === 'QR_MP'
+                                ? 'bg-sky-600/20 border-sky-500 text-sky-400'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            QR MP
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('TRANSFER')}
+                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                              paymentMethod === 'TRANSFER'
+                                ? 'bg-purple-600/20 border-purple-500 text-purple-400'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Transf.
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {/* Total y Botón */}
+                {/* Total y Botón de Venta */}
                 <div className="pt-2 border-t border-slate-800">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-slate-400 font-semibold text-xs">Total a Cobrar:</span>
+                    <span className="text-slate-400 font-semibold text-xs">Total a Registrar:</span>
                     <span className="text-xl font-extrabold text-emerald-400 font-mono">
                       {formatARS(cartTotal)}
                     </span>
                   </div>
 
-                  <Button
-                    onClick={handleCheckout}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-lg shadow-emerald-600/20"
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    {assignToCourt !== 'NONE' ? 'Cargar a Cuenta del Turno' : 'Registrar Venta en Caja'}
-                  </Button>
+                  {activeLinkedOrder?.payment_method === 'TRANSFER' ? (
+                    <Button
+                      onClick={handleRegisterSale}
+                      disabled={checkoutLoading}
+                      className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-extrabold text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2.5 transition-all"
+                    >
+                      {checkoutLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Printer className="w-5 h-5 text-emerald-200" />
+                          <div className="text-left leading-tight">
+                            <div>Registrar Venta</div>
+                            <div className="text-[10px] font-normal text-emerald-100 opacity-90">Asienta en sistema e imprime ticket térmico</div>
+                          </div>
+                        </>
+                      )}
+                    </Button>
+                  ) : activeLinkedOrder?.payment_method === 'CASH' ? (
+                    <Button
+                      onClick={handleRegisterSale}
+                      disabled={checkoutLoading}
+                      className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-extrabold text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2.5 transition-all"
+                    >
+                      {checkoutLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-5 h-5" />
+                          <div className="text-left leading-tight">
+                            <div>Cobrar y Registrar Venta</div>
+                            <div className="text-[10px] font-normal text-emerald-100 opacity-90">Efectivo • Imprime ticket térmico</div>
+                          </div>
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleRegisterSale}
+                      disabled={checkoutLoading}
+                      className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-lg shadow-emerald-600/20 gap-2"
+                    >
+                      {checkoutLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{assignToCourt !== 'NONE' ? 'Cargar a Cuenta del Turno' : 'Registrar Venta e Imprimir Ticket'}</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -593,14 +1000,16 @@ export default function CantinaPage() {
         </div>
       )}
 
-      {/* Modal de Impresión Térmica para Comandas (Mejora 1C) */}
+      {/* Modal de Impresión Térmica para Comandas */}
       {isPrintModalOpen && selectedPrintOrder && (
         <ThermalReceiptModal
           isOpen={isPrintModalOpen}
           onClose={() => {
             setIsPrintModalOpen(false)
             setSelectedPrintOrder(null)
+            setAutoPrintReceipt(false)
           }}
+          autoPrint={autoPrintReceipt}
           type="CANTINA_ORDER"
           cantinaData={{
             clubName: 'CancharClub Cantina',
@@ -608,6 +1017,7 @@ export default function CantinaPage() {
             courtOrTable: selectedPrintOrder.court_name,
             customerName: selectedPrintOrder.customer_name,
             dateTime: selectedPrintOrder.created_at,
+            paymentMethod: selectedPrintOrder.payment_method === 'TRANSFER' ? 'Transferencia Bancaria' : selectedPrintOrder.payment_method === 'CASH' ? 'Efectivo' : 'Mercado Pago',
             items: selectedPrintOrder.items.map(it => ({
               name: it.name,
               quantity: it.quantity,
@@ -619,6 +1029,14 @@ export default function CantinaPage() {
           }}
         />
       )}
+
+      {/* Modal para generar e imprimir código QR de Mesas */}
+      <CourtQrModal
+        isOpen={isTableQrOpen}
+        onClose={() => setIsTableQrOpen(false)}
+        tableName=""
+        clubSlug="padel-central"
+      />
     </div>
   )
 }

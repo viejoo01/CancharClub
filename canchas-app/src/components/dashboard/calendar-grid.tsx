@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -21,6 +22,7 @@ import { es } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { BookingStatus } from '@/types/database'
+import { getVenueCourts, getVenueBookings, type VenueItem } from '@/config/venues-data'
 
 export interface CalendarBooking {
   id: string
@@ -55,6 +57,7 @@ interface CalendarGridProps {
   courts: CourtItem[]
   initialBookings: CalendarBooking[]
   initialDate?: string
+  initialVenueId?: string
   onRefresh?: () => void
 }
 
@@ -71,10 +74,68 @@ export function CalendarGrid({
   courts,
   initialBookings,
   initialDate = new Date().toISOString().split('T')[0],
+  initialVenueId = 'venue-yb',
   onRefresh,
 }: CalendarGridProps) {
+  const router = useRouter()
   const [selectedDate, setSelectedDate] = useState(initialDate)
   const [selectedSport, setSelectedSport] = useState<string>('ALL')
+  const [optimisticBookings, setOptimisticBookings] = useState<CalendarBooking[]>([])
+
+  // Estado de sede seleccionada en caliente para respuesta instantánea (0ms)
+  const [overrideVenue, setOverrideVenue] = useState<VenueItem | null>(null)
+
+  // Escuchar cambio inmediato de sede (0ms de latencia) desde VenueSwitcher
+  useEffect(() => {
+    const handleVenueChange = (e: Event) => {
+      const customEvent = e as CustomEvent<VenueItem>
+      const venue = customEvent.detail
+      if (!venue) return
+      setOverrideVenue(venue)
+      setSelectedSport('ALL')
+    }
+
+    window.addEventListener('canchar:venue-changed', handleVenueChange)
+    return () => {
+      window.removeEventListener('canchar:venue-changed', handleVenueChange)
+    }
+  }, [])
+
+  // Canchas y reservas activas derivadas limpiamente
+  const activeCourts = useMemo(() => {
+    if (overrideVenue) {
+      let customVenues: VenueItem[] | undefined
+      try {
+        const saved = localStorage.getItem('canchar_custom_venues')
+        if (saved) customVenues = JSON.parse(saved)
+      } catch {}
+      return getVenueCourts(overrideVenue.id, customVenues)
+    }
+    return courts
+  }, [overrideVenue, courts])
+
+  const activeBookings = useMemo(() => {
+    let base: CalendarBooking[]
+    if (overrideVenue) {
+      base = getVenueBookings(overrideVenue.id, selectedDate)
+    } else if (selectedDate !== initialDate) {
+      base = getVenueBookings(initialVenueId, selectedDate)
+    } else {
+      base = initialBookings
+    }
+
+    if (optimisticBookings.length === 0) return base
+
+    const currentDayOptimistic = optimisticBookings.filter(
+      (b) => b.starts_at.split('T')[0] === selectedDate
+    )
+    if (currentDayOptimistic.length === 0) return base
+
+    const map = new Map<string, CalendarBooking>()
+    base.forEach((b) => map.set(b.id, b))
+    currentDayOptimistic.forEach((b) => map.set(b.id, b))
+    return Array.from(map.values())
+  }, [overrideVenue, initialBookings, selectedDate, initialDate, initialVenueId, optimisticBookings])
 
   // Modales
   const [isQuickBookOpen, setIsQuickBookOpen] = useState(false)
@@ -111,14 +172,14 @@ export function CalendarGrid({
 
   // Filtro de canchas
   const filteredCourts = useMemo(() => {
-    return courts.filter(c => c.is_active && (selectedSport === 'ALL' || c.sport === selectedSport))
-  }, [courts, selectedSport])
+    return activeCourts.filter(c => c.is_active && (selectedSport === 'ALL' || c.sport === selectedSport))
+  }, [activeCourts, selectedSport])
 
   // Deportes disponibles
   const sports = useMemo(() => {
-    const set = new Set(courts.map(c => c.sport))
+    const set = new Set(activeCourts.map(c => c.sport))
     return Array.from(set)
-  }, [courts])
+  }, [activeCourts])
 
   const handlePrevDay = () => {
     const prev = subDays(parseISO(selectedDate), 1)
@@ -137,15 +198,16 @@ export function CalendarGrid({
   // Mapear reservas por courtId y hora de inicio (HH:mm)
   const bookingMap = useMemo(() => {
     const map = new Map<string, CalendarBooking>()
-    initialBookings.forEach(b => {
+    activeBookings.forEach((b) => {
       if (!b.starts_at) return
+      if (b.starts_at.split('T')[0] !== selectedDate) return
       // Extraer hora local HH:mm
       const timePart = formatTime(b.starts_at)
       const key = `${b.court_id}_${timePart}`
       map.set(key, b)
     })
     return map
-  }, [initialBookings])
+  }, [activeBookings, selectedDate])
 
   const formattedDateTitle = useMemo(() => {
     return format(parseISO(selectedDate), "EEEE d 'de' MMMM", { locale: es })
@@ -252,7 +314,7 @@ export function CalendarGrid({
       <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar touch-momentum">
         <div className="min-w-180 sm:min-w-200">
           {/* Header de Canchas (Columnas) */}
-          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-20 bg-slate-950">
+          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-10 bg-slate-950">
             <div className="p-3 text-center text-xs font-bold text-slate-500 border-r border-slate-800 flex items-center justify-center">
               <Clock className="w-3.5 h-3.5 mr-1" />
               Hora
@@ -377,11 +439,33 @@ export function CalendarGrid({
             setQuickBookSlot(null)
           }}
           tenantId={tenantId}
-          courts={courts}
+          courts={activeCourts}
           preselectedDate={selectedDate}
           preselectedTime={quickBookSlot?.time || '19:00'}
           preselectedCourtId={quickBookSlot?.courtId}
-          onSuccess={() => onRefresh?.()}
+          onSuccess={() => {
+            if (quickBookSlot) {
+              const court = activeCourts.find((c) => c.id === quickBookSlot.courtId)
+              const startsAt = `${selectedDate}T${quickBookSlot.time}:00`
+              const newOptimistic: CalendarBooking = {
+                id: `bk-opt-${Date.now()}`,
+                court_id: quickBookSlot.courtId,
+                customer_name: 'Reserva Confirmada (Mostrador)',
+                starts_at: startsAt,
+                ends_at: `${selectedDate}T23:59:00`,
+                status: 'CONFIRMED',
+                origin: 'PHONE',
+                total_amount_ars: 12000,
+                deposit_amount_ars: 0,
+                total_paid: 0,
+                balance_due: 12000,
+                courts: court ? { name: court.name, sport: court.sport } : undefined,
+              }
+              setOptimisticBookings((prev) => [...prev, newOptimistic])
+            }
+            onRefresh?.()
+            router.refresh()
+          }}
         />
       )}
 
@@ -390,7 +474,10 @@ export function CalendarGrid({
           isOpen={!!selectedBooking}
           onClose={() => setSelectedBooking(null)}
           booking={selectedBooking}
-          onSuccess={() => onRefresh?.()}
+          onSuccess={() => {
+            onRefresh?.()
+            router.refresh()
+          }}
         />
       )}
 
@@ -399,9 +486,12 @@ export function CalendarGrid({
         isOpen={isRainModalOpen}
         onClose={() => setIsRainModalOpen(false)}
         tenantId={tenantId}
-        courts={courts}
+        courts={activeCourts}
         currentDate={selectedDate}
-        onSuccess={() => onRefresh?.()}
+        onSuccess={() => {
+          onRefresh?.()
+          router.refresh()
+        }}
       />
     </div>
   )

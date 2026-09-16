@@ -334,3 +334,158 @@ export async function getCantinaStats(tenantId: string): Promise<CantinaStats> {
     return { totalRevenue: 0, totalOrders: 0, avgTicket: 0, topProducts: [] }
   }
 }
+
+// ─── GESTIÓN DE INVENTARIO Y CATÁLOGO DE PRODUCTOS ───────────────────────────
+
+export interface CantinaProduct {
+  id: string
+  name: string
+  category: 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
+  price: number
+  stock: number
+  emoji: string
+  is_active?: boolean
+}
+
+export const INITIAL_CANTINA_PRODUCTS: CantinaProduct[] = [
+  { id: 'p1', name: 'Gatorade / Powerade 500ml', category: 'BEBIDAS', price: 2500, stock: 48, emoji: '⚡', is_active: true },
+  { id: 'p2', name: 'Agua Mineral 500ml', category: 'BEBIDAS', price: 1500, stock: 60, emoji: '💧', is_active: true },
+  { id: 'p3', name: 'Cerveza Corona / Stella 330ml', category: 'BEBIDAS', price: 3500, stock: 36, emoji: '🍺', is_active: true },
+  { id: 'p4', name: 'Tubo Pelotas Pádel x3 (Bullpadel)', category: 'EQUIPAMIENTO', price: 14000, stock: 15, emoji: '🎾', is_active: true },
+  { id: 'p5', name: 'Alquiler de Paleta de Pádel', category: 'EQUIPAMIENTO', price: 3500, stock: 8, emoji: '🏓', is_active: true },
+  { id: 'p6', name: 'Overgrip Wilson / Bullpadel', category: 'EQUIPAMIENTO', price: 2200, stock: 25, emoji: '🏸', is_active: true },
+  { id: 'p7', name: 'Barra de Cereal / Proteica', category: 'SNACKS', price: 1200, stock: 30, emoji: '🍫', is_active: true },
+  { id: 'p8', name: 'Papas Fritas / Maní Snack', category: 'SNACKS', price: 1800, stock: 20, emoji: '🥜', is_active: true },
+]
+
+export async function getCantinaProducts(tenantId: string): Promise<CantinaProduct[]> {
+  try {
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'CANTINA_PRODUCT_CATALOG')
+      .eq('table_name', 'cantina_products')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (error || !data || data.length === 0 || !data[0].new_data) {
+      return INITIAL_CANTINA_PRODUCTS
+    }
+
+    const catalog = data[0].new_data as { products: CantinaProduct[] }
+    if (Array.isArray(catalog.products) && catalog.products.length > 0) {
+      return catalog.products
+    }
+
+    return INITIAL_CANTINA_PRODUCTS
+  } catch (err) {
+    console.error('[getCantinaProducts] Error:', err)
+    return INITIAL_CANTINA_PRODUCTS
+  }
+}
+
+export async function saveCantinaProducts(
+  tenantId: string,
+  products: CantinaProduct[]
+): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    
+    // Verificar si ya existe el registro del catálogo
+    const { data: existing } = await supabase
+      .from('audit_log')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'CANTINA_PRODUCT_CATALOG')
+      .eq('table_name', 'cantina_products')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      const updateRes = await supabase
+        .from('audit_log')
+        .update({
+          new_data: { products, updated_at: new Date().toISOString() }
+        })
+        .eq('id', existing[0].id)
+
+      if (updateRes.error) throw updateRes.error
+    } else {
+      const insertRes = await supabase.from('audit_log').insert({
+        tenant_id: tenantId,
+        action: 'CANTINA_PRODUCT_CATALOG',
+        table_name: 'cantina_products',
+        new_data: { products, updated_at: new Date().toISOString() }
+      })
+
+      if (insertRes.error) throw insertRes.error
+    }
+
+    revalidatePath('/dashboard/cantina')
+    return { success: true, products }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al guardar productos'
+    console.error('[saveCantinaProducts] Error:', errorMsg)
+    return { success: false, products, error: errorMsg }
+  }
+}
+
+export async function updateProductStock(
+  tenantId: string,
+  productId: string,
+  amount: number,
+  isDelta = false
+): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
+  try {
+    const currentProducts = await getCantinaProducts(tenantId)
+    const updated = currentProducts.map(p => {
+      if (p.id === productId) {
+        const newStock = isDelta ? Math.max(0, p.stock + amount) : Math.max(0, amount)
+        return { ...p, stock: newStock }
+      }
+      return p
+    })
+
+    return await saveCantinaProducts(tenantId, updated)
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al actualizar stock'
+    return { success: false, products: [], error: errorMsg }
+  }
+}
+
+export async function saveSingleProduct(
+  tenantId: string,
+  product: CantinaProduct
+): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
+  try {
+    const currentProducts = await getCantinaProducts(tenantId)
+    const existingIndex = currentProducts.findIndex(p => p.id === product.id)
+    let updated: CantinaProduct[]
+    if (existingIndex >= 0) {
+      updated = [...currentProducts]
+      updated[existingIndex] = product
+    } else {
+      updated = [product, ...currentProducts]
+    }
+    return await saveCantinaProducts(tenantId, updated)
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al guardar producto'
+    return { success: false, products: [], error: errorMsg }
+  }
+}
+
+export async function deleteProduct(
+  tenantId: string,
+  productId: string
+): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
+  try {
+    const currentProducts = await getCantinaProducts(tenantId)
+    const updated = currentProducts.filter(p => p.id !== productId)
+    return await saveCantinaProducts(tenantId, updated)
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al eliminar producto'
+    return { success: false, products: [], error: errorMsg }
+  }
+}

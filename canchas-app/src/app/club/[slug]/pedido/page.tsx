@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use, useMemo } from 'react'
+import { useState, use, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { 
   ShoppingBag, 
@@ -23,26 +23,15 @@ import { formatARS } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
-import { createCourtOrder, type CantinaPaymentMethod } from '@/actions/cantina.actions'
+import { 
+  createCourtOrder, 
+  getCantinaProducts, 
+  INITIAL_CANTINA_PRODUCTS, 
+  type CantinaPaymentMethod, 
+  type CantinaProduct 
+} from '@/actions/cantina.actions'
 
-interface Product {
-  id: string
-  name: string
-  category: 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
-  price: number
-  emoji: string
-}
-
-const CANTINA_ITEMS: Product[] = [
-  { id: 'p1', name: 'Gatorade / Powerade 500ml', category: 'BEBIDAS', price: 2500, emoji: '⚡' },
-  { id: 'p2', name: 'Agua Mineral Glaciar 500ml', category: 'BEBIDAS', price: 1500, emoji: '💧' },
-  { id: 'p3', name: 'Cerveza Corona / Stella 330ml', category: 'BEBIDAS', price: 3500, emoji: '🍺' },
-  { id: 'p4', name: 'Tubo Pelotas Pádel x3 (Bullpadel)', category: 'EQUIPAMIENTO', price: 14000, emoji: '🎾' },
-  { id: 'p5', name: 'Alquiler de Paleta de Pádel', category: 'EQUIPAMIENTO', price: 3500, emoji: '🏓' },
-  { id: 'p6', name: 'Overgrip Wilson / Bullpadel Pro', category: 'EQUIPAMIENTO', price: 2200, emoji: '🏸' },
-  { id: 'p7', name: 'Barra de Cereal / Proteica', category: 'SNACKS', price: 1200, emoji: '🍫' },
-  { id: 'p8', name: 'Papas Fritas Lays / Maní', category: 'SNACKS', price: 1800, emoji: '🥜' },
-]
+export type Product = CantinaProduct
 
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -60,6 +49,7 @@ export default function CourtOrderPage({
   const club = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
   const bankDetails = useMemo(() => getClubBankDetails(club), [club])
 
+  const [products, setProducts] = useState<CantinaProduct[]>(INITIAL_CANTINA_PRODUCTS)
   const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
   const [customerName, setCustomerName] = useState('')
   const [tableName, setTableName] = useState(initialTable)
@@ -70,7 +60,24 @@ export default function CourtOrderPage({
   const [orderConfirmed, setOrderConfirmed] = useState(false)
   const [confirmedOrderId, setConfirmedOrderId] = useState<string>('')
 
+  // Cargar catálogo dinámico de productos desde Supabase
+  useEffect(() => {
+    getCantinaProducts(DEMO_TENANT_ID)
+      .then((items) => {
+        if (items && items.length > 0) {
+          setProducts(items.filter((p) => p.is_active !== false))
+        }
+      })
+      .catch((err) => {
+        console.warn('Error al cargar productos de cantina:', err)
+      })
+  }, [])
+
   const addToCart = (product: Product) => {
+    if (product.stock !== undefined && product.stock <= 0) {
+      toast.error('Este producto está momentáneamente agotado')
+      return
+    }
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id)
       if (existing) {
@@ -349,8 +356,9 @@ export default function CourtOrderPage({
         </h3>
 
         <div className="grid grid-cols-1 gap-2.5">
-          {CANTINA_ITEMS.map((product) => {
+          {products.map((product) => {
             const inCart = cart.find((i) => i.product.id === product.id)
+            const isOutOfStock = product.stock !== undefined && product.stock <= 0
             return (
               <div
                 key={product.id}
@@ -370,7 +378,11 @@ export default function CourtOrderPage({
                   </div>
                 </div>
 
-                {inCart ? (
+                {isOutOfStock ? (
+                  <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30 text-[10px] font-bold px-2.5 py-1">
+                    Agotado
+                  </Badge>
+                ) : inCart ? (
                   <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 shrink-0">
                     <button
                       onClick={() => updateQuantity(product.id, -1)}

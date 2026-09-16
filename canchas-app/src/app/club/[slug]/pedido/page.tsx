@@ -142,7 +142,11 @@ export default function CourtOrderPage({
         notes: notes.trim() || undefined,
       })
 
-      const finalId = result.order?.id || 'ord-comanda'
+      if (!result.success || !result.order) {
+        throw new Error(result.error || 'No se pudo registrar la comanda en el sistema')
+      }
+
+      const finalId = result.order.id
       setConfirmedOrderId(finalId)
 
       // Emitir en BroadcastChannel para notificación instantánea en la cantina (0ms)

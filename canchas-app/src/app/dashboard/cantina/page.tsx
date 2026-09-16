@@ -261,16 +261,27 @@ export default function CantinaPage() {
             loadOrders(false)
           }
         )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'audit_log',
+          },
+          () => {
+            loadOrders(false)
+          }
+        )
         .subscribe()
     } catch (realtimeErr) {
       console.warn('Supabase Realtime fallback:', realtimeErr)
     }
 
-    // Polling inteligente de bajo consumo: sólo cuando la pestaña está visible
+    // Polling inteligente de bajo consumo: cada 3.5s cuando la pestaña está visible
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       loadOrders(false)
-    }, 6000)
+    }, 3500)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
@@ -613,104 +624,125 @@ export default function CantinaPage() {
             </Badge>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courtOrders.map((order) => {
-              return (
-                <Card 
-                  key={order.id} 
-                  className={`border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden transition-all ${
-                    order.status === 'PENDING' ? 'border-amber-500/50 shadow-lg shadow-amber-950/20' : ''
-                  }`}
-                >
-                  <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <Badge 
-                          className={`text-[10px] font-bold ${
-                            order.status === 'PENDING'
-                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              : order.status === 'PREPARING'
-                              ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                          }`}
-                        >
-                          {order.status === 'PENDING' ? '⏳ PENDIENTE' : order.status === 'PREPARING' ? '🔥 EN PREPARACIÓN' : '✅ ENTREGADO'}
-                        </Badge>
-                        <Badge 
-                          className={`text-[10px] font-semibold ${
-                            order.payment_method === 'TRANSFER'
-                              ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                          }`}
-                        >
-                          {order.payment_method === 'TRANSFER' ? '💳 Transferencia' : '💵 Efectivo'}
-                        </Badge>
-                      </div>
-                      <h3 className="font-bold text-sm text-white mt-1">{order.court_name}</h3>
-                      <p className="text-xs text-slate-400">Cliente: <strong className="text-slate-200">{order.customer_name}</strong></p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-black text-emerald-400">{formatARS(order.total_ars)}</div>
-                      <div className="text-[10px] text-slate-500 flex items-center gap-1 justify-end mt-0.5">
-                        <Clock className="w-3 h-3" />
-                        <span>{order.created_at}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <CardContent className="p-4 space-y-3 text-xs">
-                    <div className="space-y-1.5">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Items solicitados:</div>
-                      {order.items.map((it, idx) => (
-                        <div key={idx} className="flex justify-between text-slate-300 bg-slate-950/40 p-1.5 rounded-lg border border-slate-800/60">
-                          <span><strong>{it.quantity}x</strong> {it.name}</span>
-                          <span className="font-semibold text-emerald-400">{formatARS(it.subtotal)}</span>
+          {courtOrders.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/40 border border-slate-800/80 max-w-lg mx-auto space-y-3 my-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
+                <ChefHat className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">No hay comandas activas</h3>
+              <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                Los pedidos que tus clientes hagan escaneando el código QR de sus mesas o canchas aparecerán aquí al instante con sonido de campana.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsTableQrOpen(true)}
+                className="text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl gap-1.5"
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Ver / Imprimir Cartel QR</span>
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {courtOrders.map((order) => {
+                return (
+                  <Card 
+                    key={order.id} 
+                    className={`border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden transition-all ${
+                      order.status === 'PENDING' ? 'border-amber-500/50 shadow-lg shadow-amber-950/20' : ''
+                    }`}
+                  >
+                    <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <Badge 
+                            className={`text-[10px] font-bold ${
+                              order.status === 'PENDING'
+                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                : order.status === 'PREPARING'
+                                ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            {order.status === 'PENDING' ? '⏳ PENDIENTE' : order.status === 'PREPARING' ? '🔥 EN PREPARACIÓN' : '✅ ENTREGADO'}
+                          </Badge>
+                          <Badge 
+                            className={`text-[10px] font-semibold ${
+                              order.payment_method === 'TRANSFER'
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            {order.payment_method === 'TRANSFER' ? '💳 Transferencia' : '💵 Efectivo'}
+                          </Badge>
                         </div>
-                      ))}
+                        <h3 className="font-bold text-sm text-white mt-1">{order.court_name}</h3>
+                        <p className="text-xs text-slate-400">Cliente: <strong className="text-slate-200">{order.customer_name}</strong></p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-base font-black text-emerald-400">{formatARS(order.total_ars)}</div>
+                        <div className="text-[10px] text-slate-500 flex items-center gap-1 justify-end mt-0.5">
+                          <Clock className="w-3 h-3" />
+                          <span>{order.created_at}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {order.notes && (
-                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
-                        <strong>Nota del cliente:</strong> {order.notes}
+                    <CardContent className="p-4 space-y-3 text-xs">
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Items solicitados:</div>
+                        {order.items.map((it, idx) => (
+                          <div key={idx} className="flex justify-between text-slate-300 bg-slate-950/40 p-1.5 rounded-lg border border-slate-800/60">
+                            <span><strong>{it.quantity}x</strong> {it.name}</span>
+                            <span className="font-semibold text-emerald-400">{formatARS(it.subtotal)}</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
 
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setSelectedPrintOrder(order)
-                          setAutoPrintReceipt(false)
-                          setIsPrintModalOpen(true)
-                        }}
-                        className="h-8 text-xs border-slate-700 text-slate-300 hover:bg-slate-800 rounded-xl gap-1"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Ticket</span>
-                      </Button>
+                      {order.notes && (
+                        <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+                          <strong>Nota del cliente:</strong> {order.notes}
+                        </div>
+                      )}
 
-                      {order.status !== 'DELIVERED' ? (
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
                         <Button
                           size="sm"
-                          onClick={() => loadOrderIntoCart(order)}
-                          className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl gap-1.5"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedPrintOrder(order)
+                            setAutoPrintReceipt(false)
+                            setIsPrintModalOpen(true)
+                          }}
+                          className="h-8 text-xs border-slate-700 text-slate-300 hover:bg-slate-800 rounded-xl gap-1"
                         >
-                          <ShoppingBag className="w-3.5 h-3.5" />
-                          <span>Armar Carrito POS</span>
+                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Ticket</span>
                         </Button>
-                      ) : (
-                        <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Venta Registrada
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+
+                        {order.status !== 'DELIVERED' ? (
+                          <Button
+                            size="sm"
+                            onClick={() => loadOrderIntoCart(order)}
+                            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl gap-1.5"
+                          >
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            <span>Armar Carrito POS</span>
+                          </Button>
+                        ) : (
+                          <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Venta Registrada
+                          </span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
         </div>
       ) : (
         /* VISTA 2: PUNTO DE VENTA (MOSTRADOR) */

@@ -243,17 +243,14 @@ export function CourtQrModal(props: CourtQrModalProps) {
               <div class="step-box">
                 <div class="step-circle">1</div>
                 <span class="step-title">Escaneá el QR</span>
-                <span class="step-desc">Abrí la cámara del teléfono</span>
               </div>
               <div class="step-box">
                 <div class="step-circle">2</div>
                 <span class="step-title">Elegí lo que quieras</span>
-                <span class="step-desc">Bebidas, snacks o paletas</span>
               </div>
               <div class="step-box">
                 <div class="step-circle">3</div>
                 <span class="step-title">Retirá tu pedido</span>
-                <span class="step-desc">Buscá por mostrador</span>
               </div>
             </div>
           </div>
@@ -377,9 +374,9 @@ export function CourtQrModal(props: CourtQrModalProps) {
 
       // 3 Pasos
       const stepItems = [
-        { num: '1', title: 'Escaneá el QR', desc: 'Abrí la cámara de tu celular', x: 280 },
-        { num: '2', title: 'Elegí tu pedido', desc: 'Bebidas, snacks o paletas', x: 600 },
-        { num: '3', title: 'Retirá en mostrador', desc: 'Rápido y sin esperas', x: 920 },
+        { num: '1', title: 'Escaneá el QR', x: 280 },
+        { num: '2', title: 'Elegí lo que quieras', x: 600 },
+        { num: '3', title: 'Retirá tu pedido', x: 920 },
       ]
 
       stepItems.forEach(s => {
@@ -395,10 +392,6 @@ export function CourtQrModal(props: CourtQrModalProps) {
         ctx.fillStyle = '#0f172a'
         ctx.font = 'bold 24px sans-serif'
         ctx.fillText(s.title, s.x, 1255)
-
-        ctx.fillStyle = '#64748b'
-        ctx.font = '20px sans-serif'
-        ctx.fillText(s.desc, s.x, 1285)
       })
 
       // Descarga
@@ -481,17 +474,14 @@ export function CourtQrModal(props: CourtQrModalProps) {
             <div className="space-y-0.5">
               <div className="w-4 h-4 rounded-full bg-slate-900 text-white text-[9px] font-bold mx-auto flex items-center justify-center">1</div>
               <div className="text-[9px] font-bold text-slate-900 leading-tight">Escaneá</div>
-              <div className="text-[7.5px] text-slate-500 leading-none">Cámara móvil</div>
             </div>
             <div className="space-y-0.5">
               <div className="w-4 h-4 rounded-full bg-slate-900 text-white text-[9px] font-bold mx-auto flex items-center justify-center">2</div>
               <div className="text-[9px] font-bold text-slate-900 leading-tight">Pedí</div>
-              <div className="text-[7.5px] text-slate-500 leading-none">Bebidas/snacks</div>
             </div>
             <div className="space-y-0.5">
               <div className="w-4 h-4 rounded-full bg-slate-900 text-white text-[9px] font-bold mx-auto flex items-center justify-center">3</div>
               <div className="text-[9px] font-bold text-slate-900 leading-tight">Retirá</div>
-              <div className="text-[7.5px] text-slate-500 leading-none">Por cantina</div>
             </div>
           </div>
         </div>

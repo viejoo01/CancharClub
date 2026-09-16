@@ -93,6 +93,43 @@ export async function createCourtOrder(
       .select()
       .single()
 
+    // Si falla porque la tabla court_orders no existe (PGRST205), persistir en audit_log como respaldo garantizado
+    if (error && (error.code === 'PGRST205' || error.message.includes('court_orders') || error.message.includes('schema cache'))) {
+      const orderId = crypto.randomUUID()
+      const nowIso = new Date().toISOString()
+      const fallbackOrder: CourtOrder = {
+        id: orderId,
+        tenant_id: payload.tenant_id,
+        court_id: payload.court_id ?? null,
+        court_name: payload.court_name,
+        customer_name: payload.customer_name,
+        items: payload.items,
+        total_ars: payload.total_ars,
+        status: 'PENDING',
+        payment_method: method,
+        payment_status: statusPayment,
+        notes: combinedNotes,
+        created_at: nowIso,
+        updated_at: nowIso,
+      }
+
+      const auditRes = await supabase.from('audit_log').insert({
+        tenant_id: payload.tenant_id,
+        action: 'COURT_ORDER',
+        table_name: 'court_orders',
+        record_id: orderId,
+        new_data: fallbackOrder,
+      })
+
+      if (auditRes.error) {
+        console.error('[createCourtOrder] Fallback audit_log error:', auditRes.error.message)
+        return { success: false, error: auditRes.error.message }
+      }
+
+      revalidatePath('/dashboard/cantina')
+      return { success: true, order: fallbackOrder }
+    }
+
     // Si falla porque las columnas nuevas no están creadas en Postgres, fallback a campos estándar
     if (error && (error.message.includes('payment_method') || error.message.includes('column'))) {
       const fallbackData = {
@@ -147,6 +184,28 @@ export async function updateOrderStatus(
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', orderId)
 
+    // Fallback si court_orders no existe
+    if (error && (error.code === 'PGRST205' || error.message.includes('court_orders') || error.message.includes('schema cache'))) {
+      const { data: auditRows } = await supabase
+        .from('audit_log')
+        .select('*')
+        .eq('record_id', orderId)
+        .eq('action', 'COURT_ORDER')
+        .limit(1)
+
+      if (auditRows && auditRows.length > 0) {
+        const currentData = (auditRows[0].new_data ?? {}) as Record<string, unknown>
+        const updatedData = { ...currentData, status, updated_at: new Date().toISOString() }
+        await supabase
+          .from('audit_log')
+          .update({ new_data: updatedData })
+          .eq('id', auditRows[0].id)
+        
+        revalidatePath('/dashboard/cantina')
+        return { success: true }
+      }
+    }
+
     if (error) {
       console.error('[updateOrderStatus] Error:', error.message)
       return { success: false, error: error.message }
@@ -168,18 +227,49 @@ export async function getDailyOrders(
 ): Promise<CourtOrder[]> {
   try {
     const supabase = await createServiceClient()
-    const targetDate = date ?? new Date().toISOString().split('T')[0]
-    const dayStart = `${targetDate}T00:00:00`
-    const dayEnd   = `${targetDate}T23:59:59`
+    
+    // Fecha en zona horaria local de Argentina (UTC-3)
+    const argentinaToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Tucuman' }).format(new Date())
+    const targetDate = date ?? argentinaToday
+    const dayStart = new Date(`${targetDate}T00:00:00-03:00`).toISOString()
+    const dayEnd   = new Date(`${targetDate}T23:59:59-03:00`).toISOString()
 
+    // Traer todos los pedidos pendientes o en preparación (para que nunca se pierdan de la vista en vivo)
+    // o los pedidos creados en el día seleccionado
     const { data, error } = await supabase
       .from('court_orders')
       .select('*')
       .eq('tenant_id', tenantId)
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd)
+      .or(`and(created_at.gte.${dayStart},created_at.lte.${dayEnd}),status.in.(PENDING,PREPARING)`)
       .neq('status', 'CANCELLED')
       .order('created_at', { ascending: false })
+
+    // Fallback: si court_orders no existe en Supabase, leer de audit_log
+    if (error && (error.code === 'PGRST205' || error.message.includes('court_orders') || error.message.includes('schema cache'))) {
+      const { data: auditData, error: auditError } = await supabase
+        .from('audit_log')
+        .select('new_data')
+        .eq('tenant_id', tenantId)
+        .eq('action', 'COURT_ORDER')
+        .eq('table_name', 'court_orders')
+        .order('created_at', { ascending: false })
+
+      if (auditError) {
+        console.warn('[getDailyOrders] Fallback audit_log error:', auditError.message)
+        return []
+      }
+
+      const rawOrders = (auditData ?? [])
+        .map(row => row.new_data as unknown as CourtOrder)
+        .filter(Boolean)
+        .filter(o => o.status !== 'CANCELLED')
+
+      return rawOrders.map(o => ({
+        ...o,
+        payment_method: o.payment_method || extractPaymentMethod(o),
+        payment_status: o.payment_status || (extractPaymentMethod(o) === 'TRANSFER' ? 'PAID' : 'PENDING'),
+      }))
+    }
 
     if (error) {
       console.warn('[getDailyOrders] Warning:', error.message)
@@ -193,7 +283,8 @@ export async function getDailyOrders(
     }))
 
     return orders
-  } catch {
+  } catch (err) {
+    console.error('[getDailyOrders] Error inesperado:', err)
     return []
   }
 }

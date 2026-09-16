@@ -94,18 +94,17 @@ export async function getCalendarBookings(tenantId: string, dateIso: string) {
         customer_name,
         customer_phone,
         customer_email,
-        booking_range,
+        booked_at,
         status,
-        origin,
-        total_amount_ars,
-        deposit_amount_ars,
-        internal_notes,
-        courts (name, sport, slot_duration),
-        booking_payments (amount_ars, payment_method, created_at)
+        price_total_cents,
+        deposit_cents,
+        staff_notes,
+        payment_method,
+        courts (id, name, sport, slot_duration_minutes)
       `)
       .eq('tenant_id', tenantId)
-      .filter('booking_range', 'ov', `[${startOfDay},${endOfDay}]`)
-      .not('status', 'in', '("CANCELLED_USER","CANCELLED_CLUB")')
+      .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
+      .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: true })
 
     if (error) {
@@ -113,27 +112,70 @@ export async function getCalendarBookings(tenantId: string, dateIso: string) {
       return []
     }
 
-    // Parsear booking_range para el cliente
-    return (data || []).map(b => {
-      // b.booking_range format: '["2026-09-07 15:00:00+00","2026-09-07 16:30:00+00")'
+    interface RawDbBooking {
+      id: string
+      court_id: string
+      customer_name?: string | null
+      customer_phone?: string | null
+      customer_email?: string | null
+      booked_at?: string | null
+      status?: string | null
+      price_total_cents?: number | null
+      deposit_cents?: number | null
+      staff_notes?: string | null
+      payment_method?: string | null
+      courts?: { id?: string; name?: string; sport?: string; slot_duration_minutes?: number } | null
+    }
+
+    // Parsear booked_at (tstzrange) para la grilla de turnos
+    return ((data || []) as unknown as RawDbBooking[]).map((b) => {
       let start = ''
       let end = ''
-      if (b.booking_range) {
-        const match = b.booking_range.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
         if (match) {
           start = match[1]
           end = match[2]
         }
       }
 
-      const paidSum = b.booking_payments?.reduce((acc: number, p: { amount_ars: number }) => acc + Number(p.amount_ars), 0) ?? 0
+      if (start && start.includes(' ') && !start.includes('T')) {
+        start = start.replace(' ', 'T')
+      }
+      if (end && end.includes(' ') && !end.includes('T')) {
+        end = end.replace(' ', 'T')
+      }
+
+      const totalArs = b.price_total_cents ? Math.round(Number(b.price_total_cents) / 100) : 14000
+      const depositArs = b.deposit_cents ? Math.round(Number(b.deposit_cents) / 100) : 7000
+      const isConfirmed = b.status === 'confirmed' || b.status === 'confirmed_cash'
+      const statusFormatted = isConfirmed ? 'CONFIRMED' : (b.status === 'pending_deposit' ? 'PENDING_DEPOSIT' : 'CONFIRMED')
+
+      const courtObj = b.courts
+      const courtName = courtObj?.name || 'Cancha'
+      const courtSport = courtObj?.sport || 'PADEL'
+      const courtDuration = courtObj?.slot_duration_minutes === 60 ? 'MIN_60' : 'MIN_90'
 
       return {
-        ...b,
+        id: b.id,
+        court_id: b.court_id,
+        customer_name: b.customer_name || 'Jugador Online',
+        customer_phone: b.customer_phone,
+        customer_email: b.customer_email,
         starts_at: start,
         ends_at: end,
-        total_paid: paidSum,
-        balance_due: Math.max(0, b.total_amount_ars - paidSum),
+        status: statusFormatted,
+        origin: 'ONLINE_PORTAL',
+        total_amount_ars: totalArs,
+        deposit_amount_ars: depositArs,
+        total_paid: depositArs,
+        balance_due: Math.max(0, totalArs - depositArs),
+        internal_notes: b.staff_notes || 'Seña transferida 24hs',
+        courts: {
+          name: courtName,
+          sport: courtSport,
+          slot_duration: courtDuration,
+        },
       }
     })
   } catch (err) {

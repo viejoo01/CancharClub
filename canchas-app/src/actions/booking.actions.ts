@@ -6,6 +6,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 import {
   buildLockKey,
   acquireBookingLock,
@@ -23,6 +24,25 @@ import type {
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
+import { addVenueBooking } from '@/config/venues-data'
+
+export function isValidUuid(id?: string | null): boolean {
+  return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+}
+
+export function resolveCourtUuid(courtId?: string | null, courtName?: string | null): string {
+  if (courtId && isValidUuid(courtId)) {
+    return courtId
+  }
+  const str = `${courtId || ''} ${courtName || ''}`.toLowerCase()
+  if (str.includes('c1-2') || str.includes('techada') || str.includes('cancha 2')) {
+    return '00000000-0000-0000-0000-000000000012'
+  }
+  if (str.includes('c1-3') || str.includes('blindex') || str.includes('cancha 3')) {
+    return '00000000-0000-0000-0000-000000000013'
+  }
+  return '00000000-0000-0000-0000-000000000011'
+}
 
 // ─── ACTION: Iniciar checkout online (adquirir lock + crear booking + preferencia MP) ─
 
@@ -70,62 +90,93 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    // 3. REGISTRAR BOOKING en PostgreSQL con status=SLOT_LOCKED
-    //    El lock de Redis es la primera línea de defensa durante el checkout.
+    // 3. REGISTRAR BOOKING en PostgreSQL con status='confirmed' (cierre 24hs automático del turno)
     const supabase = await createServiceClient()
-    const bookingRange = `[${new Date(payload.starts_at).toISOString()},${new Date(endsAt).toISOString()})`
+    const startsAtIso = new Date(payload.starts_at).toISOString()
+    const endsAtIso = new Date(endsAt).toISOString()
+    const bookingRange = `[${startsAtIso},${endsAtIso})`
 
-    const isValidUuid = (id?: string | null) =>
-      Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    const effectiveTenantId = (payload.tenant_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.tenant_id))
+      ? payload.tenant_id
+      : '00000000-0000-0000-0000-000000000001'
+
+    const effectiveCourtId = resolveCourtUuid(payload.court_id, payload.court_name)
+
+    let sportEnum = 'PADEL'
+    if (payload.court_name?.toLowerCase().includes('fútbol') || payload.internal_notes?.toLowerCase().includes('futbol')) {
+      sportEnum = 'FUTBOL5'
+    }
+
+    // Automatización 24hs: Cuando el jugador pulsa "Confirmar Seña", el turno queda cerrado y reservado automáticamente en el sistema
+    const isTransfer = payload.payment_method === 'TRANSFER' || !payload.payment_method
+    const isFullyCovered = payload.deposit_amount_ars === 0
+    const initialStatus = (isTransfer || isFullyCovered) ? 'confirmed' : 'pending_deposit'
+    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${payload.payment_method || 'TRANSFER'}) - ${payload.customer_notes || ''}`.trim()
 
     let dbInsertSuccess = false
 
-    if (isValidUuid(payload.tenant_id) && isValidUuid(payload.court_id)) {
-      const { error: insertError } = await supabase
-        .from('bookings')
-        .insert({
-          id: bookingId,
-          tenant_id: payload.tenant_id,
-          court_id: payload.court_id,
-          price_rule_id: isValidUuid(payload.price_rule_id) ? payload.price_rule_id : null,
-          customer_profile_id: isValidUuid(payload.customer_profile_id) ? payload.customer_profile_id : null,
-          customer_name: payload.customer_name,
-          customer_phone: payload.customer_phone,
-          customer_email: payload.customer_email,
-          booking_range: bookingRange,
-          status: 'SLOT_LOCKED' as BookingStatus,
-          origin: payload.origin,
-          total_amount_ars: payload.total_amount_ars,
-          deposit_amount_ars: payload.deposit_amount_ars,
-          internal_notes: payload.internal_notes,
-          customer_notes: payload.customer_notes,
-          created_by_profile_id: isValidUuid(payload.customer_profile_id) ? payload.customer_profile_id : null,
-          deposit_mp_external_ref: externalRef,
-          redis_lock_key: lockKey,
-          lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
-        })
+    const { error: insertError } = await supabase
+      .from('bookings')
+      .insert({
+        id: bookingId,
+        tenant_id: effectiveTenantId,
+        court_id: effectiveCourtId,
+        booked_at: bookingRange,
+        status: initialStatus,
+        sport: sportEnum,
+        price_total_cents: Math.round(payload.total_amount_ars * 100),
+        deposit_cents: Math.round(payload.deposit_amount_ars * 100),
+        payment_method: payload.payment_method === 'MERCADOPAGO' ? 'mercadopago' : 'bank_transfer',
+        customer_name: payload.customer_name,
+        customer_phone: payload.customer_phone,
+        customer_email: payload.customer_email || null,
+        staff_notes: noteText,
+        redis_lock_key: lockKey,
+        lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+      })
 
-      if (insertError) {
-        // Solo un error de exclusión/solapamiento real (código 23P01) significa que el turno ya fue tomado
-        const isExclusionConflict =
-          insertError.code === '23P01' ||
-          insertError.message?.toLowerCase().includes('exclusion') ||
-          insertError.message?.toLowerCase().includes('overlap') ||
-          insertError.message?.toLowerCase().includes('solapamiento')
+    if (insertError) {
+      const isExclusionConflict =
+        insertError.code === '23P01' ||
+        insertError.message?.toLowerCase().includes('exclusion') ||
+        insertError.message?.toLowerCase().includes('overlap') ||
+        insertError.message?.toLowerCase().includes('solapamiento')
 
-        if (isExclusionConflict) {
-          await releaseBookingLock(lockKey, bookingId)
-          return {
-            success: false,
-            error: 'Este turno ya no está disponible. Por favor elegí otro horario.',
-            error_code: 'SLOT_UNAVAILABLE',
-          }
+      if (isExclusionConflict) {
+        await releaseBookingLock(lockKey, bookingId)
+        return {
+          success: false,
+          error: 'Este turno ya no está disponible. Por favor elegí otro horario.',
+          error_code: 'SLOT_UNAVAILABLE',
         }
-        console.warn('[initiateOnlineCheckout] DB insert notice (continuing with checkout):', insertError.message)
-      } else {
-        dbInsertSuccess = true
       }
+      console.warn('[initiateOnlineCheckout] DB insert notice (continuing):', insertError.message)
+    } else {
+      dbInsertSuccess = true
     }
+
+    // Registrar también en memoria para respuesta instantánea (0ms) en la grilla
+    addVenueBooking({
+      id: bookingId,
+      court_id: effectiveCourtId,
+      customer_name: payload.customer_name,
+      customer_phone: payload.customer_phone,
+      customer_email: payload.customer_email,
+      starts_at: startsAtIso,
+      ends_at: endsAtIso,
+      status: 'CONFIRMED',
+      origin: 'ONLINE_PORTAL',
+      total_amount_ars: payload.total_amount_ars,
+      deposit_amount_ars: payload.deposit_amount_ars,
+      total_paid: payload.deposit_amount_ars,
+      balance_due: Math.max(0, payload.total_amount_ars - payload.deposit_amount_ars),
+      internal_notes: noteText,
+      courts: {
+        name: payload.court_name || 'Cancha 1 (Panorámica)',
+        sport: 'PADEL',
+        slot_duration: courtSlotDuration,
+      },
+    })
 
     // 4. OBTENER INFORMACIÓN DE COBRO DEL CLUB (TENANT)
     let tenant: {
@@ -269,14 +320,8 @@ export async function initiateOnlineCheckout(
     }
 
     // FLUJO POR DEFECTO: TRANSFERENCIA BANCARIA DIRECTA A LA CUENTA DEL CLUB
-    if (dbInsertSuccess) {
-      await supabase
-        .from('bookings')
-        .update({
-          status: 'PENDING_DEPOSIT' as BookingStatus,
-        })
-        .eq('id', bookingId)
-    }
+    // Automatización 24hs: El turno ya quedó bloqueado e impactado en la grilla oficial
+    revalidatePath('/dashboard')
 
     return {
       success: true,
@@ -293,6 +338,32 @@ export async function initiateOnlineCheckout(
       success: false,
       error: 'Error interno del servidor. Por favor intentá nuevamente.',
     }
+  }
+}
+
+// ─── ACTION: Confirmación y Validación de Seña por Transferencia (24hs) ───────
+
+export async function confirmTransferPaymentAction(
+  bookingId: string,
+  referenceNumber?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const ref = referenceNumber ? ` - Ref Transferencia #${referenceNumber}` : ''
+    await supabase
+      .from('bookings')
+      .update({
+        status: 'confirmed',
+        paid_at: new Date().toISOString(),
+        staff_notes: `Transferencia acreditada/confirmada 24hs${ref}`,
+      })
+      .eq('id', bookingId)
+
+    revalidatePath('/dashboard')
+    return { success: true }
+  } catch (err: unknown) {
+    console.error('[confirmTransferPaymentAction] Error:', err)
+    return { success: false, error: 'Error al confirmar comprobante' }
   }
 }
 

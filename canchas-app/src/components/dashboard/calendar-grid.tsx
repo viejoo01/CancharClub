@@ -126,9 +126,10 @@ export function CalendarGrid({
 
     if (optimisticBookings.length === 0) return base
 
-    const currentDayOptimistic = optimisticBookings.filter(
-      (b) => b.starts_at.split('T')[0] === selectedDate
-    )
+    const currentDayOptimistic = optimisticBookings.filter((b) => {
+      const bDate = b.starts_at?.includes('T') ? b.starts_at.split('T')[0] : b.starts_at?.split(' ')[0]
+      return bDate === selectedDate
+    })
     if (currentDayOptimistic.length === 0) return base
 
     const map = new Map<string, CalendarBooking>()
@@ -143,8 +144,26 @@ export function CalendarGrid({
   const [quickBookSlot, setQuickBookSlot] = useState<{ courtId: string; time: string } | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<CalendarBooking | null>(null)
 
-  // Sincronización en tiempo real con Supabase Realtime
+  // Supabase Realtime y BroadcastChannel para actualización automática de turnos (0ms)
   useEffect(() => {
+    // 1. Escucha por BroadcastChannel (sincronización instantánea entre pestañas / checkout online)
+    let bc: BroadcastChannel | null = null
+    try {
+      bc = new BroadcastChannel('canchar_bookings')
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'BOOKING_CONFIRMED' && event.data?.booking) {
+          toast.success('¡Nuevo turno confirmado y señado!', {
+            description: `${event.data.booking.customer_name || 'Jugador'} en ${event.data.booking.courts?.name || 'Cancha'}`
+          })
+          setOptimisticBookings((prev) => [event.data.booking, ...prev])
+          router.refresh()
+          onRefresh?.()
+        }
+      }
+    } catch {}
+
+    // 2. Escucha por canal Postgres en Supabase Realtime
+    if (!tenantId) return
     const supabase = createClient()
     const channel = supabase
       .channel(`tenant_${tenantId}_bookings`)
@@ -160,6 +179,7 @@ export function CalendarGrid({
           toast.info('Grilla sincronizada en tiempo real', {
             description: `Actualización automática de turnos (${payload.eventType}).`
           })
+          router.refresh()
           onRefresh?.()
         }
       )
@@ -167,8 +187,9 @@ export function CalendarGrid({
 
     return () => {
       supabase.removeChannel(channel)
+      bc?.close()
     }
-  }, [tenantId, onRefresh])
+  }, [tenantId, onRefresh, router])
 
   // Filtro de canchas
   const filteredCourts = useMemo(() => {
@@ -199,8 +220,8 @@ export function CalendarGrid({
   const bookingMap = useMemo(() => {
     const map = new Map<string, CalendarBooking>()
     activeBookings.forEach((b) => {
-      if (!b.starts_at) return
-      if (b.starts_at.split('T')[0] !== selectedDate) return
+      const bDate = b.starts_at.includes('T') ? b.starts_at.split('T')[0] : b.starts_at.split(' ')[0]
+      if (bDate !== selectedDate) return
       // Extraer hora local HH:mm
       const timePart = formatTime(b.starts_at)
       const key = `${b.court_id}_${timePart}`

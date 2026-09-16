@@ -28,23 +28,38 @@ export default async function DashboardPage() {
     }
   }
 
-  // Cargar canchas
+  // Cargar canchas reales de la base de datos
+  interface DbCourtRow {
+    id: string
+    name: string
+    sport: string
+    slot_duration_minutes?: number | null
+    is_active: boolean
+  }
+
   const { data: rawCourts } = await supabase
     .from('courts')
-    .select('id, name, sport, slot_duration, is_active')
+    .select('id, name, sport, slot_duration_minutes, is_active')
     .eq('tenant_id', tenantId)
     .order('display_order', { ascending: true })
 
-  // Si no hay canchas personalizadas en BD o estamos alternando sedes del complejo
   const courts = (rawCourts && rawCourts.length > 0 && activeVenueId === 'venue-yb')
-    ? rawCourts
+    ? (rawCourts as unknown as DbCourtRow[]).map((c) => ({
+        id: c.id,
+        name: c.name,
+        sport: c.sport,
+        slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : 'MIN_90') as 'MIN_60' | 'MIN_90' | 'MIN_120',
+        is_active: c.is_active,
+      }))
     : getVenueCourts(activeVenueId)
 
-  // Cargar reservas del día
-  let bookings = (await getCalendarBookings(tenantId, today)) as CalendarBooking[]
-  if (!bookings || bookings.length === 0 || activeVenueId !== 'venue-yb') {
-    bookings = getVenueBookings(activeVenueId, today)
-  }
+  // Cargar reservas del día (fusión garantizada de BD en vivo y memoria)
+  const dbBookings = (await getCalendarBookings(tenantId, today)) as CalendarBooking[]
+  const venueBookings = getVenueBookings(activeVenueId, today)
+  const mergedMap = new Map<string, CalendarBooking>()
+  venueBookings.forEach((b) => mergedMap.set(b.id, b))
+  dbBookings.forEach((b) => mergedMap.set(b.id, b))
+  const bookings = Array.from(mergedMap.values())
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">

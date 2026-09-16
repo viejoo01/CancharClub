@@ -12,13 +12,11 @@ import {
   ShieldCheck,
   Building2,
   Copy,
-  Check,
-  Smartphone,
-  Send,
-  Tag,
+  Check, 
+  Smartphone, 
+  Send, 
   Wallet,
-  Sparkles,
-  XCircle
+  Sparkles
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,10 +26,8 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { initiateOnlineCheckout } from '@/actions/booking.actions'
 import { 
-  validateCouponAction, 
   getPlayerWalletBalance, 
   applyWalletCreditAction,
-  type CouponValidationResult,
   type PlayerWallet
 } from '@/actions/coupons-and-wallet.actions'
 import { toast } from 'sonner'
@@ -61,11 +57,6 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const [loading, setLoading] = useState(false)
   const [copiedAlias, setCopiedAlias] = useState(false)
   const [copiedCbu, setCopiedCbu] = useState(false)
-
-  // Mejora 17: Cupones de Descuento
-  const [couponInput, setCouponInput] = useState('')
-  const [couponLoading, setCouponLoading] = useState(false)
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null)
 
   // Mejora 18: Billetera Virtual y Saldo a Favor por Cancelaciones
   const [playerWallet, setPlayerWallet] = useState<PlayerWallet | null>(null)
@@ -134,48 +125,14 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     }
   }, [customerPhone])
 
-  // Cálculos dinámicos de montos con Descuentos y Billetera
-  const couponDiscount = appliedCoupon?.discountAmount || 0
-  const effectiveTotal = Math.max(0, total - couponDiscount)
-
-  // La seña regular acompaña al descuento si el club lo define
+  // Cálculos dinámicos de montos con Billetera Virtual
+  const effectiveTotal = total
   const baseDeposit = deposit
-  const depositAfterCoupon = Math.max(0, Math.round(baseDeposit - (couponDiscount / 2)))
 
   const walletAvailable = playerWallet?.balanceArs || 0
-  const walletApplied = useWalletCredits ? Math.min(walletAvailable, depositAfterCoupon) : 0
-  const payableDeposit = Math.max(0, depositAfterCoupon - walletApplied)
-  const remainingAtClub = Math.max(0, effectiveTotal - depositAfterCoupon)
-
-  const handleApplyCoupon = async (codeToTry?: string) => {
-    const targetCode = (codeToTry || couponInput).trim()
-    if (!targetCode) {
-      toast.error('Ingresá un código de cupón válido')
-      return
-    }
-
-    setCouponLoading(true)
-    try {
-      const res = await validateCouponAction(targetCode, total)
-      if (res.valid) {
-        setAppliedCoupon(res)
-        setCouponInput(res.code)
-        toast.success(res.message)
-      } else {
-        toast.error(res.message)
-      }
-    } catch {
-      toast.error('Error al verificar el cupón')
-    } finally {
-      setCouponLoading(false)
-    }
-  }
-
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null)
-    setCouponInput('')
-    toast.info('Cupón removido')
-  }
+  const walletApplied = useWalletCredits ? Math.min(walletAvailable, baseDeposit) : 0
+  const payableDeposit = Math.max(0, baseDeposit - walletApplied)
+  const remainingAtClub = Math.max(0, effectiveTotal - baseDeposit)
 
   const formatTimer = (secs: number) => {
     const mins = Math.floor(secs / 60)
@@ -230,7 +187,6 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
       const noteDetails = [
         notes,
-        appliedCoupon ? `[Cupón: ${appliedCoupon.code} (-${formatARS(couponDiscount)})]` : '',
         walletApplied > 0 ? `[Saldo Billetera: -${formatARS(walletApplied)}]` : '',
       ].filter(Boolean).join(' ')
 
@@ -275,8 +231,38 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         return
       }
 
+      // Emitir en BroadcastChannel para sincronización instantánea en la grilla del club (0ms)
+      try {
+        const bc = new BroadcastChannel('canchar_bookings')
+        bc.postMessage({
+          type: 'BOOKING_CONFIRMED',
+          booking: {
+            id: res.booking_id,
+            court_id: courtId,
+            customer_name: customerName.trim(),
+            customer_phone: customerPhone.trim(),
+            customer_email: customerEmail.trim() || null,
+            starts_at: `${date}T${time}:00`,
+            ends_at: `${date}T${time}:00`,
+            status: 'CONFIRMED',
+            origin: 'ONLINE_PORTAL',
+            total_amount_ars: effectiveTotal,
+            deposit_amount_ars: payableDeposit,
+            total_paid: payableDeposit,
+            balance_due: Math.max(0, effectiveTotal - payableDeposit),
+            internal_notes: `Reserva Online 24hs - Seña confirmada: $${payableDeposit}`,
+            courts: {
+              name: courtName,
+              sport: 'PADEL',
+              slot_duration: 'MIN_90',
+            },
+          },
+        })
+        bc.close()
+      } catch {}
+
       // Flujo de Transferencia Bancaria Directa al Club:
-      toast.success('¡Turno registrado! Seña pendiente de acreditación.')
+      toast.success('¡Turno reservado y cerrado en el sistema!')
       router.push(
         `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=${payableDeposit}&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=TRANSFER&alias=${encodeURIComponent(clubBank.alias)}`
       )
@@ -342,27 +328,12 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
               </div>
             </div>
 
-            {/* Desglose de Pago con Cupón y Billetera Virtual */}
+            {/* Desglose de Pago y Billetera Virtual */}
             <div className="border-t border-slate-800/90 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-400">
                 <span>Precio regular de la cancha:</span>
                 <span className="text-slate-200 font-semibold">{formatARS(total)}</span>
               </div>
-              {appliedCoupon && couponDiscount > 0 && (
-                <div className="flex justify-between text-emerald-400 font-medium">
-                  <span className="flex items-center gap-1">
-                    <Tag className="w-3 h-3" />
-                    <span>Descuento cupón ({appliedCoupon.code}):</span>
-                  </span>
-                  <span>-{formatARS(couponDiscount)}</span>
-                </div>
-              )}
-              {couponDiscount > 0 && (
-                <div className="flex justify-between text-slate-300 font-bold">
-                  <span>Total final del turno:</span>
-                  <span>{formatARS(effectiveTotal)}</span>
-                </div>
-              )}
               <div className="flex justify-between text-slate-400">
                 <span>Saldo restante en recepción:</span>
                 <span className="text-slate-300 font-semibold">{formatARS(remainingAtClub)}</span>
@@ -496,78 +467,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
           </div>
         )}
 
-        {/* Mejora 17: Cupones de Descuento Promocional */}
-        <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
-              <Tag className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Cupón de Descuento</span>
-            </div>
-            {appliedCoupon ? (
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] font-bold">
-                Aplicado: {appliedCoupon.code}
-              </Badge>
-            ) : (
-              <span className="text-[10px] text-slate-400">¿Tenés código promo?</span>
-            )}
-          </div>
 
-          {appliedCoupon ? (
-            <div className="flex items-center justify-between bg-emerald-950/30 border border-emerald-500/30 p-2.5 rounded-xl text-xs">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-                <div>
-                  <span className="font-bold text-emerald-300 block">{appliedCoupon.message}</span>
-                  <span className="text-[10px] text-slate-400">Ahorrás {formatARS(couponDiscount)} en este turno</span>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleRemoveCoupon}
-                className="h-7 px-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-[11px] gap-1"
-              >
-                <XCircle className="w-3.5 h-3.5" />
-                <span>Quitar</span>
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Ej. CANCHAR20 o BIENVENIDO"
-                  value={couponInput}
-                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                  className="h-9 rounded-xl bg-slate-950 border-slate-800 text-xs uppercase font-mono font-bold tracking-wider"
-                />
-                <Button
-                  type="button"
-                  onClick={() => handleApplyCoupon()}
-                  disabled={couponLoading || !couponInput.trim()}
-                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0"
-                >
-                  {couponLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Aplicar'}
-                </Button>
-              </div>
-
-              {/* Chips sugeridos de cupones demo */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="text-[10px] text-slate-500 font-medium">Cupones activos:</span>
-                {['CANCHAR20', 'BIENVENIDO', 'PADEL10'].map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => handleApplyCoupon(chip)}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800/80 hover:bg-emerald-950/40 text-slate-300 hover:text-emerald-300 border border-slate-700/60 hover:border-emerald-500/40 transition-colors"
-                  >
-                    %{chip}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Sección de Selección y Datos de Cobro del Club */}
         <div>

@@ -1,16 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
-
-export interface CouponValidationResult {
-  valid: boolean
-  code: string
-  discountPct?: number
-  discountFixedArs?: number
-  discountAmount: number
-  message: string
-}
-
 export interface PlayerWallet {
   phone: string
   balanceArs: number
@@ -22,15 +11,6 @@ export interface PlayerWallet {
     amountArs: number
     type: 'CREDIT' | 'DEBIT'
   }[]
-}
-
-// Cupones activos predeterminados para promociones y marketing
-const ACTIVE_COUPONS: Record<string, { pct?: number; fixed?: number; desc: string }> = {
-  CANCHAR20: { pct: 20, desc: '20% de descuento en tu turno' },
-  BIENVENIDO: { fixed: 2000, desc: '$2.000 de descuento de bienvenida' },
-  PADEL10: { pct: 10, desc: '10% OFF para aficionados al pádel' },
-  FUTBOL15: { pct: 15, desc: '15% OFF en turnos de fútbol' },
-  LLUVIA100: { pct: 100, desc: 'Pase libre por protocolo de lluvia reprogramado' }
 }
 
 // Simulación de billeteras de jugadores (sincronizada en memoria / base de datos)
@@ -65,41 +45,7 @@ const MOCK_WALLETS: Record<string, PlayerWallet> = {
   }
 }
 
-export async function validateCouponAction(
-  rawCode: string,
-  totalArs: number
-): Promise<CouponValidationResult> {
-  const code = (rawCode || '').trim().toUpperCase()
-  if (!code) {
-    return { valid: false, code: '', discountAmount: 0, message: 'Ingresá un código de cupón' }
-  }
 
-  const promo = ACTIVE_COUPONS[code]
-  if (!promo) {
-    return {
-      valid: false,
-      code,
-      discountAmount: 0,
-      message: 'El código ingresado no existe o ya caducó'
-    }
-  }
-
-  let discount = 0
-  if (promo.pct) {
-    discount = Math.round((totalArs * promo.pct) / 100)
-  } else if (promo.fixed) {
-    discount = Math.min(promo.fixed, totalArs)
-  }
-
-  return {
-    valid: true,
-    code,
-    discountPct: promo.pct,
-    discountFixedArs: promo.fixed,
-    discountAmount: discount,
-    message: `¡Cupón ${code} aplicado! ${promo.desc}`
-  }
-}
 
 export async function getPlayerWalletBalance(rawPhone: string): Promise<PlayerWallet> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')

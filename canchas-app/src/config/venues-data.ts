@@ -107,12 +107,36 @@ export function getVenueCourts(venueId: string, customVenues?: VenueItem[]): Cou
   return VENUES_COURTS['venue-yb']
 }
 
+// Registro global en memoria de reservas en vivo (garantiza sincronización 0ms)
+const IN_MEMORY_VENUE_BOOKINGS: CalendarBooking[] = []
+
+export function addVenueBooking(booking: CalendarBooking) {
+  const existingIdx = IN_MEMORY_VENUE_BOOKINGS.findIndex((b) => b.id === booking.id)
+  if (existingIdx >= 0) {
+    IN_MEMORY_VENUE_BOOKINGS[existingIdx] = booking
+  } else {
+    IN_MEMORY_VENUE_BOOKINGS.unshift(booking)
+  }
+}
+
+export function getInMemoryBookings(): CalendarBooking[] {
+  return IN_MEMORY_VENUE_BOOKINGS
+}
+
 export function getVenueBookings(venueId: string, dateStr: string): CalendarBooking[] {
   const today = dateStr || new Date().toISOString().split('T')[0]
 
+  // Reservas dinámicas en memoria para la fecha seleccionada
+  const dynamicForDay = IN_MEMORY_VENUE_BOOKINGS.filter((b) => {
+    const d = b.starts_at?.includes('T') ? b.starts_at.split('T')[0] : b.starts_at?.split(' ')[0]
+    return d === today
+  })
+
+  let baseBookings: CalendarBooking[] = []
+
   switch (venueId) {
     case 'venue-bs':
-      return [
+      baseBookings = [
         {
           id: 'bs-b-1',
           court_id: 'c-bs-1',
@@ -283,7 +307,7 @@ export function getVenueBookings(venueId: string, dateStr: string): CalendarBook
 
     case 'venue-yb':
     default:
-      return [
+      baseBookings = [
         {
           id: 'demo-b-1',
           court_id: 'c1-1',
@@ -340,4 +364,10 @@ export function getVenueBookings(venueId: string, dateStr: string): CalendarBook
         }
       ]
   }
+
+  // Fusión con reservas dinámicas en memoria (0ms latencia)
+  const map = new Map<string, CalendarBooking>()
+  baseBookings.forEach((b) => map.set(b.id, b))
+  dynamicForDay.forEach((b) => map.set(b.id, b))
+  return Array.from(map.values())
 }

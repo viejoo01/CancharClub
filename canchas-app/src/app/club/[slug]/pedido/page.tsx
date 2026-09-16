@@ -26,10 +26,9 @@ import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
 import { 
   createCourtOrder, 
   getCantinaProducts, 
-  INITIAL_CANTINA_PRODUCTS, 
   type CantinaPaymentMethod, 
-  type CantinaProduct 
 } from '@/actions/cantina.actions'
+import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
 
 export type Product = CantinaProduct
 

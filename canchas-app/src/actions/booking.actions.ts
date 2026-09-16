@@ -26,11 +26,11 @@ import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
 import { addVenueBooking } from '@/config/venues-data'
 
-export function isValidUuid(id?: string | null): boolean {
+function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
 }
 
-export function resolveCourtUuid(courtId?: string | null, courtName?: string | null): string {
+function resolveCourtUuid(courtId?: string | null, courtName?: string | null): string {
   if (courtId && isValidUuid(courtId)) {
     return courtId
   }

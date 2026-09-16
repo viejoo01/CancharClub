@@ -53,12 +53,11 @@ import {
   updateProductStock,
   saveSingleProduct,
   deleteProduct,
-  INITIAL_CANTINA_PRODUCTS,
   type CourtOrder,
   type OrderStatus,
   type CantinaPaymentMethod,
-  type CantinaProduct,
 } from '@/actions/cantina.actions'
+import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
 
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 

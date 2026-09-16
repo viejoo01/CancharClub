@@ -10,7 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { QrCode, Printer, Copy, Check, ExternalLink, Download, Loader2 } from 'lucide-react'
+import { QrCode, Printer, Copy, Check, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
 
@@ -224,22 +224,6 @@ export function CourtQrModal(props: CourtQrModalProps) {
               color: #64748b;
               line-height: 1.25;
             }
-            .footer-row {
-              width: 100%;
-              margin-top: 12px;
-              padding-top: 8px;
-              border-top: 1px solid #f1f5f9;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              font-size: 8pt;
-              color: #94a3b8;
-            }
-            .footer-link {
-              font-family: monospace;
-              font-weight: 600;
-              color: #64748b;
-            }
           </style>
         </head>
         <body>
@@ -252,8 +236,8 @@ export function CourtQrModal(props: CourtQrModalProps) {
               <img class="qr-img" src="${qrImageUrl}" alt="QR Pedido" />
             </div>
 
-            <div class="cta-heading">📱 Escaneá con la cámara de tu celular</div>
-            <div class="payment-pill">⚡ Pagá con Transferencia o en Efectivo en mostrador</div>
+            <div class="cta-heading">Escaneá con la cámara de tu celular</div>
+            <div class="payment-pill">Pagá con Transferencia o en Efectivo en mostrador</div>
 
             <div class="steps-grid">
               <div class="step-box">
@@ -271,11 +255,6 @@ export function CourtQrModal(props: CourtQrModalProps) {
                 <span class="step-title">Retirá tu pedido</span>
                 <span class="step-desc">Buscá por mostrador</span>
               </div>
-            </div>
-
-            <div class="footer-row">
-              <span>CancharClub Cantina</span>
-              <span class="footer-link">${orderUrl}</span>
             </div>
           </div>
         </body>
@@ -371,7 +350,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
       // Llamado a la acción
       ctx.fillStyle = '#0f172a'
       ctx.font = '800 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.fillText('📱 Escaneá con la cámara de tu celular', 600, 990)
+      ctx.fillText('Escaneá con la cámara de tu celular', 600, 990)
 
       // Pill de pagos
       ctx.fillStyle = '#ecfdf5'
@@ -384,7 +363,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
 
       ctx.fillStyle = '#059669'
       ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.fillText('⚡ Pagá con Transferencia o en Efectivo en mostrador', 600, 1068)
+      ctx.fillText('Pagá con Transferencia o en Efectivo en mostrador', 600, 1068)
 
       // Línea punteada
       ctx.strokeStyle = '#cbd5e1'
@@ -421,11 +400,6 @@ export function CourtQrModal(props: CourtQrModalProps) {
         ctx.font = '20px sans-serif'
         ctx.fillText(s.desc, s.x, 1285)
       })
-
-      // Footer
-      ctx.fillStyle = '#94a3b8'
-      ctx.font = '18px monospace'
-      ctx.fillText(orderUrl, 600, 1460)
 
       // Descarga
       const link = document.createElement('a')
@@ -497,10 +471,10 @@ export function CourtQrModal(props: CourtQrModalProps) {
           </div>
 
           <div className="text-[11px] font-extrabold text-slate-900 mb-0.5">
-            📱 Escaneá con la cámara de tu celular
+            Escaneá con la cámara de tu celular
           </div>
           <div className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 mb-2.5 text-center">
-            ⚡ Pagá con Transferencia o en Efectivo en mostrador
+            Pagá con Transferencia o en Efectivo en mostrador
           </div>
 
           <div className="w-full pt-2 border-t border-dashed border-slate-300 grid grid-cols-3 gap-1 text-center">

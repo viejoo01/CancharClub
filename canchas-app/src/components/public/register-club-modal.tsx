@@ -3,14 +3,7 @@
 import { useState } from 'react'
 import {
   Building2,
-  X,
   Loader2,
-  CheckCircle2,
-  Lock,
-  Mail,
-  Phone,
-  MapPin,
-  Sparkles,
   ArrowRight
 } from 'lucide-react'
 import {
@@ -22,7 +15,6 @@ import {
 } from '@/components/ui/dialog'
 import { registerClub } from '@/actions/auth.actions'
 import { toast } from 'sonner'
-import { setClientCookie } from '@/lib/utils'
 
 interface RegisterClubModalProps {
   open: boolean
@@ -65,17 +57,6 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
 
     setIsLoading(true)
 
-    // Si es demo o falla por falta de supabase configurado en local
-    if (email.includes('demo') || password === 'demo123456') {
-      setClientCookie('demo_is_active', 'false')
-      setClientCookie('demo_tenant_name', encodeURIComponent(clubName))
-      setClientCookie('demo_user_role', 'TENANT_ADMIN')
-      setClientCookie('demo_user_name', encodeURIComponent('Dueño ' + clubName))
-      setClientCookie('demo_plan_id', 'CHICO_1')
-      toast.success('¡Club registrado! Tu cuenta está pendiente de activación.')
-      window.location.assign('/dashboard')
-      return
-    }
 
     const formData = new FormData()
     formData.append('clubName', clubName)
@@ -96,16 +77,6 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
       // Redirección de Next.js
       window.location.href = '/dashboard'
     }
-  }
-
-  const fillDemoData = () => {
-    setClubName('Club Pádel San Martín')
-    setCity('Yerba Buena, Tucumán')
-    setEmail('admin@padelsanmartin.com')
-    setPhone('+54 9 381 488-9900')
-    setPassword('demo123456')
-    setSelectedSports(['PADEL', 'FUTBOL'])
-    setErrorMessage(null)
   }
 
   return (
@@ -259,19 +230,6 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
             </button>
           </form>
 
-          {/* Botón para autocompletar demo */}
-          <div className="w-full pt-4 mt-2 border-t border-slate-200/80 dark:border-slate-800 text-left flex items-center justify-between">
-            <span className="text-[11px] text-slate-400">
-              ¿Querés probar rápido?
-            </span>
-            <button
-              type="button"
-              onClick={fillDemoData}
-              className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
-            >
-              Autocompletar datos de prueba
-            </button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

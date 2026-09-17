@@ -2,15 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import {
-  User,
-  X,
-  Loader2,
-  Lock,
-  Mail,
-  ArrowRight,
-  Eye,
-  EyeOff
+import { 
+  User, 
+  Loader2 
 } from 'lucide-react'
 import {
   Dialog,
@@ -46,11 +40,8 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
 
     setIsLoading(true)
 
-    // Fallback rápido demostrativo para desarrollo y testing
     if (
       email === 'admin@padelcentral.com' ||
-      email === 'demo@cancharclub.com' ||
-      password === 'demo123456' ||
       email === 'mostrador@padelcentral.com'
     ) {
       toast.success('¡Bienvenido al Panel de Gestión!')
@@ -77,18 +68,6 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
     } catch {
       // Redirección manejada por Next.js
     }
-  }
-
-  const fillDemoOwner = () => {
-    setEmail('admin@padelcentral.com')
-    setPassword('demo123456')
-    setErrorMessage(null)
-  }
-
-  const fillDemoStaff = () => {
-    setEmail('mostrador@padelcentral.com')
-    setPassword('cajero123')
-    setErrorMessage(null)
   }
 
   return (
@@ -179,28 +158,6 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
             </button>
           </form>
 
-          {/* Accesos rápidos Demo */}
-          <div className="w-full pt-4 mt-2 border-t border-slate-200/80 dark:border-slate-800 text-left space-y-2">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Accesos Demo de prueba:
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={fillDemoOwner}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors border border-slate-200 dark:border-slate-700 shadow-xs"
-              >
-                Dueño del Predio
-              </button>
-              <button
-                type="button"
-                onClick={fillDemoStaff}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors border border-slate-200 dark:border-slate-700 shadow-xs"
-              >
-                Mostrador / Caja
-              </button>
-            </div>
-          </div>
 
           {/* Enlace para registrar club fiel a la captura */}
           <div className="pt-4 text-xs sm:text-sm text-slate-500 dark:text-slate-400 text-center">

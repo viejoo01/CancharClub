@@ -28,8 +28,7 @@ import { siteConfig } from '@/config/site'
 import {
   getTenantDunningDetails,
   createTenantInvoicePreference,
-  recordTenantInvoicePayment,
-  updateTenantSubscriptionStatus
+  recordTenantInvoicePayment
 } from '@/actions/saas-billing.actions'
 import type { TenantSubscriptionStatus } from '@/types/database'
 
@@ -140,19 +139,6 @@ function BillingSuspendedContent() {
     })
   }
 
-  // Cambiar estado para testear otras fases del Dunning
-  const handleSimulateStatus = async (newStatus: TenantSubscriptionStatus) => {
-    if (!dunningData) return
-    startTransition(async () => {
-      await updateTenantSubscriptionStatus(dunningData.tenantId, newStatus)
-      if (newStatus === 'ACTIVE' || newStatus === 'GRACE_PERIOD' || newStatus === 'PARTIALLY_SUSPENDED') {
-        router.push('/dashboard')
-      } else {
-        const data = await getTenantDunningDetails(dunningData.tenantId)
-        setDunningData(data)
-      }
-    })
-  }
 
   if (loading) {
     return (
@@ -336,53 +322,7 @@ function BillingSuspendedContent() {
           </div>
         </div>
 
-        {/* Barra de Pruebas y Simulación (Herramienta para Desarrollador / Demo) */}
-        <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-xl p-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              <span className="text-slate-400 font-mono">Simulador Dunning (Modo Testing):</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSimulatedPayment}
-                disabled={paying || isPending}
-                className="h-7 text-[11px] bg-emerald-950/50 border-emerald-800 text-emerald-300 hover:bg-emerald-900"
-              >
-                Simular Pago Aprobado
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSimulateStatus('GRACE_PERIOD')}
-                disabled={isPending}
-                className="h-7 text-[11px] bg-amber-950/50 border-amber-800 text-amber-300 hover:bg-amber-900"
-              >
-                Gracia (Día 8)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSimulateStatus('PARTIALLY_SUSPENDED')}
-                disabled={isPending}
-                className="h-7 text-[11px] bg-rose-950/50 border-rose-800 text-rose-300 hover:bg-rose-900"
-              >
-                Pausa Pública (Día 13)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSimulateStatus('ACTIVE')}
-                disabled={isPending}
-                className="h-7 text-[11px] bg-cyan-950/50 border-cyan-800 text-cyan-300 hover:bg-cyan-900"
-              >
-                Restaurar Activo
-              </Button>
-            </div>
-          </div>
-        </div>
+
       </div>
     </div>
   )

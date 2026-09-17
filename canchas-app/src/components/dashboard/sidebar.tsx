@@ -48,8 +48,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ 
-  tenantName = 'Club Deportivo', 
-  tenantSlug = 'demo-club',
+  tenantName = 'Club Pádel Central', 
+  tenantSlug = 'padel-central',
   userRole = 'ADMIN',
   isActive = true,
   planId,

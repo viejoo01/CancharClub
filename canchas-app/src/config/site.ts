@@ -43,7 +43,7 @@ export const siteConfig = {
       href: '/',
     },
     {
-      title: 'Portal Demo Club',
+      title: 'Portal de Reservas',
       href: '/club/padel-central',
     },
     {

@@ -2,25 +2,13 @@ import Link from 'next/link'
 import { Logo } from '@/components/shared/Logo'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowRight, Sparkles, Phone, LayoutDashboard, Shield } from 'lucide-react'
+import { ArrowRight, Phone, LayoutDashboard, Shield } from 'lucide-react'
 import { siteConfig } from '@/config/site'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 
-interface NavbarProps {
-  showDemoNotice?: boolean
-}
-
-export function Navbar({ showDemoNotice = false }: NavbarProps) {
+export function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
-      {showDemoNotice && (
-        <div className="bg-gradient-to-r from-emerald-950/80 via-teal-950/80 to-emerald-950/80 border-b border-emerald-800/40 px-4 py-1 text-center text-xs text-emerald-300 flex items-center justify-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-          <span>
-            Estás explorando la demo en vivo de <strong className="text-white">{siteConfig.name}</strong> ({siteConfig.domain}) — {siteConfig.tagline}.
-          </span>
-        </div>
-      )}
 
       <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo Canchar */}

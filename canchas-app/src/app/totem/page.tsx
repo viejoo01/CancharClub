@@ -63,42 +63,22 @@ const INITIAL_COURTS: CourtStatus[] = [
     id: 'c1',
     name: 'Cancha 1 (Panorámica)',
     sport: 'PADEL',
-    status: 'PLAYING',
-    currentPlayers: 'Juan Gómez / Marcos Paz vs Lucas / Martín',
-    startsAt: '18:30',
-    endsAt: '20:00',
-    minutesRemaining: 24,
-    lightingOn: true
-  },
-  {
-    id: 'c2',
-    name: 'Cancha 2 (Techada Indoor)',
-    sport: 'PADEL',
-    status: 'NEXT_UP',
-    currentPlayers: 'Turno reservado: Matías Silva (19:00 hs)',
-    startsAt: '19:00',
-    endsAt: '20:30',
-    minutesRemaining: 6,
-    lightingOn: true
-  },
-  {
-    id: 'c3',
-    name: 'Cancha 3 (Blindex Pro)',
-    sport: 'PADEL',
     status: 'AVAILABLE',
-    startsAt: '20:00',
     lightingOn: false
   },
   {
-    id: 'c4',
-    name: 'Cancha Fútbol 5 (Sintético)',
-    sport: 'FUTBOL',
-    status: 'PLAYING',
-    currentPlayers: 'Equipo Los Cuervos vs Dep. Yerba Buena',
-    startsAt: '18:00',
-    endsAt: '19:30',
-    minutesRemaining: 12,
-    lightingOn: true
+    id: 'c2',
+    name: 'Cancha 2 (Techada)',
+    sport: 'PADEL',
+    status: 'AVAILABLE',
+    lightingOn: false
+  },
+  {
+    id: 'c3',
+    name: 'Cancha 3 (Blindex)',
+    sport: 'PADEL',
+    status: 'AVAILABLE',
+    lightingOn: false
   }
 ]
 
@@ -417,31 +397,6 @@ export default function TotemKioskPage() {
                 >
                   Buscar
                 </Button>
-              </div>
-
-              {/* Botones de Demo Rápida */}
-              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80">
-                <span className="text-xs text-slate-400 font-semibold">Turnos demo del día:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchCode('3814123456')
-                    handleSearchCheckIn('3814123456')
-                  }}
-                  className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-emerald-300 border border-slate-700"
-                >
-                  Matías Silva (Cancha 2 - 19:00 hs)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchCode('GOMEZ')
-                    handleSearchCheckIn('GOMEZ')
-                  }}
-                  className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-300 border border-slate-700"
-                >
-                  Juan Gómez (Cancha 1)
-                </button>
               </div>
             </div>
 

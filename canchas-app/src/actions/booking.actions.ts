@@ -710,79 +710,6 @@ export interface PlayerBookingDetail {
   receiptUrl: string
 }
 
-// Reservas de demostración predefinidas
-const DEMO_BOOKINGS: PlayerBookingDetail[] = [
-  {
-    id: 'b-pcl-ab3x7k',
-    code: 'PCL-AB3X7K',
-    clubName: 'Club Pádel Central',
-    clubAddress: 'Av. Aconquija 2400',
-    clubCity: 'Yerba Buena, Tucumán',
-    clubPhone: '+54 9 381 555-1234',
-    courtName: 'Cancha 1 (Panorámica Techada)',
-    sport: 'Pádel',
-    startsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endsAt: new Date(Date.now() + 3.5 * 3600 * 1000).toISOString(),
-    dateFormatted: 'Hoy',
-    timeFormatted: '19:30 - 21:00 hs',
-    status: 'CONFIRMED',
-    totalAmount: 18000,
-    depositAmount: 5000,
-    balanceRemaining: 13000,
-    customerName: 'Martín Alurralde',
-    customerEmail: 'martin@demo.com',
-    customerPhone: '+54 9 381 411-2233',
-    createdAt: new Date().toISOString(),
-    receiptUrl: '/reserva/demo-b-1/confirmado?club=Club+P%C3%A1del+Central&court=Cancha+1+(Panor%C3%A1mica)&total=18000&deposit=5000',
-  },
-  {
-    id: 'b-las-canas-89',
-    code: 'CAN-8921',
-    clubName: 'Complejo Las Cañas',
-    clubAddress: 'Av. Perón y Bascary',
-    clubCity: 'Yerba Buena, Tucumán',
-    clubPhone: '+54 9 381 498-7654',
-    courtName: 'Fútbol 7 (Césped Sintético)',
-    sport: 'Fútbol',
-    startsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAt: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
-    dateFormatted: 'Mañana',
-    timeFormatted: '21:00 - 22:00 hs',
-    status: 'PENDING',
-    totalAmount: 24000,
-    depositAmount: 8000,
-    balanceRemaining: 16000,
-    customerName: 'Martín Alurralde',
-    customerEmail: 'martin@demo.com',
-    customerPhone: '+54 9 381 411-2233',
-    createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-    receiptUrl: '/reserva/b-las-canas-89/confirmado?club=Complejo+Las+Ca%C3%B1as&court=F%C3%BAtbol+7&total=24000&deposit=8000',
-  },
-  {
-    id: 'b-tennis-44',
-    code: 'TEN-5512',
-    clubName: 'Tucumán Lawn Tennis Club',
-    clubAddress: 'Parque 9 de Julio',
-    clubCity: 'San Miguel de Tucumán',
-    clubPhone: '+54 9 381 422-3344',
-    courtName: 'Cancha 3 (Polvo de Ladrillo)',
-    sport: 'Tenis',
-    startsAt: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
-    endsAt: new Date(Date.now() - 46.5 * 3600 * 1000).toISOString(),
-    dateFormatted: 'Hace 2 días',
-    timeFormatted: '18:00 - 19:30 hs',
-    status: 'COMPLETED',
-    totalAmount: 14000,
-    depositAmount: 5000,
-    balanceRemaining: 0,
-    customerName: 'Martín Alurralde',
-    customerEmail: 'martin@demo.com',
-    customerPhone: '+54 9 381 411-2233',
-    createdAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
-    receiptUrl: '/reserva/b-tennis-44/confirmado?club=Lawn+Tennis&court=Cancha+3&total=14000&deposit=5000',
-  }
-]
-
 export async function lookupPlayerBookings(query: {
   code?: string
   email?: string
@@ -905,35 +832,7 @@ export async function lookupPlayerBookings(query: {
         }
       }
     } catch (dbErr) {
-      console.warn('[lookupPlayerBookings] DB query failed, falling back to demo records:', dbErr)
-    }
-
-    // 2. Si es por código, buscar estrictamente el código demo que coincida
-    if (cleanCode) {
-      const matchedDemo = DEMO_BOOKINGS.filter(d => {
-        const dCode = d.code.toUpperCase().replace(/^#/, '').trim()
-        const dCodeNoPrefix = dCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
-        const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
-        return (
-          dCode === cleanCode ||
-          (searchNoPrefix.length >= 4 && dCodeNoPrefix === searchNoPrefix) ||
-          d.id.toUpperCase() === cleanCode
-        )
-      })
-      for (const demo of matchedDemo) {
-        if (!results.some(r => r.code === demo.code || r.id === demo.id)) {
-          results.push(demo)
-        }
-      }
-    } else if (normalizedEmail) {
-      const matchedDemo = DEMO_BOOKINGS.filter(d =>
-        d.customerEmail.toLowerCase() === normalizedEmail
-      )
-      for (const demo of matchedDemo) {
-        if (!results.some(r => r.id === demo.id)) {
-          results.push(demo)
-        }
-      }
+      console.warn('[lookupPlayerBookings] DB query failed:', dbErr)
     }
 
     // 3. Si la búsqueda fue por código, asegurar que los resultados contengan ESTRICTAMENTE ese código

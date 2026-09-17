@@ -113,64 +113,12 @@ export async function getAllClubsBillingOverview(): Promise<{
   const monthName = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
 
   if (!tenants || tenants.length === 0) {
-    // Retornar datos demo enriquecidos si no hay datos en BD
-    const demoClubs: ClubBillingOverviewItem[] = [
-      {
-        tenantId: '00000000-0000-0000-0000-000000000001',
-        name: 'Club Pádel Central Tucumán',
-        slug: 'padel-central',
-        phone: '+54 9 381 600-1122',
-        city: 'San Miguel de Tucumán',
-        pricing: calculateClubSaaSFee(2, 30000), // 2 canchas a $30.000 -> 1.5 turnos -> $45.000
-        status: 'AL_DIA',
-        lastPaidDate: '2026-08-31',
-        billingPeriod: monthName,
-      },
-      {
-        tenantId: '00000000-0000-0000-0000-000000000002',
-        name: 'Complejo La Redonda F5',
-        slug: 'la-redonda-f5',
-        phone: '+54 9 381 555-8899',
-        city: 'Yerba Buena',
-        pricing: calculateClubSaaSFee(3, 28000), // 3 canchas a $28.000 -> 2.0 turnos -> $56.000
-        status: 'AL_DIA',
-        lastPaidDate: '2026-08-30',
-        billingPeriod: monthName,
-      },
-      {
-        tenantId: '00000000-0000-0000-0000-000000000003',
-        name: 'Yerba Buena Pádel & Tenis',
-        slug: 'yb-padel',
-        phone: '+54 9 381 444-2211',
-        city: 'Yerba Buena',
-        pricing: calculateClubSaaSFee(4, 32000), // 4 canchas a $32.000 -> 2.5 turnos -> $80.000
-        status: 'PENDIENTE',
-        lastPaidDate: null,
-        billingPeriod: monthName,
-      },
-      {
-        tenantId: '00000000-0000-0000-0000-000000000004',
-        name: 'San Martín Arena',
-        slug: 'san-martin-arena',
-        phone: '+54 9 381 777-3322',
-        city: 'San Miguel de Tucumán',
-        pricing: calculateClubSaaSFee(1, 25000), // 1 cancha a $25.000 -> 1.0 turno -> $25.000
-        status: 'AL_DIA',
-        lastPaidDate: '2026-08-29',
-        billingPeriod: monthName,
-      }
-    ]
-
-    const totalMRR = demoClubs.reduce((acc, c) => acc + c.pricing.monthlyFeeArs, 0)
-    const upToDateCount = demoClubs.filter(c => c.status === 'AL_DIA').length
-    const pendingCount = demoClubs.filter(c => c.status !== 'AL_DIA').length
-
     return {
-      clubs: demoClubs,
-      totalMRR,
-      clubsCount: demoClubs.length,
-      upToDateCount,
-      pendingCount,
+      clubs: [],
+      totalMRR: 0,
+      clubsCount: 0,
+      upToDateCount: 0,
+      pendingCount: 0,
     }
   }
 

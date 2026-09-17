@@ -7,7 +7,6 @@ import {
   Calendar,
   Building2,
   MapPin,
-  Clock,
   CheckCircle2,
   AlertCircle,
   Clock3,
@@ -39,7 +38,7 @@ export default function MisReservasPage() {
     const emailToSearch = activeTab === 'email' ? emailQuery.trim() : undefined
 
     if (activeTab === 'code' && !codeToSearch) {
-      setErrorMessage('Ingresá el código de tu reserva (ej: PCL-AB3X7K).')
+      setErrorMessage('Ingresá el código de tu reserva (ej: PCL-123456).')
       return
     }
 
@@ -81,17 +80,6 @@ export default function MisReservasPage() {
     setErrorMessage(null)
   }
 
-  const quickDemoCode = (code: string) => {
-    setActiveTab('code')
-    setCodeQuery(code)
-    setErrorMessage(null)
-  }
-
-  const quickDemoEmail = (email: string) => {
-    setActiveTab('email')
-    setEmailQuery(email)
-    setErrorMessage(null)
-  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-6 transition-colors duration-200">
@@ -168,7 +156,7 @@ export default function MisReservasPage() {
                     type={activeTab === 'code' ? 'text' : 'email'}
                     autoFocus
                     placeholder={
-                      activeTab === 'code' ? 'Ej: PCL-AB3X7K' : 'Ej: juan@ejemplo.com'
+                      activeTab === 'code' ? 'Ej: PCL-123456' : 'Ej: juan@ejemplo.com'
                     }
                     value={activeTab === 'code' ? codeQuery : emailQuery}
                     onChange={(e) =>
@@ -203,35 +191,6 @@ export default function MisReservasPage() {
                 </button>
               </form>
 
-              {/* Acceso rápido de prueba */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-left">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
-                  Códigos de prueba para consultar:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => quickDemoCode('PCL-AB3X7K')}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 text-slate-600 dark:text-slate-300 font-mono text-[11px] font-semibold transition-colors"
-                  >
-                    PCL-AB3X7K (Confirmada)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => quickDemoCode('CAN-8921')}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/15 hover:text-amber-600 dark:hover:text-amber-400 text-slate-600 dark:text-slate-300 font-mono text-[11px] font-semibold transition-colors"
-                  >
-                    CAN-8921 (Pendiente)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => quickDemoEmail('martin@demo.com')}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors"
-                  >
-                    martin@demo.com
-                  </button>
-                </div>
-              </div>
             </div>
           ) : (
             /* Resultados */

@@ -34,7 +34,8 @@ export default async function DashboardLayout({
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || headerStatus || 'ACTIVE'
   let planId: SaaSPlanId | undefined = cookiePlanId || undefined
 
-  let isActive = true  // Por defecto activo (modo demo)
+  const cookieIsActive = cookieStore.get('demo_is_active')?.value
+  let isActive = cookieIsActive === 'false' ? false : true
 
   if (user) {
     const { data: profile } = await supabase
@@ -58,7 +59,11 @@ export default async function DashboardLayout({
         tenantName = t.name || tenantName
         tenantSlug = t.slug || tenantSlug
         mpConnected = Boolean(t.mp_access_token)
-        isActive = t.is_active !== false  // false explícito = pendiente de activación
+        if (typeof t.is_active === 'boolean') {
+          isActive = t.is_active
+        } else if (cookieIsActive !== undefined) {
+          isActive = cookieIsActive === 'true'
+        }
         if (t.plan_id) {
           planId = t.plan_id
         }

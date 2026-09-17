@@ -1,6 +1,6 @@
 'use client'
 
-import { MessageCircle, Building2, Clock, CheckCircle2, ArrowRight } from 'lucide-react'
+import { MessageCircle, Mail, Clock, AlertTriangle } from 'lucide-react'
 
 interface PendingActivationScreenProps {
   tenantName: string
@@ -9,72 +9,56 @@ interface PendingActivationScreenProps {
 export function PendingActivationScreen({ tenantName }: PendingActivationScreenProps) {
   const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_DEFAULT?.replace(/\D/g, '') || '5493816839320'
   const whatsappMessage = encodeURIComponent(
-    `Hola quisiera agregar mi club "${tenantName}" a CancharClub, me podrias comentar un poco mas sobre como funciona el sistema?`
+    `Hola, acabo de registrar mi club "${tenantName}" en CancharClub y quisiera activar mi plan de canchas.`
   )
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
 
-  const emailSubject = encodeURIComponent(`Consulta activación de club: ${tenantName}`)
+  const emailSubject = encodeURIComponent(`Solicitud de activación de club: ${tenantName}`)
   const emailBody = encodeURIComponent(
-    `Hola me llamo ... quisiera agregar mi club "${tenantName}" a CancharClub, me podrias comentar un poco mas sobre como funciona el sistema?`
+    `Hola, acabo de registrar mi club "${tenantName}" en CancharClub y deseo activar mi plan de canchas para comenzar a operar el sistema.`
   )
   const emailUrl = `mailto:cancharclub@gmail.com?subject=${emailSubject}&body=${emailBody}`
 
   return (
-    <div className="flex items-center justify-center h-full min-h-125 p-6">
-      <div className="w-full max-w-lg">
-        <div className="relative bg-slate-900 border border-slate-700/60 rounded-2xl p-8 shadow-2xl overflow-hidden">
-          <div className="absolute inset-0 bg-linear-to-br from-emerald-950/30 via-transparent to-teal-950/20 pointer-events-none" />
-          <div className="absolute -top-20 -right-20 w-60 h-60 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative z-10">
-            <div className="flex justify-center mb-6">
-              <div className="w-20 h-20 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-xl shadow-emerald-900/40">
-                <Building2 className="w-10 h-10 text-white" />
-              </div>
+    <div className="w-full mb-6 relative overflow-hidden rounded-2xl border-2 border-amber-500/40 bg-linear-to-r from-amber-950/40 via-slate-900 to-amber-950/20 p-4 sm:p-6 shadow-xl shadow-amber-950/20 backdrop-blur-md">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div className="flex items-start gap-4">
+          <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 shrink-0 mt-0.5 shadow-sm">
+            <Clock className="w-6 h-6 animate-pulse" />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                Modo Vista Previa • Activación Pendiente
+              </span>
             </div>
-            <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-white mb-2">¡Bienvenido a CancharClub! 🎉</h2>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Tu club <span className="text-emerald-400 font-semibold">{tenantName}</span> fue registrado exitosamente.
-                Estamos casi listos — comunicate con nosotros para habilitar y activar tu cuenta con el plan ideal.
-              </p>
-            </div>
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 border border-slate-700/40">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                <span className="text-sm text-slate-300">Cuenta creada correctamente</span>
-              </div>
-              <div className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 border border-slate-700/40">
-                <Clock className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
-                <span className="text-sm text-slate-300">
-                  Activación de club <span className="text-amber-400 font-medium">pendiente de aprobación</span>
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center justify-center gap-3 w-full py-4 px-6 rounded-xl font-bold text-white text-base bg-linear-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 shadow-lg shadow-emerald-900/40 hover:shadow-emerald-800/60 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <MessageCircle className="w-5 h-5" />
-                Activar mi club por WhatsApp
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </a>
-
-              <a
-                href={emailUrl}
-                className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 hover:text-white transition-colors"
-              >
-                Escribinos por email (cancharclub@gmail.com)
-              </a>
-            </div>
-
-            <p className="text-center text-xs text-slate-500 mt-4">
-              Al hacer click abrirás WhatsApp con un mensaje automático para nuestro equipo de activación.
+            <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+              Tu club &quot;{tenantName}&quot; fue registrado con éxito
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-3xl">
+              Podés navegar libremente por las diferentes opciones para conocer todo el sistema. Las acciones, botones y modificaciones están bloqueados hasta que el administrador active tu cuenta según tu plan. Comunicate ahora para habilitar tu club:
             </p>
           </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all shadow-md shadow-emerald-950/50 cursor-pointer"
+          >
+            <MessageCircle className="w-4 h-4 fill-white text-transparent" />
+            <span>Activar por WhatsApp</span>
+          </a>
+          <a
+            href={emailUrl}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm text-slate-200 bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 hover:text-white cursor-pointer"
+          >
+            <Mail className="w-4 h-4 text-slate-400" />
+            <span>Escribir por Email</span>
+          </a>
         </div>
       </div>
     </div>

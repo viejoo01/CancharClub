@@ -16,7 +16,6 @@ import {
   Repeat,
   Zap,
   BarChart3,
-  Lock,
   X,
   Landmark,
   Users,
@@ -208,6 +207,11 @@ export function Sidebar({
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
                 Superadmin Plataforma
               </span>
+            ) : !isActive ? (
+              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Activación Pendiente
+              </span>
             ) : (
               <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -242,22 +246,6 @@ export function Sidebar({
             : pathname.startsWith(item.href)
 
           const Icon = item.icon
-
-          if (!isActive) {
-            // Club pendiente de activación: mostrar ítem deshabilitado
-            return (
-              <div
-                key={item.href}
-                className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium opacity-35 cursor-not-allowed select-none"
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-4 h-4 text-slate-600" />
-                  <span className="text-slate-600">{item.title}</span>
-                </div>
-                <Lock className="w-3 h-3 text-slate-700" />
-              </div>
-            )
-          }
 
           return (
             <Link

@@ -13,6 +13,7 @@ import {
 import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
 interface DashboardLayoutClientProps {
@@ -147,14 +148,30 @@ export function DashboardLayoutClient({
 
         {isActive && gracePeriodBanner}
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar">
-          {isActive ? children : pendingScreen}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
+          {!isActive && pendingScreen}
+
+          <div className="relative w-full">
+            {!isActive && (
+              <div
+                onClick={() => {
+                  toast.error('Acciones bloqueadas en modo de prueba', {
+                    description: 'Para habilitar botones, cobros y reservas en tu club, contactá al administrador por WhatsApp o Email.',
+                  })
+                }}
+                className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"
+                title="Modo sólo lectura: activá tu plan para usar las funciones."
+              />
+            )}
+            <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>
+              {children}
+            </div>
+          </div>
         </main>
 
         {/* ─── 4. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM BAR) PARA CELULARES ─── */}
-        {isActive && (
-          <nav 
-            className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1.5 flex items-center justify-around shadow-2xl select-none"
+        <nav 
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1.5 flex items-center justify-around shadow-2xl select-none"
             style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
             aria-label="Navegación inferior móvil"
           >
@@ -203,7 +220,6 @@ export function DashboardLayoutClient({
               </span>
             </button>
           </nav>
-        )}
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
   Building2, 
@@ -8,6 +9,7 @@ import {
   Calendar, 
   Plus, 
   CheckCircle2, 
+  Check,
   ExternalLink,
   Search,
   ShieldCheck,
@@ -41,10 +43,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS, setClientCookie } from '@/lib/utils'
+import { formatARS, setClientCookie, cn } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
+import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess } from '@/actions/superadmin.actions'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -62,6 +65,7 @@ export interface ClubUser {
 }
 
 export default function SuperadminPage() {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<'BILLING' | 'TENANTS' | 'USERS'>('USERS')
 
   // Listado de clubes con sus parámetros para la fórmula proporcional y plan asignado
@@ -120,6 +124,80 @@ export default function SuperadminPage() {
     is_active: boolean
   } | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+
+  // Estado para modal rápido de activación de club y asignación de plan
+  const [activatingTenant, setActivatingTenant] = useState<{
+    id: string
+    name: string
+    active_courts: number
+    plan_id: SaaSPlanId
+  } | null>(null)
+  const [isActivating, setIsActivating] = useState(false)
+
+  // Sincronización en tiempo real con los clubes reales de la base de datos Supabase
+  useEffect(() => {
+    async function loadClubs() {
+      const res = await getSuperadminTenants()
+      if (res.success && res.data.length > 0) {
+        setTenants(res.data)
+      }
+    }
+    loadClubs()
+  }, [])
+
+  const handleOpenActivate = (t: typeof tenants[0]) => {
+    setActivatingTenant({
+      id: t.id,
+      name: t.name,
+      active_courts: t.active_courts,
+      plan_id: t.plan_id || getPlanByCourtsCount(t.active_courts).id,
+    })
+  }
+
+  const handleConfirmActivation = async () => {
+    if (!activatingTenant) return
+    setIsActivating(true)
+    const res = await activateTenantAccess(activatingTenant.id, activatingTenant.plan_id)
+    setIsActivating(false)
+
+    if (!res.success) {
+      toast.error(res.error || 'Error al activar el club')
+      return
+    }
+
+    setTenants(prev => prev.map(t => {
+      if (t.id === activatingTenant.id) {
+        return {
+          ...t,
+          is_active: true,
+          status: 'ACTIVE',
+          subscription_status: 'AL_DIA',
+          plan_id: activatingTenant.plan_id,
+        }
+      }
+      return t
+    }))
+
+    toast.success(`¡Acceso otorgado a "${activatingTenant.name}"!`, {
+      description: `Plan asignado: ${SAAS_PLANS[activatingTenant.plan_id]?.name || activatingTenant.plan_id}. El club ya tiene acceso y control total.`
+    })
+    setActivatingTenant(null)
+  }
+
+  const handleToggleDeactivate = async (tenantId: string, clubName: string) => {
+    if (!confirm(`¿Estás seguro de que deseas suspender o poner en modo lectura a "${clubName}"?`)) {
+      return
+    }
+    const res = await deactivateTenantAccess(tenantId)
+    if (!res.success) {
+      toast.error(res.error || 'Error al suspender el club')
+      return
+    }
+    setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, is_active: false, status: 'PENDING', subscription_status: 'PENDIENTE' } : t))
+    toast.warning(`Club "${clubName}" suspendido`, {
+      description: 'El club ahora está en modo de vista previa restringida.'
+    })
+  }
 
   // Cálculos SaaS basados en la fórmula y plan asignado
   const tenantsWithPricing = tenants.map(t => {
@@ -241,6 +319,11 @@ export default function SuperadminPage() {
     }))
 
     try {
+      if (editingTenant.is_active) {
+        await activateTenantAccess(editingTenant.id, editingTenant.plan_id)
+      } else {
+        await deactivateTenantAccess(editingTenant.id)
+      }
       const supabase = createClient()
       await supabase
         .from('tenants')
@@ -395,7 +478,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     toast.success(`Iniciando sesión como ${user.name}`, {
       description: `Rol: ${user.role === 'TENANT_ADMIN' ? 'Dueño del Club' : 'Canchero (Turnos y Caja)'}`
     })
-    window.location.assign('/dashboard')
+    router.push('/dashboard')
+    router.refresh()
   }
 
   const handleSimulateClub = (t: typeof tenants[0], role: 'TENANT_ADMIN' | 'TENANT_STAFF' = 'TENANT_ADMIN') => {
@@ -408,7 +492,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     toast.success(`Ingresando a ${t.name}`, {
       description: `Modo: ${role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'} | Plan: ${SAAS_PLANS[t.plan_id]?.name || t.plan_id} (${t.is_active !== false ? 'Activo' : 'Pendiente'})`
     })
-    window.location.assign('/dashboard')
+    router.push('/dashboard')
+    router.refresh()
   }
 
   const handleToggleUserStatus = (userId: string) => {
@@ -1096,6 +1181,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </div>
                     </div>
 
+                    {/* Botón destacado para activar si está pendiente */}
+                    {!t.is_active && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenActivate(t)}
+                        className="w-full h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Activar y Dar Acceso Total</span>
+                      </Button>
+                    )}
+
                     {/* Botones de acción móvil */}
                     <div className="flex items-center justify-between gap-1.5 pt-1">
                       <Button
@@ -1117,6 +1214,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <Pencil className="w-3 h-3 text-indigo-400" />
                         <span>Editar</span>
                       </Button>
+
+                      {t.is_active ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleToggleDeactivate(t.id, t.name)}
+                          className="h-8 px-2 text-[11px] border-amber-500/30 text-amber-400 hover:bg-amber-950/30 rounded-xl cursor-pointer"
+                          title="Suspender acceso"
+                        >
+                          Pausar
+                        </Button>
+                      ) : null}
 
                       <Link 
                         href={`/club/${t.slug}`} 
@@ -1161,12 +1270,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         </Badge>
                       </td>
                       <td className="p-4 text-center">
-                        {t.is_active !== false ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                        {t.is_active ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
                             ✅ Habilitado
                           </Badge>
                         ) : (
-                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
                             ⏳ Pendiente
                           </Badge>
                         )}
@@ -1187,6 +1296,27 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {!t.is_active ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenActivate(t)}
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 rounded-lg shadow-sm shadow-emerald-950/40 cursor-pointer flex items-center gap-1"
+                              title="Otorgar poder y acceso total a este club asignando su plan"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>Activar Acceso</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleDeactivate(t.id, t.name)}
+                              className="h-7 text-[11px] text-slate-400 hover:text-amber-400 px-2 rounded-lg cursor-pointer"
+                              title="Suspender acceso (modo sólo lectura)"
+                            >
+                              Pausar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -2615,6 +2745,105 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   Ver en el Listado de Usuarios
                 </Button>
               </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: ACTIVAR CLUB Y ASIGNAR PLAN SAAS */}
+      <Dialog open={Boolean(activatingTenant)} onOpenChange={(open) => !open && setActivatingTenant(null)}>
+        <DialogContent className="sm:max-w-md bg-slate-900 border border-slate-800 text-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-emerald-400">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
+              Activar Club y Otorgar Acceso
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-sm">
+              Otorgá el acceso y poder total a <strong className="text-white">{activatingTenant?.name}</strong> asignando su plan de canchas.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activatingTenant && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-slate-300">
+                  Seleccionar Plan de Canchas Contratado:
+                </Label>
+                <div className="grid grid-cols-1 gap-2">
+                  {SAAS_PLANS_LIST.map((plan) => {
+                    const isSelected = activatingTenant.plan_id === plan.id
+                    return (
+                      <div
+                        key={plan.id}
+                        onClick={() => setActivatingTenant({ ...activatingTenant, plan_id: plan.id })}
+                        className={cn(
+                          "p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                          isSelected
+                            ? "bg-emerald-500/10 border-emerald-500 text-white shadow-sm shadow-emerald-950/40"
+                            : "bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                        )}
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-white">{plan.name}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {plan.badge}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {plan.courtsLabel} • Tarifa: {plan.priceTurnosLabel}
+                          </p>
+                        </div>
+                        <div className="shrink-0 ml-3">
+                          <div className={cn(
+                            "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
+                            isSelected ? "border-emerald-400 bg-emerald-500 text-white" : "border-slate-600"
+                          )}>
+                            {isSelected && <Check className="w-3 h-3 stroke-3" />}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5 text-slate-300">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Canchas activas del predio:</span>
+                  <span className="font-semibold text-white">{activatingTenant.active_courts} canchas</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Estado resultante:</span>
+                  <span className="font-bold text-emerald-400">100% Habilitado y Operativo</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActivatingTenant(null)}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isActivating}
+                  onClick={handleConfirmActivation}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-900/40 cursor-pointer flex items-center gap-1.5"
+                >
+                  {isActivating ? (
+                    <span>Habilitando...</span>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Confirmar y Dar Acceso Total</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

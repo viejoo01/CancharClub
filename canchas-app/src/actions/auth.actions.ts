@@ -65,7 +65,7 @@ export async function loginWithEmail(formData: FormData) {
   if (t?.name) cookieStore.set('demo_tenant_name', t.name, { path: '/', maxAge: 86400 })
   if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, { path: '/', maxAge: 86400 })
   if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', t?.is_active !== false ? 'true' : 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', t?.is_active === true ? 'true' : 'false', { path: '/', maxAge: 86400 })
 
   if (profile?.role === 'TENANT_STAFF') {
     cookieStore.set('demo_user_role', 'TENANT_STAFF', { path: '/', maxAge: 86400 })
@@ -163,8 +163,8 @@ export async function registerClub(formData: FormData) {
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: true,
-      subscription_status: 'ACTIVE',
+      is_active: false,
+      subscription_status: 'PENDIENTE',
       payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
     })
     .select()
@@ -221,8 +221,8 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'PENDIENTE', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
 
   redirect('/dashboard')
 }

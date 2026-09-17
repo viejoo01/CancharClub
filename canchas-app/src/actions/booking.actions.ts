@@ -78,9 +78,17 @@ export async function initiateOnlineCheckout(
     const supabaseCheck = await createServiceClient()
     const { data: tenantCheck } = await supabaseCheck
       .from('tenants')
-      .select('subscription_status, name')
+      .select('subscription_status, name, is_active')
       .eq('id', payload.tenant_id)
       .maybeSingle()
+
+    if (tenantCheck?.is_active === false) {
+      return {
+        success: false,
+        error: 'Este club se encuentra en proceso de activación por el administrador.',
+        error_code: 'CLUB_PENDING_ACTIVATION',
+      }
+    }
 
     const effectiveStatus: TenantSubscriptionStatus = demoStatus || tenantCheck?.subscription_status || 'ACTIVE'
 

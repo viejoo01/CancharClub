@@ -1,42 +1,31 @@
-// CancharClub PWA Service Worker
-const CACHE_NAME = 'cancharclub-v1'
-const ASSETS_TO_CACHE = [
-  '/',
-  '/manifest.json',
-  '/globe.svg',
-]
+// CancharClub PWA Service Worker - Auto-Bust Cache (v2-live)
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE)
-    })
-  )
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      )
-    })
+      return Promise.all(keys.map((key) => caches.delete(key)))
+    }).then(() => self.clients.claim())
   )
-  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
+
+  // Navegación de páginas: SIEMPRE desde la red para ver los cambios en tiempo real
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    )
+    return
+  }
+
+  // Recursos estáticos: Network-First con fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request).catch(() => {
-        // Retornar fallback si es navegación de página
-        if (event.request.mode === 'navigate') {
-          return caches.match('/')
-        }
-      })
-    })
+    fetch(event.request).catch(() => caches.match(event.request))
   )
 })
 

@@ -90,6 +90,21 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <meta name="theme-color" content="#059669" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator && 'caches' in window) {
+                caches.keys().then(function(keys) {
+                  keys.forEach(function(key) {
+                    if (key.indexOf('v1') !== -1) {
+                      caches.delete(key);
+                    }
+                  });
+                });
+              }
+            `,
+          }}
+        />
       </head>
       <body className={inter.variable}>
         <ThemeProvider

@@ -23,10 +23,12 @@ import {
   type PlayerHistoryItem,
 } from '@/actions/players.actions'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+// tenant isolation: useTenantId hook
 
 export default function JugadoresPage() {
+  const tenantId = useTenantId()
   const [players, setPlayers] = useState<PlayerSummary[]>([])
   const [stats, setStats] = useState({
     totalPlayers: 0,
@@ -47,7 +49,7 @@ export default function JugadoresPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getPlayersReputation(DEMO_TENANT_ID, searchQuery)
+      const res = await getPlayersReputation(tenantId!, searchQuery)
       if (res.success) {
         setPlayers(res.players)
         setStats(res.stats)
@@ -72,7 +74,7 @@ export default function JugadoresPage() {
     setSelectedPlayer(player)
     setLoadingHistory(true)
     try {
-      const res = await getPlayerHistory(DEMO_TENANT_ID, player.phone)
+      const res = await getPlayerHistory(tenantId!, player.phone)
       if (res.success) {
         setHistory(res.history)
       } else {
@@ -498,3 +500,5 @@ export default function JugadoresPage() {
     </div>
   )
 }
+
+

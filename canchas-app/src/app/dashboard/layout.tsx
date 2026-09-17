@@ -26,8 +26,8 @@ export default async function DashboardLayout({
   const cookieTenantName = cookieStore.get('demo_tenant_name')?.value
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
 
-  let tenantName = cookieTenantName || 'Club Pádel Central Tucumán'
-  let tenantSlug = cookieTenantSlug || 'padel-central'
+  let tenantName = cookieTenantName || 'Mi Club Deportivo'
+  let tenantSlug = cookieTenantSlug || 'mi-club'
   let userRole = cookieRole || 'TENANT_ADMIN'
   let userName = cookieName || (cookieRole === 'TENANT_STAFF' ? 'Canchero (Mostrador)' : 'Dueño del Club')
   let mpConnected = true

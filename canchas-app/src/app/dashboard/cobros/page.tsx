@@ -23,20 +23,22 @@ import {
   saveTenantMpCredentials, 
   disconnectTenantMpAccount 
 } from '@/actions/tenant-payment-settings.actions'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
 export default function CobrosConfigPage() {
+  const tenantId = useTenantId()
   const [loading, setLoading] = useState(true)
   const [savingBank, setSavingBank] = useState(false)
   const [savingMp, setSavingMp] = useState(false)
   const [disconnectingMp, setDisconnectingMp] = useState(false)
 
   // Datos bancarios
-  const [bankName, setBankName] = useState('Mercado Pago / Banco Galicia')
-  const [accountHolder, setAccountHolder] = useState('Club Pádel Central SRL')
-  const [cbu, setCbu] = useState('0000003100098765432101')
-  const [alias, setAlias] = useState('padelcentral.mp')
-  const [cuit, setCuit] = useState('30-71234567-9')
-  const [whatsappPhone, setWhatsappPhone] = useState('5493814123456')
+  const [bankName, setBankName] = useState('')
+  const [accountHolder, setAccountHolder] = useState('')
+  const [cbu, setCbu] = useState('')
+  const [alias, setAlias] = useState('')
+  const [cuit, setCuit] = useState('')
+  const [whatsappPhone, setWhatsappPhone] = useState('')
 
   // Mercado Pago del Club
   const [mpConnected, setMpConnected] = useState(false)
@@ -49,13 +51,12 @@ export default function CobrosConfigPage() {
   const [allowTransfer, setAllowTransfer] = useState(true)
   const [allowMp, setAllowMp] = useState(false)
 
-  const tenantId = '00000000-0000-0000-0000-000000000001'
 
   useEffect(() => {
     async function loadSettings() {
       setLoading(true)
       try {
-        const settings = await getTenantPaymentSettings(tenantId)
+        const settings = await getTenantPaymentSettings(tenantId!)
         if (settings) {
           setBankName(settings.bankName)
           setAccountHolder(settings.accountHolder)
@@ -91,7 +92,7 @@ export default function CobrosConfigPage() {
       if (allowMp && mpConnected) activeMethods.push('MERCADOPAGO')
       if (activeMethods.length === 0) activeMethods.push('TRANSFER')
 
-      const res = await saveTenantBankSettings(tenantId, {
+      const res = await saveTenantBankSettings(tenantId!, {
         bankName,
         accountHolder,
         cbu,
@@ -124,7 +125,7 @@ export default function CobrosConfigPage() {
 
     setSavingMp(true)
     try {
-      const res = await saveTenantMpCredentials(tenantId, {
+      const res = await saveTenantMpCredentials(tenantId!, {
         accessToken: mpAccessToken,
         publicKey: mpPublicKey || undefined,
       })
@@ -151,7 +152,7 @@ export default function CobrosConfigPage() {
     if (!confirm('¿Seguro que querés desvincular tu cuenta de Mercado Pago del club?')) return
     setDisconnectingMp(true)
     try {
-      const res = await disconnectTenantMpAccount(tenantId)
+      const res = await disconnectTenantMpAccount(tenantId!)
       if (res.success) {
         setMpConnected(false)
         setAllowMp(false)

@@ -29,6 +29,7 @@ interface InflationAdjustModalProps {
   isOpen: boolean
   onClose: () => void
   currentRules: PriceRulePreview[]
+  tenantId?: string
   onSuccess?: (updatedRules: PriceRulePreview[]) => void
 }
 
@@ -36,6 +37,7 @@ export function InflationAdjustModal({
   isOpen,
   onClose,
   currentRules,
+  tenantId,
   onSuccess,
 }: InflationAdjustModalProps) {
   const [percentage, setPercentage] = useState<number>(15)
@@ -55,10 +57,15 @@ export function InflationAdjustModal({
       return
     }
 
+    if (!tenantId) {
+      toast.error('No se pudo determinar el club activo')
+      return
+    }
+
     setIsApplying(true)
     try {
       const res = await applyBulkInflationPriceAdjustment(
-        '00000000-0000-0000-0000-000000000001',
+        tenantId,
         percentage,
         roundingStep
       )

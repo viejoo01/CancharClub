@@ -29,8 +29,10 @@ import {
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
 export default function ClubPlanPage() {
+  const tenantId = useTenantId()
   // Canchas activas con las que cuenta el club
   const [courtsCount, setCourtsCount] = useState<number>(() => {
     if (typeof window !== 'undefined') {
@@ -76,10 +78,11 @@ export default function ClubPlanPage() {
   const handlePayWithMercadoPago = async () => {
     setPaying(true)
     try {
-      const res = await createTenantInvoicePreference('00000000-0000-0000-0000-000000000001')
+      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const res = await createTenantInvoicePreference(activeTenant)
       if (res.initPoint) {
         if (res.isSimulated) {
-          await recordTenantInvoicePayment('00000000-0000-0000-0000-000000000001')
+          await recordTenantInvoicePayment(activeTenant)
           setIsPaid(true)
           toast.success('Pago Aprobado con Mercado Pago', {
             description: `Se acreditó el abono mensual de ${formatARS(pricing.monthlyFeeArs)}. ¡Tu club está al día!`
@@ -119,7 +122,8 @@ export default function ClubPlanPage() {
   const handleSetupAutoDebit = async () => {
     setSubscribing(true)
     try {
-      const res = await setupMonthlySubscriptionPreapproval('00000000-0000-0000-0000-000000000001')
+      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const res = await setupMonthlySubscriptionPreapproval(activeTenant)
       if (res.success) {
         if (res.initPoint) {
           toast.info('Abriendo portal oficial de Mercado Pago Subscriptions...', {

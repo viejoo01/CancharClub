@@ -541,7 +541,7 @@ export default function ClubPublicPage({
                     <div className="shrink-0">
                       {slot.isAvailable ? (
                         <Link
-                          href={`/club/${club.slug}/checkout?courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${slot.sport}&club=${encodeURIComponent(club.name)}`}
+                          href={`/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${slot.sport}&club=${encodeURIComponent(club.name)}`}
                         >
                           <Button
                             size="sm"
@@ -602,7 +602,7 @@ export default function ClubPublicPage({
               setIsWaitlistOpen(false)
               setWaitlistSlot(null)
             }}
-            tenantId="00000000-0000-0000-0000-000000000001"
+            tenantId={club.id}
             courtId={waitlistSlot.courtId}
             courtName={waitlistSlot.courtName}
             date={selectedDate}

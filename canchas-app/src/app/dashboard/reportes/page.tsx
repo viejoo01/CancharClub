@@ -21,8 +21,9 @@ import { formatARS } from '@/lib/utils'
 import { getOccupancyReport, type OccupancyReportData, type PricingRecommendation } from '@/actions/analytics.actions'
 import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+// tenant isolation: useTenantId hook
 
 const SLOTS_HEADER = [
   { key: 'MANANA', label: 'Mañana', range: '08:00 - 13:00' },
@@ -36,13 +37,14 @@ const DAYS_HEADER = [
 ]
 
 export default function ReportesPage() {
+  const tenantId = useTenantId()
   const [data, setData] = useState<OccupancyReportData | null>(null)
   const [loading, setLoading] = useState(true)
 
   const loadReport = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getOccupancyReport(DEMO_TENANT_ID)
+      const res = await getOccupancyReport(tenantId!)
       setData(res)
     } catch {
       toast.error('Error al cargar reporte de ocupación')
@@ -53,7 +55,7 @@ export default function ReportesPage() {
 
   useEffect(() => {
     let isMounted = true
-    getOccupancyReport(DEMO_TENANT_ID)
+    getOccupancyReport(tenantId!)
       .then((res) => {
         if (isMounted) {
           setData(res)
@@ -400,3 +402,5 @@ export default function ReportesPage() {
     </div>
   )
 }
+
+

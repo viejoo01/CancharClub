@@ -25,10 +25,12 @@ import {
   type StaffRole,
 } from '@/actions/staff.actions'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+// tenant isolation: useTenantId hook
 
 export default function EquipoPage() {
+  const tenantId = useTenantId()
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -43,7 +45,7 @@ export default function EquipoPage() {
   const loadStaff = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getClubStaff(DEMO_TENANT_ID)
+      const res = await getClubStaff(tenantId!)
       if (res.success) {
         setStaff(res.staff)
       } else {
@@ -73,7 +75,7 @@ export default function EquipoPage() {
     setSubmitting(true)
     try {
       const res = await inviteStaffMember({
-        tenantId: DEMO_TENANT_ID,
+        tenantId: tenantId!,
         fullName: fullName.trim(),
         email: email.trim(),
         phone: phone.trim() || undefined,
@@ -472,3 +474,5 @@ export default function EquipoPage() {
     </div>
   )
 }
+
+

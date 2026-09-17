@@ -30,18 +30,37 @@ function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
 }
 
-function resolveCourtUuid(courtId?: string | null, courtName?: string | null): string {
+async function resolveCourtUuid(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  tenantId: string,
+  courtId?: string | null,
+  courtName?: string | null
+): Promise<string> {
   if (courtId && isValidUuid(courtId)) {
     return courtId
   }
-  const str = `${courtId || ''} ${courtName || ''}`.toLowerCase()
-  if (str.includes('c1-2') || str.includes('techada') || str.includes('cancha 2')) {
-    return '00000000-0000-0000-0000-000000000012'
+  if (tenantId && isValidUuid(tenantId)) {
+    if (courtName) {
+      const { data: court } = await supabase
+        .from('courts')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .ilike('name', `%${courtName.trim()}%`)
+        .limit(1)
+        .maybeSingle()
+      if (court?.id) return court.id
+    }
+    const { data: firstCourt } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (firstCourt?.id) return firstCourt.id
   }
-  if (str.includes('c1-3') || str.includes('blindex') || str.includes('cancha 3')) {
-    return '00000000-0000-0000-0000-000000000013'
-  }
-  return '00000000-0000-0000-0000-000000000011'
+  return crypto.randomUUID()
 }
 
 // ─── ACTION: Iniciar checkout online (adquirir lock + crear booking + preferencia MP) ─
@@ -100,7 +119,7 @@ export async function initiateOnlineCheckout(
       ? payload.tenant_id
       : '00000000-0000-0000-0000-000000000001'
 
-    const effectiveCourtId = resolveCourtUuid(payload.court_id, payload.court_name)
+    const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
 
     let sportEnum = 'PADEL'
     if (payload.court_name?.toLowerCase().includes('fútbol') || payload.internal_notes?.toLowerCase().includes('futbol')) {
@@ -172,8 +191,8 @@ export async function initiateOnlineCheckout(
       balance_due: Math.max(0, payload.total_amount_ars - payload.deposit_amount_ars),
       internal_notes: noteText,
       courts: {
-        name: payload.court_name || 'Cancha 1 (Panorámica)',
-        sport: 'PADEL',
+        name: payload.court_name || 'Cancha',
+        sport: (payload.court_name?.toLowerCase().includes('fútbol') || payload.internal_notes?.toLowerCase().includes('futbol')) ? 'FUTBOL' : 'PADEL',
         slot_duration: courtSlotDuration,
       },
     })

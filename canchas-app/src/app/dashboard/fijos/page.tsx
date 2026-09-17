@@ -38,35 +38,27 @@ import {
 import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
-import { DEFAULT_VENUES, VENUES_COURTS } from '@/config/venues-data'
+import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 const DAYS_NAME = [
   'Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'
 ]
 
-function getCourtNameById(id: string): string {
-  for (const courts of Object.values(VENUES_COURTS)) {
-    const found = courts.find((c) => c.id === id)
-    if (found) return found.name
-  }
-  if (id === 'c1' || id === 'c1-1') return 'Cancha 1 (Panorámica)'
-  if (id === 'c2' || id === 'c1-2') return 'Cancha 2 (Techada)'
-  if (id === 'c3' || id === 'c1-3') return 'Cancha 3 (Blindex)'
-  if (id === 'c4') return 'Fútbol 5 (Sintético)'
-  return 'Cancha'
-}
+
 
 export default function TurnosFijosPage() {
+  const tenantId = useTenantId()
   const [slots, setSlots] = useState<RecurringSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actionSlotId, setActionSlotId] = useState<string | null>(null)
+  const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>([])
 
   // Form states
-  const [courtId, setCourtId] = useState('c1')
+  const [courtId, setCourtId] = useState('')
   const [dayOfWeek, setDayOfWeek] = useState(1) // Lunes
   const [startTime, setStartTime] = useState('20:00')
   const [endTime, setEndTime] = useState('21:30')
@@ -76,17 +68,28 @@ export default function TurnosFijosPage() {
   const [paymentDueDay, setPaymentDueDay] = useState(10)
 
   const loadData = useCallback(async () => {
+    if (!tenantId) return
     try {
-      const data = await getRecurringSlots(DEMO_TENANT_ID)
+      const data = await getRecurringSlots(tenantId)
       setSlots(data)
     } catch {
       toast.error('Error al actualizar turnos fijos')
     }
-  }, [])
+  }, [tenantId])
 
   useEffect(() => {
+    if (!tenantId) return
     let isMounted = true
-    getRecurringSlots(DEMO_TENANT_ID)
+    // Load courts from DB
+    const supabase = createClient()
+    supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }) => {
+      if (data && data.length > 0) {
+        setDbCourts(data)
+        setCourtId(data[0].id)
+      }
+    })
+    // Load recurring slots
+    getRecurringSlots(tenantId)
       .then((data) => {
         if (isMounted) {
           setSlots(data)
@@ -103,7 +106,7 @@ export default function TurnosFijosPage() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [tenantId])
 
   const handleToggleStatus = async (slotId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
@@ -130,7 +133,7 @@ export default function TurnosFijosPage() {
     setSubmitting(true)
     try {
       const res = await createRecurringSlot({
-        tenant_id: DEMO_TENANT_ID,
+        tenant_id: tenantId!,
         court_id: courtId,
         day_of_week: Number(dayOfWeek),
         start_time: startTime,
@@ -177,7 +180,7 @@ export default function TurnosFijosPage() {
   const handleCheckOverdueAndRelease = async () => {
     setSubmitting(true)
     try {
-      const res = await checkAndReleaseOverdueRecurringSlots(DEMO_TENANT_ID)
+      const res = await checkAndReleaseOverdueRecurringSlots(tenantId!)
       if (res.success) {
         if (res.releasedCount && res.releasedCount > 0) {
           toast.warning(`Se liberaron ${res.releasedCount} turnos fijos impagos a la grilla pública.`)
@@ -271,7 +274,7 @@ export default function TurnosFijosPage() {
           </div>
         ) : (
           slots.map((slot) => {
-            const courtName = slot.court?.name || getCourtNameById(slot.court_id)
+            const courtName = slot.court?.name || dbCourts.find(c => c.id === slot.court_id)?.name || 'Cancha'
             const isPaused = slot.status !== 'ACTIVE'
             const waMsg = `Hola ${slot.customer_name}, te escribimos desde el club sobre tu abono semanal de los ${DAYS_NAME[slot.day_of_week]} a las ${slot.start_time} hs en ${courtName}. Recordá que el día de corte de pago mensual es el ${slot.payment_due_day}.`
             const waLink = buildWhatsAppLink(slot.customer_phone, waMsg)
@@ -408,18 +411,13 @@ export default function TurnosFijosPage() {
                   onChange={(e) => setCourtId(e.target.value)}
                   className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
                 >
-                  {DEFAULT_VENUES.map((v) => {
-                    const courts = VENUES_COURTS[v.id] || []
-                    return (
-                      <optgroup key={v.id} label={v.branchName}>
-                        {courts.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} ({c.sport})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )
-                  })}
+                  {dbCourts.length > 0 ? dbCourts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.sport})
+                    </option>
+                  )) : (
+                    <option value="" disabled>No hay canchas registradas</option>
+                  )}
                 </select>
               </div>
 

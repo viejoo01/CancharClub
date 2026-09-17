@@ -36,9 +36,23 @@ function subscribeStorage(callback: () => void) {
   }
 }
 
+function cleanLegacyVenueStorage() {
+  try {
+    const val = localStorage.getItem('canchar_active_venue_id')
+    const nameVal = localStorage.getItem('canchar_active_venue_name')
+    if (val === 'venue-yb' || nameVal?.toLowerCase().includes('yerba buena')) {
+      localStorage.removeItem('canchar_active_venue_id')
+      localStorage.removeItem('canchar_active_venue_name')
+      localStorage.removeItem('canchar_custom_venues')
+    }
+  } catch {}
+}
+
 function getStoredVenueId(): string {
   try {
-    return localStorage.getItem('canchar_active_venue_id') || DEFAULT_VENUES[0].id
+    cleanLegacyVenueStorage()
+    const val = localStorage.getItem('canchar_active_venue_id')
+    return val || DEFAULT_VENUES[0].id
   } catch {
     return DEFAULT_VENUES[0].id
   }
@@ -46,7 +60,13 @@ function getStoredVenueId(): string {
 
 function getStoredCustomVenuesJson(): string {
   try {
-    return localStorage.getItem('canchar_custom_venues') || '[]'
+    cleanLegacyVenueStorage()
+    const raw = localStorage.getItem('canchar_custom_venues')
+    if (raw && raw.toLowerCase().includes('yerba buena')) {
+      localStorage.removeItem('canchar_custom_venues')
+      return '[]'
+    }
+    return raw || '[]'
   } catch {
     return '[]'
   }
@@ -55,7 +75,7 @@ function getStoredCustomVenuesJson(): string {
 const getServerVenueId = () => DEFAULT_VENUES[0].id
 const getServerCustomVenues = () => '[]'
 
-export function VenueSwitcher({ className }: { className?: string }) {
+export function VenueSwitcher({ className, tenantName }: { className?: string; tenantName?: string }) {
   const router = useRouter()
   const activeVenueId = useSyncExternalStore(
     subscribeStorage,
@@ -78,8 +98,13 @@ export function VenueSwitcher({ className }: { className?: string }) {
   }, [customVenuesJson])
 
   const venues = useMemo(() => {
-    return customVenues.length > 0 ? [...DEFAULT_VENUES, ...customVenues] : DEFAULT_VENUES
-  }, [customVenues])
+    const baseVenue: VenueItem = {
+      ...DEFAULT_VENUES[0],
+      name: tenantName || DEFAULT_VENUES[0].name,
+      branchName: tenantName ? `${tenantName} (Central)` : 'Sede Central',
+    }
+    return customVenues.length > 0 ? [baseVenue, ...customVenues] : [baseVenue]
+  }, [customVenues, tenantName])
 
   const [isOpen, setIsOpen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)

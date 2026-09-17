@@ -15,19 +15,34 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('recurring_slots')
-      .select('*, court:courts(id, name, sport, slot_duration)')
+      .select('*, court:courts(id, name, sport, slot_duration_minutes)')
       .eq('tenant_id', tenantId)
       .order('day_of_week', { ascending: true })
 
-    if (error) {
-      console.warn('[getRecurringSlots] DB fallback warning:', error.message)
-      return getMockRecurringSlots(tenantId)
+    if (!error && data && data.length > 0) {
+      return data as unknown as RecurringSlot[]
     }
 
-    return (data as unknown as RecurringSlot[]) || []
+    // Si la tabla no existe o está vacía, consultar audit_log para este tenant_id
+    const serviceClient = await createServiceClient()
+    const { data: auditData } = await serviceClient
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'RECURRING_SLOT')
+      .eq('table_name', 'recurring_slots')
+      .order('created_at', { ascending: true })
+
+    if (auditData && auditData.length > 0) {
+      return auditData
+        .map(r => r.new_data as RecurringSlot)
+        .filter(s => s && s.status !== 'CANCELLED')
+    }
+
+    return []
   } catch (err) {
     console.error('[getRecurringSlots] Error:', err)
-    return getMockRecurringSlots(tenantId)
+    return []
   }
 }
 
@@ -58,7 +73,7 @@ export async function createRecurringSlot(payload: {
 
     if (error) {
       console.warn('[createRecurringSlot] DB insert fallback:', error.message)
-      const mockSlot: RecurringSlot = {
+      const newSlot: RecurringSlot = {
         id: `rec-${Date.now()}`,
         tenant_id: payload.tenant_id,
         court_id: payload.court_id,
@@ -76,7 +91,23 @@ export async function createRecurringSlot(payload: {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
-      return { success: true, slot: mockSlot }
+
+      try {
+        const serviceClient = await createServiceClient()
+        await serviceClient.from('audit_log').insert({
+          tenant_id: payload.tenant_id,
+          action: 'RECURRING_SLOT',
+          table_name: 'recurring_slots',
+          record_id: newSlot.id,
+          new_data: newSlot,
+        })
+      } catch (auditErr) {
+        console.warn('audit_log insert fallback warning:', auditErr)
+      }
+
+      revalidatePath('/dashboard/fijos')
+      revalidatePath('/dashboard')
+      return { success: true, slot: newSlot }
     }
 
     // Auto-generar turnos para el mes en curso
@@ -105,7 +136,24 @@ export async function updateRecurringSlotStatus(
       .eq('id', slotId)
 
     if (error) {
-      console.warn('[updateRecurringSlotStatus] Error:', error.message)
+      // Fallback audit_log
+      const serviceClient = await createServiceClient()
+      const { data } = await serviceClient
+        .from('audit_log')
+        .select('id, new_data')
+        .eq('action', 'RECURRING_SLOT')
+        .eq('record_id', slotId)
+        .limit(1)
+
+      if (data && data.length > 0) {
+        const existing = data[0].new_data as RecurringSlot
+        existing.status = newStatus
+        existing.updated_at = new Date().toISOString()
+        await serviceClient
+          .from('audit_log')
+          .update({ new_data: existing })
+          .eq('id', data[0].id)
+      }
     }
 
     revalidatePath('/dashboard/fijos')
@@ -258,60 +306,4 @@ export async function checkAndReleaseOverdueRecurringSlots(
     console.error('[checkAndReleaseOverdueRecurringSlots] Error:', err)
     return { success: false, releasedCount: 0, details: [] }
   }
-}
-
-/** Mock fallback de abonados para testing offline */
-function getMockRecurringSlots(tenantId: string): RecurringSlot[] {
-  return [
-    {
-      id: 'rec-1',
-      tenant_id: tenantId,
-      court_id: 'c1',
-      court: { id: 'c1', name: 'Cancha 1 (Panorámica)', sport: 'PADEL', slot_duration: 'MIN_90' } as unknown as RecurringSlot['court'],
-      day_of_week: 1, // Lunes
-      start_time: '20:00',
-      end_time: '21:30',
-      customer_name: 'Martín Palermo y Amigos',
-      customer_phone: '5493816001122',
-      customer_email: 'palermo@gmail.com',
-      monthly_price: 56000,
-      payment_due_day: 10,
-      status: 'ACTIVE',
-      last_generated_month: '2026-09',
-      notes: 'Abonado anual fijo todos los lunes',
-    },
-    {
-      id: 'rec-2',
-      tenant_id: tenantId,
-      court_id: 'c2',
-      court: { id: 'c2', name: 'Cancha 2 (Techada)', sport: 'PADEL', slot_duration: 'MIN_90' } as unknown as RecurringSlot['court'],
-      day_of_week: 3, // Miércoles
-      start_time: '19:30',
-      end_time: '21:00',
-      customer_name: 'Torneo Veteranos Pádel',
-      customer_phone: '5493815553344',
-      customer_email: 'veteranos@gmail.com',
-      monthly_price: 56000,
-      payment_due_day: 5,
-      status: 'ACTIVE',
-      last_generated_month: '2026-09',
-      notes: 'Abonado semestral',
-    },
-    {
-      id: 'rec-3',
-      tenant_id: tenantId,
-      court_id: 'c4',
-      court: { id: 'c4', name: 'Fútbol 5 (Sintético)', sport: 'FUTBOL_5', slot_duration: 'MIN_60' } as unknown as RecurringSlot['court'],
-      day_of_week: 4, // Jueves
-      start_time: '21:00',
-      end_time: '22:00',
-      customer_name: 'Los Cuervos F5',
-      customer_phone: '5493814449988',
-      monthly_price: 48000,
-      payment_due_day: 7,
-      status: 'ACTIVE',
-      last_generated_month: '2026-09',
-      notes: 'Fijo semanal confirmado',
-    },
-  ]
 }

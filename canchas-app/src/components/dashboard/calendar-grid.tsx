@@ -22,7 +22,7 @@ import { es } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { BookingStatus } from '@/types/database'
-import { getVenueCourts, getVenueBookings, type VenueItem } from '@/config/venues-data'
+import { getVenueCourts, type VenueItem } from '@/config/venues-data'
 
 export interface CalendarBooking {
   id: string
@@ -74,7 +74,6 @@ export function CalendarGrid({
   courts,
   initialBookings,
   initialDate = new Date().toISOString().split('T')[0],
-  initialVenueId = 'venue-yb',
   onRefresh,
 }: CalendarGridProps) {
   const router = useRouter()
@@ -103,26 +102,23 @@ export function CalendarGrid({
 
   // Canchas y reservas activas derivadas limpiamente
   const activeCourts = useMemo(() => {
-    if (overrideVenue) {
+    if (courts && courts.length > 0) {
+      return courts
+    }
+    if (overrideVenue && overrideVenue.id !== 'venue-main' && overrideVenue.id !== 'venue-yb') {
       let customVenues: VenueItem[] | undefined
       try {
         const saved = localStorage.getItem('canchar_custom_venues')
         if (saved) customVenues = JSON.parse(saved)
       } catch {}
-      return getVenueCourts(overrideVenue.id, customVenues)
+      const res = getVenueCourts(overrideVenue.id, customVenues)
+      if (res && res.length > 0) return res
     }
-    return courts
+    return courts || []
   }, [overrideVenue, courts])
 
   const activeBookings = useMemo(() => {
-    let base: CalendarBooking[]
-    if (overrideVenue) {
-      base = getVenueBookings(overrideVenue.id, selectedDate)
-    } else if (selectedDate !== initialDate) {
-      base = getVenueBookings(initialVenueId, selectedDate)
-    } else {
-      base = initialBookings
-    }
+    const base: CalendarBooking[] = initialBookings || []
 
     if (optimisticBookings.length === 0) return base
 
@@ -136,7 +132,7 @@ export function CalendarGrid({
     base.forEach((b) => map.set(b.id, b))
     currentDayOptimistic.forEach((b) => map.set(b.id, b))
     return Array.from(map.values())
-  }, [overrideVenue, initialBookings, selectedDate, initialDate, initialVenueId, optimisticBookings])
+  }, [initialBookings, selectedDate, optimisticBookings])
 
   // Modales
   const [isQuickBookOpen, setIsQuickBookOpen] = useState(false)
@@ -331,8 +327,27 @@ export function CalendarGrid({
         <span className="text-emerald-400 font-semibold">{filteredCourts.length} canchas</span>
       </div>
 
-      {/* Matriz de Calendario con scroll táctil suave */}
-      <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar touch-momentum">
+      {/* Matriz de Calendario o Estado Vacío */}
+      {filteredCourts.length === 0 ? (
+        <div className="flex-1 rounded-2xl border border-slate-800/80 bg-slate-950/80 p-12 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+            <Clock className="w-7 h-7" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">No hay canchas registradas en este club</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+              Para visualizar y gestionar la grilla de turnos, primero agregá las canchas (Fútbol, Pádel, etc.) en el menú Canchas.
+            </p>
+          </div>
+          <Button
+            onClick={() => router.push('/dashboard/canchas')}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl px-4 cursor-pointer"
+          >
+            Ir a Gestión de Canchas
+          </Button>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar touch-momentum">
         <div className="min-w-180 sm:min-w-200">
           {/* Header de Canchas (Columnas) */}
           <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-10 bg-slate-950">
@@ -450,6 +465,7 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
+      )}
 
       {/* Modales */}
       {isQuickBookOpen && (

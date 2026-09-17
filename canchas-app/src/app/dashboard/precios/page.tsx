@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,37 +20,30 @@ import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-moda
 import { formatARS } from '@/lib/utils'
 import { createPriceRule } from '@/actions/club.actions'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
 
 export default function PreciosPage() {
-  const [rules, setRules] = useState([
-    {
-      id: 'r1',
-      name: 'Tarifa General Diurna',
-      days_of_week: [1, 2, 3, 4, 5],
-      time_from: '08:00',
-      time_to: '18:00',
-      price_ars: 10000,
-      deposit_pct: 30,
-    },
-    {
-      id: 'r2',
-      name: 'Tarifa Prime Nocturna (Con Luz)',
-      days_of_week: [1, 2, 3, 4, 5],
-      time_from: '18:00',
-      time_to: '00:00',
-      price_ars: 14000,
-      deposit_pct: 50,
-    },
-    {
-      id: 'r3',
-      name: 'Fin de Semana (Sábados y Domingos)',
-      days_of_week: [0, 6],
-      time_from: '08:00',
-      time_to: '00:00',
-      price_ars: 15000,
-      deposit_pct: 50,
-    },
-  ])
+  const tenantId = useTenantId()
+  const [rules, setRules] = useState<{
+    id: string; name: string; days_of_week: number[]; time_from: string; time_to: string; price_ars: number; deposit_pct: number;
+  }[]>([])
+  const [loadingRules, setLoadingRules] = useState(true)
+
+  useEffect(() => {
+    if (!tenantId) return
+    const supabase = createClient()
+    supabase
+      .from('price_rules')
+      .select('id, name, days_of_week, time_from, time_to, price_ars, deposit_pct')
+      .eq('tenant_id', tenantId)
+      .then(({ data }) => {
+        if (data) {
+          setRules(data)
+        }
+        setLoadingRules(false)
+      })
+  }, [tenantId])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isInflationModalOpen, setIsInflationModalOpen] = useState(false)
@@ -81,7 +74,7 @@ export default function PreciosPage() {
 
     try {
       await createPriceRule({
-        tenant_id: '00000000-0000-0000-0000-000000000001',
+        tenant_id: tenantId!,
         ...newRule,
       })
       toast.success('Regla de precio guardada')
@@ -138,50 +131,76 @@ export default function PreciosPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {rules.map((rule) => {
-          const señaMonto = Math.round((rule.price_ars * rule.deposit_pct) / 100)
+      {/* Grid de Tarifas */}
+      {loadingRules ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin mr-2 text-emerald-400" />
+          <span>Cargando tarifas y reglas de precio...</span>
+        </div>
+      ) : rules.length === 0 ? (
+        <div className="text-center py-16 rounded-2xl bg-slate-900/40 border border-slate-800 p-8 space-y-3">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
+            <Tag className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold text-white">No hay tarifas configuradas</h3>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            Configurá las tarifas por día y horario para que los jugadores puedan reservar en tu club con los precios correctos.
+          </p>
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 rounded-xl text-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Crear Primera Tarifa</span>
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {rules.map((rule) => {
+            const señaMonto = Math.round((rule.price_ars * rule.deposit_pct) / 100)
 
-          return (
-            <Card key={rule.id} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <Badge variant="default" className="mb-2">
-                    {rule.days_of_week.map(d => daysMap[d]).join(', ')}
-                  </Badge>
-                  <span className="text-xl font-extrabold text-emerald-400">
-                    {formatARS(rule.price_ars)}
-                  </span>
-                </div>
-                <CardTitle className="text-base">{rule.name}</CardTitle>
-                <CardDescription className="flex items-center gap-1 mt-1 text-xs">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{rule.time_from} a {rule.time_to} hs</span>
-                </CardDescription>
-              </CardHeader>
+            return (
+              <Card key={rule.id} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <Badge variant="default" className="mb-2">
+                      {rule.days_of_week.map(d => daysMap[d]).join(', ')}
+                    </Badge>
+                    <span className="text-xl font-extrabold text-emerald-400">
+                      {formatARS(rule.price_ars)}
+                    </span>
+                  </div>
+                  <CardTitle className="text-base">{rule.name}</CardTitle>
+                  <CardDescription className="flex items-center gap-1 mt-1 text-xs">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{rule.time_from} a {rule.time_to} hs</span>
+                  </CardDescription>
+                </CardHeader>
 
-              <CardContent className="border-t border-slate-800/80 pt-3 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <Percent className="w-3.5 h-3.5 text-emerald-400" /> Seña exigida online:
-                  </span>
-                  <span className="font-bold text-slate-100">
-                    {rule.deposit_pct}% ({formatARS(señaMonto)})
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Saldo a liquidar en club:
-                  </span>
-                  <span className="font-medium text-slate-300">
-                    {formatARS(rule.price_ars - señaMonto)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
+                <CardContent className="border-t border-slate-800/80 pt-3 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <Percent className="w-3.5 h-3.5 text-emerald-400" /> Seña exigida online:
+                    </span>
+                    <span className="font-bold text-slate-100">
+                      {rule.deposit_pct}% ({formatARS(señaMonto)})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Saldo a liquidar en club:
+                    </span>
+                    <span className="font-medium text-slate-300">
+                      {formatARS(rule.price_ars - señaMonto)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {/* Modal Nueva Tarifa */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -270,6 +289,7 @@ export default function PreciosPage() {
         isOpen={isInflationModalOpen}
         onClose={() => setIsInflationModalOpen(false)}
         currentRules={rules}
+        tenantId={tenantId ?? undefined}
         onSuccess={(updated) => {
           setRules(updated.map((u, idx) => ({
             ...rules[idx],
@@ -282,6 +302,7 @@ export default function PreciosPage() {
       <DynamicPricingModal
         open={isDynamicModalOpen}
         onOpenChange={setIsDynamicModalOpen}
+        tenantId={tenantId ?? undefined}
       />
     </div>
   )

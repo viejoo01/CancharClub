@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
+import type { CantinaProduct } from '@/config/cantina-data'
 
 export type { CantinaProduct }
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
@@ -352,18 +352,18 @@ export async function getCantinaProducts(tenantId: string): Promise<CantinaProdu
       .limit(1)
 
     if (error || !data || data.length === 0 || !data[0].new_data) {
-      return INITIAL_CANTINA_PRODUCTS
+      return []
     }
 
     const catalog = data[0].new_data as { products: CantinaProduct[] }
-    if (Array.isArray(catalog.products) && catalog.products.length > 0) {
+    if (Array.isArray(catalog.products)) {
       return catalog.products
     }
 
-    return INITIAL_CANTINA_PRODUCTS
+    return []
   } catch (err) {
     console.error('[getCantinaProducts] Error:', err)
-    return INITIAL_CANTINA_PRODUCTS
+    return []
   }
 }
 

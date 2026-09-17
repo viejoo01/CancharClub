@@ -47,42 +47,7 @@ export interface ClubData {
   mpConnected?: boolean
 }
 
-export const CLUBS_DATABASE: ClubData[] = [
-  {
-    id: 'c1',
-    name: 'Club Pádel Central',
-    slug: 'padel-central',
-    address: 'Av. Aconquija 2400',
-    city: 'Yerba Buena, Tucumán',
-    phone: '+54 9 381 412-3456',
-    whatsappPhone: '5493814123456',
-    sports: ['PADEL'],
-    courtsCount: 3,
-    startingPrice: 18000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    hasParking: true,
-    rating: 4.9,
-    reviewsCount: 142,
-    availableToday: true,
-    openHours: '08:00 a 00:00 hs',
-    bankDetails: {
-      bankName: 'Mercado Pago / Banco Galicia',
-      accountHolder: 'Club Pádel Central SRL',
-      alias: 'padelcentral.mp',
-      cbu: '0000003100098765432101',
-      cuit: '30-71234567-9',
-    },
-    paymentMethods: ['TRANSFER'],
-    mpConnected: false,
-    courts: [
-      { id: 'c1-1', name: 'Cancha 1 (Panorámica)', sport: 'PADEL', features: ['Panorámica', 'Cristal 12mm', 'LED Pro'], pricePerHour: 18000, depositPercentage: 0.5 },
-      { id: 'c1-2', name: 'Cancha 2 (Techada)', sport: 'PADEL', features: ['Techada', 'Indoor', 'Césped Azul'], pricePerHour: 18000, depositPercentage: 0.5 },
-      { id: 'c1-3', name: 'Cancha 3 (Blindex)', sport: 'PADEL', features: ['Blindex Pro', 'Foco LED'], pricePerHour: 18000, depositPercentage: 0.5 },
-    ]
-  }
-]
+export const CLUBS_DATABASE: ClubData[] = []
 
 export interface GeneratedSlot {
   time: string
@@ -103,7 +68,6 @@ export function getClubBySlug(slug: string): ClubData {
   const found = CLUBS_DATABASE.find(c => c.slug.toLowerCase() === normalizedSlug)
   if (found) return found
 
-  // Plantilla amigable si el slug es nuevo (ej. creado desde superadmin)
   const formattedName = normalizedSlug
     .replace(/-/g, ' ')
     .replace(/\b\w/g, l => l.toUpperCase())
@@ -112,25 +76,22 @@ export function getClubBySlug(slug: string): ClubData {
     id: `club-${normalizedSlug}`,
     name: formattedName || 'Club Deportivo',
     slug: normalizedSlug,
-    address: 'Tucumán, Argentina',
-    city: 'San Miguel de Tucumán',
-    phone: '+54 9 381 400-0000',
-    whatsappPhone: '5493814000000',
-    sports: ['PADEL', 'FUTBOL'],
-    courtsCount: 3,
-    startingPrice: 16000,
-    hasLighting: true,
-    isIndoor: true,
-    hasCantina: true,
-    hasParking: true,
-    rating: 4.8,
-    reviewsCount: 45,
+    address: 'Argentina',
+    city: 'Argentina',
+    phone: '',
+    whatsappPhone: '',
+    sports: [],
+    courtsCount: 0,
+    startingPrice: 0,
+    hasLighting: false,
+    isIndoor: false,
+    hasCantina: false,
+    hasParking: false,
+    rating: 5.0,
+    reviewsCount: 0,
     availableToday: true,
     openHours: '08:00 a 00:00 hs',
-    courts: [
-      { id: 'c-auto-1', name: 'Cancha 1 (Techada)', sport: 'FUTBOL', features: ['Césped Sintético', 'Iluminación LED'], pricePerHour: 20000, depositPercentage: 0.5 },
-      { id: 'c-auto-2', name: 'Cancha 2 (Panorámica)', sport: 'PADEL', features: ['Panorámica', 'Cristal 12mm'], pricePerHour: 16000, depositPercentage: 0.5 },
-    ]
+    courts: []
   }
 }
 

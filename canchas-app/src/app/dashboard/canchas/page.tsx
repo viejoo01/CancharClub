@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -19,50 +19,72 @@ import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
 import { createCourt, updateCourt } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
+import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
+
+interface Court {
+  id: string
+  name: string
+  sport: SportType
+  slot_duration: SlotDuration
+  surface: CourtSurface
+  has_lighting: boolean
+  is_indoor: boolean
+  is_active: boolean
+}
 
 export default function CanchasPage() {
-  const [courts, setCourts] = useState([
-    {
-      id: 'c1',
-      name: 'Cancha 1 (Panorámica)',
-      sport: 'PADEL' as SportType,
-      slot_duration: 'MIN_90' as SlotDuration,
-      surface: 'SINTETICO' as CourtSurface,
-      has_lighting: true,
-      is_indoor: false,
-      is_active: true,
-    },
-    {
-      id: 'c2',
-      name: 'Cancha 2 (Techada)',
-      sport: 'PADEL' as SportType,
-      slot_duration: 'MIN_90' as SlotDuration,
-      surface: 'SINTETICO' as CourtSurface,
-      has_lighting: true,
-      is_indoor: true,
-      is_active: true,
-    },
-    {
-      id: 'c3',
-      name: 'Cancha 3 (Blindex)',
-      sport: 'PADEL' as SportType,
-      slot_duration: 'MIN_90' as SlotDuration,
-      surface: 'SINTETICO' as CourtSurface,
-      has_lighting: true,
-      is_indoor: false,
-      is_active: true,
-    },
-    {
-      id: 'c4',
-      name: 'Fútbol 5 (Sintético)',
-      sport: 'FUTBOL_5' as SportType,
-      slot_duration: 'MIN_60' as SlotDuration,
-      surface: 'SINTETICO' as CourtSurface,
-      has_lighting: true,
-      is_indoor: false,
-      is_active: true,
-    },
-  ])
+  const tenantId = useTenantId()
+  const [courts, setCourts] = useState<Court[]>([])
+  const [courtsLoading, setCourtsLoading] = useState(true)
+  const [clubSlug, setClubSlug] = useState('club')
+
+  // Cargar canchas reales desde Supabase
+  useEffect(() => {
+    if (!tenantId) return
+    const supabase = createClient()
+    supabase
+      .from('courts')
+      .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
+      .eq('tenant_id', tenantId)
+      .order('display_order', { ascending: true })
+      .then(({ data }) => {
+        if (data) {
+          interface CourtDbRow {
+            id: string
+            name: string
+            sport: SportType
+            slot_duration_minutes: number | null
+            surface: CourtSurface | null
+            has_lights: boolean | null
+            is_indoor: boolean | null
+            is_active: boolean | null
+          }
+          const mapped: Court[] = (data as unknown as CourtDbRow[]).map(c => ({
+            id: c.id,
+            name: c.name,
+            sport: c.sport,
+            slot_duration: c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
+            surface: c.surface || 'SINTETICO',
+            has_lighting: !!c.has_lights,
+            is_indoor: !!c.is_indoor,
+            is_active: c.is_active ?? true,
+          }))
+          setCourts(mapped)
+        }
+        setCourtsLoading(false)
+      })
+    // Also get club slug
+    supabase
+      .from('profiles')
+      .select('tenants(slug)')
+      .eq('tenant_id', tenantId)
+      .single()
+      .then(({ data }) => {
+        const slug = (data?.tenants as { slug?: string } | null)?.slug
+        if (slug) setClubSlug(slug)
+      })
+  }, [tenantId])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
@@ -113,10 +135,19 @@ export default function CanchasPage() {
     setCourts(prev => [...prev, newCourt])
 
     try {
-      await createCourt({
-        tenant_id: '00000000-0000-0000-0000-000000000001',
+      if (!tenantId) {
+        toast.error('Error: no se pudo determinar el club activo')
+        setLoading(false)
+        return
+      }
+      const created = await createCourt({
+        tenant_id: tenantId,
         ...newCourt,
       })
+      // Update court id with real DB id if returned
+      if (created?.court?.id) {
+        setCourts(prev => prev.map(c => c.id === newCourt.id ? { ...c, id: created.court!.id } : c))
+      }
       toast.success('¡Cancha agregada con éxito!')
     } catch {
       toast.info('Cancha agregada')
@@ -242,8 +273,21 @@ export default function CanchasPage() {
         isOpen={!!selectedQrCourt}
         onClose={() => setSelectedQrCourt(null)}
         court={selectedQrCourt}
-        clubSlug="padel-central"
+        clubSlug={clubSlug}
       />
+
+      {/* Loading state while fetching courts */}
+      {courtsLoading && (
+        <div className="flex items-center justify-center py-12 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" />
+          <span>Cargando canchas...</span>
+        </div>
+      )}
+      {!courtsLoading && courts.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <p className="text-sm">No hay canchas registradas. Agregá la primera cancha con el botón &quot;Nueva Cancha&quot;.</p>
+        </div>
+      )}
 
 
       {/* Modal Nueva Cancha */}

@@ -21,8 +21,9 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+// tenant isolation: useTenantId hook
 
 function methodLabel(method: string): string {
   if (method === 'CASH') return 'Efectivo'
@@ -55,6 +56,7 @@ function formatTime(iso: string): string {
 }
 
 export default function CajaPage() {
+  const tenantId = useTenantId()
   const today = new Date().toISOString().split('T')[0]
   const [selectedDate, setSelectedDate] = useState(today)
   const [report, setReport] = useState<DailyCashReport | null>(null)
@@ -63,7 +65,7 @@ export default function CajaPage() {
   const loadReport = useCallback(async (date: string) => {
     setLoading(true)
     try {
-      const data = await getDailyCashReport(DEMO_TENANT_ID, date)
+      const data = await getDailyCashReport(tenantId!, date)
       setReport(data)
     } catch {
       toast.error('Error al cargar el reporte de caja')
@@ -303,3 +305,5 @@ export default function CajaPage() {
     </div>
   )
 }
+
+

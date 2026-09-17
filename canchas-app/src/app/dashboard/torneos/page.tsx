@@ -36,11 +36,13 @@ import {
   type TournamentWithDetails 
 } from '@/actions/tournament.actions'
 import { toast } from 'sonner'
+import { useTenantId } from '@/hooks/use-tenant-id'
 import type { Tournament, TournamentTeam, TournamentMatch } from '@/types/database'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
+// tenant isolation: useTenantId hook
 
 export default function TorneosDashboardPage() {
+  const tenantId = useTenantId()
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [selectedTournament, setSelectedTournament] = useState<TournamentWithDetails | null>(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
@@ -86,7 +88,7 @@ export default function TorneosDashboardPage() {
   const loadTournaments = useCallback(async () => {
     setLoading(true)
     try {
-      const list = await getTournaments(DEMO_TENANT_ID)
+      const list = await getTournaments(tenantId!)
       setTournaments(list)
       if (list.length > 0) {
         await loadTournamentDetails(list[0].id)
@@ -120,7 +122,7 @@ export default function TorneosDashboardPage() {
         .map((name) => ({ name, max_teams: 8 }))
 
       const res = await createTournament({
-        tenant_id: DEMO_TENANT_ID,
+        tenant_id: tenantId!,
         name: newTourName,
         sport: newTourSport,
         format: 'PLAYOFFS',
@@ -1066,3 +1068,5 @@ export default function TorneosDashboardPage() {
     </div>
   )
 }
+
+

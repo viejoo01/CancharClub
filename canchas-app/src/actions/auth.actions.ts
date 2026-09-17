@@ -188,15 +188,22 @@ export async function registerClub(formData: FormData) {
 
   // 4. Crear canchas iniciales según deportes seleccionados
   try {
-    const courtsToInsert = sports.map((sport: string, index: number) => ({
-      tenant_id: tenant.id,
-      name: `Cancha ${index + 1} (${sport.toUpperCase() === 'PADEL' ? 'Blindex' : sport.toUpperCase() === 'FUTBOL' ? 'Sintético' : sport})`,
-      sport: sport.toUpperCase(),
-      slot_duration_minutes: sport.toUpperCase() === 'PADEL' ? 90 : 60,
-      display_order: index + 1,
-      is_active: true,
-    }))
-    await serviceClient.from('courts').insert(courtsToInsert)
+    const courtsToInsert = sports.map((sport: string, index: number) => {
+      const s = sport.toUpperCase()
+      const isPadel = s === 'PADEL'
+      const sportEnum = s === 'FUTBOL' ? 'FUTBOL_5' : s
+      return {
+        tenant_id: tenant.id,
+        name: `Cancha ${index + 1} (${isPadel ? 'Blindex' : 'Sintético'})`,
+        sport: sportEnum,
+        slot_duration_minutes: isPadel ? 90 : 60,
+        has_lights: true,
+        display_order: index + 1,
+        is_active: true,
+      }
+    })
+    const { error: insertCourtsErr } = await serviceClient.from('courts').insert(courtsToInsert)
+    if (insertCourtsErr) console.error('Error creating initial courts:', insertCourtsErr.message)
   } catch (courtErr) {
     console.warn('Initial courts creation notice:', courtErr)
   }

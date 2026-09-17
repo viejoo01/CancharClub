@@ -11,13 +11,15 @@ interface HeaderProps {
   onToggleMobileMenu?: () => void
   mpConnected?: boolean
   userName?: string
+  tenantName?: string
 }
 
 export function Header({
   onQuickBookClick,
   onToggleMobileMenu,
   mpConnected = true,
-  userName = 'Administrador'
+  userName = 'Administrador',
+  tenantName,
 }: HeaderProps) {
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
@@ -39,7 +41,7 @@ export function Header({
         </h1>
 
         {/* Mejora 19: Selector de Sede / Sucursal Multisede */}
-        <VenueSwitcher />
+        <VenueSwitcher tenantName={tenantName} />
 
         {mpConnected ? (
           <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex">

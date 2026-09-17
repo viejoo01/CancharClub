@@ -23,12 +23,13 @@ import { formatARS } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
+import { getClubPublicData } from '@/actions/club.actions'
 import { 
   createCourtOrder, 
   getCantinaProducts, 
   type CantinaPaymentMethod, 
 } from '@/actions/cantina.actions'
-import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
+import type { CantinaProduct } from '@/config/cantina-data'
 
 export type Product = CantinaProduct
 
@@ -48,7 +49,8 @@ export default function CourtOrderPage({
   const club = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
   const bankDetails = useMemo(() => getClubBankDetails(club), [club])
 
-  const [products, setProducts] = useState<CantinaProduct[]>(INITIAL_CANTINA_PRODUCTS)
+  const [clubTenantId, setClubTenantId] = useState<string>(club?.id && club.id.length > 10 ? club.id : '')
+  const [products, setProducts] = useState<CantinaProduct[]>([])
   const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
   const [customerName, setCustomerName] = useState('')
   const [tableName, setTableName] = useState(initialTable)
@@ -59,18 +61,24 @@ export default function CourtOrderPage({
   const [orderConfirmed, setOrderConfirmed] = useState(false)
   const [confirmedOrderId, setConfirmedOrderId] = useState<string>('')
 
-  // Cargar catálogo dinámico de productos desde Supabase
+  // Cargar catálogo dinámico de productos desde Supabase para este club
   useEffect(() => {
-    getCantinaProducts(DEMO_TENANT_ID)
-      .then((items) => {
-        if (items && items.length > 0) {
-          setProducts(items.filter((p) => p.is_active !== false))
-        }
-      })
-      .catch((err) => {
-        console.warn('Error al cargar productos de cantina:', err)
-      })
-  }, [])
+    getClubPublicData(resolvedParams.slug).then((data) => {
+      const tid = data?.id || (club?.id && club.id.length > 10 ? club.id : DEMO_TENANT_ID)
+      if (tid) {
+        setClubTenantId(tid)
+        getCantinaProducts(tid)
+          .then((items) => {
+            if (items) {
+              setProducts(items.filter((p) => p.is_active !== false))
+            }
+          })
+          .catch((err) => {
+            console.warn('Error al cargar productos de cantina:', err)
+          })
+      }
+    })
+  }, [resolvedParams.slug, club?.id])
 
   const addToCart = (product: Product) => {
     if (product.stock !== undefined && product.stock <= 0) {
@@ -137,8 +145,9 @@ export default function CourtOrderPage({
       }))
 
       // Guardar en base de datos vía Server Action
+      const effectiveTenant = clubTenantId || DEMO_TENANT_ID
       const result = await createCourtOrder({
-        tenant_id: DEMO_TENANT_ID,
+        tenant_id: effectiveTenant,
         court_name: destination,
         customer_name: customerName.trim(),
         items: orderItems,
@@ -162,7 +171,7 @@ export default function CourtOrderPage({
           type: 'NEW_ORDER',
           order: {
             id: finalId,
-            tenant_id: DEMO_TENANT_ID,
+            tenant_id: effectiveTenant,
             court_name: destination,
             customer_name: customerName.trim(),
             items: orderItems,

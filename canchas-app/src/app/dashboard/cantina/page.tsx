@@ -57,9 +57,9 @@ import {
   type OrderStatus,
   type CantinaPaymentMethod,
 } from '@/actions/cantina.actions'
-import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
+import type { CantinaProduct } from '@/config/cantina-data'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 export type Product = CantinaProduct
 
@@ -118,13 +118,14 @@ function playOrderChime() {
 }
 
 export default function CantinaPage() {
+  const tenantId = useTenantId()
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY'>('POS')
   const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
   // Catálogo de Productos y Estado de Inventario
-  const [products, setProducts] = useState<CantinaProduct[]>(INITIAL_CANTINA_PRODUCTS)
+  const [products, setProducts] = useState<CantinaProduct[]>([])
   const [, setProductsLoading] = useState(false)
 
   // Modales y Control de Inventario
@@ -161,18 +162,18 @@ export default function CantinaPage() {
 
   // Carga de Productos desde Supabase
   const loadProducts = useCallback(async () => {
+    if (!tenantId) return
     setProductsLoading(true)
     try {
-      const data = await getCantinaProducts(DEMO_TENANT_ID)
-      if (data && data.length > 0) {
-        setProducts(data)
-      }
+      const data = await getCantinaProducts(tenantId)
+      setProducts(data || [])
     } catch (err) {
       console.warn('[loadProducts] Error:', err)
+      setProducts([])
     } finally {
       setProductsLoading(false)
     }
-  }, [])
+  }, [tenantId])
 
   // Modificar stock rápido (+1 / -1)
   const handleQuickStock = async (productId: string, delta: number) => {
@@ -185,7 +186,7 @@ export default function CantinaPage() {
     setProducts(updated)
 
     try {
-      await updateProductStock(DEMO_TENANT_ID, productId, delta, true)
+      await updateProductStock(tenantId!, productId, delta, true)
     } catch {
       toast.error('Error al sincronizar stock')
       loadProducts()
@@ -214,7 +215,7 @@ export default function CantinaPage() {
       )
       setProducts(updated)
 
-      const res = await updateProductStock(DEMO_TENANT_ID, selectedRestockProduct.id, restockQty, true)
+      const res = await updateProductStock(tenantId!, selectedRestockProduct.id, restockQty, true)
       if (!res.success) throw new Error(res.error)
 
       toast.success('¡Stock cargado con éxito!', {
@@ -287,7 +288,7 @@ export default function CantinaPage() {
       }
       setProducts(updatedProducts)
 
-      const res = await saveSingleProduct(DEMO_TENANT_ID, productPayload)
+      const res = await saveSingleProduct(tenantId!, productPayload)
       if (!res.success) throw new Error(res.error)
 
       toast.success(editingProduct ? '¡Producto actualizado correctamente!' : '¡Nuevo producto agregado al inventario!')
@@ -311,7 +312,7 @@ export default function CantinaPage() {
     setProducts(updated)
 
     try {
-      const res = await deleteProduct(DEMO_TENANT_ID, productId)
+      const res = await deleteProduct(tenantId!, productId)
       if (!res.success) throw new Error(res.error)
       toast.success(`Producto "${productName}" eliminado del inventario`)
     } catch {
@@ -378,7 +379,7 @@ export default function CantinaPage() {
   const loadOrders = useCallback(async (isInitial = false) => {
     setOrdersLoading(true)
     try {
-      const orders = await getDailyOrders(DEMO_TENANT_ID)
+      const orders = await getDailyOrders(tenantId!)
       setCourtOrders(orders)
 
       // Detectar nuevos pedidos para reproducir sonido y encolar alerta
@@ -406,7 +407,7 @@ export default function CantinaPage() {
     } finally {
       setOrdersLoading(false)
     }
-  }, [loadOrderIntoCart])
+  }, [loadOrderIntoCart, tenantId])
 
   useEffect(() => {
     // Carga inicial diferida
@@ -502,24 +503,28 @@ export default function CantinaPage() {
     }
   }, [loadOrders, loadOrderIntoCart, loadProducts])
 
-  // Datos para Alerta Predictiva de Stock memoizados
+  // Datos para Alerta Predictiva de Stock memoizados (calculado sobre productos reales con bajo stock)
   const weekendPredictions = useMemo(() => {
-    const p1 = products.find(p => p.id === 'p1') || products[0]
-    const p2 = products.find(p => p.id === 'p2') || products[1]
-    const p4 = products.find(p => p.id === 'p4') || products[3]
-    return [
-      { product: p1, currentStock: p1?.stock ?? 48, projectedDemand: 95, deficit: Math.max(0, 95 - (p1?.stock ?? 48)) },
-      { product: p2, currentStock: p2?.stock ?? 60, projectedDemand: 80, deficit: Math.max(0, 80 - (p2?.stock ?? 60)) },
-      { product: p4, currentStock: p4?.stock ?? 15, projectedDemand: 24, deficit: Math.max(0, 24 - (p4?.stock ?? 15)) },
-    ].filter((x): x is { product: CantinaProduct; currentStock: number; projectedDemand: number; deficit: number } => Boolean(x.product))
+    return products
+      .filter(p => p.stock !== undefined && p.stock < 10)
+      .map(p => ({
+        product: p,
+        currentStock: p.stock ?? 0,
+        projectedDemand: 20,
+        deficit: Math.max(0, 20 - (p.stock ?? 0))
+      }))
+      .filter(p => p.deficit > 0)
   }, [products])
 
-  const distributorWhatsAppUrl = useMemo(() => buildWhatsAppLink(
-    '5493815009988',
-    `¡Hola Distribuidora Bebidas y Deportes! Te paso el pedido de reposición preventiva de CancharClub para el fin de semana:\n\n` +
-    weekendPredictions.map(p => `• ${p.deficit}x ${p.product.name} (Faltante p/ fin de semana)`).join('\n') +
-    `\n\n¿Nos podrán entregar antes del viernes a las 18 hs? ¡Muchas gracias!`
-  ), [weekendPredictions])
+  const distributorWhatsAppUrl = useMemo(() => {
+    if (weekendPredictions.length === 0) return '#'
+    return buildWhatsAppLink(
+      '5493815009988',
+      `¡Hola! Te paso el pedido de reposición preventiva de cantina para el fin de semana:\n\n` +
+      weekendPredictions.map(p => `• ${p.deficit}x ${p.product.name} (Stock actual: ${p.currentStock})`).join('\n') +
+      `\n\n¿Nos podrán entregar antes del fin de semana? ¡Muchas gracias!`
+    )
+  }, [weekendPredictions])
 
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
     // Optimistic update
@@ -607,7 +612,7 @@ export default function CantinaPage() {
           subtotal: c.product.price * c.quantity,
         }))
         const res = await createCourtOrder({
-          tenant_id: DEMO_TENANT_ID,
+          tenant_id: tenantId!,
           court_name: assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Venta Mostrador',
           customer_name: 'Cliente Mostrador',
           items,
@@ -620,7 +625,7 @@ export default function CantinaPage() {
         } else {
           completedOrder = {
             id: `ord-${Date.now()}`,
-            tenant_id: DEMO_TENANT_ID,
+            tenant_id: tenantId!,
             court_id: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -645,7 +650,7 @@ export default function CantinaPage() {
           }
           return p
         })
-        saveCantinaProducts(DEMO_TENANT_ID, updated).catch(err => console.warn('Sync stock error:', err))
+        saveCantinaProducts(tenantId!, updated).catch(err => console.warn('Sync stock error:', err))
         return updated
       })
 
@@ -762,33 +767,37 @@ export default function CantinaPage() {
         </div>
       )}
 
-      {/* Alerta de Control Predictivo de Stock */}
-      <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Alerta Predictiva de Stock (Consumo Viernes a Domingo)</span>
+      {/* Alerta de Control Predictivo de Stock (solo cuando hay déficit proyectado) */}
+      {weekendPredictions.length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Demanda estimada de fin de semana superará el stock disponible en depósito en <strong>3 artículos clave</strong> ({weekendPredictions[0].deficit} Gatorade y {weekendPredictions[2].deficit} tubos de pelotas).
-            </p>
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Alerta Predictiva de Stock (Consumo Fin de Semana)</span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Demanda estimada de fin de semana superará el stock disponible en{' '}
+                <strong>{weekendPredictions.length} artículo{weekendPredictions.length > 1 ? 's' : ''}</strong>:{' '}
+                {weekendPredictions.map(p => `${p.product.name} (faltan ${p.deficit})`).join(', ')}.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <a
-          href={distributorWhatsAppUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shrink-0 transition-colors shadow-xs"
-        >
-          <MessageSquare className="w-4 h-4" />
-          <span>Pedir Reposición (WhatsApp)</span>
-        </a>
-      </div>
+          <a
+            href={distributorWhatsAppUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shrink-0 transition-colors shadow-xs"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Pedir Reposición (WhatsApp)</span>
+          </a>
+        </div>
+      )}
 
       {/* Tabs Selector */}
       <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
@@ -1292,32 +1301,52 @@ export default function CantinaPage() {
             </div>
 
             {/* Grid de Productos */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {filteredProducts.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => addToCart(p)}
-                  className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/40 hover:bg-slate-900 transition-all cursor-pointer group flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                      {p.emoji}
-                    </div>
-                    <div className="font-semibold text-slate-200 text-xs line-clamp-2">
-                      {p.name}
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="font-extrabold text-emerald-400 text-sm">
-                      {formatARS(p.price)}
-                    </span>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg group-hover:bg-emerald-600 group-hover:text-white">
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
+            {filteredProducts.length === 0 ? (
+              <div className="py-12 text-center rounded-2xl bg-slate-900/40 border border-slate-800/80 p-8 space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
+                  <Package className="w-6 h-6" />
                 </div>
-              ))}
-            </div>
+                <h4 className="text-sm font-bold text-white">No hay productos en inventario</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Agregá bebidas, snacks o artículos deportivos desde la pestaña &quot;Inventario&quot; para comenzar a vender en mostrador.
+                </p>
+                <Button
+                  onClick={openNewProductModal}
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Crear Primer Producto</span>
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {filteredProducts.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => addToCart(p)}
+                    className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/40 hover:bg-slate-900 transition-all cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                        {p.emoji}
+                      </div>
+                      <div className="font-semibold text-slate-200 text-xs line-clamp-2">
+                        {p.name}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className="font-extrabold text-emerald-400 text-sm">
+                        {formatARS(p.price)}
+                      </span>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg group-hover:bg-emerald-600 group-hover:text-white">
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Carrito de Venta y Cobro */}

@@ -19,44 +19,42 @@ export interface IssuedInvoice {
 }
 
 // In-memory fallback si la tabla no existe en Supabase todavía
-let mockInvoices: IssuedInvoice[] = [
-  {
-    id: 'inv-1',
-    comprobanteTipo: 'Factura C',
-    numeroCompleto: '0001-00000412',
-    fechaEmision: '2026-09-14',
-    cliente: 'Martín Benítez',
-    cuitDni: '38.123.456',
-    montoTotal: 14000,
-    cae: '74391823901245',
-    caeVto: '2026-09-24',
-    concepto: 'Alquiler Cancha 1 (Turno 19:00 hs)',
-    qrUrl: 'https://www.afip.gob.ar/fe/qr/?p=eyJ2ZXIiOjF9'
-  },
-  {
-    id: 'inv-2',
-    comprobanteTipo: 'Factura C',
-    numeroCompleto: '0001-00000411',
-    fechaEmision: '2026-09-13',
-    cliente: 'Luciana Gómez',
-    cuitDni: 'Consumidor Final',
-    montoTotal: 16000,
-    cae: '74391823901198',
-    caeVto: '2026-09-23',
-    concepto: 'Abono Mensual Pádel (Turno Fijo)',
-    qrUrl: 'https://www.afip.gob.ar/fe/qr/?p=eyJ2ZXIiOjF9'
-  }
-]
+let mockInvoices: IssuedInvoice[] = []
 
-export async function getAfipConfig(tenantId = '00000000-0000-0000-0000-000000000001'): Promise<AfipConfig> {
+export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
+  if (tenantId) {
+    try {
+      const supabase = await createClient()
+      const { data } = await supabase
+        .from('tenants')
+        .select('name, bank_cuit, address')
+        .eq('id', tenantId)
+        .maybeSingle()
+      if (data) {
+        return {
+          cuit: data.bank_cuit || '',
+          puntoVenta: 1,
+          razonSocial: data.name || 'Mi Club Deportivo',
+          condicionIva: 'MONOTRIBUTO',
+          domicilioComercial: data.address || '',
+          inicioActividades: new Date().toISOString().split('T')[0],
+          ingresosBrutos: '',
+          environment: 'TESTING'
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return {
-    cuit: '20-38145678-9',
+    cuit: '',
     puntoVenta: 1,
-    razonSocial: 'Club Pádel Central SRL',
+    razonSocial: 'Mi Club Deportivo',
     condicionIva: 'MONOTRIBUTO',
-    domicilioComercial: 'Av. Aconquija 1420, Yerba Buena, Tucumán',
-    inicioActividades: '2023-03-01',
-    ingresosBrutos: '381-998231-1',
+    domicilioComercial: '',
+    inicioActividades: new Date().toISOString().split('T')[0],
+    ingresosBrutos: '',
     environment: 'TESTING'
   }
 }
@@ -67,7 +65,11 @@ export async function saveAfipConfig(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
-    await supabase.from('tenants').update({ updated_at: new Date().toISOString() }).eq('id', tenantId)
+    await supabase.from('tenants').update({ 
+      bank_cuit: config.cuit || null,
+      address: config.domicilioComercial || null,
+      updated_at: new Date().toISOString() 
+    }).eq('id', tenantId)
     revalidatePath('/dashboard/facturacion')
     return { success: true }
   } catch (err: unknown) {
@@ -75,7 +77,7 @@ export async function saveAfipConfig(
   }
 }
 
-export async function getIssuedInvoices(tenantId = '00000000-0000-0000-0000-000000000001'): Promise<IssuedInvoice[]> {
+export async function getIssuedInvoices(): Promise<IssuedInvoice[]> {
   return mockInvoices
 }
 

@@ -33,6 +33,7 @@ import {
 import { toast } from 'sonner'
 import type { SportType } from '@/types/database'
 import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
+import { getClubPublicData } from '@/actions/club.actions'
 
 function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const router = useRouter()
@@ -49,6 +50,19 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const total = Number(searchParams.get('total')) || 14000
   const deposit = Number(searchParams.get('deposit')) || 7000
   const sport = (searchParams.get('sport') || 'PADEL') as SportType
+
+  const paramTenant = searchParams.get('tenantId')
+  const [resolvedTenantId, setResolvedTenantId] = useState<string>(
+    paramTenant || (club?.id && club.id.length > 10 ? club.id : '')
+  )
+
+  useEffect(() => {
+    if (!resolvedTenantId) {
+      getClubPublicData(slug).then((data) => {
+        if (data?.id) setResolvedTenantId(data.id)
+      })
+    }
+  }, [slug, resolvedTenantId])
 
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -193,7 +207,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       // Invocar Server Action para lock + registro de booking con el método elegido
       const res = await initiateOnlineCheckout(
         {
-          tenant_id: '00000000-0000-0000-0000-000000000001',
+          tenant_id: resolvedTenantId || (club?.id && club.id.length > 10 ? club.id : '00000000-0000-0000-0000-000000000001'),
           court_id: courtId,
           court_name: courtName,
           customer_name: customerName,

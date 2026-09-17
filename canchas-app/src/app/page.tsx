@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
   Calendar,
@@ -12,7 +12,8 @@ import {
   MapPin,
   Star,
   Zap,
-  Coffee
+  Coffee,
+  Loader2
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,8 @@ import { ClubLoginModal } from '@/components/public/club-login-modal'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 
-import { CLUBS_DATABASE, type SportCategory } from '@/config/clubs-catalog'
+import { type SportCategory, type ClubData } from '@/config/clubs-catalog'
+import { getPublicClubs } from '@/actions/club.actions'
 
 
 // Componentes de Íconos Vectoriales Estilizados (Fieles a la Referencia)
@@ -154,9 +156,24 @@ export default function HomePage() {
   const [isReservasModalOpen, setIsReservasModalOpen] = useState(false)
   const [isClubLoginModalOpen, setIsClubLoginModalOpen] = useState(false)
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
+  const [clubs, setClubs] = useState<ClubData[]>([])
+  const [isLoadingClubs, setIsLoadingClubs] = useState(true)
+
+  useEffect(() => {
+    getPublicClubs()
+      .then((data) => {
+        setClubs(data || [])
+      })
+      .catch((err) => {
+        console.warn('Error loading public clubs:', err)
+      })
+      .finally(() => {
+        setIsLoadingClubs(false)
+      })
+  }, [])
 
   // Filtrado de clubes según deporte seleccionado y término de búsqueda
-  const filteredClubs = CLUBS_DATABASE.filter(club => {
+  const filteredClubs = clubs.filter((club: ClubData) => {
     const matchesSport = selectedSport ? club.sports.includes(selectedSport) : true
     const matchesSearch = 
       club.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -318,18 +335,23 @@ export default function HomePage() {
           </div>
 
           {/* Grilla de Clubes */}
-          {filteredClubs.length === 0 ? (
+          {isLoadingClubs ? (
+            <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800 space-y-3 flex flex-col items-center justify-center">
+              <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+              <p className="text-xs text-slate-400">Cargando complejos disponibles...</p>
+            </div>
+          ) : filteredClubs.length === 0 ? (
             <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800 space-y-3">
               <div className="text-4xl">🔍</div>
               <h3 className="font-bold text-base text-slate-100">
                 {searchTerm
                   ? `No se encontraron complejos para "${searchTerm}"`
-                  : 'Próximamente complejos disponibles en esta categoría'}
+                  : 'No hay complejos disponibles en esta categoría'}
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
                 {searchTerm
-                  ? 'Probá buscando por otra zona como "Yerba Buena" o limpiá el filtro para ver todos los clubes.'
-                  : 'Actualmente podés reservar en los clubes disponibles seleccionando la categoría Pádel.'}
+                  ? 'Probá buscando por otro término o limpiá el filtro para ver todos los clubes.'
+                  : 'Sé el primero en publicar turnos para este deporte sumando tu club a CancharClub.'}
               </p>
               {searchTerm && (
                 <Button

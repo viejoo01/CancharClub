@@ -39,16 +39,16 @@ export async function getTenantPaymentSettings(tenantId: string): Promise<Tenant
       .maybeSingle()
 
     if (error || !tenant) {
-      console.warn('[getTenantPaymentSettings] Tenant not found, returning defaults for:', tenantId)
+      console.warn('[getTenantPaymentSettings] Tenant not found for:', tenantId)
       return {
         tenantId,
-        clubName: 'Club Pádel Central',
-        bankName: 'Mercado Pago / Banco Galicia',
-        accountHolder: 'Club Pádel Central SRL',
-        cbu: '0000003100098765432101',
-        alias: 'padelcentral.mp',
-        cuit: '30-71234567-9',
-        whatsappPhone: '5493814123456',
+        clubName: 'Mi Club',
+        bankName: '',
+        accountHolder: '',
+        cbu: '',
+        alias: '',
+        cuit: '',
+        whatsappPhone: '',
         paymentMethods: ['TRANSFER'],
         mpConnected: false,
       }
@@ -57,10 +57,10 @@ export async function getTenantPaymentSettings(tenantId: string): Promise<Tenant
     return {
       tenantId: tenant.id,
       clubName: tenant.name || 'Mi Club',
-      bankName: tenant.bank_name || 'Mercado Pago / Banco Galicia',
-      accountHolder: tenant.bank_account_holder || tenant.name || 'Titular de la cuenta',
-      cbu: tenant.bank_cbu || '0000003100098765432101',
-      alias: tenant.bank_alias || 'padelcentral.mp',
+      bankName: tenant.bank_name || '',
+      accountHolder: tenant.bank_account_holder || '',
+      cbu: tenant.bank_cbu || '',
+      alias: tenant.bank_alias || '',
       cuit: tenant.bank_cuit || '',
       whatsappPhone: tenant.phone_whatsapp || '',
       paymentMethods: (tenant.payment_methods as ('TRANSFER' | 'MERCADOPAGO')[]) || ['TRANSFER'],

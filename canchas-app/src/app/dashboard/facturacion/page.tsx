@@ -38,8 +38,10 @@ import {
 } from '@/actions/afip.actions'
 import { toast } from 'sonner'
 import type { AfipConfig, TipoComprobante } from '@/lib/afip'
+import { useTenantId } from '@/hooks/use-tenant-id'
 
 export default function FacturacionPage() {
+  const tenantId = useTenantId()
   const [invoices, setInvoices] = useState<IssuedInvoice[]>([])
   const [config, setConfig] = useState<AfipConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -58,10 +60,11 @@ export default function FacturacionPage() {
   const [montoTotal, setMontoTotal] = useState('14000')
 
   useEffect(() => {
+    if (!tenantId) return
     let isMounted = true
     Promise.all([
       getIssuedInvoices(),
-      getAfipConfig()
+      getAfipConfig(tenantId)
     ])
       .then(([invs, cfg]) => {
         if (isMounted) {
@@ -77,7 +80,7 @@ export default function FacturacionPage() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [tenantId])
 
   const handleEmitInvoice = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -125,7 +128,7 @@ export default function FacturacionPage() {
     if (!config) return
     setSubmitting(true)
     try {
-      const res = await saveAfipConfig('00000000-0000-0000-0000-000000000001', config)
+      const res = await saveAfipConfig(tenantId || '00000000-0000-0000-0000-000000000001', config)
       if (res.success) {
         toast.success('Configuración AFIP guardada')
         setIsConfigOpen(false)

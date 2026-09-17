@@ -13,21 +13,22 @@ import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory 
 
 export async function getClubCourts(tenantId: string) {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('courts')
-      .select(`
-        *,
-        price_rules (*)
-      `)
+      .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, display_order')
       .eq('tenant_id', tenantId)
       .order('display_order', { ascending: true })
 
     if (error) {
-      console.warn('[getClubCourts] Fallback a canchas por defecto:', error.message || error)
+      console.warn('[getClubCourts] Error fetching courts:', error.message)
       return []
     }
-    return data ?? []
+    return (data ?? []).map(c => ({
+      ...c,
+      slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90') as SlotDuration,
+      has_lighting: Boolean(c.has_lights),
+    }))
   } catch (err) {
     console.warn('[getClubCourts] Fallback por excepción:', err)
     return []
@@ -38,20 +39,41 @@ export async function createCourt(payload: {
   tenant_id: string
   name: string
   sport: SportType
-  slot_duration: SlotDuration
+  slot_duration?: SlotDuration
+  slot_duration_minutes?: number
   surface?: CourtSurface | null
   has_lighting?: boolean
+  has_lights?: boolean
   is_indoor?: boolean
   is_active?: boolean
 }) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
+  const durationMinutes = payload.slot_duration_minutes || (payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90)
+  const hasLights = payload.has_lights !== undefined ? payload.has_lights : (payload.has_lighting !== undefined ? payload.has_lighting : true)
+  const s = (payload.sport || 'PADEL').toUpperCase()
+  const sportEnum = s === 'FUTBOL' ? 'FUTBOL_5' : s
+
+  const insertData = {
+    tenant_id: payload.tenant_id,
+    name: payload.name,
+    sport: sportEnum,
+    slot_duration_minutes: durationMinutes,
+    surface: payload.surface || null,
+    has_lights: hasLights,
+    is_indoor: Boolean(payload.is_indoor),
+    is_active: payload.is_active !== false,
+  }
+
   const { data, error } = await supabase
     .from('courts')
-    .insert(payload)
+    .insert(insertData)
     .select()
     .single()
 
-  if (error) return { success: false, error: error.message }
+  if (error) {
+    console.error('[createCourt] Error inserting court:', error.message)
+    return { success: false, error: error.message }
+  }
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
   return { success: true, court: data }
@@ -61,15 +83,39 @@ export async function updateCourt(courtId: string, payload: Partial<{
   name: string
   sport: SportType
   slot_duration: SlotDuration
+  slot_duration_minutes: number
   surface: CourtSurface | null
   has_lighting: boolean
+  has_lights: boolean
   is_indoor: boolean
   is_active: boolean
 }>) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString()
+  }
+  if (payload.name !== undefined) updateData.name = payload.name
+  if (payload.sport !== undefined) {
+    const s = payload.sport.toUpperCase()
+    updateData.sport = s === 'FUTBOL' ? 'FUTBOL_5' : s
+  }
+  if (payload.surface !== undefined) updateData.surface = payload.surface
+  if (payload.is_indoor !== undefined) updateData.is_indoor = payload.is_indoor
+  if (payload.is_active !== undefined) updateData.is_active = payload.is_active
+  if (payload.slot_duration_minutes !== undefined) {
+    updateData.slot_duration_minutes = payload.slot_duration_minutes
+  } else if (payload.slot_duration !== undefined) {
+    updateData.slot_duration_minutes = payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90
+  }
+  if (payload.has_lights !== undefined) {
+    updateData.has_lights = payload.has_lights
+  } else if (payload.has_lighting !== undefined) {
+    updateData.has_lights = payload.has_lighting
+  }
+
   const { error } = await supabase
     .from('courts')
-    .update(payload)
+    .update(updateData)
     .eq('id', courtId)
 
   if (error) return { success: false, error: error.message }
@@ -298,65 +344,22 @@ export async function getDailyCashSummary(tenantId: string, dateStr: string) {
 // ─── TURNOS FIJOS / ABONADOS (Mejora 2A) ──────────────────────────────────────
 
 export async function getRecurringBookings(tenantId: string) {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('recurring_bookings')
-    .select('*, courts(name, sport)')
-    .eq('tenant_id', tenantId)
-    .order('day_of_week', { ascending: true })
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('recurring_bookings')
+      .select('*, courts(name, sport)')
+      .eq('tenant_id', tenantId)
+      .order('day_of_week', { ascending: true })
 
-  if (error) {
-    // Fallback con turnos fijos de demostración si la tabla aún no tiene datos
-    return [
-      {
-        id: 'rf-1',
-        tenant_id: tenantId,
-        court_id: 'c1',
-        courts: { name: 'Cancha 1 (Panorámica)', sport: 'PADEL' },
-        day_of_week: 1, // Lunes
-        start_time: '20:00',
-        end_time: '21:30',
-        customer_name: 'Martín Palermo y Amigos',
-        customer_phone: '5493816001122',
-        total_amount_ars: 14000,
-        deposit_amount_ars: 7000,
-        is_active: true,
-        notes: 'Abonado anual fijo todos los lunes',
-      },
-      {
-        id: 'rf-2',
-        tenant_id: tenantId,
-        court_id: 'c2',
-        courts: { name: 'Cancha 2 (Techada)', sport: 'PADEL' },
-        day_of_week: 3, // Miércoles
-        start_time: '19:30',
-        end_time: '21:00',
-        customer_name: 'Torneo Semanal Veteranos',
-        customer_phone: '5493815553344',
-        total_amount_ars: 14000,
-        deposit_amount_ars: 14000,
-        is_active: true,
-        notes: 'Pago mensual por adelantado',
-      },
-      {
-        id: 'rf-3',
-        tenant_id: tenantId,
-        court_id: 'c4',
-        courts: { name: 'Fútbol 5 (Sintético)', sport: 'FUTBOL_5' },
-        day_of_week: 4, // Jueves
-        start_time: '21:00',
-        end_time: '22:00',
-        customer_name: 'Grupo Los Cuervos F5',
-        customer_phone: '5493814449988',
-        total_amount_ars: 12000,
-        deposit_amount_ars: 6000,
-        is_active: true,
-        notes: 'Fijo semanal confirmado',
-      },
-    ]
+    if (error) {
+      return []
+    }
+
+    return data ?? []
+  } catch {
+    return []
   }
-
-  return data ?? []
 }
 
 export async function createRecurringBooking(payload: {
@@ -471,12 +474,12 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         name,
         slug,
         address,
-        phone,
+        city,
+        phone_whatsapp,
         is_active,
-        plan_id,
         bank_alias,
         bank_cbu,
-        bank_holder,
+        bank_account_holder,
         bank_name,
         mp_access_token
       `)
@@ -484,13 +487,14 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       .maybeSingle()
 
     if (tenantErr || !tenant) {
+      if (tenantErr) console.warn('[getClubPublicData] tenantErr:', tenantErr.message)
       return fallback
     }
 
     // 2. Consultar canchas activas del tenant
     const { data: courts } = await supabase
       .from('courts')
-      .select('id, name, sport, slot_duration, surface, is_indoor, has_lighting, is_active, display_order')
+      .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active, display_order')
       .eq('tenant_id', tenant.id)
       .eq('is_active', true)
       .order('display_order', { ascending: true })
@@ -510,7 +514,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
 
           const features: string[] = []
           if (c.is_indoor) features.push('Techada')
-          if (c.has_lighting) features.push('Iluminación LED')
+          if (c.has_lights) features.push('Iluminación LED')
           if (c.surface) features.push(c.surface)
 
           return {
@@ -522,51 +526,162 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             depositPercentage: 0.5,
           }
         })
-      : fallback.courts
+      : []
 
     // Determinar deportes únicos
     const sports = Array.from(new Set(courtsMapped.map((c) => c.sport))) as SportCategory[]
 
     // Calcular precio inicial más bajo
-    const startingPrice = courtsMapped.reduce(
-      (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
-      courtsMapped[0]?.pricePerHour || 16000
-    )
+    const startingPrice = courtsMapped.length > 0
+      ? courtsMapped.reduce(
+          (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
+          courtsMapped[0]?.pricePerHour || 16000
+        )
+      : 0
 
     return {
       id: tenant.id,
       name: tenant.name || fallback.name,
       slug: tenant.slug || normalizedSlug,
       address: tenant.address || fallback.address,
-      city: fallback.city,
-      phone: tenant.phone || fallback.phone,
-      whatsappPhone: tenant.phone ? tenant.phone.replace(/\D/g, '') : fallback.whatsappPhone,
-      sports: sports.length > 0 ? sports : fallback.sports,
+      city: tenant.city || fallback.city,
+      phone: tenant.phone_whatsapp || fallback.phone,
+      whatsappPhone: tenant.phone_whatsapp ? tenant.phone_whatsapp.replace(/\D/g, '') : fallback.whatsappPhone,
+      sports: sports.length > 0 ? sports : [],
       courtsCount: courtsMapped.length,
       startingPrice,
       hasLighting: courtsMapped.some((c) => c.features.includes('Iluminación LED')),
       isIndoor: courtsMapped.some((c) => c.features.includes('Techada')),
       hasCantina: fallback.hasCantina,
       hasParking: fallback.hasParking,
-      rating: fallback.rating,
-      reviewsCount: fallback.reviewsCount,
+      rating: 5.0,
+      reviewsCount: 0,
       availableToday: true,
       openHours: fallback.openHours,
       courts: courtsMapped,
       bankDetails: tenant.bank_alias
         ? {
             bankName: tenant.bank_name || 'Mercado Pago',
-            accountHolder: tenant.bank_holder || tenant.name,
+            accountHolder: tenant.bank_account_holder || tenant.name,
             alias: tenant.bank_alias,
             cbu: tenant.bank_cbu || '',
           }
-        : fallback.bankDetails,
+        : undefined,
       paymentMethods: tenant.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
       mpConnected: Boolean(tenant.mp_access_token),
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)
     return fallback
+  }
+}
+
+export async function getPublicClubs(): Promise<ClubData[]> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: tenants, error } = await supabase
+      .from('tenants')
+      .select(`
+        id,
+        name,
+        slug,
+        address,
+        city,
+        phone_whatsapp,
+        is_active,
+        bank_alias,
+        bank_cbu,
+        bank_account_holder,
+        bank_name,
+        mp_access_token
+      `)
+      .eq('is_active', true)
+
+    if (error || !tenants) {
+      if (error) console.warn('[getPublicClubs] error:', error.message)
+      return []
+    }
+
+    const clubsList: ClubData[] = []
+
+    for (const t of tenants) {
+      const { data: courts } = await supabase
+        .from('courts')
+        .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active')
+        .eq('tenant_id', t.id)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+
+      const { data: priceRules } = await supabase
+        .from('price_rules')
+        .select('court_id, price_ars, is_default')
+        .eq('tenant_id', t.id)
+
+      const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)
+        ? courts.map((c) => {
+            const rule = (priceRules || []).find((r) => r.court_id === c.id) ||
+              (priceRules || []).find((r) => r.is_default)
+            const pricePerHour = Number(rule?.price_ars || 18000)
+            const features: string[] = []
+            if (c.is_indoor) features.push('Techada')
+            if (c.has_lights) features.push('Iluminación LED')
+            if (c.surface) features.push(c.surface)
+            return {
+              id: c.id,
+              name: c.name,
+              sport: (c.sport as SportCategory) || 'PADEL',
+              features: features.length > 0 ? features : ['Césped Sintético'],
+              pricePerHour,
+              depositPercentage: 0.5,
+            }
+          })
+        : []
+
+      const sports = Array.from(new Set(courtsMapped.map((c) => c.sport))) as SportCategory[]
+      const startingPrice = courtsMapped.length > 0
+        ? courtsMapped.reduce(
+            (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
+            courtsMapped[0]?.pricePerHour || 16000
+          )
+        : 0
+
+      clubsList.push({
+        id: t.id,
+        name: t.name || 'Club Deportivo',
+        slug: t.slug || t.id,
+        address: t.address || 'Argentina',
+        city: t.city || 'Argentina',
+        phone: t.phone_whatsapp || '',
+        whatsappPhone: t.phone_whatsapp ? t.phone_whatsapp.replace(/\D/g, '') : '',
+        sports: sports.length > 0 ? sports : ['PADEL'],
+        courtsCount: courtsMapped.length,
+        startingPrice: courtsMapped.length > 0 ? startingPrice : 0,
+        hasLighting: courtsMapped.some((c) => c.features.includes('Iluminación LED')),
+        isIndoor: courtsMapped.some((c) => c.features.includes('Techada')),
+        hasCantina: false,
+        hasParking: false,
+        rating: 5.0,
+        reviewsCount: 0,
+        availableToday: true,
+        openHours: '08:00 a 00:00 hs',
+        courts: courtsMapped,
+        bankDetails: t.bank_alias
+          ? {
+              bankName: t.bank_name || 'Mercado Pago',
+              accountHolder: t.bank_account_holder || t.name,
+              alias: t.bank_alias,
+              cbu: t.bank_cbu || '',
+            }
+          : undefined,
+        paymentMethods: t.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
+        mpConnected: Boolean(t.mp_access_token),
+      })
+    }
+
+    return clubsList
+  } catch (err) {
+    console.error('[getPublicClubs] Exception:', err)
+    return []
   }
 }
 

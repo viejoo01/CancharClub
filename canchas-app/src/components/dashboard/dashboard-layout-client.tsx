@@ -140,6 +140,7 @@ export function DashboardLayoutClient({
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden relative">
         <Header
           userName={userName}
+          tenantName={tenantName}
           mpConnected={mpConnected}
           onToggleMobileMenu={() => setMobileMenuOpen(true)}
         />

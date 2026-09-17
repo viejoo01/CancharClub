@@ -29,6 +29,7 @@ import {
   type DynamicPricingConfig,
   type OccupancyInsight
 } from '@/actions/dynamic-pricing.actions'
+import { useTenantId } from '@/hooks/use-tenant-id'
 import { toast } from 'sonner'
 
 interface DynamicPricingModalProps {
@@ -40,8 +41,10 @@ interface DynamicPricingModalProps {
 export function DynamicPricingModal({
   open,
   onOpenChange,
-  tenantId = '00000000-0000-0000-0000-000000000001'
+  tenantId: propTenantId,
 }: DynamicPricingModalProps) {
+  const hookTenantId = useTenantId()
+  const tenantId = propTenantId || hookTenantId || ''
   const [config, setConfig] = useState<DynamicPricingConfig>({
     enable_last_minute: true,
     last_minute_discount_pct: 25,

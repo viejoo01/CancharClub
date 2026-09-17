@@ -26,25 +26,19 @@ export interface CourtItem {
 
 export const DEFAULT_VENUES: VenueItem[] = [
   {
-    id: 'venue-yb',
-    name: 'Club Pádel Central',
-    branchName: 'Sede Yerba Buena (Central)',
-    address: 'Av. Aconquija 2400',
-    city: 'Yerba Buena, Tucumán',
-    courtsCount: 3,
-    sports: ['Pádel'],
+    id: 'venue-main',
+    name: 'Sede Principal',
+    branchName: 'Sede Central',
+    address: 'Sede del club',
+    city: 'Argentina',
+    courtsCount: 0,
+    sports: [],
     isPrimary: true
   }
 ]
 
-// Canchas por cada sede
-export const VENUES_COURTS: Record<string, CourtItem[]> = {
-  'venue-yb': [
-    { id: 'c1-1', name: 'Cancha 1 (Panorámica)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
-    { id: 'c1-2', name: 'Cancha 2 (Techada)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
-    { id: 'c1-3', name: 'Cancha 3 (Blindex)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
-  ]
-}
+// Canchas personalizadas por sede
+export const VENUES_COURTS: Record<string, CourtItem[]> = {}
 
 export function getVenueCourts(venueId: string, customVenues?: VenueItem[]): CourtItem[] {
   if (VENUES_COURTS[venueId]) {
@@ -53,13 +47,13 @@ export function getVenueCourts(venueId: string, customVenues?: VenueItem[]): Cou
 
   // Si es una sede personalizada creada por el usuario
   const matched = customVenues?.find(v => v.id === venueId)
-  if (matched) {
+  if (matched && matched.courtsCount > 0) {
     const courts: CourtItem[] = []
     for (let i = 1; i <= matched.courtsCount; i++) {
       courts.push({
         id: `${matched.id}-c${i}`,
-        name: `Cancha ${i} (${matched.sports[0] || 'Pádel'})`,
-        sport: (matched.sports[0] || 'PADEL').toUpperCase(),
+        name: `Cancha ${i} (${matched.sports[0] || 'Deporte'})`,
+        sport: (matched.sports[0] || 'CANCHA').toUpperCase(),
         slot_duration: 'MIN_90',
         is_active: true
       })
@@ -67,7 +61,7 @@ export function getVenueCourts(venueId: string, customVenues?: VenueItem[]): Cou
     return courts
   }
 
-  return VENUES_COURTS['venue-yb']
+  return []
 }
 
 // Registro global en memoria de reservas en vivo (garantiza sincronización 0ms)

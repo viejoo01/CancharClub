@@ -9,7 +9,6 @@ import {
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { loginWithEmail } from '@/actions/auth.actions'
-import { toast } from 'sonner'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -32,68 +31,9 @@ export default function LoginPage() {
 
     setIsLoading(true)
 
-    // 1. Acceso Superadmin (Demo o Local)
-    if (
-      cleanEmail === 'superadmin@cancharclub.com.ar' ||
-      cleanEmail.includes('superadmin')
-    ) {
-      document.cookie = 'demo_user_role=SUPERADMIN; path=/; max-age=86400'
-      document.cookie = 'demo_user_name=Superadmin Plataforma; path=/; max-age=86400'
-      toast.success('¡Bienvenido Superadmin!')
-
-      const formData = new FormData()
-      formData.append('email', cleanEmail === 'superadmin@cancharclub.com.ar' ? 'superadmin@cancharclub.com.ar' : email.trim())
-      formData.append('password', cleanPassword)
-
-      try {
-        const res = await loginWithEmail(formData)
-        if (res && !res.success) {
-          // Si Supabase no responde o falla pero es la credencial local conocida, permitimos entrar en modo demo
-          if (cleanEmail === 'superadmin@cancharclub.com.ar' && (cleanPassword === 'superadmin123' || cleanPassword === 'demo123456')) {
-            window.location.href = '/superadmin'
-            return
-          }
-          setErrorMessage(res.error || 'Credenciales incorrectas.')
-          setIsLoading(false)
-          return
-        }
-      } catch {
-        // Redirección manejada por Next.js
-        window.location.href = '/superadmin'
-        return
-      }
-      window.location.href = '/superadmin'
-      return
-    }
-
-    // 2. Fallback rápido Mostrador / Canchero
-    if (cleanEmail === 'mostrador@padelcentral.com' || cleanEmail.includes('canchero') || cleanEmail.includes('mostrador')) {
-      document.cookie = 'demo_user_role=TENANT_STAFF; path=/; max-age=86400'
-      document.cookie = 'demo_user_name=Canchero (Turnos y Cantina); path=/; max-age=86400'
-      toast.success('¡Bienvenido Canchero!', {
-        description: 'Acceso exclusivo a Calendario, Kiosco/Cantina y Caja.'
-      })
-      window.location.href = '/dashboard'
-      return
-    }
-
-    // 3. Fallback rápido Dueño del Club
-    if (
-      cleanEmail === 'admin@padelcentral.com' ||
-      cleanEmail === 'demo@cancharclub.com' ||
-      cleanPassword === 'demo123456'
-    ) {
-      document.cookie = 'demo_user_role=TENANT_ADMIN; path=/; max-age=86400'
-      document.cookie = 'demo_user_name=Dueño del Club; path=/; max-age=86400'
-      toast.success('¡Bienvenido al Panel de Dueño del Club!')
-      window.location.href = '/dashboard'
-      return
-    }
-
-    // 4. Login real en Supabase
     const formData = new FormData()
-    formData.append('email', email.trim())
-    formData.append('password', password)
+    formData.append('email', cleanEmail)
+    formData.append('password', cleanPassword)
 
     try {
       const res = await loginWithEmail(formData)
@@ -104,24 +44,6 @@ export default function LoginPage() {
     } catch {
       // Redirección manejada por Next.js
     }
-  }
-
-  const fillDemoOwner = () => {
-    setEmail('admin@padelcentral.com')
-    setPassword('demo123456')
-    setErrorMessage(null)
-  }
-
-  const fillDemoStaff = () => {
-    setEmail('mostrador@padelcentral.com')
-    setPassword('cajero123')
-    setErrorMessage(null)
-  }
-
-  const fillDemoSuperadmin = () => {
-    setEmail('superadmin@cancharclub.com.ar')
-    setPassword('superadmin123')
-    setErrorMessage(null)
   }
 
   return (
@@ -216,36 +138,6 @@ export default function LoginPage() {
             )}
           </button>
         </form>
-
-        {/* Accesos rápidos Demo */}
-        <div className="w-full pt-6 mt-4 border-t border-slate-200/80 dark:border-slate-800 text-left space-y-2">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Accesos rápidos Demo:
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={fillDemoOwner}
-              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors border border-slate-200 dark:border-slate-700 shadow-xs"
-            >
-              Dueño del Predio
-            </button>
-            <button
-              type="button"
-              onClick={fillDemoStaff}
-              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors border border-slate-200 dark:border-slate-700 shadow-xs"
-            >
-              Mostrador / Caja
-            </button>
-            <button
-              type="button"
-              onClick={fillDemoSuperadmin}
-              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-purple-500/15 hover:text-purple-600 dark:hover:text-purple-400 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors border border-slate-200 dark:border-slate-700 shadow-xs"
-            >
-              Superadmin
-            </button>
-          </div>
-        </div>
 
         {/* Enlace para registrar club fiel a la captura */}
         <div className="pt-4 text-xs sm:text-sm text-slate-500 dark:text-slate-400 text-center">

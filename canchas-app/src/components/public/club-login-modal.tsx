@@ -14,7 +14,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { loginWithEmail } from '@/actions/auth.actions'
-import { toast } from 'sonner'
 
 interface ClubLoginModalProps {
   open: boolean
@@ -40,24 +39,9 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
 
     setIsLoading(true)
 
-    if (
-      email === 'admin@padelcentral.com' ||
-      email === 'mostrador@padelcentral.com'
-    ) {
-      toast.success('¡Bienvenido al Panel de Gestión!')
-      window.location.href = '/dashboard'
-      return
-    }
-
-    if (email === 'superadmin@cancharclub.com.ar' && password === 'superadmin123') {
-      toast.success('¡Bienvenido Superadmin!')
-      window.location.href = '/superadmin'
-      return
-    }
-
     const formData = new FormData()
-    formData.append('email', email)
-    formData.append('password', password)
+    formData.append('email', email.trim().toLowerCase())
+    formData.append('password', password.trim())
 
     try {
       const res = await loginWithEmail(formData)

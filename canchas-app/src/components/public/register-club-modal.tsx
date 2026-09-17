@@ -60,9 +60,11 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
 
     const formData = new FormData()
     formData.append('clubName', clubName)
+    formData.append('city', city)
     formData.append('email', email)
     formData.append('phone', phone)
     formData.append('password', password)
+    formData.append('sports', JSON.stringify(selectedSports))
 
     try {
       const res = await registerClub(formData)

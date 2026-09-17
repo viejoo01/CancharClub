@@ -322,19 +322,25 @@ export default function HomePage() {
             <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800 space-y-3">
               <div className="text-4xl">🔍</div>
               <h3 className="font-bold text-base text-slate-100">
-                No se encontraron complejos para &ldquo;{searchTerm}&rdquo;
+                {searchTerm
+                  ? `No se encontraron complejos para "${searchTerm}"`
+                  : 'Próximamente complejos disponibles en esta categoría'}
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Probá buscando por otra zona como &ldquo;Yerba Buena&rdquo; o limpiá el filtro para ver todos los clubes.
+                {searchTerm
+                  ? 'Probá buscando por otra zona como "Yerba Buena" o limpiá el filtro para ver todos los clubes.'
+                  : 'Actualmente podés reservar en los clubes disponibles seleccionando la categoría Pádel.'}
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSearchTerm('')}
-                className="text-xs rounded-xl border-slate-800 text-slate-100"
-              >
-                Limpiar búsqueda
-              </Button>
+              {searchTerm && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSearchTerm('')}
+                  className="text-xs rounded-xl border-slate-800 text-slate-100"
+                >
+                  Limpiar búsqueda
+                </Button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

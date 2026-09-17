@@ -34,6 +34,26 @@ export const DEFAULT_VENUES: VenueItem[] = [
     courtsCount: 3,
     sports: ['Pádel'],
     isPrimary: true
+  },
+  {
+    id: 'venue-bs',
+    name: 'Club Pádel Central',
+    branchName: 'Sede Barrio Sur (Indoor)',
+    address: 'General Paz 850',
+    city: 'San Miguel de Tucumán',
+    courtsCount: 4,
+    sports: ['Pádel'],
+    isPrimary: false
+  },
+  {
+    id: 'venue-canas',
+    name: 'Complejo Las Cañas',
+    branchName: 'Sede Country & Predio',
+    address: 'Av. Perón y Bascary',
+    city: 'Yerba Buena, Tucumán',
+    courtsCount: 8,
+    sports: ['Fútbol', 'Pádel'],
+    isPrimary: false
   }
 ]
 
@@ -43,6 +63,22 @@ export const VENUES_COURTS: Record<string, CourtItem[]> = {
     { id: 'c1-1', name: 'Cancha 1 (Panorámica)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
     { id: 'c1-2', name: 'Cancha 2 (Techada)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
     { id: 'c1-3', name: 'Cancha 3 (Blindex)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+  ],
+  'venue-bs': [
+    { id: 'c-bs-1', name: 'Cancha Indoor 1 (Central)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c-bs-2', name: 'Cancha Indoor 2 (Techada)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c-bs-3', name: 'Cancha Indoor 3 (Blindex)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c-bs-4', name: 'Cancha Cristal 4 (Pro)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+  ],
+  'venue-canas': [
+    { id: 'c2-f1', name: 'Fútbol 5 A (Sintético)', sport: 'FUTBOL', slot_duration: 'MIN_60', is_active: true },
+    { id: 'c2-f2', name: 'Fútbol 5 B (Techada)', sport: 'FUTBOL', slot_duration: 'MIN_60', is_active: true },
+    { id: 'c2-f3', name: 'Fútbol 7 Principal', sport: 'FUTBOL', slot_duration: 'MIN_60', is_active: true },
+    { id: 'c2-f4', name: 'Fútbol 5 C (Estadio)', sport: 'FUTBOL', slot_duration: 'MIN_60', is_active: true },
+    { id: 'c2-p1', name: 'Pádel 1 (Panorámica)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c2-p2', name: 'Pádel 2 (Blindex)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c2-p3', name: 'Pádel 3 (Central)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
+    { id: 'c2-p4', name: 'Pádel 4 (Outdoor)', sport: 'PADEL', slot_duration: 'MIN_90', is_active: true },
   ]
 }
 

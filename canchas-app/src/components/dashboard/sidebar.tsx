@@ -317,7 +317,18 @@ export function Sidebar({
 
       {/* Footer Logout */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/60">
-        <form action="/auth/logout" method="post" onSubmit={() => onClose?.()}>
+        <form 
+          action="/auth/logout" 
+          method="post" 
+          onSubmit={() => {
+            try {
+              localStorage.removeItem('canchar_active_venue_id')
+              localStorage.removeItem('canchar_active_venue_name')
+              localStorage.removeItem('canchar_custom_venues')
+            } catch {}
+            onClose?.()
+          }}
+        >
           <button
             type="submit"
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer"

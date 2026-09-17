@@ -44,7 +44,17 @@ export default function SuperadminLayout({
             </Button>
           </Link>
 
-          <form action="/auth/logout" method="post">
+          <form 
+            action="/auth/logout" 
+            method="post"
+            onSubmit={() => {
+              try {
+                localStorage.removeItem('canchar_active_venue_id')
+                localStorage.removeItem('canchar_active_venue_name')
+                localStorage.removeItem('canchar_custom_venues')
+              } catch {}
+            }}
+          >
             <Button
               type="submit"
               variant="ghost"

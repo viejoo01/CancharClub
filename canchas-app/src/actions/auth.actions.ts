@@ -237,5 +237,7 @@ export async function logout() {
   cookieStore.delete('demo_plan_id')
   cookieStore.delete('demo_tenant_name')
   cookieStore.delete('demo_tenant_slug')
-  redirect('/auth/login')
+  cookieStore.delete('canchar_active_venue_id')
+  cookieStore.delete('canchar_active_venue_name')
+  redirect('/')
 }

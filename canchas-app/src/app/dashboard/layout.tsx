@@ -40,7 +40,7 @@ export default async function DashboardLayout({
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, full_name, tenant_id, tenants(name, slug, mp_access_token, subscription_status, is_active, plan_id)')
+      .select('role, full_name, tenant_id, tenants(name, slug, mp_access_token, subscription_status, is_active, base_slots_plan)')
       .eq('id', user.id)
       .single()
 
@@ -53,7 +53,7 @@ export default async function DashboardLayout({
         mp_access_token?: string
         subscription_status?: TenantSubscriptionStatus
         is_active?: boolean
-        plan_id?: SaaSPlanId
+        base_slots_plan?: number
       } | null
       if (t) {
         tenantName = t.name || tenantName
@@ -64,8 +64,8 @@ export default async function DashboardLayout({
         } else if (cookieIsActive !== undefined) {
           isActive = cookieIsActive === 'true'
         }
-        if (t.plan_id) {
-          planId = t.plan_id
+        if (t.base_slots_plan && !cookiePlanId) {
+          planId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
         }
         if (t.subscription_status && !cookieStatus) {
           subscriptionStatus = t.subscription_status

@@ -354,7 +354,6 @@ export default function SuperadminPage() {
           name: editingTenant.name,
           slug: sanitizedSlug || editingTenant.slug,
           city: editingTenant.city,
-          plan_id: editingTenant.plan_id,
           is_active: editingTenant.is_active,
         })
         .eq('id', editingTenant.id)

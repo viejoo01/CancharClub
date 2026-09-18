@@ -33,7 +33,6 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         name,
         slug,
         city,
-        plan_id,
         is_active,
         subscription_status,
         mp_access_token,
@@ -79,7 +78,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         status: isActuallyActive ? 'ACTIVE' : 'PENDING',
         subscription_status: (t.subscription_status === 'ACTIVE' || t.subscription_status === 'AL_DIA' ? 'AL_DIA' : 'PENDIENTE'),
         last_paid: null,
-        plan_id: (t.plan_id as SaaSPlanId) || defaultPlan,
+        plan_id: defaultPlan,
         is_active: isActuallyActive,
       }
     })
@@ -94,16 +93,22 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
 /**
  * Otorga acceso y poder total a un club activándolo con su plan SaaS correspondiente.
  */
-export async function activateTenantAccess(tenantId: string, planId: SaaSPlanId) {
+export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId) {
   try {
     const supabase = await createServiceClient()
+    const updateData: Record<string, unknown> = {
+      is_active: true,
+      subscription_status: 'ACTIVE',
+    }
+
+    if (planId) {
+      const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
+      updateData.base_slots_plan = baseSlots
+    }
+
     const { error } = await supabase
       .from('tenants')
-      .update({
-        is_active: true,
-        subscription_status: 'ACTIVE',
-        plan_id: planId,
-      })
+      .update(updateData)
       .eq('id', tenantId)
 
     if (error) {

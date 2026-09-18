@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag } from 'lucide-react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,39 +18,112 @@ import {
 import { InflationAdjustModal } from '@/components/dashboard/inflation-adjust-modal'
 import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-modal'
 import { formatARS } from '@/lib/utils'
-import { createPriceRule } from '@/actions/club.actions'
+import { createPriceRule, getClubPriceRules, deletePriceRule } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { createClient } from '@/lib/supabase/client'
 
+interface PriceRuleItem {
+  id: string
+  name: string
+  court_id?: string | null
+  court_name?: string
+  days_of_week: number[]
+  time_from: string
+  time_to: string
+  price_ars: number
+  deposit_pct: number
+}
+
+interface ClubCourtSimple {
+  id: string
+  name: string
+}
+
 export default function PreciosPage() {
   const tenantId = useTenantId()
-  const [rules, setRules] = useState<{
-    id: string; name: string; days_of_week: number[]; time_from: string; time_to: string; price_ars: number; deposit_pct: number;
-  }[]>([])
+  const [rules, setRules] = useState<PriceRuleItem[]>([])
+  const [availableCourts, setAvailableCourts] = useState<ClubCourtSimple[]>([])
   const [loadingRules, setLoadingRules] = useState(true)
+
+  const reloadRules = async (tId: string) => {
+    try {
+      const data = await getClubPriceRules(tId)
+      interface RawRuleResult {
+        id: string
+        name: string
+        court_id?: string | null
+        courts?: { name?: string } | { name?: string }[] | null
+        days_of_week?: number[]
+        time_from?: string
+        time_to?: string
+        price_ars: number
+      }
+      const mapped: PriceRuleItem[] = (data as unknown as RawRuleResult[]).map((r) => {
+        let cName = 'Todas las canchas'
+        if (Array.isArray(r.courts) && r.courts.length > 0) {
+          cName = r.courts[0]?.name || 'Cancha'
+        } else if (r.courts && typeof r.courts === 'object' && 'name' in r.courts) {
+          cName = r.courts.name || 'Cancha'
+        }
+        return {
+          id: r.id,
+          name: r.name,
+          court_id: r.court_id,
+          court_name: cName,
+          days_of_week: r.days_of_week || [1, 2, 3, 4, 5],
+          time_from: r.time_from ? r.time_from.substring(0, 5) : '18:00',
+          time_to: r.time_to ? r.time_to.substring(0, 5) : '23:00',
+          price_ars: r.price_ars,
+          deposit_pct: 50,
+        }
+      })
+      setRules(mapped)
+    } catch {
+      toast.error('Error al cargar tarifas')
+    }
+  }
 
   useEffect(() => {
     if (!tenantId) return
-    const supabase = createClient()
-    supabase
-      .from('price_rules')
-      .select('id, name, days_of_week, time_from, time_to, price_ars, deposit_pct')
-      .eq('tenant_id', tenantId)
-      .then(({ data }) => {
-        if (data) {
-          setRules(data)
-        }
+
+    let isMounted = true
+
+    async function init() {
+      setLoadingRules(true)
+      await reloadRules(tenantId!)
+
+      // Cargar canchas disponibles para asignación
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('courts')
+        .select('id, name')
+        .eq('tenant_id', tenantId!)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+
+      if (isMounted && data) {
+        setAvailableCourts(data)
+      }
+      if (isMounted) {
         setLoadingRules(false)
-      })
+      }
+    }
+
+    init()
+
+    return () => {
+      isMounted = false
+    }
   }, [tenantId])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isInflationModalOpen, setIsInflationModalOpen] = useState(false)
   const [isDynamicModalOpen, setIsDynamicModalOpen] = useState(false)
   const [name, setName] = useState('')
+  const [selectedCourtId, setSelectedCourtId] = useState<string>('')
   const [timeFrom, setTimeFrom] = useState('18:00')
-  const [timeTo, setTimeTo] = useState('00:00')
+  const [timeTo, setTimeTo] = useState('23:00')
   const [price, setPrice] = useState('14000')
   const [depositPct, setDepositPct] = useState('50')
   const [loading, setLoading] = useState(false)
@@ -59,31 +132,56 @@ export default function PreciosPage() {
     e.preventDefault()
     if (!name.trim()) return
 
-    setLoading(true)
-    const newRule = {
-      id: `rule-${Date.now()}`,
-      name,
-      days_of_week: [1, 2, 3, 4, 5],
-      time_from: timeFrom,
-      time_to: timeTo,
-      price_ars: Number(price),
-      deposit_pct: Number(depositPct),
+    if (!tenantId) {
+      toast.error('No se pudo identificar el club activo')
+      return
     }
 
-    setRules(prev => [...prev, newRule])
-
+    setLoading(true)
     try {
-      await createPriceRule({
-        tenant_id: tenantId!,
-        ...newRule,
+      const res = await createPriceRule({
+        tenant_id: tenantId,
+        court_id: selectedCourtId || null,
+        name: name.trim(),
+        days_of_week: [1, 2, 3, 4, 5],
+        time_from: timeFrom,
+        time_to: timeTo,
+        price_ars: Number(price),
+        deposit_pct: Number(depositPct),
       })
-      toast.success('Regla de precio guardada')
-    } catch {
-      toast.info('Regla agregada')
-    } finally {
-      setLoading(false)
+
+      if (!res.success) {
+        toast.error(res.error || 'Error al guardar la regla de tarifa')
+        return
+      }
+
+      toast.success('¡Regla de tarifa guardada exitosamente!')
+      await reloadRules(tenantId)
       setIsModalOpen(false)
       setName('')
+      setSelectedCourtId('')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error inesperado al crear tarifa'
+      toast.error(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteRule = async (ruleId: string, ruleName: string) => {
+    if (!tenantId) return
+    if (!confirm(`¿Estás seguro de eliminar la tarifa "${ruleName}"?`)) return
+
+    try {
+      const res = await deletePriceRule(ruleId, tenantId)
+      if (!res.success) {
+        toast.error(res.error || 'Error al eliminar regla de precio')
+      } else {
+        setRules(prev => prev.filter(r => r.id !== ruleId))
+        toast.success(`Tarifa "${ruleName}" eliminada correctamente`)
+      }
+    } catch {
+      toast.error('Error de conexión al eliminar regla')
     }
   }
 
@@ -172,9 +270,15 @@ export default function PreciosPage() {
                     </span>
                   </div>
                   <CardTitle className="text-base">{rule.name}</CardTitle>
-                  <CardDescription className="flex items-center gap-1 mt-1 text-xs">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{rule.time_from} a {rule.time_to} hs</span>
+                  <CardDescription className="flex items-center justify-between gap-1 mt-1 text-xs">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{rule.time_from} a {rule.time_to} hs</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-slate-400 font-medium">
+                      <Layers className="w-3 h-3 text-emerald-400" />
+                      <span>{rule.court_name}</span>
+                    </span>
                   </CardDescription>
                 </CardHeader>
 
@@ -194,6 +298,19 @@ export default function PreciosPage() {
                     <span className="font-medium text-slate-300">
                       {formatARS(rule.price_ars - señaMonto)}
                     </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/60 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteRule(rule.id, rule.name)}
+                      className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
+                      title="Eliminar tarifa"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Eliminar</span>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -223,6 +340,23 @@ export default function PreciosPage() {
                 required
                 className="h-10 text-xs"
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="courtSelect">Cancha Asignada</Label>
+              <select
+                id="courtSelect"
+                value={selectedCourtId}
+                onChange={(e) => setSelectedCourtId(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">Todas las canchas del club</option>
+                {availableCourts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

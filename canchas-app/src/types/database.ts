@@ -5,8 +5,8 @@
 
 export type UserRole = 'SUPERADMIN' | 'TENANT_ADMIN' | 'TENANT_STAFF' | 'CUSTOMER'
 export type TenantStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED'
-export type SportType = 'PADEL' | 'FUTBOL_5' | 'FUTBOL_7' | 'TENIS' | 'SQUASH' | 'OTHER'
-export type CourtSurface = 'CEMENTO' | 'SINTETICO' | 'POLVO_LADRILLO' | 'ALFOMBRA' | 'PARQUET' | 'OTHER'
+export type SportType = 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL_5' | 'FUTBOL_7' | 'TENIS' | 'SQUASH' | 'OTHER'
+export type CourtSurface = 'CESPED_SINTETICO' | 'PASTO_NATURAL' | 'CEMENTO' | 'POLVO_LADRILLO' | 'CRISTAL' | 'SINTETICO' | 'ALFOMBRA' | 'PARQUET' | 'OTHER'
 export type SlotDuration = 'MIN_60' | 'MIN_90' | 'MIN_120'
 export type PriceRuleType = 'STANDARD' | 'PEAK' | 'OFF_PEAK' | 'WEEKEND' | 'HOLIDAY' | 'PROMO'
 export type BookingStatus =

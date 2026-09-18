@@ -66,6 +66,8 @@ export function sportLabel(sport: SportType): string {
     PADEL: 'Pádel',
     FUTBOL_5: 'Fútbol 5',
     FUTBOL_7: 'Fútbol 7',
+    FUTBOL5: 'Fútbol 5',
+    FUTBOL7: 'Fútbol 7',
     TENIS: 'Tenis',
     SQUASH: 'Squash',
     OTHER: 'Otro',

@@ -9,6 +9,25 @@ import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory } from '@/config/clubs-catalog'
 
+// ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
+
+function normalizeSportEnum(sport?: string | null): 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' {
+  const s = (sport || 'PADEL').toUpperCase().replace(/[\s_-]/g, '')
+  if (s.includes('7')) return 'FUTBOL7'
+  if (s.includes('FUTBOL') || s.includes('5') || s.includes('SOCCER')) return 'FUTBOL5'
+  if (s.includes('TENIS') || s.includes('TENNIS')) return 'TENIS'
+  return 'PADEL'
+}
+
+function normalizeSurfaceEnum(surface?: string | null): 'CESPED_SINTETICO' | 'PASTO_NATURAL' | 'CEMENTO' | 'POLVO_LADRILLO' | 'CRISTAL' {
+  const s = (surface || '').toUpperCase().replace(/[\s-]/g, '_')
+  if (s.includes('CRISTAL') || s.includes('VIDRIO') || s.includes('BLINDEX') || s.includes('PANORAMIC')) return 'CRISTAL'
+  if (s.includes('NATURAL') || s.includes('PASTO_NATURAL') || s.includes('GRASS')) return 'PASTO_NATURAL'
+  if (s.includes('CEMENTO') || s.includes('QUICK') || s.includes('HARD') || s.includes('HORMIGON')) return 'CEMENTO'
+  if (s.includes('LADRILLO') || s.includes('CLAY') || s.includes('POLVO')) return 'POLVO_LADRILLO'
+  return 'CESPED_SINTETICO'
+}
+
 // ─── CANCHAS ──────────────────────────────────────────────────────────────────
 
 export async function getClubCourts(tenantId: string) {
@@ -27,6 +46,7 @@ export async function getClubCourts(tenantId: string) {
     return (data ?? []).map(c => ({
       ...c,
       slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90') as SlotDuration,
+      surface: (c.surface || 'CESPED_SINTETICO') as CourtSurface,
       has_lighting: Boolean(c.has_lights),
     }))
   } catch (err) {
@@ -50,15 +70,15 @@ export async function createCourt(payload: {
   const supabase = await createServiceClient()
   const durationMinutes = payload.slot_duration_minutes || (payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90)
   const hasLights = payload.has_lights !== undefined ? payload.has_lights : (payload.has_lighting !== undefined ? payload.has_lighting : true)
-  const s = (payload.sport || 'PADEL').toUpperCase()
-  const sportEnum = s === 'FUTBOL' ? 'FUTBOL_5' : s
+  const sportEnum = normalizeSportEnum(payload.sport)
+  const surfaceEnum = normalizeSurfaceEnum(payload.surface)
 
   const insertData = {
     tenant_id: payload.tenant_id,
-    name: payload.name,
+    name: payload.name.trim(),
     sport: sportEnum,
     slot_duration_minutes: durationMinutes,
-    surface: payload.surface || null,
+    surface: surfaceEnum,
     has_lights: hasLights,
     is_indoor: Boolean(payload.is_indoor),
     is_active: payload.is_active !== false,
@@ -94,12 +114,13 @@ export async function updateCourt(courtId: string, payload: Partial<{
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()
   }
-  if (payload.name !== undefined) updateData.name = payload.name
+  if (payload.name !== undefined) updateData.name = payload.name.trim()
   if (payload.sport !== undefined) {
-    const s = payload.sport.toUpperCase()
-    updateData.sport = s === 'FUTBOL' ? 'FUTBOL_5' : s
+    updateData.sport = normalizeSportEnum(payload.sport)
   }
-  if (payload.surface !== undefined) updateData.surface = payload.surface
+  if (payload.surface !== undefined) {
+    updateData.surface = normalizeSurfaceEnum(payload.surface)
+  }
   if (payload.is_indoor !== undefined) updateData.is_indoor = payload.is_indoor
   if (payload.is_active !== undefined) updateData.is_active = payload.is_active
   if (payload.slot_duration_minutes !== undefined) {
@@ -118,7 +139,50 @@ export async function updateCourt(courtId: string, payload: Partial<{
     .update(updateData)
     .eq('id', courtId)
 
-  if (error) return { success: false, error: error.message }
+  if (error) {
+    console.error('[updateCourt] Error updating court:', error.message)
+    return { success: false, error: error.message }
+  }
+  revalidatePath('/dashboard/canchas')
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
+export async function deleteCourt(courtId: string, tenantId: string) {
+  const supabase = await createServiceClient()
+
+  // 1. Validar que no existan reservas activas (no canceladas)
+  const { count } = await supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('court_id', courtId)
+    .not('status', 'in', '("cancelled")')
+
+  if (count && count > 0) {
+    return { 
+      success: false, 
+      error: 'Esta cancha tiene turnos activos asociados. Para cancelarla o darla de baja sin perder el historial de turnos, podés marcarla como Inactiva.' 
+    }
+  }
+
+  // 2. Eliminar reglas de precio asociadas
+  await supabase
+    .from('price_rules')
+    .delete()
+    .eq('court_id', courtId)
+
+  // 3. Eliminar la cancha
+  const { error } = await supabase
+    .from('courts')
+    .delete()
+    .eq('id', courtId)
+    .eq('tenant_id', tenantId)
+
+  if (error) {
+    console.error('[deleteCourt] Error deleting court:', error.message)
+    return { success: false, error: error.message }
+  }
+
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
   return { success: true }
@@ -234,16 +298,38 @@ export async function getCalendarBookings(tenantId: string, dateIso: string) {
 
 export async function getClubPriceRules(tenantId: string) {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('price_rules')
-      .select(`*, courts(name, sport)`)
+      .select(`
+        id,
+        tenant_id,
+        court_id,
+        name,
+        day_of_week,
+        time_from,
+        time_to,
+        price_cents,
+        priority,
+        is_active,
+        courts(name, sport)
+      `)
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
 
-    if (error) return []
-    return data ?? []
-  } catch {
+    if (error) {
+      console.warn('[getClubPriceRules] Error fetching price rules:', error.message)
+      return []
+    }
+    return (data ?? []).map(r => ({
+      ...r,
+      days_of_week: r.day_of_week,
+      price_ars: Math.round(Number(r.price_cents) / 100),
+      time_from: r.time_from ? r.time_from.substring(0, 5) : '18:00',
+      time_to: r.time_to ? r.time_to.substring(0, 5) : '23:00',
+    }))
+  } catch (err) {
+    console.warn('[getClubPriceRules] Exception:', err)
     return []
   }
 }
@@ -252,22 +338,81 @@ export async function createPriceRule(payload: {
   tenant_id: string
   court_id?: string | null
   name: string
-  days_of_week: number[]
+  days_of_week?: number[]
+  day_of_week?: number[]
   time_from: string
   time_to: string
   price_ars: number
-  deposit_pct: number
+  deposit_pct?: number
 }) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
+  const days = payload.days_of_week || payload.day_of_week || [1, 2, 3, 4, 5]
+  const priceCents = Math.round(Number(payload.price_ars) * 100)
+  const timeFromFormatted = payload.time_from.length === 5 ? `${payload.time_from}:00` : payload.time_from
+  const timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+
+  // Si no se especifica court_id, asignar a todas las canchas activas del club
+  let targetCourtIds: string[] = []
+  if (payload.court_id) {
+    targetCourtIds = [payload.court_id]
+  } else {
+    const { data: clubCourts } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', payload.tenant_id)
+      .eq('is_active', true)
+
+    if (clubCourts && clubCourts.length > 0) {
+      targetCourtIds = clubCourts.map(c => c.id)
+    }
+  }
+
+  if (targetCourtIds.length === 0) {
+    return {
+      success: false,
+      error: 'Debes registrar al menos una cancha activa antes de definir tarifas.',
+    }
+  }
+
+  const rowsToInsert = targetCourtIds.map(cid => ({
+    tenant_id: payload.tenant_id,
+    court_id: cid,
+    name: payload.name.trim(),
+    day_of_week: days,
+    time_from: timeFromFormatted,
+    time_to: timeToFormatted,
+    price_cents: priceCents,
+    priority: 1,
+    is_active: true,
+  }))
+
   const { data, error } = await supabase
     .from('price_rules')
-    .insert(payload)
+    .insert(rowsToInsert)
     .select()
-    .single()
 
-  if (error) return { success: false, error: error.message }
+  if (error) {
+    console.error('[createPriceRule] Error inserting price rule:', error.message)
+    return { success: false, error: error.message }
+  }
+
   revalidatePath('/dashboard/precios')
-  return { success: true, rule: data }
+  return { success: true, rule: data?.[0] }
+}
+
+export async function deletePriceRule(ruleId: string, tenantId: string) {
+  const supabase = await createServiceClient()
+  const { error } = await supabase
+    .from('price_rules')
+    .delete()
+    .eq('id', ruleId)
+    .eq('tenant_id', tenantId)
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+  revalidatePath('/dashboard/precios')
+  return { success: true }
 }
 
 // ─── CAJA DIARIA & ARQUEO ─────────────────────────────────────────────────────

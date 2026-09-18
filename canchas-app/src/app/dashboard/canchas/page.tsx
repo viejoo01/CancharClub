@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock } from 'lucide-react'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
-import { createCourt, updateCourt } from '@/actions/club.actions'
+import { createCourt, updateCourt, deleteCourt } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { useTenantId } from '@/hooks/use-tenant-id'
@@ -31,6 +31,25 @@ interface Court {
   has_lighting: boolean
   is_indoor: boolean
   is_active: boolean
+}
+
+function formatSurface(surface?: string | null) {
+  if (!surface) return 'Césped Sintético'
+  if (surface === 'CESPED_SINTETICO' || surface === 'SINTETICO') return 'Césped Sintético'
+  if (surface === 'CRISTAL') return 'Cristal / Panorámica'
+  if (surface === 'CEMENTO') return 'Cemento / Quick'
+  if (surface === 'POLVO_LADRILLO') return 'Polvo de Ladrillo'
+  if (surface === 'PASTO_NATURAL') return 'Pasto Natural'
+  return surface
+}
+
+function formatSport(sport?: string | null) {
+  if (!sport) return 'Pádel'
+  if (sport === 'FUTBOL5' || sport === 'FUTBOL_5') return 'Fútbol 5'
+  if (sport === 'FUTBOL7' || sport === 'FUTBOL_7') return 'Fútbol 7'
+  if (sport === 'TENIS') return 'Tenis'
+  if (sport === 'PADEL') return 'Pádel'
+  return sport
 }
 
 export default function CanchasPage() {
@@ -48,8 +67,10 @@ export default function CanchasPage() {
       .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
       .eq('tenant_id', tenantId)
       .order('display_order', { ascending: true })
-      .then(({ data }) => {
-        if (data) {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error fetching courts:', error.message)
+        } else if (data) {
           interface CourtDbRow {
             id: string
             name: string
@@ -65,7 +86,7 @@ export default function CanchasPage() {
             name: c.name,
             sport: c.sport,
             slot_duration: c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
-            surface: c.surface || 'SINTETICO',
+            surface: c.surface || 'CESPED_SINTETICO',
             has_lighting: !!c.has_lights,
             is_indoor: !!c.is_indoor,
             is_active: c.is_active ?? true,
@@ -92,27 +113,58 @@ export default function CanchasPage() {
   const [sport, setSport] = useState<SportType>('PADEL')
   const [slotDuration, setSlotDuration] = useState<SlotDuration>('MIN_90')
   const [isCovered, setIsCovered] = useState(false)
-  const [surface, setSurface] = useState<CourtSurface>('SINTETICO')
+  const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
   const [loading, setLoading] = useState(false)
 
   const handleToggleActive = async (courtId: string, current: boolean) => {
-    setCourts(prev => prev.map(c => c.id === courtId ? { ...c, is_active: !current } : c))
+    const nextState = !current
+    setCourts(prev => prev.map(c => c.id === courtId ? { ...c, is_active: nextState } : c))
     try {
-      await updateCourt(courtId, { is_active: !current })
-      toast.success('Estado de cancha actualizado')
+      const res = await updateCourt(courtId, { is_active: nextState })
+      if (!res.success) {
+        setCourts(prev => prev.map(c => c.id === courtId ? { ...c, is_active: current } : c))
+        toast.error(res.error || 'Error al actualizar estado')
+      } else {
+        toast.success(nextState ? 'Cancha activada' : 'Cancha desactivada')
+      }
     } catch {
-      toast.info('Actualizado localmente')
+      setCourts(prev => prev.map(c => c.id === courtId ? { ...c, is_active: current } : c))
+      toast.error('Error de conexión al actualizar estado')
     }
   }
 
   const handleDurationChange = async (courtId: string, newDuration: SlotDuration) => {
+    const prevDuration = courts.find(c => c.id === courtId)?.slot_duration || 'MIN_90'
     setCourts(prev => prev.map(c => c.id === courtId ? { ...c, slot_duration: newDuration } : c))
     try {
-      await updateCourt(courtId, { slot_duration: newDuration })
-      const durText = newDuration === 'MIN_60' ? '60 min' : newDuration === 'MIN_90' ? '90 min' : '120 min'
-      toast.success(`Duración de turnos actualizada a ${durText}`)
+      const res = await updateCourt(courtId, { slot_duration: newDuration })
+      if (!res.success) {
+        setCourts(prev => prev.map(c => c.id === courtId ? { ...c, slot_duration: prevDuration } : c))
+        toast.error(res.error || 'Error al actualizar duración')
+      } else {
+        const durText = newDuration === 'MIN_60' ? '60 min' : newDuration === 'MIN_90' ? '90 min' : '120 min'
+        toast.success(`Duración de turnos actualizada a ${durText}`)
+      }
     } catch {
-      toast.info('Duración actualizada localmente')
+      setCourts(prev => prev.map(c => c.id === courtId ? { ...c, slot_duration: prevDuration } : c))
+      toast.error('Error de conexión al actualizar duración')
+    }
+  }
+
+  const handleDeleteCourt = async (courtId: string, courtName: string) => {
+    if (!tenantId) return
+    if (!confirm(`¿Estás seguro de que querés eliminar la cancha "${courtName}"? Esta acción no se puede deshacer.`)) return
+
+    try {
+      const res = await deleteCourt(courtId, tenantId)
+      if (!res.success) {
+        toast.error(res.error || 'Error al eliminar cancha')
+      } else {
+        setCourts(prev => prev.filter(c => c.id !== courtId))
+        toast.success(`Cancha "${courtName}" eliminada correctamente`)
+      }
+    } catch {
+      toast.error('Error de conexión al eliminar cancha')
     }
   }
 
@@ -120,41 +172,51 @@ export default function CanchasPage() {
     e.preventDefault()
     if (!name.trim()) return
 
-    setLoading(true)
-    const newCourt = {
-      id: `court-${Date.now()}`,
-      name,
-      sport,
-      slot_duration: slotDuration,
-      surface,
-      has_lighting: true,
-      is_indoor: isCovered,
-      is_active: true,
+    if (!tenantId) {
+      toast.error('Error: no se pudo determinar el club activo')
+      return
     }
 
-    setCourts(prev => [...prev, newCourt])
-
+    setLoading(true)
     try {
-      if (!tenantId) {
-        toast.error('Error: no se pudo determinar el club activo')
-        setLoading(false)
+      const res = await createCourt({
+        tenant_id: tenantId,
+        name: name.trim(),
+        sport,
+        slot_duration: slotDuration,
+        surface,
+        has_lighting: true,
+        is_indoor: isCovered,
+        is_active: true,
+      })
+
+      if (!res.success || !res.court) {
+        toast.error(res.error || 'Error al guardar la cancha en la base de datos')
         return
       }
-      const created = await createCourt({
-        tenant_id: tenantId,
-        ...newCourt,
-      })
-      // Update court id with real DB id if returned
-      if (created?.court?.id) {
-        setCourts(prev => prev.map(c => c.id === newCourt.id ? { ...c, id: created.court!.id } : c))
+
+      // Solo agregamos al estado local cuando la base de datos confirmó el guardado
+      const dbCourt = res.court
+      const createdCourt: Court = {
+        id: dbCourt.id,
+        name: dbCourt.name,
+        sport: dbCourt.sport,
+        slot_duration: dbCourt.slot_duration_minutes === 60 ? 'MIN_60' : dbCourt.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
+        surface: dbCourt.surface || 'CESPED_SINTETICO',
+        has_lighting: Boolean(dbCourt.has_lights),
+        is_indoor: Boolean(dbCourt.is_indoor),
+        is_active: dbCourt.is_active !== false,
       }
-      toast.success('¡Cancha agregada con éxito!')
-    } catch {
-      toast.info('Cancha agregada')
-    } finally {
-      setLoading(false)
+
+      setCourts(prev => [...prev, createdCourt])
+      toast.success('¡Cancha guardada y registrada con éxito en el club!')
       setIsModalOpen(false)
       setName('')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error inesperado al crear la cancha'
+      toast.error(msg)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -185,7 +247,7 @@ export default function CanchasPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <Badge variant="outline" className="mb-2">
-                    {court.sport}
+                    {formatSport(court.sport)}
                   </Badge>
                   <CardTitle className="text-base">{court.name}</CardTitle>
                 </div>
@@ -233,7 +295,7 @@ export default function CanchasPage() {
                   <Layers className="w-3.5 h-3.5 text-slate-500" /> Superficie:
                 </span>
                 <span className="font-medium text-slate-200">
-                  {court.surface === 'SINTETICO' ? 'Césped Sintético' : court.surface === 'POLVO_LADRILLO' ? 'Polvo de Ladrillo' : court.surface}
+                  {formatSurface(court.surface)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -251,8 +313,19 @@ export default function CanchasPage() {
                 </span>
               </div>
 
-              {/* Botón Cartel QR Cantina (Mejora 2D) */}
-              <div className="pt-2 border-t border-slate-800/60 flex justify-end">
+              {/* Botones de acción: QR Cantina y Eliminar */}
+              <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDeleteCourt(court.id, court.name)}
+                  className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
+                  title="Eliminar cancha"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar</span>
+                </Button>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -322,10 +395,9 @@ export default function CanchasPage() {
                   className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
                 >
                   <option value="PADEL">Pádel</option>
-                  <option value="FUTBOL_5">Fútbol 5</option>
-                  <option value="FUTBOL_7">Fútbol 7</option>
+                  <option value="FUTBOL5">Fútbol 5</option>
+                  <option value="FUTBOL7">Fútbol 7</option>
                   <option value="TENIS">Tenis</option>
-                  <option value="SQUASH">Squash</option>
                 </select>
               </div>
 
@@ -352,11 +424,11 @@ export default function CanchasPage() {
                 onChange={(e) => setSurface(e.target.value as CourtSurface)}
                 className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
               >
-                <option value="SINTETICO">Césped Sintético</option>
+                <option value="CESPED_SINTETICO">Césped Sintético</option>
+                <option value="CRISTAL">Cristal / Panorámica</option>
                 <option value="CEMENTO">Cemento / Quick</option>
                 <option value="POLVO_LADRILLO">Polvo de Ladrillo</option>
-                <option value="PARQUET">Parquet</option>
-                <option value="ALFOMBRA">Alfombra</option>
+                <option value="PASTO_NATURAL">Pasto Natural</option>
               </select>
             </div>
 

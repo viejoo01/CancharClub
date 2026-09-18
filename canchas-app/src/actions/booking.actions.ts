@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Lógica de reservas con control de concurrencia Redis + PG
 // ==============================================================================
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import {
@@ -401,7 +401,7 @@ export async function createManualBooking(
   payload: CreateBookingPayload & { tenant_id: string }
 ): Promise<{ success: boolean; booking_id?: string; error?: string }> {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
     // 1. Verificación de Seguridad Anti-IDOR: Solo miembros autorizados del club
     const authCheck = await assertTenantMember(payload.tenant_id)
@@ -409,51 +409,68 @@ export async function createManualBooking(
       return { success: false, error: authCheck.error || 'Sin permisos para cargar reservas en este club' }
     }
 
-    // Obtener duración de la cancha
-    const { data: court } = await supabase
+    // Obtener detalles de la cancha (deporte y duración de slot)
+    const { data: court, error: courtErr } = await supabase
       .from('courts')
-      .select('slot_duration')
+      .select('id, sport, slot_duration_minutes')
       .eq('id', payload.court_id)
       .single()
 
-    const slotDuration = court?.slot_duration || 'MIN_90'
-    const endsAt = computeEndsAt(payload.starts_at, slotDuration)
-    const bookingRange = `[${new Date(payload.starts_at).toISOString()},${new Date(endsAt).toISOString()})`
+    if (courtErr || !court) {
+      return { success: false, error: 'Cancha no encontrada o inactiva' }
+    }
+
+    const durationMinutes = court.slot_duration_minutes || 90
+    const startsAtDate = new Date(payload.starts_at)
+    const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
+    const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
+
+    const priceTotalCents = Math.round(Number(payload.total_amount_ars || 0) * 100)
+    const depositCents = Math.round(Number(payload.deposit_amount_ars || 0) * 100)
+    const isFullCash = depositCents >= priceTotalCents && priceTotalCents > 0
+    const initialStatus = isFullCash ? 'confirmed_cash' : 'confirmed'
+
+    const noteParts = []
+    if (payload.internal_notes) noteParts.push(payload.internal_notes)
+    if (payload.customer_notes) noteParts.push(`Nota cliente: ${payload.customer_notes}`)
+    const staffNotes = noteParts.join(' | ') || null
 
     const { data: booking, error } = await supabase
       .from('bookings')
       .insert({
         tenant_id: payload.tenant_id,
         court_id: payload.court_id,
-        price_rule_id: payload.price_rule_id,
-        customer_name: payload.customer_name,
-        customer_phone: payload.customer_phone,
-        customer_email: payload.customer_email,
-        booking_range: bookingRange,
-        status: 'CONFIRMED' as BookingStatus, // Manual = confirmado directo
-        origin: payload.origin,
-        total_amount_ars: payload.total_amount_ars,
-        deposit_amount_ars: payload.deposit_amount_ars,
-        internal_notes: payload.internal_notes,
-        customer_notes: payload.customer_notes,
-        created_by_profile_id: authCheck.user?.id || null,
+        booked_at: bookingRange,
+        status: initialStatus,
+        sport: court.sport || 'PADEL',
+        price_total_cents: priceTotalCents,
+        deposit_cents: depositCents,
+        staff_deposit_amount_cents: depositCents,
+        payment_method: 'cash',
+        paid_at: depositCents > 0 ? new Date().toISOString() : null,
+        customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
+        customer_phone: payload.customer_phone?.trim() || null,
+        customer_email: payload.customer_email?.trim() || null,
+        staff_notes: staffNotes,
+        created_by_staff_id: authCheck.user?.id || null,
       })
       .select('id')
       .single()
 
     if (error) {
       if (error.code === '23P01') {
-        return { success: false, error: 'Ya existe una reserva activa en ese horario para esa cancha.' }
+        return { success: false, error: 'Ya existe un turno reservado en ese horario para esta cancha.' }
       }
-      console.warn('[createManualBooking] DB insert fallback for demo:', error.message)
-      return { success: true, booking_id: `bk-demo-${Date.now()}` }
+      console.error('[createManualBooking] DB insert error:', error.message)
+      return { success: false, error: error.message }
     }
 
-    return { success: true, booking_id: booking?.id || `bk-demo-${Date.now()}` }
+    revalidatePath('/dashboard')
+    return { success: true, booking_id: booking.id }
 
   } catch (error) {
-    console.error('[createManualBooking] Error:', error)
-    return { success: false, error: 'Error interno del servidor' }
+    console.error('[createManualBooking] Exception:', error)
+    return { success: false, error: 'Error interno del servidor al registrar reserva' }
   }
 }
 
@@ -467,65 +484,58 @@ export async function registerCashPayment(params: {
   notes?: string
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient()
-    // Obtener el booking para validar tenant
-    const { data: booking } = await supabase
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, total_amount_ars, deposit_amount_ars, status')
+      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status')
       .eq('id', params.booking_id)
       .single()
 
-    if (!booking) return { success: false, error: 'Reserva no encontrada' }
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
 
-    // Verificación de Seguridad Anti-IDOR
     const authCheck = await assertTenantMember(booking.tenant_id)
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'Sin permisos para registrar cobros en este club' }
     }
 
-    // Insertar pago
-    const { error: payError } = await supabase
-      .from('booking_payments')
-      .insert({
-        tenant_id: booking.tenant_id,
-        booking_id: params.booking_id,
-        amount_ars: params.amount_ars,
-        payment_method: params.payment_method,
-        received_by_profile_id: authCheck.user?.id || null,
-        reference_number: params.reference_number,
-        notes: params.notes,
-        payment_date: new Date().toISOString().split('T')[0],
+    const amountCents = Math.round(params.amount_ars * 100)
+    const currentDeposit = Number(booking.deposit_cents) || 0
+    const newDepositCents = currentDeposit + amountCents
+    const totalPriceCents = Number(booking.price_total_cents) || 0
+
+    const methodStr = String(params.payment_method)
+    const methodEnum = methodStr === 'TRANSFER' ? 'bank_transfer'
+      : (methodStr === 'MERCADOPAGO' || methodStr === 'QR_MP') ? 'mercadopago'
+      : 'cash'
+
+    const isFullyPaid = newDepositCents >= totalPriceCents
+    const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
+
+    const noteEntry = `Cobro $${params.amount_ars} (${params.payment_method})${params.notes ? ` - ${params.notes}` : ''}`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
+
+    const { error: upErr } = await supabase
+      .from('bookings')
+      .update({
+        deposit_cents: newDepositCents,
+        staff_deposit_amount_cents: newDepositCents,
+        payment_method: methodEnum,
+        paid_at: new Date().toISOString(),
+        status: newStatus,
+        staff_notes: updatedNotes,
       })
+      .eq('id', params.booking_id)
 
-    if (payError) return { success: false, error: payError.message }
-
-    // Calcular total pagado para actualizar estado del booking
-    const { data: payments } = await supabase
-      .from('booking_payments')
-      .select('amount_ars')
-      .eq('booking_id', params.booking_id)
-
-    const totalPaid = payments?.reduce((sum, p) => sum + Number(p.amount_ars), 0) ?? 0
-
-    let newStatus: BookingStatus = booking.status as BookingStatus
-    if (totalPaid >= booking.total_amount_ars) {
-      newStatus = 'FULLY_PAID'
-    } else if (totalPaid >= booking.deposit_amount_ars) {
-      newStatus = 'CONFIRMED'
+    if (upErr) {
+      console.error('[registerCashPayment] Error updating booking payment:', upErr.message)
+      return { success: false, error: upErr.message }
     }
 
-    if (newStatus !== booking.status) {
-      await supabase
-        .from('bookings')
-        .update({ status: newStatus })
-        .eq('id', params.booking_id)
-    }
-
+    revalidatePath('/dashboard')
     return { success: true }
-
   } catch (error) {
     console.error('[registerCashPayment] Error:', error)
-    return { success: false, error: 'Error interno del servidor' }
+    return { success: false, error: 'Error interno del servidor al registrar pago' }
   }
 }
 
@@ -537,70 +547,71 @@ export async function cancelBooking(params: {
   cancelled_by: 'USER' | 'CLUB'
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient()
-    const { data: booking } = await supabase
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('redis_lock_key, id, tenant_id, court_id, starts_at')
+      .select('redis_lock_key, id, tenant_id, court_id, booked_at, staff_notes')
       .eq('id', params.booking_id)
       .single()
 
-    if (!booking) return { success: false, error: 'Reserva no encontrada' }
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
 
-    let cancellingUserId: string | null = null
     if (params.cancelled_by === 'CLUB') {
       const authCheck = await assertTenantMember(booking.tenant_id)
       if (!authCheck.authorized) {
         return { success: false, error: authCheck.error || 'Sin permisos para cancelar turnos en este club' }
       }
-      cancellingUserId = authCheck.user?.id || null
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      cancellingUserId = user?.id || null
     }
 
-    const newStatus: BookingStatus = params.cancelled_by === 'USER' ? 'CANCELLED_USER' : 'CANCELLED_CLUB'
+    const cancellationNote = `Turno cancelado por ${params.cancelled_by === 'CLUB' ? 'el club' : 'el usuario'}: ${params.reason || 'Sin motivo especificado'}`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${cancellationNote}` : cancellationNote
 
     const { error } = await supabase
       .from('bookings')
       .update({
-        status: newStatus,
-        cancellation_reason: params.reason,
-        cancelled_at: new Date().toISOString(),
-        cancelled_by_profile_id: cancellingUserId,
+        status: 'cancelled',
+        staff_notes: updatedNotes,
       })
       .eq('id', params.booking_id)
 
-    if (error) return { success: false, error: error.message }
+    if (error) {
+      console.error('[cancelBooking] Error cancelling booking:', error.message)
+      return { success: false, error: error.message }
+    }
 
     // Si había un lock de Redis activo, liberarlo
     if (booking?.redis_lock_key) {
       await releaseBookingLock(booking.redis_lock_key, booking.id)
     }
 
-    // Trigger de Lista de Espera: Notificar al primer usuario en espera (Prioridad 10 min)
-    if (booking?.tenant_id && booking?.starts_at) {
-      const bookingDate = new Date(booking.starts_at).toISOString().split('T')[0]
-      const d = new Date(booking.starts_at)
-      const hours = String(d.getHours()).padStart(2, '0')
-      const minutes = String(d.getMinutes()).padStart(2, '0')
-      const timeSlot = `${hours}:${minutes}`
+    // Trigger de Lista de Espera si corresponde
+    if (booking?.tenant_id && booking?.booked_at) {
+      const match = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (match) {
+        const startsAt = match[1]
+        const bookingDate = new Date(startsAt).toISOString().split('T')[0]
+        const d = new Date(startsAt)
+        const hours = String(d.getHours()).padStart(2, '0')
+        const minutes = String(d.getMinutes()).padStart(2, '0')
+        const timeSlot = `${hours}:${minutes}`
 
-      try {
-        await processWaitlistOnCancellation({
-          tenantId: booking.tenant_id,
-          date: bookingDate,
-          timeSlot,
-        })
-      } catch (err) {
-        console.warn('[cancelBooking] Error al procesar lista de espera:', err)
+        try {
+          await processWaitlistOnCancellation({
+            tenantId: booking.tenant_id,
+            date: bookingDate,
+            timeSlot,
+          })
+        } catch (err) {
+          console.warn('[cancelBooking] Error al procesar lista de espera:', err)
+        }
       }
     }
 
+    revalidatePath('/dashboard')
     return { success: true }
-
   } catch (error) {
     console.error('[cancelBooking] Error:', error)
-    return { success: false, error: 'Error interno del servidor' }
+    return { success: false, error: 'Error interno del servidor al cancelar' }
   }
 }
 
@@ -608,28 +619,37 @@ export async function cancelBooking(params: {
 
 export async function markBookingNoShow(bookingId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient()
-    const cookieStore = await cookies()
-    const demoUserRole = cookieStore.get('demo_user_role')?.value
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user && !demoUserRole) return { success: false, error: 'No autenticado' }
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, staff_notes')
+      .eq('id', bookingId)
+      .single()
 
-    if (!user || bookingId.startsWith('bk-demo-') || bookingId.startsWith('bk-')) {
-      return { success: true }
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
+
+    const authCheck = await assertTenantMember(booking.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para modificar este turno' }
     }
+
+    const noShowNote = 'Jugador no asistió al turno (Marcado como NO-SHOW)'
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noShowNote}` : noShowNote
 
     const { error } = await supabase
       .from('bookings')
       .update({
-        status: 'NO_SHOW' as BookingStatus,
-        internal_notes: 'Jugador no asistió al turno (Marcado como NO-SHOW)',
+        status: 'no_show',
+        staff_notes: updatedNotes,
       })
       .eq('id', bookingId)
 
     if (error) {
-      console.warn('[markBookingNoShow] DB fallback warning:', error.message)
+      console.error('[markBookingNoShow] DB error:', error.message)
+      return { success: false, error: error.message }
     }
 
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (error) {
     console.error('[markBookingNoShow] Error:', error)

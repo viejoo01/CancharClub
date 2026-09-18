@@ -197,12 +197,17 @@ export async function registerClub(formData: FormData) {
   try {
     const courtsToInsert = sports.map((sport: string, index: number) => {
       const s = sport.toUpperCase()
-      const isPadel = s === 'PADEL'
-      const sportEnum = s === 'FUTBOL' ? 'FUTBOL_5' : s
+      const isPadel = s.includes('PADEL')
+      let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' = 'PADEL'
+      if (s.includes('7')) sportEnum = 'FUTBOL7'
+      else if (s.includes('FUTBOL') || s.includes('SOCCER') || s.includes('5')) sportEnum = 'FUTBOL5'
+      else if (s.includes('TENIS') || s.includes('TENNIS')) sportEnum = 'TENIS'
+
       return {
         tenant_id: tenant.id,
-        name: `Cancha ${index + 1} (${isPadel ? 'Blindex' : 'Sintético'})`,
+        name: `Cancha ${index + 1} (${isPadel ? 'Cristal' : 'Sintético'})`,
         sport: sportEnum,
+        surface: isPadel ? 'CRISTAL' : 'CESPED_SINTETICO',
         slot_duration_minutes: isPadel ? 90 : 60,
         has_lights: true,
         display_order: index + 1,

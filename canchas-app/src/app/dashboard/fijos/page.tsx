@@ -215,12 +215,12 @@ export default function TurnosFijosPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
             onClick={handleCheckOverdueAndRelease}
             disabled={submitting}
-            className="border-slate-800 bg-slate-900 text-slate-300 hover:text-amber-400 text-xs gap-1.5"
+            className="flex-1 sm:flex-none border-slate-800 bg-slate-900 text-slate-300 hover:text-amber-400 text-xs gap-1.5 min-h-10 rounded-xl"
           >
             <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
             <span>Auditar Vencimientos</span>
@@ -228,7 +228,7 @@ export default function TurnosFijosPage() {
 
           <Button
             onClick={() => setIsModalOpen(true)}
-            className="bg-purple-600 hover:bg-purple-500 text-white font-bold gap-2 shadow-lg shadow-purple-950/40 rounded-xl text-xs"
+            className="flex-1 sm:flex-none bg-purple-600 hover:bg-purple-500 text-white font-bold gap-2 shadow-lg shadow-purple-950/40 rounded-xl text-xs min-h-10"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Abonado Fijo</span>
@@ -391,7 +391,7 @@ export default function TurnosFijosPage() {
 
       {/* Modal Alta Turno Fijo */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Repeat className="w-5 h-5 text-purple-400" />

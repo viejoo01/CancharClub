@@ -98,7 +98,7 @@ export function RainProtocolModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleReset}>
-      <DialogContent className="sm:max-w-[560px] bg-slate-900 border-slate-800 text-slate-100">
+      <DialogContent className="sm:max-w-[560px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-900 border-slate-800 text-slate-100">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
@@ -124,7 +124,7 @@ export function RainProtocolModal({
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label htmlFor="rainDate" className="text-xs text-slate-300">Fecha</Label>
                 <Input
@@ -259,17 +259,17 @@ export function RainProtocolModal({
           </div>
         )}
 
-        <DialogFooter className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-slate-800">
           {!result ? (
             <>
-              <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              <Button type="button" variant="ghost" size="sm" onClick={onClose} className="min-h-10 sm:min-h-9">
                 Cancelar
               </Button>
               <Button
                 type="button"
                 disabled={loading || selectedCourts.length === 0}
                 onClick={handleExecute}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-2"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-2 min-h-10 sm:min-h-9"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudRain className="w-4 h-4" />}
                 <span>Activar Suspensión por Lluvia</span>
@@ -279,7 +279,7 @@ export function RainProtocolModal({
             <Button
               type="button"
               onClick={handleReset}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold"
+              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold min-h-10"
             >
               Cerrar y Volver a la Grilla
             </Button>

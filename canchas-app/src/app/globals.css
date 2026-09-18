@@ -425,3 +425,65 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ─── Touch / Táctil ────────────────────────────────────────────────────────── */
+
+/* Eliminar delay de 300ms en iOS/Android para todos los elementos interactivos */
+a, button, [role="button"], input[type="button"], input[type="submit"],
+input[type="reset"], label, select, summary {
+  touch-action: manipulation;
+}
+
+/* Clase utilitaria para garantizar área táctil mínima (Apple HIG: 44×44px) */
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Scroll contenido sin rebote en iOS para los paneles internos del dashboard */
+.overscroll-contain {
+  overscroll-behavior: contain;
+}
+.overscroll-none {
+  overscroll-behavior: none;
+}
+
+/* Asegurar que inputs nativos (date, select) tengan el mismo alto táctil */
+input[type="date"],
+input[type="time"],
+select {
+  min-height: 36px;
+}
+
+/* ─── Print styles (Caja Diaria) ─────────────────────────────────────────────── */
+@media print {
+  /* Ocultar sidebar, header, bottom nav y botones de acción al imprimir */
+  aside,
+  header,
+  nav,
+  .no-print,
+  [aria-label="Navegación inferior móvil"],
+  button:not(.print-visible) {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Las tarjetas de caja se imprimen con borde negro */
+  .card, [class*="Card"] {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+}
+

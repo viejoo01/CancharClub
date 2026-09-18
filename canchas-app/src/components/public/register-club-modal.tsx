@@ -83,7 +83,7 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-7 bg-[#f7f7f8] dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[28px] shadow-2xl transition-all max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg w-[95vw] sm:w-full p-5 sm:p-7 bg-[#f7f7f8] dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[28px] shadow-2xl transition-all max-h-[90dvh] overflow-y-auto">
         <DialogHeader className="sr-only">
           <DialogTitle>Sumá tu club - Canchar Club</DialogTitle>
           <DialogDescription>

@@ -56,7 +56,7 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-7 bg-[#f7f7f8] dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[28px] shadow-2xl transition-all">
+      <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full p-6 sm:p-7 bg-[#f7f7f8] dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[28px] shadow-2xl transition-all">
         <DialogHeader className="sr-only">
           <DialogTitle>Acceso clubes - Canchar Club</DialogTitle>
           <DialogDescription>

@@ -116,7 +116,7 @@ export function QuickBookingModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Carga Rápida de Turno</DialogTitle>
           <DialogDescription>
@@ -126,7 +126,7 @@ export function QuickBookingModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           {/* Cliente */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="customerName">Nombre Jugador *</Label>
               <Input
@@ -134,6 +134,7 @@ export function QuickBookingModal({
                 placeholder="Ej. Juan Pérez"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
+                className="h-11"
                 required
               />
             </div>
@@ -144,6 +145,8 @@ export function QuickBookingModal({
                 placeholder="Ej. 3814123456"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
+                className="h-11"
+                type="tel"
               />
             </div>
           </div>
@@ -155,7 +158,7 @@ export function QuickBookingModal({
               id="court"
               value={courtId}
               onChange={(e) => setCourtId(e.target.value)}
-              className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               required
             >
               {courts.map((c) => (
@@ -166,7 +169,7 @@ export function QuickBookingModal({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="date">Fecha</Label>
               <Input
@@ -174,6 +177,7 @@ export function QuickBookingModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                className="h-11"
                 required
               />
             </div>
@@ -185,13 +189,14 @@ export function QuickBookingModal({
                 step="1800"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
+                className="h-11"
                 required
               />
             </div>
           </div>
 
           {/* Tarifas y Cobro */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="totalAmount">Precio Total ($ ARS)</Label>
               <Input
@@ -199,6 +204,7 @@ export function QuickBookingModal({
                 type="number"
                 value={totalAmount}
                 onChange={(e) => setTotalAmount(e.target.value)}
+                className="h-11"
                 required
               />
             </div>
@@ -209,6 +215,7 @@ export function QuickBookingModal({
                 type="number"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
+                className="h-11"
               />
             </div>
           </div>
@@ -220,7 +227,7 @@ export function QuickBookingModal({
                 id="paymentMethod"
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as 'CASH' | 'TRANSFER')}
-                className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="CASH">Efectivo en mostrador</option>
                 <option value="TRANSFER">Transferencia bancaria / alias</option>
@@ -257,19 +264,20 @@ export function QuickBookingModal({
             />
           </div>
 
-          <DialogFooter className="pt-3">
+          <DialogFooter className="pt-3 flex-col sm:flex-row gap-2">
             <Button
               type="button"
               variant="ghost"
               onClick={onClose}
               disabled={loading}
+              className="w-full sm:w-auto h-11"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               disabled={loading}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+              className="w-full sm:w-auto h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
             >
               {loading ? (
                 <>

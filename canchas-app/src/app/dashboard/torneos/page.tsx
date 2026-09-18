@@ -293,7 +293,7 @@ export default function TorneosDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {selectedTournament && (
             <>
               <Button
@@ -803,7 +803,7 @@ export default function TorneosDashboardPage() {
 
       {/* Modal: Crear Torneo */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Trophy className="w-5 h-5 text-amber-400" />
@@ -907,7 +907,7 @@ export default function TorneosDashboardPage() {
 
       {/* Modal: Inscribir Pareja */}
       <Dialog open={isTeamOpen} onOpenChange={setIsTeamOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Users className="w-5 h-5 text-emerald-400" />
@@ -986,7 +986,7 @@ export default function TorneosDashboardPage() {
 
       {/* Modal: Cargar Marcador */}
       <Dialog open={isScoreOpen} onOpenChange={setIsScoreOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Swords className="w-5 h-5 text-amber-400" />

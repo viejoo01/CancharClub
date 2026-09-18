@@ -164,8 +164,8 @@ export default function ClubPublicPage({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center">
-      {/* Contenedor Mobile First optimizado para Smartphones (max-w-md / max-w-lg) */}
-      <div className="w-full max-w-lg flex-1 flex flex-col pb-16 border-x border-slate-900 bg-slate-950">
+      {/* Contenedor Mobile First optimizado para Smartphones, Tablets y Notebooks */}
+      <div className="w-full max-w-lg md:max-w-3xl lg:max-w-4xl flex-1 flex flex-col pb-16 border-x border-slate-900 bg-slate-950">
         
         {/* Barra Superior Flotante Mobile */}
         <header className="sticky top-0 z-30 px-4 py-3 flex items-center justify-between border-b border-slate-800/90 bg-slate-950/90 backdrop-blur-md">
@@ -372,10 +372,10 @@ export default function ClubPublicPage({
         {/* FILTROS RÁPIDOS: HORARIOS Y CANCHAS                        */}
         {/* ────────────────────────────────────────────────────────── */}
         <section className="px-4 pt-4">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar touch-momentum pb-1">
             <button
               onClick={() => setTimeFilter('ALL')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors ${
+              className={`px-3.5 py-2 min-h-10 rounded-xl text-xs font-bold shrink-0 transition-colors ${
                 timeFilter === 'ALL'
                   ? 'bg-slate-200 text-slate-950'
                   : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -385,7 +385,7 @@ export default function ClubPublicPage({
             </button>
             <button
               onClick={() => setTimeFilter('TARDE')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors ${
+              className={`px-3.5 py-2 min-h-10 rounded-xl text-xs font-bold shrink-0 transition-colors ${
                 timeFilter === 'TARDE'
                   ? 'bg-emerald-500 text-slate-950 font-black'
                   : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -395,7 +395,7 @@ export default function ClubPublicPage({
             </button>
             <button
               onClick={() => setTimeFilter('NOCHE')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors ${
+              className={`px-3.5 py-2 min-h-10 rounded-xl text-xs font-bold shrink-0 transition-colors ${
                 timeFilter === 'NOCHE'
                   ? 'bg-emerald-500 text-slate-950 font-black'
                   : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
@@ -407,11 +407,11 @@ export default function ClubPublicPage({
 
           {/* Filtro por Cancha si hay más de una */}
           {courtsList.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar mt-2 pb-0.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum mt-2 pb-0.5">
               <span className="text-[10px] text-slate-400 font-semibold mr-0.5 shrink-0">Cancha:</span>
               <button
                 onClick={() => setSelectedCourtFilter('ALL')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
+                className={`px-3 py-1.5 min-h-9 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
                   selectedCourtFilter === 'ALL'
                     ? 'bg-slate-800 text-white border border-slate-700'
                     : 'bg-slate-950 border border-slate-800 text-slate-400'
@@ -423,7 +423,7 @@ export default function ClubPublicPage({
                 <button
                   key={court.id}
                   onClick={() => setSelectedCourtFilter(court.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 transition-colors ${
+                  className={`px-3 py-1.5 min-h-9 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
                     selectedCourtFilter === court.id
                       ? 'bg-emerald-500/20 border border-emerald-500 text-emerald-300'
                       : 'bg-slate-950 border border-slate-800 text-slate-400'
@@ -492,7 +492,7 @@ export default function ClubPublicPage({
               </Button>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredSlots.map((slot, index) => (
                 <Card
                   key={`${slot.courtId}-${slot.time}-${index}`}

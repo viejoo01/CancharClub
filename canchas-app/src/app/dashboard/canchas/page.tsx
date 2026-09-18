@@ -160,7 +160,7 @@ export default function CanchasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-white">
             Gestión de Canchas
@@ -171,10 +171,10 @@ export default function CanchasPage() {
         </div>
         <Button
           onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40"
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 h-10 shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Nueva Cancha</span>
+          <span className="hidden sm:inline">Nueva Cancha</span>
         </Button>
       </div>
 
@@ -292,7 +292,7 @@ export default function CanchasPage() {
 
       {/* Modal Nueva Cancha */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>Nueva Cancha</DialogTitle>
             <DialogDescription>

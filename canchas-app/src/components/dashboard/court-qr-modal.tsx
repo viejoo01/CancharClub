@@ -410,7 +410,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-115 text-center bg-slate-900 border-slate-800 text-slate-100 p-5">
+      <DialogContent className="sm:max-w-115 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full text-center bg-slate-900 border-slate-800 text-slate-100 p-4 sm:p-5">
         <DialogHeader>
           <div className="mx-auto w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-1.5">
             <QrCode className="w-5 h-5 text-emerald-400" />
@@ -506,7 +506,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
             variant="outline"
             onClick={handleDownloadImage}
             disabled={downloading}
-            className="w-full sm:w-auto flex-1 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5 h-9 rounded-xl"
+            className="w-full sm:w-auto flex-1 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5 min-h-10 rounded-xl"
           >
             {downloading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -520,7 +520,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
             type="button"
             onClick={handlePrint}
             disabled={printing}
-            className="w-full sm:w-auto flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 text-xs h-9 rounded-xl shadow-md cursor-pointer"
+            className="w-full sm:w-auto flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 text-xs min-h-10 rounded-xl shadow-md cursor-pointer"
           >
             {printing ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

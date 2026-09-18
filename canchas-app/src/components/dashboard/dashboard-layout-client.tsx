@@ -148,7 +148,7 @@ export function DashboardLayoutClient({
 
         {isActive && gracePeriodBanner}
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
           {!isActive && pendingScreen}
 
           <div className="relative w-full">
@@ -171,10 +171,10 @@ export function DashboardLayoutClient({
 
         {/* ─── 4. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM BAR) PARA CELULARES ─── */}
         <nav 
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1.5 flex items-center justify-around shadow-2xl select-none"
-            style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
-            aria-label="Navegación inferior móvil"
-          >
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 pt-1.5 flex items-center justify-around shadow-2xl select-none"
+          style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
+          aria-label="Navegación inferior móvil"
+        >
             {quickBottomNav.map((item) => {
               const isActiveRoute = item.exact 
                 ? pathname === item.href 

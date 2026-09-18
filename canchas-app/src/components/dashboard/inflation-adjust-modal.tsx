@@ -91,7 +91,7 @@ export function InflationAdjustModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[540px]">
+      <DialogContent className="sm:max-w-[540px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
         <DialogHeader>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-1">
             <TrendingUp className="w-4 h-4" />
@@ -215,12 +215,13 @@ export function InflationAdjustModal({
           </div>
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={onClose}
+            className="min-h-10 sm:min-h-9"
           >
             Cancelar
           </Button>
@@ -228,7 +229,7 @@ export function InflationAdjustModal({
           <Button
             onClick={handleApply}
             disabled={isApplying}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 text-xs rounded-xl shadow-lg shadow-emerald-950/40"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 text-xs rounded-xl shadow-lg shadow-emerald-950/40 min-h-10 sm:min-h-9"
           >
             {isApplying ? (
               <Loader2 className="w-4 h-4 animate-spin" />

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { 
@@ -138,7 +138,7 @@ export default function ReportesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
               <BarChart3 className="w-6 h-6 text-emerald-400" />
               Analítica de Ocupación y Precios Inteligentes
@@ -152,13 +152,13 @@ export default function ReportesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
             onClick={handleExportCsv}
             disabled={loading || !data}
-            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5 h-10"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
             <span>Excel / CSV</span>
@@ -169,10 +169,10 @@ export default function ReportesPage() {
             variant="outline"
             onClick={handlePrintPdf}
             disabled={loading || !data}
-            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5 h-10"
           >
             <Printer className="w-3.5 h-3.5 text-blue-400" />
-            <span>Imprimir / PDF</span>
+            <span>PDF</span>
           </Button>
 
           <Button
@@ -180,7 +180,7 @@ export default function ReportesPage() {
             variant="outline"
             onClick={loadReport}
             disabled={loading}
-            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs"
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs h-10"
           >
             Actualizar Métricas
           </Button>
@@ -263,7 +263,7 @@ export default function ReportesPage() {
               </div>
 
               {/* Leyenda */}
-              <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-300">
+              <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-300 overflow-x-auto pb-1">
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded bg-rose-500/40 border border-rose-500/60" />
                   &lt; 30% Muerto
@@ -284,7 +284,14 @@ export default function ReportesPage() {
             </div>
 
             {/* Matriz Heatmap */}
-            <div className="overflow-x-auto pb-2">
+            {/* Hint de scroll para mobile */}
+            <div className="md:hidden mb-2">
+              <span className="inline-flex items-center gap-1 bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-700/60 text-[11px] text-slate-300">
+                &larr; Deslizá para ver el mapa completo &rarr;
+              </span>
+            </div>
+
+            <div className="overflow-x-auto pb-2 touch-momentum">
               <div className="min-w-[650px] space-y-2">
                 {/* Header Días */}
                 <div className="grid grid-cols-[140px_repeat(7,1fr)] gap-2 text-center text-xs font-bold text-slate-400 pb-1 border-b border-slate-800">
@@ -334,7 +341,7 @@ export default function ReportesPage() {
 
           {/* Radar de Horarios Muertos y Recomendaciones Inteligentes */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Lightbulb className="w-5 h-5 text-amber-400" />
               <h2 className="text-lg font-bold text-white tracking-tight">
                 Recomendaciones Automatizadas de Precios y Promociones

@@ -93,7 +93,7 @@ export default function PreciosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-white">
             Tarifas y Reglas de Seña
@@ -102,28 +102,28 @@ export default function PreciosPage() {
             Establecé precios diferenciados por horario, días y porcentaje de seña exigido para reservar online.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
             onClick={() => setIsDynamicModalOpen(true)}
-            className="border-purple-500/30 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 font-bold gap-2 text-xs rounded-xl"
+            className="flex-1 sm:flex-none border-purple-500/30 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 font-bold gap-2 text-xs rounded-xl min-h-10"
           >
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span>Tarifas Dinámicas (IA)</span>
+            <span>Dinámicas (IA)</span>
           </Button>
 
           <Button
             variant="outline"
             onClick={() => setIsInflationModalOpen(true)}
-            className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold gap-2 text-xs rounded-xl"
+            className="flex-1 sm:flex-none border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold gap-2 text-xs rounded-xl min-h-10"
           >
             <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span>Ajuste por Inflación (+%)</span>
+            <span>Ajuste Inflación (+%)</span>
           </Button>
 
           <Button
             onClick={() => setIsModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl"
+            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl min-h-10"
           >
             <Plus className="w-4 h-4" />
             <span>Nueva Tarifa</span>
@@ -204,7 +204,7 @@ export default function PreciosPage() {
 
       {/* Modal Nueva Tarifa */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>Nueva Regla de Tarifa</DialogTitle>
             <DialogDescription>
@@ -221,6 +221,7 @@ export default function PreciosPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                className="h-10 text-xs"
               />
             </div>
 
@@ -233,6 +234,7 @@ export default function PreciosPage() {
                   value={timeFrom}
                   onChange={(e) => setTimeFrom(e.target.value)}
                   required
+                  className="h-10 text-xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -243,6 +245,7 @@ export default function PreciosPage() {
                   value={timeTo}
                   onChange={(e) => setTimeTo(e.target.value)}
                   required
+                  className="h-10 text-xs"
                 />
               </div>
             </div>
@@ -256,6 +259,7 @@ export default function PreciosPage() {
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   required
+                  className="h-10 text-xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -268,15 +272,16 @@ export default function PreciosPage() {
                   value={depositPct}
                   onChange={(e) => setDepositPct(e.target.value)}
                   required
+                  className="h-10 text-xs"
                 />
               </div>
             </div>
 
-            <DialogFooter className="pt-3">
-              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
+            <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3">
+              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} className="h-10 text-xs">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">
+              <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-10 text-xs">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : 'Guardar Tarifa'}
               </Button>
             </DialogFooter>

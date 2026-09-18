@@ -287,7 +287,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   }
 
   return (
-    <div className="w-full max-w-lg flex-1 flex flex-col pb-28 border-x border-slate-900 bg-slate-950 min-h-screen relative">
+    <div className="w-full max-w-lg flex-1 flex flex-col pb-36 border-x border-slate-900 bg-slate-950 min-h-screen relative">
       {/* Header Mobile con Botón Volver y Paso */}
       <header className="sticky top-0 z-30 px-4 py-3 border-b border-slate-800 bg-slate-950/90 backdrop-blur-md flex items-center justify-between">
         <button
@@ -622,8 +622,11 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         </div>
       </form>
 
-      {/* Barra Inferior Fija para Móviles (Sticky Bottom Bar) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/90 px-4 py-3 flex items-center justify-center">
+      {/* Barra Inferior Fija para Móviles (Sticky Bottom Bar con Safe Area) */}
+      <div 
+        className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/90 px-4 py-3 flex items-center justify-center"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
         <div className="w-full max-w-lg flex items-center justify-between gap-3">
           <div>
             <span className="text-[10px] text-slate-400 block font-semibold">

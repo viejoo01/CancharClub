@@ -165,7 +165,10 @@ export default function MetricasPage() {
         </div>
 
         {/* Tabla / Matriz Heatmap */}
-        <div className="mt-6 overflow-x-auto">
+        <div className="flex items-center justify-between text-xs text-slate-400 sm:hidden mt-4">
+          <span>👉 Deslizá horizontalmente para ver todas las horas</span>
+        </div>
+        <div className="mt-2 sm:mt-6 overflow-x-auto touch-momentum">
           <div className="min-w-[650px] space-y-2">
             {/* Header Horas */}
             <div className="grid grid-cols-10 gap-2 text-center text-[11px] font-bold text-slate-400 pb-2">

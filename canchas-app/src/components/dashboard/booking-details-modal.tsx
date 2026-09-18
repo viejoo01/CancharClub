@@ -193,7 +193,7 @@ export function BookingDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[520px] max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between pr-4">
             <DialogTitle>{courtDisplayName}</DialogTitle>
@@ -244,13 +244,13 @@ export function BookingDetailsModal({
               </div>
 
               {/* Botones de Comunicación */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {waUrl && (
                   <a
                     href={waUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 font-medium text-xs transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 font-medium text-xs transition-colors min-h-9"
                     title="Abrir chat en WhatsApp"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
@@ -262,11 +262,12 @@ export function BookingDetailsModal({
                     href={reminderWaUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 border border-sky-500/30 font-medium text-xs transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 border border-sky-500/30 font-medium text-xs transition-colors min-h-9"
                     title="Enviar recordatorio automático de 3 horas antes"
                   >
                     <BellRing className="w-3.5 h-3.5" />
-                    <span>Recordatorio 3h</span>
+                    <span className="hidden xs:inline">Recordatorio 3h</span>
+                    <span className="xs:hidden">3h</span>
                   </a>
                 )}
               </div>
@@ -330,6 +331,7 @@ export function BookingDetailsModal({
                         type="number"
                         value={payAmount}
                         onChange={(e) => setPayAmount(e.target.value)}
+                        className="h-11"
                         required
                       />
                     </div>
@@ -339,7 +341,7 @@ export function BookingDetailsModal({
                         id="payMethod"
                         value={payMethod}
                         onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER')}
-                        className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                        className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
                       >
                         <option value="CASH">Efectivo</option>
                         <option value="TRANSFER">Transferencia</option>
@@ -376,8 +378,8 @@ export function BookingDetailsModal({
           )}
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+        <DialogFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2">
+          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 w-full sm:w-auto">
             {/* Botón Marcar No-Show (Mejora 2C) */}
             <Button
               type="button"
@@ -385,10 +387,10 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingNoShow || booking.status === 'NO_SHOW'}
               onClick={handleMarkNoShow}
-              className="gap-1.5 border-red-900/50 text-red-400 hover:bg-red-950/40 text-xs"
+              className="gap-1.5 border-red-900/50 text-red-400 hover:bg-red-950/40 text-xs h-10"
             >
               {loadingNoShow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
-              <span>Marcar No-Show</span>
+              <span>No-Show</span>
             </Button>
 
             {/* Botón Imprimir Ticket Térmico (Mejora 1C) */}
@@ -397,10 +399,10 @@ export function BookingDetailsModal({
               variant="outline"
               size="sm"
               onClick={() => setIsReceiptOpen(true)}
-              className="gap-1.5 border-slate-700 text-slate-300 hover:bg-slate-800 text-xs"
+              className="gap-1.5 border-slate-700 text-slate-300 hover:bg-slate-800 text-xs h-10"
             >
               <Printer className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Ticket Térmico</span>
+              <span>Ticket</span>
             </Button>
 
             <Button
@@ -409,14 +411,14 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingCancel}
               onClick={handleCancelBooking}
-              className="gap-1.5 text-xs"
+              className="gap-1.5 text-xs h-10"
             >
               {loadingCancel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
               <span>Cancelar</span>
             </Button>
           </div>
 
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} className="h-10">
             Cerrar
           </Button>
         </DialogFooter>

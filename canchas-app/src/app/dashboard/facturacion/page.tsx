@@ -163,11 +163,11 @@ export default function FacturacionPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
             onClick={() => setIsConfigOpen(true)}
-            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5"
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5 min-h-10"
           >
             <Settings2 className="w-3.5 h-3.5 text-slate-400" />
             <span>Punto de Venta &amp; CUIT</span>
@@ -175,7 +175,7 @@ export default function FacturacionPage() {
 
           <Button
             onClick={() => setIsEmitOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-emerald-950/40"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-emerald-950/40 min-h-10"
           >
             <Plus className="w-4 h-4" />
             <span>Emitir Comprobante</span>
@@ -321,7 +321,7 @@ export default function FacturacionPage() {
 
       {/* Modal Emitir Comprobante */}
       <Dialog open={isEmitOpen} onOpenChange={setIsEmitOpen}>
-        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Receipt className="w-5 h-5 text-emerald-400" />
@@ -419,7 +419,7 @@ export default function FacturacionPage() {
       {/* Modal Ver / Imprimir Comprobante Oficial AFIP */}
       {selectedInvoice && (
         <Dialog open={!!selectedInvoice} onOpenChange={() => setSelectedInvoice(null)}>
-          <DialogContent className="sm:max-w-lg bg-white text-slate-900 p-6 border-slate-200">
+          <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-white text-slate-900 p-4 sm:p-6 border-slate-200">
             <DialogHeader className="border-b border-slate-200 pb-3">
               <div className="flex justify-between items-start">
                 <div>
@@ -522,7 +522,7 @@ export default function FacturacionPage() {
       {/* Modal Configuración AFIP */}
       {config && (
         <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
-          <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100">
+          <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
             <DialogHeader>
               <DialogTitle className="text-white flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-purple-400" />

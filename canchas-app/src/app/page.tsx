@@ -186,7 +186,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-6 transition-colors duration-200">
       
       {/* Botón flotante para alternar tema */}
-      <div className="w-full max-w-md flex justify-end pt-2 pb-1">
+      <div className="w-full max-w-sm sm:max-w-xl lg:max-w-3xl flex justify-end pt-2 pb-1">
         <ThemeToggle />
       </div>
 
@@ -194,7 +194,7 @@ export default function HomePage() {
       {/* VISTA 1: MENÚ INICIAL DE SELECCIÓN (ESTILO EXACTO A LA REFERENCIA)     */}
       {/* ────────────────────────────────────────────────────────────────────── */}
       {!selectedSport ? (
-        <main className="w-full max-w-sm my-auto flex flex-col items-center text-center space-y-6 animate-fade-in">
+        <main className="w-full max-w-sm sm:max-w-xl lg:max-w-3xl my-auto flex flex-col items-center text-center space-y-6 sm:space-y-8 animate-fade-in py-4 sm:py-8">
           
           {/* Logo / Encabezado superior */}
           <div className="flex flex-col items-center justify-center">
@@ -210,12 +210,12 @@ export default function HomePage() {
           </div>
 
           {/* Tarjetas de Deportes (Estilo idéntico a la referencia) */}
-          <div className="grid grid-cols-2 gap-3.5 w-full">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4 w-full">
             {SPORTS_LIST.map((sport) => (
               <button
                 key={sport.id}
                 onClick={() => setSelectedSport(sport.id)}
-                className="group p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-sm hover:shadow-md hover:border-emerald-500/50 transition-all duration-200 flex flex-col items-center justify-center text-center space-y-3 cursor-pointer"
+                className="group p-5 sm:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-sm hover:shadow-md hover:border-emerald-500/50 transition-all duration-200 flex flex-col items-center justify-center text-center space-y-3 cursor-pointer"
               >
                 <div className="w-16 h-16 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
                   {sport.renderIcon({ className: "w-16 h-16 drop-shadow-sm" })}
@@ -228,10 +228,10 @@ export default function HomePage() {
           </div>
 
           {/* Menú inferior con separadores (Fiel a la captura) */}
-          <div className="w-full bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden divide-y divide-slate-800 shadow-sm text-left">
+          <div className="w-full max-w-sm sm:max-w-md bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden divide-y divide-slate-800 shadow-sm text-left">
             <button
               onClick={() => setIsReservasModalOpen(true)}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-800/40 transition-colors"
+              className="w-full px-4 py-3.5 min-h-12 flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-800/40 transition-colors"
             >
               <div className="flex items-center gap-3">
                 <CalendarCheck className="w-4 h-4 text-slate-400" />
@@ -242,7 +242,7 @@ export default function HomePage() {
 
             <button
               onClick={() => setIsClubLoginModalOpen(true)}
-              className="w-full px-4 py-3.5 flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-800/40 transition-colors"
+              className="w-full px-4 py-3.5 min-h-12 flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-800/40 transition-colors"
             >
               <div className="flex items-center gap-3">
                 <Building2 className="w-4 h-4 text-slate-400" />
@@ -276,7 +276,7 @@ export default function HomePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedSport(null)}
-                className="rounded-xl border-slate-800 bg-slate-900 text-slate-100 text-xs font-semibold gap-1.5"
+                className="rounded-xl border-slate-800 bg-slate-900 text-slate-100 text-xs font-semibold gap-1.5 min-h-10 sm:min-h-9"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Volver
@@ -307,7 +307,7 @@ export default function HomePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setIsReservasModalOpen(true)}
-                className="h-9 px-3 rounded-xl border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-100 text-xs font-semibold gap-1.5 shrink-0"
+                className="min-h-10 sm:min-h-9 px-3 rounded-xl border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-100 text-xs font-semibold gap-1.5 shrink-0"
               >
                 <Calendar className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Mis reservas</span>
@@ -432,7 +432,7 @@ export default function HomePage() {
                     <Link href={`/club/${club.slug}${selectedSport ? `?sport=${selectedSport}` : ''}`}>
                       <Button
                         size="sm"
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 gap-1.5"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 gap-1.5 min-h-10"
                       >
                         <span>Reservar Cancha</span>
                         <ChevronRight className="w-3.5 h-3.5" />

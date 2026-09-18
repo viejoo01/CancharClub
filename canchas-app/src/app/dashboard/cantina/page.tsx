@@ -800,34 +800,34 @@ export default function CantinaPage() {
       )}
 
       {/* Tabs Selector */}
-      <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+      <div className="flex items-center gap-2 sm:gap-3 border-b border-slate-800 pb-3 overflow-x-auto no-scrollbar touch-momentum">
         <button
           onClick={() => setActiveTab('POS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 min-h-10 ${
             activeTab === 'POS'
               ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
           <Coffee className="w-4 h-4" />
-          <span>Punto de Venta (Mostrador)</span>
+          <span>Punto de Venta</span>
           {activeLinkedOrder && (
             <span className="px-2 py-0.5 rounded-full bg-purple-500 text-white font-bold text-[10px]">
-              Pedido activo: {activeLinkedOrder.customer_name}
+              {activeLinkedOrder.customer_name}
             </span>
           )}
         </button>
 
         <button
           onClick={() => setActiveTab('ORDERS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 relative ${
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 relative shrink-0 min-h-10 ${
             activeTab === 'ORDERS'
               ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
           <QrCode className="w-4 h-4" />
-          <span>Comandas de Mesa y Cancha (QR)</span>
+          <span>Comandas (QR)</span>
           {ordersLoading && (
             <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
           )}
@@ -840,7 +840,7 @@ export default function CantinaPage() {
 
         <button
           onClick={() => setActiveTab('INVENTORY')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 relative ${
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 relative shrink-0 min-h-10 ${
             activeTab === 'INVENTORY'
               ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
@@ -1064,12 +1064,12 @@ export default function CantinaPage() {
 
           {/* Barra de Acciones: Filtros, Buscador y Botones Principales */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800">
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pb-1">
               {['ALL', 'BEBIDAS', 'EQUIPAMIENTO', 'SNACKS'].map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
                     selectedCategory === cat
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1272,13 +1272,13 @@ export default function CantinaPage() {
           {/* Catálogo de Productos */}
           <div className="lg:col-span-2 space-y-4">
             {/* Filtros y Buscador */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
-              <div className="flex items-center gap-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pb-1">
                 {['ALL', 'BEBIDAS', 'EQUIPAMIENTO', 'SNACKS'].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
                       selectedCategory === cat
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'

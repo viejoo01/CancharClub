@@ -236,24 +236,24 @@ export function CalendarGrid({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
         {/* Selector de Fecha */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleToday} className="text-xs h-9 px-3">
+          <Button variant="outline" size="sm" onClick={handleToday} className="text-xs h-10 px-3 min-w-[52px]">
             Hoy
           </Button>
           <div className="flex items-center bg-slate-950 rounded-xl border border-slate-800 p-0.5 sm:p-1">
             <button
               onClick={handlePrevDay}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-2 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Día anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-white capitalize flex items-center gap-1.5 sm:gap-2">
               <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
-              <span className="truncate max-w-35 sm:max-w-none">{formattedDateTitle}</span>
+              <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-none">{formattedDateTitle}</span>
             </div>
             <button
               onClick={handleNextDay}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-2 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Día siguiente"
             >
               <ChevronRight className="w-4 h-4" />
@@ -263,7 +263,7 @@ export function CalendarGrid({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-9 rounded-xl border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+            className="h-10 rounded-xl border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
           />
         </div>
 
@@ -273,7 +273,7 @@ export function CalendarGrid({
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setSelectedSport('ALL')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
                 selectedSport === 'ALL'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -285,7 +285,7 @@ export function CalendarGrid({
               <button
                 key={sp}
                 onClick={() => setSelectedSport(sp)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
                   selectedSport === sp
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -319,12 +319,17 @@ export function CalendarGrid({
       </div>
 
       {/* Indicador para móviles de desplazamiento horizontal de canchas */}
-      <div className="md:hidden flex items-center justify-between px-2 py-0.5 text-[11px] text-slate-400 select-none">
-        <span className="flex items-center gap-1">
-          <span>👉</span>
-          <span>Deslizá para ver todas las canchas</span>
+      <div className="md:hidden flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
+        <span className="flex items-center gap-1.5 animate-pulse">
+          <span className="inline-flex items-center gap-1 bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-700/60">
+            <ChevronLeft className="w-3 h-3 text-slate-500" />
+            <span className="text-slate-300 font-medium">Deslizá para ver canchas</span>
+            <ChevronRight className="w-3 h-3 text-slate-500" />
+          </span>
         </span>
-        <span className="text-emerald-400 font-semibold">{filteredCourts.length} canchas</span>
+        <span className="text-emerald-400 font-semibold bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-500/30">
+          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
+        </span>
       </div>
 
       {/* Matriz de Calendario o Estado Vacío */}
@@ -371,7 +376,7 @@ export function CalendarGrid({
             {TIME_SLOTS.map((time) => (
               <div
                 key={time}
-                className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[64px]"
+                className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[72px]"
               >
                 {/* Columna Hora */}
                 <div className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/90 flex items-center justify-center">
@@ -449,12 +454,19 @@ export function CalendarGrid({
                         setQuickBookSlot({ courtId: court.id, time })
                         setIsQuickBookOpen(true)
                       }}
-                      className="p-1 border-r border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-950/20 transition-colors relative"
+                      className="p-1 border-r border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-950/20 transition-colors relative min-h-[72px]"
                     >
-                      <div className="h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-600/40 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
+                      {/* Área visible en desktop con hover */}
+                      <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">
                         <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-md border border-emerald-500/20">
                           <Plus className="w-3 h-3" />
                           Reservar
+                        </span>
+                      </div>
+                      {/* Área táctil visible en mobile siempre */}
+                      <div className="sm:hidden h-full w-full rounded-lg flex items-center justify-center">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500/60 px-1.5 py-0.5 rounded border border-dashed border-emerald-600/25">
+                          <Plus className="w-2.5 h-2.5" />
                         </span>
                       </div>
                     </div>

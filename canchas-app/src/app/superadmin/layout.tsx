@@ -1,7 +1,9 @@
+'use client'
+
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ShieldCheck, LayoutDashboard, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/shared/theme-toggle'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +12,16 @@ export default function SuperadminLayout({
 }: {
   children: React.ReactNode
 }) {
+  const router = useRouter()
+
+  async function handleLogout() {
+    try {
+      await fetch('/api/superadmin/login', { method: 'DELETE' })
+    } catch {}
+    router.push('/superadmin/login')
+    router.refresh()
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Superadmin Header */}
@@ -29,8 +41,6 @@ export default function SuperadminLayout({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-3">
-          <ThemeToggle />
-
           <Link href="/dashboard">
             <Button
               variant="outline"
@@ -44,29 +54,18 @@ export default function SuperadminLayout({
             </Button>
           </Link>
 
-          <form 
-            action="/auth/logout" 
-            method="post"
-            onSubmit={() => {
-              try {
-                localStorage.removeItem('canchar_active_venue_id')
-                localStorage.removeItem('canchar_active_venue_name')
-                localStorage.removeItem('canchar_custom_venues')
-              } catch {}
-            }}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-xs text-slate-400 hover:text-rose-400 h-8 px-2 sm:px-3 flex items-center gap-1 cursor-pointer"
+            title="Cerrar Sesión Superadmin"
           >
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="text-xs text-slate-400 hover:text-rose-400 h-8 px-2 sm:px-3 flex items-center gap-1 cursor-pointer"
-              title="Cerrar Sesión"
-            >
-              <LogOut className="w-3.5 h-3.5 sm:hidden" />
-              <span className="hidden sm:inline">Cerrar Sesión</span>
-              <span className="sm:hidden">Salir</span>
-            </Button>
-          </form>
+            <LogOut className="w-3.5 h-3.5 sm:hidden" />
+            <span className="hidden sm:inline">Cerrar Sesión</span>
+            <span className="sm:hidden">Salir</span>
+          </Button>
         </div>
       </header>
 

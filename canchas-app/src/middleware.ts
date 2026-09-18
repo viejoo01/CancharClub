@@ -73,8 +73,8 @@ export async function middleware(request: NextRequest) {
   // Refrescar la sesión
   const { data: { user } } = await supabase.auth.getUser()
 
-  // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS ───────────────────────────────────────
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/superadmin')) {
+  // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS (DASHBOARD) ──────────────────────────
+  if (pathname.startsWith('/dashboard')) {
     if (!user && !demoUserRole) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
@@ -84,35 +84,49 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── 4. PROTECCIÓN DEL PANEL SUPERADMIN ────────────────────────────────────
+  // El panel superadmin usa su propio sistema de sesión (cookie sa_session),
+  // completamente independiente de Supabase y de los demo_* cookies de clubes.
   if (pathname.startsWith('/superadmin')) {
-    // 4.a Modo demo con rol SUPERADMIN
-    if (demoUserRole === 'SUPERADMIN') {
+    // La página de login del superadmin es pública
+    if (pathname === '/superadmin/login') {
       return response
     }
 
-    // 4.b Usuario real en Supabase
-    if (user) {
-      const isSuperadminId = Boolean(process.env.SUPERADMIN_USER_ID && user.id === process.env.SUPERADMIN_USER_ID)
-      const isSuperadminEmail = user.email === 'santi.alonsoleal@gmail.com' || user.email === 'superadmin@cancharclub.com.ar'
+    // Verificar la cookie de sesión sa_session
+    const saSession = request.cookies.get('sa_session')?.value
+    const secret = process.env.SUPERADMIN_SESSION_SECRET
 
-      if (isSuperadminId || isSuperadminEmail) {
-        return response
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (profile?.role === 'SUPERADMIN') {
-        return response
-      }
+    if (!saSession || !secret) {
+      return NextResponse.redirect(new URL('/superadmin/login', request.url))
     }
 
-    // Si no tiene permisos de superadmin, enviar al panel de club
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    // Verificar firma HMAC del token usando Web Crypto API (compatible con Edge Runtime)
+    try {
+      const decoded = Buffer.from(saSession, 'base64url').toString('utf-8')
+      const parts = decoded.split(':')
+      if (parts.length < 3) throw new Error('invalid')
+      const sig = parts.pop()!
+      const payload = parts.join(':')
+
+      const enc = new TextEncoder()
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['verify']
+      )
+      const sigBytes = Buffer.from(sig, 'hex')
+      const payloadBytes = enc.encode(payload)
+      const valid = await crypto.subtle.verify('HMAC', keyMaterial, sigBytes, payloadBytes)
+      if (!valid) throw new Error('invalid sig')
+    } catch {
+      return NextResponse.redirect(new URL('/superadmin/login', request.url))
+    }
+
+    return response
   }
+
 
   // ─── 5. EVALUACIÓN DEL ESTADO DE DUNNING DEL CLUB (TENANT) ────────────────
   if (pathname.startsWith('/dashboard') && user) {

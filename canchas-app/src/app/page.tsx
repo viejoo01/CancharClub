@@ -26,7 +26,7 @@ import { ClubLoginModal } from '@/components/public/club-login-modal'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 
-import { type SportCategory, type ClubData } from '@/config/clubs-catalog'
+import { type SportCategory, type ClubData, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { getPublicClubs } from '@/actions/club.actions'
 
 
@@ -174,7 +174,9 @@ export default function HomePage() {
 
   // Filtrado de clubes según deporte seleccionado y término de búsqueda
   const filteredClubs = clubs.filter((club: ClubData) => {
-    const matchesSport = selectedSport ? club.sports.includes(selectedSport) : true
+    const matchesSport = selectedSport
+      ? club.sports.some((s) => normalizeToSportCategory(s) === normalizeToSportCategory(selectedSport))
+      : true
     const matchesSearch = 
       club.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       club.city.toLowerCase().includes(searchTerm.toLowerCase()) ||

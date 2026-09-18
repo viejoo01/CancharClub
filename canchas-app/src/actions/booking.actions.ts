@@ -130,9 +130,18 @@ export async function initiateOnlineCheckout(
 
     const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
 
-    let sportEnum = 'PADEL'
-    if (payload.court_name?.toLowerCase().includes('fútbol') || payload.internal_notes?.toLowerCase().includes('futbol')) {
-      sportEnum = 'FUTBOL5'
+    let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' = 'PADEL'
+    if (effectiveCourtId) {
+      const { data: courtRow } = await supabase.from('courts').select('sport').eq('id', effectiveCourtId).maybeSingle()
+      if (courtRow?.sport) {
+        sportEnum = courtRow.sport as 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS'
+      } else if (payload.court_name?.toLowerCase().includes('7')) {
+        sportEnum = 'FUTBOL7'
+      } else if (payload.court_name?.toLowerCase().includes('fútbol') || payload.court_name?.toLowerCase().includes('futbol') || payload.internal_notes?.toLowerCase().includes('futbol')) {
+        sportEnum = 'FUTBOL5'
+      } else if (payload.court_name?.toLowerCase().includes('tenis') || payload.court_name?.toLowerCase().includes('tennis')) {
+        sportEnum = 'TENIS'
+      }
     }
 
     // Automatización 24hs: Cuando el jugador pulsa "Confirmar Seña", el turno queda cerrado y reservado automáticamente en el sistema

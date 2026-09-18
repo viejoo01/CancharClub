@@ -7,6 +7,24 @@ import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots
 
 export type SportCategory = 'PADEL' | 'FUTBOL' | 'TENIS' | 'BASQUET'
 
+/**
+ * Normaliza cualquier variante de deporte a una de las categorías públicas de la plataforma
+ */
+export function normalizeToSportCategory(sport?: string | null): SportCategory {
+  if (!sport) return 'PADEL'
+  const s = sport.toUpperCase().trim().replace(/[\s_-]/g, '')
+  if (s.includes('FUTBOL') || s.includes('SOCCER') || s.includes('F5') || s.includes('F7') || s.includes('F11') || s.includes('FUT')) {
+    return 'FUTBOL'
+  }
+  if (s.includes('TENIS') || s.includes('TENNIS')) {
+    return 'TENIS'
+  }
+  if (s.includes('BASQUET') || s.includes('BASKET')) {
+    return 'BASQUET'
+  }
+  return 'PADEL'
+}
+
 export interface CourtDefinition {
   id: string
   name: string
@@ -103,7 +121,8 @@ export function getClubBySlug(slug: string): ClubData {
  * Genera la grilla de turnos para un club y deporte dado respetando el horario de apertura y cierre
  */
 export function generateClubSlots(club: ClubData, sport: SportCategory): GeneratedSlot[] {
-  const matchingCourts = club.courts.filter(c => c.sport === sport)
+  const targetCategory = normalizeToSportCategory(sport)
+  const matchingCourts = club.courts.filter(c => normalizeToSportCategory(c.sport) === targetCategory)
   if (matchingCourts.length === 0) return []
 
   const opening = club.schedule?.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time
@@ -118,7 +137,8 @@ export function generateClubSlots(club: ClubData, sport: SportCategory): Generat
   const slots: GeneratedSlot[] = []
 
   matchingCourts.forEach((court, courtIndex) => {
-    const duration = court.slotDurationMinutes || (court.sport === 'PADEL' ? 90 : 60)
+    const isCourtPadel = normalizeToSportCategory(court.sport) === 'PADEL'
+    const duration = court.slotDurationMinutes || (isCourtPadel ? 90 : 60)
     // Si hay más de una cancha y duración 90m, escalonar 30 min la cancha secundaria para flujo parejo
     const courtOffset = (matchingCourts.length > 1 && duration === 90 && courtIndex % 2 === 1) ? 30 : 0
     const courtStart = startMins + courtOffset
@@ -136,7 +156,7 @@ export function generateClubSlots(club: ClubData, sport: SportCategory): Generat
         time,
         courtId: court.id,
         courtName: court.name,
-        sport: court.sport,
+        sport: normalizeToSportCategory(court.sport),
         totalPrice,
         depositPrice,
         isAvailable: true,

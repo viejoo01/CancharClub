@@ -170,8 +170,8 @@ export async function registerClub(formData: FormData) {
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: false,
-      subscription_status: 'PAYMENT_PENDING',
+      is_active: true,
+      subscription_status: 'ACTIVE',
       payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
     })
     .select()
@@ -233,8 +233,8 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'PAYMENT_PENDING', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
 
   redirect('/dashboard')
 }

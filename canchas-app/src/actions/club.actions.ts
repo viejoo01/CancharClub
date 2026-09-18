@@ -7,7 +7,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
-import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory } from '@/config/clubs-catalog'
+import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
@@ -839,20 +839,20 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
           return {
             id: c.id,
             name: c.name,
-            sport: c.sport as SportCategory,
+            sport: normalizeToSportCategory(c.sport),
             surface: c.surface || 'Césped Sintético',
             isIndoor: Boolean(c.is_indoor),
             hasLighting: Boolean(c.has_lights),
             features,
-            slotDurationMinutes: c.slot_duration_minutes || 90,
+            slotDurationMinutes: c.slot_duration_minutes || (c.sport?.includes('FUTBOL') ? 60 : 90),
             pricePerHour,
             depositPercentage: 0.5,
           }
         })
       : []
 
-    // Determinar deportes únicos
-    const sports = Array.from(new Set(courtsMapped.map((c) => c.sport))) as SportCategory[]
+    // Determinar deportes únicos normalizados
+    const sports = Array.from(new Set(courtsMapped.map((c) => normalizeToSportCategory(c.sport)))) as SportCategory[]
 
     // Calcular precio inicial más bajo
     const startingPrice = courtsMapped.length > 0
@@ -970,16 +970,16 @@ export async function getPublicClubs(): Promise<ClubData[]> {
             return {
               id: c.id,
               name: c.name,
-              sport: (c.sport as SportCategory) || 'PADEL',
+              sport: normalizeToSportCategory(c.sport),
               features: features.length > 0 ? features : ['Césped Sintético'],
               pricePerHour,
               depositPercentage: 0.5,
-              slotDurationMinutes: c.slot_duration_minutes || 90,
+              slotDurationMinutes: c.slot_duration_minutes || (c.sport?.includes('FUTBOL') ? 60 : 90),
             }
           })
         : []
 
-      const sports = Array.from(new Set(courtsMapped.map((c) => c.sport))) as SportCategory[]
+      const sports = Array.from(new Set(courtsMapped.map((c) => normalizeToSportCategory(c.sport)))) as SportCategory[]
       const startingPrice = courtsMapped.length > 0
         ? courtsMapped.reduce(
             (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),

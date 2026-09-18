@@ -31,7 +31,8 @@ import {
   generateClubSlots, 
   type SportCategory,
   type GeneratedSlot,
-  type ClubData
+  type ClubData,
+  normalizeToSportCategory
 } from '@/config/clubs-catalog'
 import { getClubPublicData } from '@/actions/club.actions'
 
@@ -98,13 +99,15 @@ export default function ClubPublicPage({
 
   // Deporte activo: si el usuario lo cambió manualmente lo usamos, de lo contrario usamos el del query param o el principal del club
   const selectedSport: SportCategory = useMemo(() => {
-    if (userSelectedSport && club.sports.includes(userSelectedSport)) {
-      return userSelectedSport
+    const normUser = userSelectedSport ? normalizeToSportCategory(userSelectedSport) : null
+    if (normUser && club.sports.some(s => normalizeToSportCategory(s) === normUser)) {
+      return normUser
     }
-    if (urlSport && club.sports.includes(urlSport)) {
-      return urlSport
+    const normUrl = urlSport ? normalizeToSportCategory(urlSport) : null
+    if (normUrl && club.sports.some(s => normalizeToSportCategory(s) === normUrl)) {
+      return normUrl
     }
-    return club.sports[0] || 'PADEL'
+    return club.sports[0] ? normalizeToSportCategory(club.sports[0]) : 'PADEL'
   }, [userSelectedSport, club.sports, urlSport])
 
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -160,7 +163,7 @@ export default function ClubPublicPage({
 
   // Obtener lista única de canchas del club para el deporte actual
   const courtsList = useMemo(() => {
-    return club.courts.filter(c => c.sport === selectedSport)
+    return club.courts.filter(c => normalizeToSportCategory(c.sport) === selectedSport)
   }, [club.courts, selectedSport])
 
   return (
@@ -281,7 +284,7 @@ export default function ClubPublicPage({
               const isSelected = selectedSport === sp
               const sportName = sp === 'FUTBOL' ? 'Fútbol' : sp === 'PADEL' ? 'Pádel' : sp === 'TENIS' ? 'Tenis' : 'Básquet'
               const sportIcon = sp === 'FUTBOL' ? '⚽' : sp === 'PADEL' ? '🎾' : sp === 'TENIS' ? '🎾' : '🏀'
-              const countForSport = club.courts.filter(c => c.sport === sp).length
+              const countForSport = club.courts.filter(c => normalizeToSportCategory(c.sport) === normalizeToSportCategory(sp)).length
 
               return (
                 <button

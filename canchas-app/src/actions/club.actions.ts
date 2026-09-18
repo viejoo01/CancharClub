@@ -149,44 +149,106 @@ export async function updateCourt(courtId: string, payload: Partial<{
   return { success: true }
 }
 
-export async function deleteCourt(courtId: string, tenantId: string) {
+export async function deleteCourt(
+  courtId: string, 
+  tenantId: string,
+  options?: { force?: boolean }
+): Promise<{ success: boolean; hasActiveBookings?: boolean; activeCount?: number; error?: string }> {
   const supabase = await createServiceClient()
 
-  // 1. Validar que no existan reservas activas (no canceladas)
-  const { count } = await supabase
-    .from('bookings')
-    .select('id', { count: 'exact', head: true })
-    .eq('court_id', courtId)
-    .not('status', 'in', '("cancelled")')
+  try {
+    // 1. Validar si existen reservas activas (no canceladas / no finalizadas)
+    const { count: activeCount } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('court_id', courtId)
+      .in('status', ['confirmed', 'confirmed_cash', 'pending_deposit', 'in_process'])
 
-  if (count && count > 0) {
-    return { 
-      success: false, 
-      error: 'Esta cancha tiene turnos activos asociados. Para cancelarla o darla de baja sin perder el historial de turnos, podés marcarla como Inactiva.' 
+    if (!options?.force && activeCount && activeCount > 0) {
+      return { 
+        success: false, 
+        hasActiveBookings: true,
+        activeCount,
+        error: `Esta cancha tiene ${activeCount} turno(s) activo(s) confirmado(s). Para darla de baja sin perder las reservas de los clientes, podés marcarla como "Inactiva". Si deseás eliminarla de todos modos junto con sus turnos, confirmá la eliminación.` 
+      }
     }
+
+    // 2. Desvincular pedidos de cantina asociados a la cancha si existen
+    try {
+      await supabase
+        .from('court_orders')
+        .update({ court_id: null })
+        .eq('court_id', courtId)
+    } catch {}
+
+    // 3. Eliminar bloqueos de cancha (court_blocks) si existen
+    try {
+      await supabase
+        .from('court_blocks')
+        .delete()
+        .eq('court_id', courtId)
+    } catch {}
+
+    // 4. Eliminar turnos fijos (recurring_slots) si existen
+    try {
+      await supabase
+        .from('recurring_slots')
+        .delete()
+        .eq('court_id', courtId)
+    } catch {}
+
+    // 5. Eliminar listas de espera (waitlists) si existen
+    try {
+      await supabase
+        .from('waitlists')
+        .delete()
+        .eq('court_id', courtId)
+    } catch {}
+
+    // 6. Eliminar reglas de precio asociadas a esta cancha
+    try {
+      await supabase
+        .from('price_rules')
+        .delete()
+        .eq('court_id', courtId)
+    } catch (prErr: unknown) {
+      console.warn('[deleteCourt] Warning deleting price rules:', prErr)
+    }
+
+    // 7. Eliminar TODAS las reservas asociadas a esta cancha
+    // (Crucial: evita la violación de FK "bookings_court_id_fkey" en PostgreSQL)
+    const { error: bookingsErr } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('court_id', courtId)
+
+    if (bookingsErr) {
+      console.error('[deleteCourt] Error deleting bookings:', bookingsErr.message)
+      return { success: false, error: 'No se pudieron limpiar las reservas asociadas a la cancha: ' + bookingsErr.message }
+    }
+
+    // 8. Eliminar la cancha de la tabla courts
+    const { error: courtErr } = await supabase
+      .from('courts')
+      .delete()
+      .eq('id', courtId)
+      .eq('tenant_id', tenantId)
+
+    if (courtErr) {
+      console.error('[deleteCourt] Error deleting court:', courtErr.message)
+      return { success: false, error: courtErr.message }
+    }
+
+    revalidatePath('/dashboard/canchas')
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/precios')
+    revalidatePath('/dashboard/fijos')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al eliminar la cancha'
+    console.error('[deleteCourt] Exception:', err)
+    return { success: false, error: msg }
   }
-
-  // 2. Eliminar reglas de precio asociadas
-  await supabase
-    .from('price_rules')
-    .delete()
-    .eq('court_id', courtId)
-
-  // 3. Eliminar la cancha
-  const { error } = await supabase
-    .from('courts')
-    .delete()
-    .eq('id', courtId)
-    .eq('tenant_id', tenantId)
-
-  if (error) {
-    console.error('[deleteCourt] Error deleting court:', error.message)
-    return { success: false, error: error.message }
-  }
-
-  revalidatePath('/dashboard/canchas')
-  revalidatePath('/dashboard')
-  return { success: true }
 }
 
 // ─── CALENDARIO & TURNOS DEL DÍA ──────────────────────────────────────────────
@@ -403,17 +465,30 @@ export async function createPriceRule(payload: {
 
 export async function deletePriceRule(ruleId: string, tenantId: string) {
   const supabase = await createServiceClient()
-  const { error } = await supabase
-    .from('price_rules')
-    .delete()
-    .eq('id', ruleId)
-    .eq('tenant_id', tenantId)
+  try {
+    // Desvincular de bookings si alguna reserva apunta a esta regla de precios
+    try {
+      await supabase
+        .from('bookings')
+        .update({ price_rule_id: null })
+        .eq('price_rule_id', ruleId)
+    } catch {}
 
-  if (error) {
-    return { success: false, error: error.message }
+    const { error } = await supabase
+      .from('price_rules')
+      .delete()
+      .eq('id', ruleId)
+      .eq('tenant_id', tenantId)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    revalidatePath('/dashboard/precios')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar tarifa'
+    return { success: false, error: msg }
   }
-  revalidatePath('/dashboard/precios')
-  return { success: true }
 }
 
 // ─── CAJA DIARIA & ARQUEO ─────────────────────────────────────────────────────

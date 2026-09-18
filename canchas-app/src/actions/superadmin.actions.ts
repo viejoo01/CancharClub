@@ -466,7 +466,12 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
   try {
     const supabase = await createServiceClient()
 
-    // 1. Eliminar dependencias
+    // 1. Eliminar dependencias en orden relacional estricto
+    try { await supabase.from('court_orders').delete().eq('tenant_id', tenantId) } catch {}
+    try { await supabase.from('court_blocks').delete().eq('tenant_id', tenantId) } catch {}
+    try { await supabase.from('recurring_slots').delete().eq('tenant_id', tenantId) } catch {}
+    try { await supabase.from('waitlists').delete().eq('tenant_id', tenantId) } catch {}
+    try { await supabase.from('tournaments').delete().eq('tenant_id', tenantId) } catch {}
     await supabase.from('bookings').delete().eq('tenant_id', tenantId)
     await supabase.from('price_rules').delete().eq('tenant_id', tenantId)
     await supabase.from('courts').delete().eq('tenant_id', tenantId)

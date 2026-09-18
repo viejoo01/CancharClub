@@ -165,6 +165,23 @@ export async function removeStaffMember(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createServiceClient()
+
+    // 1. Desvincular referencias en bookings y court_blocks para evitar violación de FK
+    try {
+      await supabase
+        .from('bookings')
+        .update({ created_by_staff_id: null })
+        .eq('created_by_staff_id', profileId)
+    } catch {}
+
+    try {
+      await supabase
+        .from('court_blocks')
+        .update({ created_by_profile_id: null })
+        .eq('created_by_profile_id', profileId)
+    } catch {}
+
+    // 2. Eliminar el perfil
     const { error } = await supabase
       .from('profiles')
       .delete()
@@ -172,6 +189,7 @@ export async function removeStaffMember(
 
     if (error) {
       console.warn('[removeStaffMember] DB warning:', error.message)
+      return { success: false, error: error.message }
     }
 
     revalidatePath('/dashboard/equipo')

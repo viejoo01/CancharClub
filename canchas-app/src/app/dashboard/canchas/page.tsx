@@ -166,7 +166,24 @@ export default function CanchasPage() {
     try {
       const res = await deleteCourt(courtId, tenantId)
       if (!res.success) {
-        toast.error(res.error || 'Error al eliminar cancha')
+        if (res.hasActiveBookings) {
+          const proceed = confirm(
+            `${res.error}\n\n¿Deseás eliminar la cancha de todas formas borrando todos sus turnos asociados? (Si cancelás, podés simplemente desactivarla).`
+          )
+          if (proceed) {
+            const forceRes = await deleteCourt(courtId, tenantId, { force: true })
+            if (forceRes.success) {
+              setCourts(prev => prev.filter(c => c.id !== courtId))
+              toast.success(`Cancha "${courtName}" y sus turnos asociados fueron eliminados correctamente`)
+              return
+            } else {
+              toast.error(forceRes.error || 'Error al forzar eliminación')
+              return
+            }
+          }
+        } else {
+          toast.error(res.error || 'Error al eliminar cancha')
+        }
       } else {
         setCourts(prev => prev.filter(c => c.id !== courtId))
         toast.success(`Cancha "${courtName}" eliminada correctamente`)

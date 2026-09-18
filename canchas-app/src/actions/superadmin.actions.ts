@@ -130,7 +130,7 @@ export async function deactivateTenantAccess(tenantId: string) {
       .from('tenants')
       .update({
         is_active: false,
-        subscription_status: 'PENDIENTE',
+        subscription_status: 'PAYMENT_PENDING',
       })
       .eq('id', tenantId)
 

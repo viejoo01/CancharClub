@@ -140,10 +140,10 @@ export default function ClubPublicPage({
 
   const isPublicPaused = subscriptionStatus === 'PARTIALLY_SUSPENDED' || subscriptionStatus === 'LOCKED'
 
-  // Generar turnos dinámicos del club para el deporte seleccionado
+  // Generar turnos dinámicos del club para el deporte seleccionado y la fecha elegida
   const slots: GeneratedSlot[] = useMemo(() => {
-    return generateClubSlots(club, selectedSport)
-  }, [club, selectedSport])
+    return generateClubSlots(club, selectedSport, selectedDate)
+  }, [club, selectedSport, selectedDate])
 
   // Filtros combinados de horario y canchas
   const filteredSlots = useMemo(() => {

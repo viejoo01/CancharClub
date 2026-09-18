@@ -35,6 +35,17 @@ export interface CourtDefinition {
   slotDurationMinutes?: number
 }
 
+export interface PriceRuleDefinition {
+  id: string
+  courtId?: string | null
+  name: string
+  dayOfWeek: number[]
+  timeFrom: string
+  timeTo: string
+  priceArs: number
+  depositPct: number
+}
+
 export interface ClubBankDetails {
   bankName: string
   accountHolder: string
@@ -63,6 +74,7 @@ export interface ClubData {
   availableToday: boolean
   openHours: string
   courts: CourtDefinition[]
+  priceRules?: PriceRuleDefinition[]
   bankDetails?: ClubBankDetails
   paymentMethods?: ('TRANSFER' | 'MERCADOPAGO')[]
   mpConnected?: boolean
@@ -113,14 +125,20 @@ export function getClubBySlug(slug: string): ClubData {
     reviewsCount: 0,
     availableToday: true,
     openHours: '08:00 a 00:00 hs',
-    courts: []
+    courts: [],
+    priceRules: []
   }
 }
 
 /**
- * Genera la grilla de turnos para un club y deporte dado respetando el horario de apertura y cierre
+ * Genera la grilla de turnos para un club y deporte dado respetando el horario de apertura, cierre
+ * y aplicando las tarifas dinámicas reales según día de la semana y franja horaria.
  */
-export function generateClubSlots(club: ClubData, sport: SportCategory): GeneratedSlot[] {
+export function generateClubSlots(
+  club: ClubData,
+  sport: SportCategory,
+  targetDate?: string
+): GeneratedSlot[] {
   const targetCategory = normalizeToSportCategory(sport)
   const matchingCourts = club.courts.filter(c => normalizeToSportCategory(c.sport) === targetCategory)
   if (matchingCourts.length === 0) return []
@@ -133,6 +151,15 @@ export function generateClubSlots(club: ClubData, sport: SportCategory): Generat
   const startMins = startH * 60 + (startM || 0)
   let endMins = endH * 60 + (endM || 0)
   if (endMins < startMins) endMins += 24 * 60
+
+  // Determinar día de la semana correspondiente a targetDate (0 = Dom, 1 = Lun, ..., 6 = Sáb)
+  let dayOfWeek = new Date().getDay()
+  if (targetDate) {
+    const parts = targetDate.split('-').map(Number)
+    if (parts.length === 3) {
+      dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay()
+    }
+  }
 
   const slots: GeneratedSlot[] = []
 
@@ -149,8 +176,34 @@ export function generateClubSlots(club: ClubData, sport: SportCategory): Generat
       const mm = (totalMinutes % 60).toString().padStart(2, '0')
       const time = `${hh}:${mm}`
 
-      const totalPrice = court.pricePerHour
-      const depositPrice = Math.round(totalPrice * court.depositPercentage)
+      // Calcular precio dinámico según reglas de tarifas configuradas por el club
+      let totalPrice = court.pricePerHour
+      let depositPct = court.depositPercentage || 0.5
+
+      if (club.priceRules && club.priceRules.length > 0) {
+        // Filtrar reglas que correspondan a esta cancha (o aplicables a todas) y a este día de la semana
+        const applicableRules = club.priceRules.filter(rule => {
+          const matchesCourt = !rule.courtId || rule.courtId === court.id
+          const matchesDay = Array.isArray(rule.dayOfWeek) && rule.dayOfWeek.includes(dayOfWeek)
+          return matchesCourt && matchesDay
+        })
+
+        // Buscar regla donde el horario del turno esté contenido en [timeFrom, timeTo]
+        const matchingRule = applicableRules
+          .filter(rule => time >= rule.timeFrom && time <= rule.timeTo)
+          .sort((a, b) => b.timeFrom.localeCompare(a.timeFrom))[0]
+
+        if (matchingRule) {
+          totalPrice = matchingRule.priceArs
+          depositPct = (matchingRule.depositPct || 50) / 100
+        } else if (applicableRules.length > 0) {
+          // Si no hubo coincidencia horaria estricta, aplicar la tarifa del día correspondiente
+          totalPrice = applicableRules[0].priceArs
+          depositPct = (applicableRules[0].depositPct || 50) / 100
+        }
+      }
+
+      const depositPrice = Math.round(totalPrice * depositPct)
 
       slots.push({
         time,

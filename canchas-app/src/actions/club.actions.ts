@@ -7,7 +7,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
-import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, normalizeToSportCategory } from '@/config/clubs-catalog'
+import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
@@ -818,18 +818,31 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       .eq('is_active', true)
       .order('display_order', { ascending: true })
 
-    // 3. Consultar reglas de precios del tenant
+    // 3. Consultar reglas de precios activas del tenant
     const { data: priceRules } = await supabase
       .from('price_rules')
-      .select('court_id, price_ars, is_default')
+      .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, priority, is_active')
       .eq('tenant_id', tenant.id)
+      .eq('is_active', true)
+      .order('priority', { ascending: false })
+
+    const priceRulesMapped: PriceRuleDefinition[] = (priceRules || []).map((r) => ({
+      id: r.id,
+      courtId: r.court_id,
+      name: r.name,
+      dayOfWeek: Array.isArray(r.day_of_week) ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+      timeFrom: (r.time_from || '00:00:00').substring(0, 5),
+      timeTo: (r.time_to || '23:59:59').substring(0, 5),
+      priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
+      depositPct: 50,
+    }))
 
     const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)
       ? courts.map((c) => {
-          const rule = (priceRules || []).find((r) => r.court_id === c.id) ||
-            (priceRules || []).find((r) => r.is_default)
-
-          const pricePerHour = Number(rule?.price_ars || 18000)
+          const courtRules = priceRulesMapped.filter((r) => !r.courtId || r.courtId === c.id)
+          const pricePerHour = courtRules.length > 0
+            ? Math.min(...courtRules.map((r) => r.priceArs))
+            : 20000
 
           const features: string[] = []
           if (c.is_indoor) features.push('Techada')
@@ -855,12 +868,9 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     const sports = Array.from(new Set(courtsMapped.map((c) => normalizeToSportCategory(c.sport)))) as SportCategory[]
 
     // Calcular precio inicial más bajo
-    const startingPrice = courtsMapped.length > 0
-      ? courtsMapped.reduce(
-          (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
-          courtsMapped[0]?.pricePerHour || 16000
-        )
-      : 0
+    const startingPrice = priceRulesMapped.length > 0
+      ? Math.min(...priceRulesMapped.map((r) => r.priceArs))
+      : (courtsMapped[0]?.pricePerHour || 20000)
 
     const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
     const hasMp = rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO')
@@ -899,6 +909,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       openHours: formatScheduleHours(schedule.opening_time, schedule.closing_time),
       schedule,
       courts: courtsMapped,
+      priceRules: priceRulesMapped,
       bankDetails: tenant.bank_alias
         ? {
             bankName: tenant.bank_name || 'Mercado Pago',
@@ -955,14 +966,28 @@ export async function getPublicClubs(): Promise<ClubData[]> {
 
       const { data: priceRules } = await supabase
         .from('price_rules')
-        .select('court_id, price_ars, is_default')
+        .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, priority, is_active')
         .eq('tenant_id', t.id)
+        .eq('is_active', true)
+        .order('priority', { ascending: false })
+
+      const priceRulesMapped: PriceRuleDefinition[] = (priceRules || []).map((r) => ({
+        id: r.id,
+        courtId: r.court_id,
+        name: r.name,
+        dayOfWeek: Array.isArray(r.day_of_week) ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+        timeFrom: (r.time_from || '00:00:00').substring(0, 5),
+        timeTo: (r.time_to || '23:59:59').substring(0, 5),
+        priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
+        depositPct: 50,
+      }))
 
       const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)
         ? courts.map((c) => {
-            const rule = (priceRules || []).find((r) => r.court_id === c.id) ||
-              (priceRules || []).find((r) => r.is_default)
-            const pricePerHour = Number(rule?.price_ars || 18000)
+            const courtRules = priceRulesMapped.filter((r) => !r.courtId || r.courtId === c.id)
+            const pricePerHour = courtRules.length > 0
+              ? Math.min(...courtRules.map((r) => r.priceArs))
+              : 20000
             const features: string[] = []
             if (c.is_indoor) features.push('Techada')
             if (c.has_lights) features.push('Iluminación LED')
@@ -980,12 +1005,9 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         : []
 
       const sports = Array.from(new Set(courtsMapped.map((c) => normalizeToSportCategory(c.sport)))) as SportCategory[]
-      const startingPrice = courtsMapped.length > 0
-        ? courtsMapped.reduce(
-            (min, c) => (c.pricePerHour < min ? c.pricePerHour : min),
-            courtsMapped[0]?.pricePerHour || 16000
-          )
-        : 0
+      const startingPrice = priceRulesMapped.length > 0
+        ? Math.min(...priceRulesMapped.map((r) => r.priceArs))
+        : (courtsMapped[0]?.pricePerHour || 20000)
 
       let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
       if (t.description) {
@@ -1021,6 +1043,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         openHours: formatScheduleHours(schedule.opening_time, schedule.closing_time),
         schedule,
         courts: courtsMapped,
+        priceRules: priceRulesMapped,
         bankDetails: t.bank_alias
           ? {
               bankName: t.bank_name || 'Mercado Pago',

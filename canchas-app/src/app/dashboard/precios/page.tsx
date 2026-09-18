@@ -126,6 +126,7 @@ export default function PreciosPage() {
   const [timeTo, setTimeTo] = useState('23:00')
   const [price, setPrice] = useState('14000')
   const [depositPct, setDepositPct] = useState('50')
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 0])
   const [loading, setLoading] = useState(false)
 
   const handleCreateRule = async (e: React.FormEvent) => {
@@ -143,7 +144,7 @@ export default function PreciosPage() {
         tenant_id: tenantId,
         court_id: selectedCourtId || null,
         name: name.trim(),
-        days_of_week: [1, 2, 3, 4, 5],
+        days_of_week: selectedDays.length > 0 ? selectedDays : [1, 2, 3, 4, 5, 6, 0],
         time_from: timeFrom,
         time_to: timeTo,
         price_ars: Number(price),
@@ -160,6 +161,7 @@ export default function PreciosPage() {
       setIsModalOpen(false)
       setName('')
       setSelectedCourtId('')
+      setSelectedDays([1, 2, 3, 4, 5, 6, 0])
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error inesperado al crear tarifa'
       toast.error(msg)
@@ -262,8 +264,14 @@ export default function PreciosPage() {
               <Card key={rule.id} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
-                    <Badge variant="default" className="mb-2">
-                      {rule.days_of_week.map(d => daysMap[d]).join(', ')}
+                    <Badge variant="default" className="mb-2 bg-slate-800 text-slate-200 border-slate-700 font-semibold">
+                      {rule.days_of_week.length === 7
+                        ? 'Todos los días (Lun-Dom)'
+                        : rule.days_of_week.length === 2 && rule.days_of_week.includes(6) && rule.days_of_week.includes(0)
+                        ? 'Fines de semana (Sáb, Dom)'
+                        : rule.days_of_week.length === 5 && !rule.days_of_week.includes(6) && !rule.days_of_week.includes(0)
+                        ? 'Lun a Vie'
+                        : [1, 2, 3, 4, 5, 6, 0].filter(d => rule.days_of_week.includes(d)).map(d => daysMap[d]).join(', ')}
                     </Badge>
                     <span className="text-xl font-extrabold text-emerald-400">
                       {formatARS(rule.price_ars)}
@@ -357,6 +365,81 @@ export default function PreciosPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Selector interactivo de Días de la Semana */}
+            <div className="space-y-2 pt-0.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-slate-200">
+                  Días de la Semana aplicables *
+                </Label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDays([1, 2, 3, 4, 5, 6, 0])}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                  >
+                    Lun-Vie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDays([6, 0])}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-900 transition-colors"
+                  >
+                    Fines de Sem
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 sm:gap-1.5 pt-1">
+                {[
+                  { id: 1, label: 'Lun' },
+                  { id: 2, label: 'Mar' },
+                  { id: 3, label: 'Mié' },
+                  { id: 4, label: 'Jue' },
+                  { id: 5, label: 'Vie' },
+                  { id: 6, label: 'Sáb' },
+                  { id: 0, label: 'Dom' },
+                ].map((day) => {
+                  const isSelected = selectedDays.includes(day.id)
+                  return (
+                    <button
+                      key={day.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedDays(prev =>
+                          prev.includes(day.id)
+                            ? prev.length > 1 ? prev.filter(d => d !== day.id) : prev
+                            : [...prev, day.id]
+                        )
+                      }}
+                      className={`py-2 text-xs font-bold rounded-xl transition-all flex flex-col items-center justify-center border cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                          : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <span>{day.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {selectedDays.length === 7
+                  ? '✓ Aplica todos los días (Lunes a Domingo)'
+                  : selectedDays.length === 2 && selectedDays.includes(6) && selectedDays.includes(0)
+                  ? '✓ Aplica solo los Fines de Semana (Sábados y Domingos)'
+                  : selectedDays.length === 5 && !selectedDays.includes(6) && !selectedDays.includes(0)
+                  ? '✓ Aplica de Lunes a Viernes'
+                  : `✓ Días seleccionados: ${[1, 2, 3, 4, 5, 6, 0].filter(d => selectedDays.includes(d)).map(d => daysMap[d]).join(', ')}`}
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

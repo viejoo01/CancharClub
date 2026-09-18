@@ -110,11 +110,26 @@ export default function ClubPublicPage({
     return club.sports[0] ? normalizeToSportCategory(club.sports[0]) : 'PADEL'
   }, [userSelectedSport, club.sports, urlSport])
 
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'MAÑANA' | 'TARDE' | 'NOCHE'>('ALL')
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('ALL')
+
+  // Reloj reactivo para invalidar en tiempo real los turnos que ya pasaron durante el día
+  const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => {
+    const now = new Date()
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  })
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date()
+      setCurrentTimeStr(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const availableDays = useMemo(() => getNextDays(14), [])
 
@@ -145,9 +160,22 @@ export default function ClubPublicPage({
     return generateClubSlots(club, selectedSport, selectedDate)
   }, [club, selectedSport, selectedDate])
 
-  // Filtros combinados de horario y canchas
+  // Filtros combinados de horario, canchas y exclusión de horas pasadas
   const filteredSlots = useMemo(() => {
+    const now = new Date()
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
     return slots.filter(slot => {
+      // 1. Omitir turnos cuya hora ya pasó si se está viendo el día de hoy
+      if (selectedDate === todayIso) {
+        if (slot.time <= currentTimeStr) {
+          return false
+        }
+      } else if (selectedDate < todayIso) {
+        // En fechas pasadas no se permite reservar ningún turno
+        return false
+      }
+
       if (selectedCourtFilter !== 'ALL' && slot.courtId !== selectedCourtFilter) return false
       
       const hour = parseInt(slot.time.split(':')[0], 10)
@@ -157,7 +185,7 @@ export default function ClubPublicPage({
 
       return true
     })
-  }, [slots, selectedCourtFilter, timeFilter])
+  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr])
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 
@@ -491,8 +519,24 @@ export default function ClubPublicPage({
           ) : filteredSlots.length === 0 ? (
             <div className="p-8 text-center bg-slate-900/50 rounded-3xl border border-slate-800 space-y-3">
               <Clock className="w-8 h-8 text-slate-400 mx-auto" />
-              <div className="text-sm font-bold text-slate-200">No hay turnos para los filtros seleccionados</div>
-              <p className="text-xs text-slate-400">Probá seleccionando otro día o quitando los filtros de horario.</p>
+              <div className="text-sm font-bold text-slate-200">
+                {(() => {
+                  const now = new Date()
+                  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                  return selectedDate === todayIso
+                    ? 'No hay más turnos disponibles para hoy'
+                    : 'No hay turnos para los filtros seleccionados'
+                })()}
+              </div>
+              <p className="text-xs text-slate-400">
+                {(() => {
+                  const now = new Date()
+                  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                  return selectedDate === todayIso
+                    ? 'Los horarios anteriores ya pasaron o están completos. Probá seleccionando el día de mañana.'
+                    : 'Probá seleccionando otro día o quitando los filtros de horario.'
+                })()}
+              </p>
               <Button
                 size="sm"
                 variant="outline"

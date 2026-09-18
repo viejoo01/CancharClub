@@ -101,6 +101,16 @@ export async function initiateOnlineCheckout(
       }
     }
 
+    // 0.1 VERIFICACIÓN DE HORARIO PASADO (El turno debe ser posterior a la hora actual)
+    const slotStartTime = new Date(payload.starts_at).getTime()
+    if (!isNaN(slotStartTime) && slotStartTime <= Date.now() - 60_000) {
+      return {
+        success: false,
+        error: 'El horario seleccionado ya ha pasado. Por favor elegí un turno disponible posterior a la hora actual.',
+        error_code: 'SLOT_IN_PAST',
+      }
+    }
+
     // 1. Calcular ends_at desde starts_at + duración
     const endsAt = computeEndsAt(payload.starts_at, courtSlotDuration)
     const lockKey = buildLockKey(payload.court_id, payload.starts_at)

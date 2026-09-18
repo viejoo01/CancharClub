@@ -193,6 +193,18 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     return `${mins.toString().padStart(2, '0')}:${rem.toString().padStart(2, '0')}`
   }
 
+  // Validación: si la fecha u horario seleccionado ya ha pasado
+  const isSlotInPast = useMemo(() => {
+    try {
+      const now = new Date()
+      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      return date < todayIso || (date === todayIso && time <= currentTimeStr)
+    } catch {
+      return false
+    }
+  }, [date, time])
+
   // Formato de fecha amigable para móviles
   const formattedDate = (() => {
     try {
@@ -224,6 +236,10 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSlotInPast) {
+      toast.error('Este horario ya ha pasado. Por favor seleccioná un turno posterior a la hora actual.')
+      return
+    }
     if (!customerName.trim() || !customerPhone.trim()) {
       toast.error('Completá tu nombre y teléfono celular de WhatsApp')
       return
@@ -411,6 +427,28 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Alerta si el horario ya pasó */}
+        {isSlotInPast && (
+          <div className="mt-3 p-4 rounded-2xl bg-amber-950/50 border border-amber-500/50 text-amber-200 text-xs space-y-2">
+            <div className="font-extrabold flex items-center gap-1.5 text-amber-400">
+              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Horario No Disponible</span>
+            </div>
+            <p className="text-slate-300 leading-relaxed">
+              El turno de las <strong>{time} hs</strong> ya ha pasado o acaba de comenzar. Por favor volvé al menú del club y elegí un horario disponible posterior a la hora actual.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.back()}
+              className="mt-1 border-amber-500/40 text-amber-300 hover:bg-amber-950/60 font-bold text-xs rounded-xl"
+            >
+              ← Volver y elegir otro horario
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Formulario de Datos del Jugador */}
@@ -698,8 +736,8 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
               <Button
                 type="submit"
                 form="checkout-form"
-                disabled={loading}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
+                disabled={loading || isSlotInPast}
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>

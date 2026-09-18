@@ -490,7 +490,7 @@ export interface CheckoutResponse {
     whatsapp_phone?: string
   }
   error?: string
-  error_code?: 'SLOT_UNAVAILABLE' | 'LOCK_FAILED' | 'MP_ERROR' | 'VALIDATION_ERROR' | 'CLUB_SUSPENDED_DUNNING' | 'CLUB_PENDING_ACTIVATION'
+  error_code?: 'SLOT_UNAVAILABLE' | 'LOCK_FAILED' | 'MP_ERROR' | 'VALIDATION_ERROR' | 'CLUB_SUSPENDED_DUNNING' | 'CLUB_PENDING_ACTIVATION' | 'SLOT_IN_PAST'
 }
 
 /** Notificación de webhook de Mercado Pago */

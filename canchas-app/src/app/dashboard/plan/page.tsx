@@ -373,7 +373,7 @@ export default function ClubPlanPage() {
               Adherí tu Club al Débito Automático Mensual
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Disfrutá de <strong>30 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién a partir del día 31 de uso del sistema, y luego continuará de forma automática entre el día 1 y 7 de cada mes.
+              Disfrutá de <strong>30 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 30 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.
             </p>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
               <span className="flex items-center gap-1 text-emerald-300 font-semibold">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,70 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createManualBooking, registerCashPayment } from '@/actions/booking.actions'
+import { getClubPriceRules } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
+
+export interface QuickBookingPriceRule {
+  id?: string
+  courtId?: string | null
+  court_id?: string | null
+  dayOfWeek?: number[]
+  day_of_week?: number[]
+  days_of_week?: number[]
+  timeFrom?: string
+  time_from?: string
+  timeTo?: string
+  time_to?: string
+  priceArs?: number
+  price_ars?: number
+  price_cents?: number
+  deposit_pct?: number
+}
+
+function computeSlotPrice(
+  courtId: string,
+  date: string,
+  time: string,
+  rules: QuickBookingPriceRule[]
+): number {
+  if (!courtId) return 25000
+  let dayOfWeek = new Date().getDay()
+  if (date) {
+    const parts = date.split('-').map(Number)
+    if (parts.length === 3) dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay()
+  }
+  const cleanTime = (time || '19:00').substring(0, 5)
+
+  if (rules && rules.length > 0) {
+    const courtRules = rules.filter((r) => {
+      const cId = r.courtId || r.court_id
+      return !cId || cId === courtId
+    })
+    const applicableRules = courtRules.filter((r) => {
+      const days = r.dayOfWeek || r.days_of_week || r.day_of_week
+      return !days || days.length === 0 || days.includes(dayOfWeek)
+    })
+    const matchingRule = applicableRules
+      .filter((r) => {
+        const from = (r.timeFrom || r.time_from || '00:00').substring(0, 5)
+        const to = (r.timeTo || r.time_to || '23:59').substring(0, 5)
+        return cleanTime >= from && cleanTime <= to
+      })
+      .sort((a, b) => {
+        const fromA = (a.timeFrom || a.time_from || '00:00').substring(0, 5)
+        const fromB = (b.timeFrom || b.time_from || '00:00').substring(0, 5)
+        return fromB.localeCompare(fromA)
+      })[0]
+
+    const chosen = matchingRule || applicableRules[0] || courtRules[0]
+    if (chosen) {
+      const p = chosen.priceArs || chosen.price_ars || (chosen.price_cents ? Math.round(Number(chosen.price_cents) / 100) : null)
+      if (p) return p
+    }
+  }
+  return 25000
+}
 
 interface QuickBookingModalProps {
   isOpen: boolean
@@ -26,6 +88,7 @@ interface QuickBookingModalProps {
     sport: string
     slot_duration: 'MIN_60' | 'MIN_90' | 'MIN_120'
   }>
+  priceRules?: QuickBookingPriceRule[]
   preselectedDate?: string
   preselectedTime?: string
   preselectedCourtId?: string
@@ -37,6 +100,7 @@ export function QuickBookingModal({
   onClose,
   tenantId,
   courts,
+  priceRules,
   preselectedDate = new Date().toISOString().split('T')[0],
   preselectedTime = '19:00',
   preselectedCourtId,
@@ -47,12 +111,49 @@ export function QuickBookingModal({
   const [time, setTime] = useState(preselectedTime)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
-  const [totalAmount, setTotalAmount] = useState('12000')
+  const [internalRules, setInternalRules] = useState<QuickBookingPriceRule[]>(priceRules || [])
+  const [totalAmount, setTotalAmount] = useState(() =>
+    String(
+      computeSlotPrice(
+        preselectedCourtId || courts[0]?.id || '',
+        preselectedDate,
+        preselectedTime,
+        priceRules || []
+      )
+    )
+  )
   const [depositAmount, setDepositAmount] = useState('0')
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'TRANSFER' | 'NONE'>('NONE')
   const [notes, setNotes] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // Cargar reglas reales desde el backend si no fueron inyectadas por props
+  useEffect(() => {
+    if (!priceRules && tenantId) {
+      let isMounted = true
+      getClubPriceRules(tenantId).then((rules) => {
+        if (isMounted && rules && rules.length > 0) {
+          setInternalRules(rules as QuickBookingPriceRule[])
+          setTotalAmount((prev) => {
+            const calculated = String(computeSlotPrice(courtId, date, time, rules as QuickBookingPriceRule[]))
+            return prev === '25000' || prev === '12000' ? calculated : prev
+          })
+        }
+      })
+      return () => {
+        isMounted = false
+      }
+    }
+  }, [priceRules, tenantId, courtId, date, time])
+
+  const recalculatePrice = useCallback(
+    (cId: string, d: string, t: string) => {
+      const p = computeSlotPrice(cId, d, t, internalRules)
+      setTotalAmount(String(p))
+    },
+    [internalRules]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -157,7 +258,11 @@ export function QuickBookingModal({
             <select
               id="court"
               value={courtId}
-              onChange={(e) => setCourtId(e.target.value)}
+              onChange={(e) => {
+                const newCourt = e.target.value
+                setCourtId(newCourt)
+                recalculatePrice(newCourt, date, time)
+              }}
               className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               required
             >
@@ -176,7 +281,11 @@ export function QuickBookingModal({
                 id="date"
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  const newDate = e.target.value
+                  setDate(newDate)
+                  recalculatePrice(courtId, newDate, time)
+                }}
                 className="h-11"
                 required
               />
@@ -188,7 +297,11 @@ export function QuickBookingModal({
                 type="time"
                 step="1800"
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                onChange={(e) => {
+                  const newTime = e.target.value
+                  setTime(newTime)
+                  recalculatePrice(courtId, date, newTime)
+                }}
                 className="h-11"
                 required
               />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, use } from 'react'
+import { useState, useEffect, Suspense, use, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Lock, 
@@ -32,7 +32,7 @@ import {
 } from '@/actions/coupons-and-wallet.actions'
 import { toast } from 'sonner'
 import type { SportType } from '@/types/database'
-import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
+import { getClubBySlug, getClubBankDetails, type ClubData } from '@/config/clubs-catalog'
 import { getClubPublicData } from '@/actions/club.actions'
 
 function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
@@ -40,15 +40,49 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const searchParams = useSearchParams()
   const { slug } = use(params)
 
-  const club = getClubBySlug(slug)
-  const clubBank = getClubBankDetails(club)
+  const fallbackClub = useMemo(() => getClubBySlug(slug), [slug])
+  const [liveClub, setLiveClub] = useState<ClubData | null>(null)
+  const club = liveClub || fallbackClub
+  const clubBank = useMemo(() => getClubBankDetails(club), [club])
 
   const courtId = searchParams.get('courtId') || 'c1'
   const courtName = searchParams.get('courtName') || 'Cancha 1'
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
   const time = searchParams.get('time') || '19:00'
-  const total = Number(searchParams.get('total')) || 14000
-  const deposit = Number(searchParams.get('deposit')) || 7000
+  const rawTotalParam = Number(searchParams.get('total'))
+  const rawDepositParam = Number(searchParams.get('deposit'))
+
+  // Cálculo inteligente: si no viene en los parámetros URL, computar de las reglas de tarifas del club
+  const calculatedPricing = useMemo(() => {
+    if (rawTotalParam > 0) {
+      return {
+        total: rawTotalParam,
+        deposit: rawDepositParam > 0 ? rawDepositParam : Math.round(rawTotalParam * 0.5),
+      }
+    }
+    if (club.priceRules && club.priceRules.length > 0) {
+      let dayOfWeek = new Date().getDay()
+      if (date) {
+        const parts = date.split('-').map(Number)
+        if (parts.length === 3) dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay()
+      }
+      const matchingRule = club.priceRules.find((r) =>
+        (!r.courtId || r.courtId === courtId) &&
+        (!r.dayOfWeek || r.dayOfWeek.length === 0 || r.dayOfWeek.includes(dayOfWeek)) &&
+        time >= r.timeFrom && time <= r.timeTo
+      )
+      if (matchingRule) {
+        const t = matchingRule.priceArs
+        const depPct = (matchingRule.depositPct || 50) / 100
+        return { total: t, deposit: Math.round(t * depPct) }
+      }
+    }
+    const defaultPrice = club.startingPrice || 25000
+    return { total: defaultPrice, deposit: Math.round(defaultPrice * 0.5) }
+  }, [rawTotalParam, rawDepositParam, club, date, time, courtId])
+
+  const total = calculatedPricing.total
+  const deposit = calculatedPricing.deposit
   const sport = (searchParams.get('sport') || 'PADEL') as SportType
 
   const paramTenant = searchParams.get('tenantId')
@@ -57,12 +91,17 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   )
 
   useEffect(() => {
-    if (!resolvedTenantId) {
-      getClubPublicData(slug).then((data) => {
-        if (data?.id) setResolvedTenantId(data.id)
-      })
+    let isMounted = true
+    getClubPublicData(slug).then((data) => {
+      if (isMounted && data) {
+        setLiveClub(data)
+        if (data.id) setResolvedTenantId(data.id)
+      }
+    })
+    return () => {
+      isMounted = false
     }
-  }, [slug, resolvedTenantId])
+  }, [slug])
 
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')

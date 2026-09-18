@@ -184,7 +184,7 @@ export function generateClubSlots(
         // Filtrar reglas que correspondan a esta cancha (o aplicables a todas) y a este día de la semana
         const applicableRules = club.priceRules.filter(rule => {
           const matchesCourt = !rule.courtId || rule.courtId === court.id
-          const matchesDay = Array.isArray(rule.dayOfWeek) && rule.dayOfWeek.includes(dayOfWeek)
+          const matchesDay = !rule.dayOfWeek || rule.dayOfWeek.length === 0 || (Array.isArray(rule.dayOfWeek) && rule.dayOfWeek.includes(dayOfWeek))
           return matchesCourt && matchesDay
         })
 
@@ -197,9 +197,20 @@ export function generateClubSlots(
           totalPrice = matchingRule.priceArs
           depositPct = (matchingRule.depositPct || 50) / 100
         } else if (applicableRules.length > 0) {
-          // Si no hubo coincidencia horaria estricta, aplicar la tarifa del día correspondiente
+          // Si no hubo coincidencia horaria estricta en el día, aplicar la tarifa más cercana del día
           totalPrice = applicableRules[0].priceArs
           depositPct = (applicableRules[0].depositPct || 50) / 100
+        } else {
+          // Si no hay regla específica configurada para este día (ej: fin de semana aún no diferenciado),
+          // heredar la franja horaria correspondiente de la cancha
+          const courtRules = club.priceRules.filter(rule => !rule.courtId || rule.courtId === court.id)
+          const timeFallback = courtRules
+            .filter(rule => time >= rule.timeFrom && time <= rule.timeTo)
+            .sort((a, b) => b.timeFrom.localeCompare(a.timeFrom))[0]
+          if (timeFallback) {
+            totalPrice = timeFallback.priceArs
+            depositPct = (timeFallback.depositPct || 50) / 100
+          }
         }
       }
 

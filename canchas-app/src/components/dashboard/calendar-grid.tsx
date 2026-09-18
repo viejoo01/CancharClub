@@ -13,7 +13,7 @@ import {
   CloudRain
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { QuickBookingModal } from './quick-booking-modal'
+import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
@@ -61,6 +61,7 @@ interface CalendarGridProps {
   initialDate?: string
   initialVenueId?: string
   initialSchedule?: ClubScheduleConfig
+  priceRules?: QuickBookingPriceRule[]
   onRefresh?: () => void
 }
 
@@ -70,6 +71,7 @@ export function CalendarGrid({
   initialBookings,
   initialDate = new Date().toISOString().split('T')[0],
   initialSchedule,
+  priceRules,
   onRefresh,
 }: CalendarGridProps) {
   const router = useRouter()
@@ -513,6 +515,7 @@ export function CalendarGrid({
           }}
           tenantId={tenantId}
           courts={activeCourts}
+          priceRules={priceRules}
           preselectedDate={selectedDate}
           preselectedTime={quickBookSlot?.time || '19:00'}
           preselectedCourtId={quickBookSlot?.courtId}
@@ -520,6 +523,7 @@ export function CalendarGrid({
             if (quickBookSlot) {
               const court = activeCourts.find((c) => c.id === quickBookSlot.courtId)
               const startsAt = `${selectedDate}T${quickBookSlot.time}:00`
+              const optAmount = priceRules && priceRules.length > 0 ? (priceRules[0].priceArs || 25000) : 25000
               const newOptimistic: CalendarBooking = {
                 id: `bk-opt-${Date.now()}`,
                 court_id: quickBookSlot.courtId,
@@ -528,10 +532,10 @@ export function CalendarGrid({
                 ends_at: `${selectedDate}T23:59:00`,
                 status: 'CONFIRMED',
                 origin: 'PHONE',
-                total_amount_ars: 12000,
+                total_amount_ars: optAmount,
                 deposit_amount_ars: 0,
                 total_paid: 0,
-                balance_due: 12000,
+                balance_due: optAmount,
                 courts: court ? { name: court.name, sport: court.sport } : undefined,
               }
               setOptimisticBookings((prev) => [...prev, newOptimistic])

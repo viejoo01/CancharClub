@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { formatARS } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { getClubBySlug, getClubBankDetails } from '@/config/clubs-catalog'
+import { getClubBySlug, getClubBankDetails, type ClubData } from '@/config/clubs-catalog'
 import { getClubPublicData } from '@/actions/club.actions'
 import { 
   createCourtOrder, 
@@ -46,7 +46,9 @@ export default function CourtOrderPage({
   const rawMesa = searchParams.get('mesa') || searchParams.get('cancha') || ''
   const initialTable = rawMesa ? (rawMesa.toLowerCase().startsWith('cancha') ? 'Mesa' : rawMesa) : 'Mesa'
 
-  const club = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
+  const fallbackClub = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
+  const [liveClub, setLiveClub] = useState<ClubData | null>(null)
+  const club = liveClub || fallbackClub
   const bankDetails = useMemo(() => getClubBankDetails(club), [club])
 
   const [clubTenantId, setClubTenantId] = useState<string>(club?.id && club.id.length > 10 ? club.id : '')
@@ -64,6 +66,9 @@ export default function CourtOrderPage({
   // Cargar catálogo dinámico de productos desde Supabase para este club
   useEffect(() => {
     getClubPublicData(resolvedParams.slug).then((data) => {
+      if (data) {
+        setLiveClub(data)
+      }
       const tid = data?.id || (club?.id && club.id.length > 10 ? club.id : DEMO_TENANT_ID)
       if (tid) {
         setClubTenantId(tid)

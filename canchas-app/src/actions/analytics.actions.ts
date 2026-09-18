@@ -273,15 +273,17 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       ? `${peakCell.slotLabel} (${peakCell.timeRange}) — ${peakCell.occupancyPct}% ocupación`
       : 'Noche (20:00 - 00:00 hs)'
 
-    // Precio pico del club
+    // Precio pico del club desde la columna real price_cents
     const { data: priceRules } = await supabase
       .from('price_rules')
-      .select('price_ars')
+      .select('price_cents')
       .eq('tenant_id', tenantId)
       .eq('is_active', true)
-      .order('price_ars', { ascending: false })
+      .order('price_cents', { ascending: false })
       .limit(1)
-    const peakPrice = priceRules?.[0]?.price_ars ?? 14000
+    const peakPrice = (priceRules?.[0]?.price_cents)
+      ? Math.round(Number(priceRules[0].price_cents) / 100)
+      : 25000
 
     // Recomendaciones: una por hora muerta (máx. 3)
     const deadHours = heatmap.filter(h => h.isDeadHour).slice(0, 3)

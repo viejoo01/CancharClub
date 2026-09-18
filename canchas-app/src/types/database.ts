@@ -164,13 +164,17 @@ export interface PriceRule {
   tenant_id: string
   court_id: string | null
   name: string
-  rule_type: PriceRuleType
-  applies_to_days: number[]
-  time_from: string   // "HH:MM"
-  time_to: string     // "HH:MM"
-  price_ars: number
-  valid_from: string  // ISO date
-  valid_to: string | null
+  rule_type?: PriceRuleType
+  day_of_week?: number[]
+  applies_to_days?: number[]
+  days_of_week?: number[]
+  time_from: string   // "HH:MM:SS" or "HH:MM"
+  time_to: string     // "HH:MM:SS" or "HH:MM"
+  price_cents: number // Primary source of truth in PostgreSQL
+  price_ars?: number  // Computed ARS (price_cents / 100)
+  priority?: number
+  valid_from?: string | null // ISO date
+  valid_to?: string | null
   is_active: boolean
   created_at: string
   updated_at: string

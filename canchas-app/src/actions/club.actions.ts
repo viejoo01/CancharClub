@@ -409,7 +409,11 @@ export async function createPriceRule(payload: {
   deposit_pct?: number
 }) {
   const supabase = await createServiceClient()
-  const days = payload.days_of_week || payload.day_of_week || [1, 2, 3, 4, 5]
+  const days = (payload.days_of_week && payload.days_of_week.length > 0)
+    ? payload.days_of_week
+    : (payload.day_of_week && payload.day_of_week.length > 0)
+      ? payload.day_of_week
+      : [1, 2, 3, 4, 5, 6, 0]
   const priceCents = Math.round(Number(payload.price_ars) * 100)
   const timeFromFormatted = payload.time_from.length === 5 ? `${payload.time_from}:00` : payload.time_from
   const timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
@@ -638,19 +642,19 @@ export async function applyBulkInflationPriceAdjustment(
   percentage: number,
   roundingStep: number = 500
 ) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
-  // 1. Obtener reglas de precios actuales
+  // 1. Obtener reglas de precios actuales desde la columna price_cents real
   const { data: currentRules, error } = await supabase
     .from('price_rules')
-    .select('id, name, price_ars')
+    .select('id, name, price_cents')
     .eq('tenant_id', tenantId)
 
   if (error || !currentRules || currentRules.length === 0) {
     return {
       success: true,
-      updatedCount: 3,
-      message: `Precios ajustados un +${percentage}% y redondeados a múltiplos de $${roundingStep}`,
+      updatedCount: 0,
+      message: `No se encontraron tarifas activas para ajustar`,
     }
   }
 
@@ -658,12 +662,14 @@ export async function applyBulkInflationPriceAdjustment(
   let updatedCount = 0
 
   for (const rule of currentRules) {
-    const rawPrice = rule.price_ars * multiplier
-    const roundedPrice = Math.round(rawPrice / roundingStep) * roundingStep
+    const currentPriceArs = Math.round((Number(rule.price_cents) || 0) / 100)
+    const rawPrice = currentPriceArs * multiplier
+    const roundedPriceArs = Math.round(rawPrice / roundingStep) * roundingStep
+    const newPriceCents = Math.round(roundedPriceArs * 100)
 
     const { error: updateErr } = await supabase
       .from('price_rules')
-      .update({ price_ars: roundedPrice })
+      .update({ price_cents: newPriceCents })
       .eq('id', rule.id)
 
     if (!updateErr) updatedCount++
@@ -671,6 +677,7 @@ export async function applyBulkInflationPriceAdjustment(
 
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard')
+  revalidatePath('/club/[slug]', 'page')
   return {
     success: true,
     updatedCount,
@@ -830,7 +837,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       id: r.id,
       courtId: r.court_id,
       name: r.name,
-      dayOfWeek: Array.isArray(r.day_of_week) ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+      dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0 ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
       timeFrom: (r.time_from || '00:00:00').substring(0, 5),
       timeTo: (r.time_to || '23:59:59').substring(0, 5),
       priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
@@ -975,7 +982,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         id: r.id,
         courtId: r.court_id,
         name: r.name,
-        dayOfWeek: Array.isArray(r.day_of_week) ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+        dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0 ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
         timeFrom: (r.time_from || '00:00:00').substring(0, 5),
         timeTo: (r.time_to || '23:59:59').substring(0, 5),
         priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),

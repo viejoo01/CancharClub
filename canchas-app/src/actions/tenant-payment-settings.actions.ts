@@ -10,6 +10,8 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { assertTenantAdmin } from '@/lib/auth-security'
+import { sanitizeText } from '@/lib/sanitize'
 
 export interface TenantPaymentSettings {
   tenantId: string
@@ -90,16 +92,22 @@ export async function saveTenantBankSettings(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede modificar estos datos
+    const authCheck = await assertTenantAdmin(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
+    }
+
     const supabase = await createServiceClient()
     const { error } = await supabase
       .from('tenants')
       .update({
-        bank_name: data.bankName.trim(),
-        bank_account_holder: data.accountHolder.trim(),
-        bank_cbu: data.cbu.trim(),
-        bank_alias: data.alias.trim().toLowerCase(),
-        bank_cuit: data.cuit?.trim() || null,
-        phone_whatsapp: data.whatsappPhone?.trim() || null,
+        bank_name: sanitizeText(data.bankName, 60),
+        bank_account_holder: sanitizeText(data.accountHolder, 80),
+        bank_cbu: data.cbu.replace(/\D/g, '').slice(0, 22),
+        bank_alias: sanitizeText(data.alias, 40).toLowerCase(),
+        bank_cuit: data.cuit ? data.cuit.replace(/[^\d-]/g, '').slice(0, 14) : null,
+        phone_whatsapp: data.whatsappPhone ? sanitizeText(data.whatsappPhone, 25) : null,
         payment_methods: data.paymentMethods || ['TRANSFER'],
         updated_at: new Date().toISOString(),
       })
@@ -132,10 +140,16 @@ export async function saveTenantMpCredentials(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede vincular credenciales
+    const authCheck = await assertTenantAdmin(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para configurar Mercado Pago en este club' }
+    }
+
     const supabase = await createServiceClient()
     const trimmedToken = data.accessToken.trim()
 
-    // Validación básica
+    // Validación básica de token Mercado Pago
     if (!trimmedToken.startsWith('APP_USR-') && !trimmedToken.startsWith('TEST-')) {
       return { success: false, error: 'El Access Token debe comenzar con APP_USR- o TEST-' }
     }
@@ -172,6 +186,12 @@ export async function saveTenantMpCredentials(
  */
 export async function disconnectTenantMpAccount(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede desvincular credenciales
+    const authCheck = await assertTenantAdmin(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
+    }
+
     const supabase = await createServiceClient()
     const { error } = await supabase
       .from('tenants')

@@ -481,7 +481,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         bank_cbu,
         bank_account_holder,
         bank_name,
-        mp_access_token
+        payment_methods
       `)
       .eq('slug', normalizedSlug)
       .maybeSingle()
@@ -520,8 +520,12 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
           return {
             id: c.id,
             name: c.name,
-            sport: (c.sport as SportCategory) || 'PADEL',
-            features: features.length > 0 ? features : ['Césped Sintético'],
+            sport: c.sport as SportCategory,
+            surface: c.surface || 'Césped Sintético',
+            isIndoor: Boolean(c.is_indoor),
+            hasLighting: Boolean(c.has_lights),
+            features,
+            slotDurationMinutes: c.slot_duration_minutes || 90,
             pricePerHour,
             depositPercentage: 0.5,
           }
@@ -538,6 +542,9 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
           courtsMapped[0]?.pricePerHour || 16000
         )
       : 0
+
+    const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
+    const hasMp = rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO')
 
     return {
       id: tenant.id,
@@ -567,8 +574,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             cbu: tenant.bank_cbu || '',
           }
         : undefined,
-      paymentMethods: tenant.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
-      mpConnected: Boolean(tenant.mp_access_token),
+      paymentMethods: hasMp ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
+      mpConnected: hasMp,
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)

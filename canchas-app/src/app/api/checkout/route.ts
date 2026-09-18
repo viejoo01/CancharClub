@@ -10,6 +10,8 @@ import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { siteConfig } from '@/config/site'
+import { checkCheckoutRateLimit, getClientIp } from '@/lib/rate-limiter'
+import { sanitizeText } from '@/lib/sanitize'
 
 // Schema de validación para Checkout API
 const checkoutSchema = z.discriminatedUnion('type', [
@@ -38,6 +40,19 @@ export type CheckoutRequestBody = z.infer<typeof checkoutSchema>
 
 export async function POST(req: NextRequest) {
   try {
+    // 0. ESCUDO ANTI-BOT Y RATE LIMITING (Máximo 15 checkouts/minuto por IP)
+    const clientIp = getClientIp(req)
+    const rateLimit = await checkCheckoutRateLimit(clientIp)
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Demasiadas solicitudes de pago en poco tiempo. Por favor intentá nuevamente en un minuto.',
+        },
+        { status: 429 }
+      )
+    }
+
     const rawBody = await req.json()
     const validation = checkoutSchema.safeParse(rawBody)
 
@@ -134,6 +149,34 @@ export async function POST(req: NextRequest) {
     // Title: "Seña Turno [Cancha] - CancharClub"
     // --------------------------------------------------------------------------
     if (payload.type === 'booking_deposit') {
+      // 1. BLINDAJE FINANCIERO ANTI-FRAUDE: Consultar reserva real en la base de datos
+      const { data: booking, error: bookingErr } = await supabase
+        .from('bookings')
+        .select('id, tenant_id, deposit_amount, total_price, status')
+        .eq('id', payload.booking_id)
+        .maybeSingle()
+
+      if (bookingErr || !booking) {
+        return NextResponse.json(
+          { success: false, error: 'Reserva no encontrada o expirada' },
+          { status: 404 }
+        )
+      }
+
+      // Validar que la reserva pertenezca efectivamente al tenant solicitado
+      if (booking.tenant_id !== payload.tenant_id) {
+        return NextResponse.json(
+          { success: false, error: 'Inconsistencia de seguridad: el club no coincide con la reserva' },
+          { status: 403 }
+        )
+      }
+
+      // El monto se determina estrictamente desde la base de datos (NUNCA confiando en el cliente)
+      const serverCalculatedDeposit = Number(booking.deposit_amount) || Number(booking.total_price)
+      const enforcedAmount = (serverCalculatedDeposit && serverCalculatedDeposit > 0)
+        ? serverCalculatedDeposit
+        : payload.amount
+
       // Obtener el access_token del tenant (cuenta Mercado Pago del club)
       const { data: tenant } = await supabase
         .from('tenants')
@@ -141,7 +184,7 @@ export async function POST(req: NextRequest) {
         .eq('id', payload.tenant_id)
         .single()
 
-      const itemTitle = `Seña Turno ${payload.court_name} - CancharClub`
+      const itemTitle = `Seña Turno ${sanitizeText(payload.court_name, 50)} - CancharClub`
       const externalRef = `cancharclub_booking_${payload.booking_id}`
 
       // Seguridad: Solo usar el token del club (NUNCA el del Superadmin)
@@ -159,6 +202,8 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      const safePayerName = sanitizeText(payload.payer_name, 70)
+
       const client = new Preference(new MercadoPagoConfig({ accessToken: tenantToken }))
       const preference = await client.create({
         body: {
@@ -167,12 +212,12 @@ export async function POST(req: NextRequest) {
               id: payload.booking_id,
               title: itemTitle,
               quantity: 1,
-              unit_price: payload.amount,
+              unit_price: enforcedAmount,
               currency_id: 'ARS',
             },
           ],
           payer: {
-            name: payload.payer_name,
+            name: safePayerName,
             email: payload.payer_email,
           },
           external_reference: externalRef,

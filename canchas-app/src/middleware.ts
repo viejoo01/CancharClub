@@ -27,8 +27,6 @@ export async function middleware(request: NextRequest) {
   const demoStatusOverride = request.nextUrl.searchParams.get('simulate_status') || 
                              request.cookies.get('demo_subscription_status')?.value
 
-  const demoUserRole = request.cookies.get('demo_user_role')?.value
-
   // Permitir la página de inicio ('/') y todas las rutas públicas sin redirección
   const isPublicPath = pathname === '/' || PUBLIC_PATHS.some(p => pathname.startsWith(p))
   if (isPublicPath) {
@@ -74,8 +72,9 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS (DASHBOARD) ──────────────────────────
+  // En producción, el acceso al dashboard requiere una sesión real autenticada en Supabase.
   if (pathname.startsWith('/dashboard')) {
-    if (!user && !demoUserRole) {
+    if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       url.searchParams.set('redirectTo', pathname)
@@ -85,7 +84,7 @@ export async function middleware(request: NextRequest) {
 
   // ─── 4. PROTECCIÓN DEL PANEL SUPERADMIN ────────────────────────────────────
   // El panel superadmin usa su propio sistema de sesión (cookie sa_session),
-  // completamente independiente de Supabase y de los demo_* cookies de clubes.
+  // completamente independiente de Supabase.
   if (pathname.startsWith('/superadmin')) {
     // La página de login del superadmin es pública
     if (pathname === '/superadmin/login') {
@@ -100,12 +99,19 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/superadmin/login', request.url))
     }
 
-    // Verificar firma HMAC del token usando Web Crypto API (compatible con Edge Runtime)
+    // Verificar firma HMAC del token y timestamp usando Web Crypto API (Edge Runtime)
     try {
       const decoded = Buffer.from(saSession, 'base64url').toString('utf-8')
       const parts = decoded.split(':')
       if (parts.length < 3) throw new Error('invalid')
       const sig = parts.pop()!
+
+      // Verificar que la sesión no tenga más de 8 horas
+      const timestamp = parseInt(parts[parts.length - 1], 10)
+      if (isNaN(timestamp) || Date.now() - timestamp > 8 * 60 * 60 * 1000) {
+        throw new Error('expired')
+      }
+
       const payload = parts.join(':')
 
       const enc = new TextEncoder()

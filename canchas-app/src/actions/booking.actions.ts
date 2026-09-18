@@ -25,6 +25,7 @@ import type {
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
 import { addVenueBooking } from '@/config/venues-data'
+import { assertTenantMember } from '@/lib/auth-security'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -402,28 +403,10 @@ export async function createManualBooking(
   try {
     const supabase = await createClient()
 
-    const cookieStore = await cookies()
-    const demoUserRole = cookieStore.get('demo_user_role')?.value
-
-    // Verificar que el usuario es staff del tenant o demo staff/admin
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user && !demoUserRole) return { success: false, error: 'No autenticado' }
-
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, tenant_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!profile || !['TENANT_ADMIN', 'TENANT_STAFF', 'SUPERADMIN'].includes(profile.role)) {
-        return { success: false, error: 'Sin permisos' }
-      }
-
-      // Para STAFF/ADMIN, verificar que el tenant_id coincide con el suyo
-      if (profile.role !== 'SUPERADMIN' && profile.tenant_id !== payload.tenant_id) {
-        return { success: false, error: 'No perteneces a este club' }
-      }
+    // 1. Verificación de Seguridad Anti-IDOR: Solo miembros autorizados del club
+    const authCheck = await assertTenantMember(payload.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para cargar reservas en este club' }
     }
 
     // Obtener duración de la cancha
@@ -453,7 +436,7 @@ export async function createManualBooking(
         deposit_amount_ars: payload.deposit_amount_ars,
         internal_notes: payload.internal_notes,
         customer_notes: payload.customer_notes,
-        created_by_profile_id: user?.id || null,
+        created_by_profile_id: authCheck.user?.id || null,
       })
       .select('id')
       .single()
@@ -485,15 +468,6 @@ export async function registerCashPayment(params: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
-    const cookieStore = await cookies()
-    const demoUserRole = cookieStore.get('demo_user_role')?.value
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user && !demoUserRole) return { success: false, error: 'No autenticado' }
-
-    if (!user || params.booking_id.startsWith('bk-demo-') || params.booking_id.startsWith('bk-')) {
-      return { success: true }
-    }
-
     // Obtener el booking para validar tenant
     const { data: booking } = await supabase
       .from('bookings')
@@ -503,6 +477,12 @@ export async function registerCashPayment(params: {
 
     if (!booking) return { success: false, error: 'Reserva no encontrada' }
 
+    // Verificación de Seguridad Anti-IDOR
+    const authCheck = await assertTenantMember(booking.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para registrar cobros en este club' }
+    }
+
     // Insertar pago
     const { error: payError } = await supabase
       .from('booking_payments')
@@ -511,7 +491,7 @@ export async function registerCashPayment(params: {
         booking_id: params.booking_id,
         amount_ars: params.amount_ars,
         payment_method: params.payment_method,
-        received_by_profile_id: user.id,
+        received_by_profile_id: authCheck.user?.id || null,
         reference_number: params.reference_number,
         notes: params.notes,
         payment_date: new Date().toISOString().split('T')[0],
@@ -558,24 +538,27 @@ export async function cancelBooking(params: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient()
-    const cookieStore = await cookies()
-    const demoUserRole = cookieStore.get('demo_user_role')?.value
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user && !demoUserRole) return { success: false, error: 'No autenticado' }
-
-    if (!user || params.booking_id.startsWith('bk-demo-') || params.booking_id.startsWith('bk-')) {
-      return { success: true }
-    }
-
-    const newStatus: BookingStatus = params.cancelled_by === 'USER'
-      ? 'CANCELLED_USER'
-      : 'CANCELLED_CLUB'
-
     const { data: booking } = await supabase
       .from('bookings')
       .select('redis_lock_key, id, tenant_id, court_id, starts_at')
       .eq('id', params.booking_id)
       .single()
+
+    if (!booking) return { success: false, error: 'Reserva no encontrada' }
+
+    let cancellingUserId: string | null = null
+    if (params.cancelled_by === 'CLUB') {
+      const authCheck = await assertTenantMember(booking.tenant_id)
+      if (!authCheck.authorized) {
+        return { success: false, error: authCheck.error || 'Sin permisos para cancelar turnos en este club' }
+      }
+      cancellingUserId = authCheck.user?.id || null
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      cancellingUserId = user?.id || null
+    }
+
+    const newStatus: BookingStatus = params.cancelled_by === 'USER' ? 'CANCELLED_USER' : 'CANCELLED_CLUB'
 
     const { error } = await supabase
       .from('bookings')
@@ -583,7 +566,7 @@ export async function cancelBooking(params: {
         status: newStatus,
         cancellation_reason: params.reason,
         cancelled_at: new Date().toISOString(),
-        cancelled_by_profile_id: user.id,
+        cancelled_by_profile_id: cancellingUserId,
       })
       .eq('id', params.booking_id)
 

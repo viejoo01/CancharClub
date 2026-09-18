@@ -150,16 +150,16 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Verificar firma usando el secret de la plataforma (para webhooks de APP) ─
-  // NOTA: En modo marketplace, el secret puede ser diferente por tenant.
-  //       Para simplificar, usamos el secret global de la plataforma.
-  //       En producción, implementar lookup por seller_id si se usa OAuth por club.
   const webhookSecret = process.env.MP_WEBHOOK_SECRET
   if (webhookSecret) {
     const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
     if (!isValid) {
-      console.warn('[MP Webhook] Firma inválida — descartando notificación')
+      console.warn('[MP Webhook] Firma inválida — descartando notificación maliciosa')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    console.error('[MP Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
   }
 
   console.log(`[MP Webhook] Procesando payment_id: ${paymentId}`)

@@ -11,6 +11,8 @@ import { cookies } from 'next/headers'
 import { MercadoPagoConfig, Preference, PreApproval } from 'mercadopago'
 import type { TenantSubscriptionStatus, TenantInvoice } from '@/types/database'
 
+import { getPlanByCourtsCount, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
+
 export interface ClubBillingOverviewItem {
   tenantId: string
   name: string
@@ -23,11 +25,130 @@ export interface ClubBillingOverviewItem {
   billingPeriod: string
 }
 
+export interface ClubPlanDetails {
+  tenantId: string
+  tenantName: string
+  tenantSlug: string
+  courtsCount: number
+  highestSlotPriceArs: number
+  pricing: ClubSaaSPricing
+  activePlan: SaaSPlanDefinition
+  isPaid: boolean
+  subscriptionStatus: TenantSubscriptionStatus
+  nextDueDate: string
+}
+
+/**
+ * Obtiene los detalles completos y oficiales del plan SaaS del club actualmente autenticado.
+ * Garantiza que siempre muestre el nombre del club registrado y el plan asignado por el Superadmin.
+ */
+export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPlanDetails> {
+  const supabase = await createClient()
+  let targetTenantId = tenantIdParam
+
+  if (!targetTenantId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      targetTenantId = profile?.tenant_id
+    }
+  }
+
+  const cookieStore = await cookies()
+  const cookieTenantName = cookieStore.get('demo_tenant_name')?.value
+  const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
+  const cookieStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
+  const cookiePlanId = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
+
+  let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
+  let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'
+  let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || 'ACTIVE'
+  let baseSlots: number | null = null
+
+  if (targetTenantId) {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, name, slug, base_slots_plan, subscription_status, is_active')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    if (tenant) {
+      tenantName = tenant.name || tenantName
+      tenantSlug = tenant.slug || tenantSlug
+      subscriptionStatus = tenant.subscription_status || subscriptionStatus
+      if (tenant.base_slots_plan) {
+        baseSlots = Number(tenant.base_slots_plan)
+      }
+    }
+  }
+
+  // 1. Determinar canchas asignadas (prioridad a base_slots_plan fijado por Superadmin)
+  let courtsCount = 2
+  if (baseSlots && baseSlots > 0) {
+    courtsCount = baseSlots === 1 ? 1 : (baseSlots === 1.5 || baseSlots === 2) ? 2 : baseSlots <= 4 ? 3 : 5
+  } else if (cookiePlanId) {
+    courtsCount = cookiePlanId === 'CHICO_1' ? 1 : cookiePlanId === 'MEDIANO_2' ? 2 : cookiePlanId === 'CONSOLIDADO_3_4' ? 3 : 5
+  } else if (targetTenantId) {
+    const { data: courts } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', targetTenantId)
+      .eq('is_active', true)
+    if (courts && courts.length > 0) {
+      courtsCount = courts.length
+    }
+  }
+
+  // 2. Obtener el valor de turno más alto para la tarifa proporcional
+  let highestPriceArs = 30000
+  if (targetTenantId) {
+    const { data: priceRules } = await supabase
+      .from('price_rules')
+      .select('price_cents')
+      .eq('tenant_id', targetTenantId)
+      .order('price_cents', { ascending: false })
+      .limit(1)
+
+    if (priceRules && priceRules.length > 0 && priceRules[0].price_cents) {
+      const parsed = Math.round(Number(priceRules[0].price_cents) / 100)
+      if (parsed > 0) highestPriceArs = parsed
+    }
+  }
+
+  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs)
+  const activePlan = getPlanByCourtsCount(courtsCount)
+  const isPaid = subscriptionStatus === 'ACTIVE'
+
+  return {
+    tenantId: targetTenantId || '',
+    tenantName,
+    tenantSlug,
+    courtsCount,
+    highestSlotPriceArs: highestPriceArs,
+    pricing,
+    activePlan,
+    isPaid,
+    subscriptionStatus,
+    nextDueDate: pricing.nextDueDate,
+  }
+}
+
 /**
  * Obtiene el resumen de facturación SaaS de un club específico.
  */
 export async function getClubBillingSummary(tenantId: string) {
   const supabase = await createClient()
+
+  // 0. Obtener tenant para verificar plan fijado por Superadmin
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, name, slug, base_slots_plan, subscription_status')
+    .eq('id', tenantId)
+    .maybeSingle()
 
   // 1. Obtener canchas activas
   const { data: courts } = await supabase
@@ -36,7 +157,13 @@ export async function getClubBillingSummary(tenantId: string) {
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
 
-  const activeCourtsCount = courts?.length ?? 2
+  let activeCourtsCount = 2
+  if (tenant?.base_slots_plan) {
+    const b = Number(tenant.base_slots_plan)
+    activeCourtsCount = b === 1 ? 1 : (b === 1.5 || b === 2) ? 2 : b <= 4 ? 3 : 5
+  } else if (courts && courts.length > 0) {
+    activeCourtsCount = courts.length
+  }
 
   // 2. Obtener la regla de precio con el valor más alto
   const { data: priceRules } = await supabase
@@ -261,9 +388,9 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
 
   return {
     tenantId: defaultTenantId,
-    tenantName: tenant?.name || 'Club Pádel Central Tucumán',
-    tenantSlug: tenant?.slug || 'padel-central',
-    phone: tenant?.phone_whatsapp || '+54 9 381 600-1122',
+    tenantName: tenant?.name || 'Mi Club',
+    tenantSlug: tenant?.slug || 'mi-club',
+    phone: tenant?.phone_whatsapp || '',
     status: effectiveStatus,
     currentBalance: Number(tenant?.current_balance ?? debtAmountArs),
     invoice: (invoice as TenantInvoice | null) || {

@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 function ConfirmationContent({ bookingId }: { bookingId: string }) {
   const searchParams = useSearchParams()
 
-  const clubName = searchParams.get('club') || 'Club Pádel Central Tucumán'
+  const clubName = searchParams.get('club') || 'Club Deportivo'
   const courtName = searchParams.get('court') || 'Cancha 1 (Panorámica)'
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
   const time = searchParams.get('time') || '19:00'

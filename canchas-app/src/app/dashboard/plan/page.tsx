@@ -14,7 +14,8 @@ import {
   RefreshCw,
   X,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Info
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,7 +25,9 @@ import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
   createTenantInvoicePreference, 
   recordTenantInvoicePayment, 
-  setupMonthlySubscriptionPreapproval
+  setupMonthlySubscriptionPreapproval,
+  getClubPlanDetails,
+  type ClubPlanDetails
 } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
@@ -33,33 +36,38 @@ import { useTenantId } from '@/hooks/use-tenant-id'
 
 export default function ClubPlanPage() {
   const tenantId = useTenantId()
-  // Canchas activas con las que cuenta el club
-  const [courtsCount, setCourtsCount] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('cancharclub_club_courts_count')
-      if (saved) {
-        const parsed = parseInt(saved, 10)
-        if (!isNaN(parsed) && parsed > 0) return parsed
+  const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
+
+  // Cargar información oficial del club y plan asignado desde la base de datos
+  useEffect(() => {
+    let isMounted = true
+    async function loadPlan() {
+      try {
+        const details = await getClubPlanDetails(tenantId || undefined)
+        if (isMounted) {
+          setPlanDetails(details)
+        }
+      } catch (err) {
+        console.error('Error fetching club plan details:', err)
       }
     }
-    return 2
-  })
+    loadPlan()
+    return () => { isMounted = false }
+  }, [tenantId])
 
-  const handleSelectCourts = (num: number) => {
-    setCourtsCount(num)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cancharclub_club_courts_count', String(num))
-    }
-  }
+  const [manualPaid, setManualPaid] = useState(false)
+  const isPaid = manualPaid || (planDetails?.isPaid ?? false)
 
-  const highestSlotPrice = 30000
-  const pricing = calculateClubSaaSFee(courtsCount, highestSlotPrice)
-  const activePlan = getPlanByCourtsCount(courtsCount)
+  const clubName = planDetails?.tenantName || 'Cargando club...'
+  const courtsCount = planDetails?.courtsCount || 2
+  const highestSlotPrice = planDetails?.highestSlotPriceArs || 30000
+  const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice)
+  const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
 
   const [copied, setCopied] = useState(false)
-  const [isPaid, setIsPaid] = useState(false)
   const [paying, setPaying] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
+
   const [hasAutoDebit, setHasAutoDebit] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -78,12 +86,12 @@ export default function ClubPlanPage() {
   const handlePayWithMercadoPago = async () => {
     setPaying(true)
     try {
-      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
       const res = await createTenantInvoicePreference(activeTenant)
       if (res.initPoint) {
         if (res.isSimulated) {
           await recordTenantInvoicePayment(activeTenant)
-          setIsPaid(true)
+          setManualPaid(true)
           toast.success('Pago Aprobado con Mercado Pago', {
             description: `Se acreditó el abono mensual de ${formatARS(pricing.monthlyFeeArs)}. ¡Tu club está al día!`
           })
@@ -122,7 +130,7 @@ export default function ClubPlanPage() {
   const handleSetupAutoDebit = async () => {
     setSubscribing(true)
     try {
-      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
       const res = await setupMonthlySubscriptionPreapproval(activeTenant)
       if (res.success) {
         if (res.initPoint) {
@@ -131,7 +139,6 @@ export default function ClubPlanPage() {
           })
           window.location.assign(res.initPoint)
         } else {
-          // Si no hay initPoint de MP o estamos en modo simulación, abrir el formulario oficial de carga de tarjeta
           setShowSubscriptionModal(true)
         }
       } else {
@@ -195,8 +202,8 @@ export default function ClubPlanPage() {
                   </Badge>
                 )}
               </div>
-              <h2 className="text-xl font-bold text-white">
-                Club Pádel Central Tucumán
+              <h2 className="text-2xl font-bold text-white tracking-tight">
+                {clubName}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 Modelo adaptado automáticamente a la infraestructura de tu complejo.
@@ -213,32 +220,31 @@ export default function ClubPlanPage() {
             )}
           </div>
 
-          {/* Canchas en tu predio */}
-          <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center gap-2.5 flex-wrap">
-            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Canchas en tu predio:
-            </span>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {[1, 2, 3, 4, 6].map((num) => {
-                const isSelected = courtsCount === num
-                return (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => handleSelectCourts(num)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950 scale-[1.02]'
-                        : 'bg-slate-800/90 text-slate-300 hover:text-white hover:bg-slate-700/80 border border-slate-700/60'
-                    }`}
-                  >
-                    {isSelected && <Check className="w-3.5 h-3.5 text-white stroke-3" />}
-                    <span>{num >= 5 ? '5+ Canchas' : `${num} Cancha${num > 1 ? 's' : ''}`}</span>
-                  </button>
-                )
-              })}
+          {/* Canchas en tu predio — Fijado y Administrado por Superadmin */}
+          <div className="mt-5 pt-4 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Canchas en tu predio:
+              </span>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold shadow-sm ring-1 ring-emerald-400/30">
+                <Check className="w-3.5 h-3.5 text-emerald-400 stroke-3" />
+                <span>{courtsCount >= 5 ? '5+ Canchas' : `${courtsCount} Cancha${courtsCount > 1 ? 's' : ''}`}</span>
+                <span className="text-[10px] text-emerald-400/80 font-mono font-normal">({activePlan.name})</span>
+              </div>
             </div>
+
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-950/70 border border-slate-800 px-3 py-1.5 rounded-xl">
+              <LockIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>Plan fijado por la administración central</span>
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+            <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span>
+              La cantidad de canchas y el plan mensual son administrados exclusivamente por el Superadmin. Para ampliar canchas o modificar tu plan, comunicate con soporte.
+            </span>
           </div>
 
           <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -35,6 +35,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         city,
         is_active,
         subscription_status,
+        base_slots_plan,
         mp_access_token,
         courts (id, is_active),
         price_rules (price_cents)
@@ -57,9 +58,14 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
       }
 
-      // Determinar plan por defecto según canchas si no tiene asignado
+      // Determinar plan respetando la configuración oficial de la administración (base_slots_plan)
       let defaultPlan: SaaSPlanId = 'MEDIANO_2'
-      if (activeCourts <= 1) defaultPlan = 'CHICO_1'
+      const baseSlots = Number(t.base_slots_plan)
+      if (baseSlots === 1) defaultPlan = 'CHICO_1'
+      else if (baseSlots === 1.5 || baseSlots === 2) defaultPlan = 'MEDIANO_2'
+      else if (baseSlots === 3 || baseSlots === 4) defaultPlan = 'CONSOLIDADO_3_4'
+      else if (baseSlots >= 5) defaultPlan = 'GRANDE_5_PLUS'
+      else if (activeCourts <= 1) defaultPlan = 'CHICO_1'
       else if (activeCourts === 2) defaultPlan = 'MEDIANO_2'
       else if (activeCourts <= 4) defaultPlan = 'CONSOLIDADO_3_4'
       else defaultPlan = 'GRANDE_5_PLUS'
@@ -91,6 +97,34 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
 }
 
 /**
+ * Permite al Superadmin cambiar el plan SaaS asignado a un club.
+ */
+export async function updateTenantPlan(tenantId: string, planId: SaaSPlanId) {
+  try {
+    const supabase = await createServiceClient()
+    const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
+
+    const { error } = await supabase
+      .from('tenants')
+      .update({ base_slots_plan: baseSlots })
+      .eq('id', tenantId)
+
+    if (error) {
+      console.error('Error updating tenant plan:', error)
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
+    return { success: true }
+  } catch (err) {
+    console.error('updateTenantPlan exception:', err)
+    return { success: false, error: 'Error al actualizar el plan del club' }
+  }
+}
+
+/**
  * Otorga acceso y poder total a un club activándolo con su plan SaaS correspondiente.
  */
 export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId) {
@@ -117,6 +151,7 @@ export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId
     }
 
     revalidatePath('/superadmin')
+    revalidatePath('/dashboard/plan')
     revalidatePath('/dashboard')
     return { success: true }
   } catch (err) {

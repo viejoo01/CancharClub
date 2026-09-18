@@ -28,7 +28,8 @@ import {
   Eye,
   EyeOff,
   Smartphone,
-  CreditCard
+  CreditCard,
+  RefreshCw
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,7 +48,8 @@ import { formatARS, setClientCookie, cn } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
-import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, deleteTenantById, getSuperadminUsers, deleteProfileById, type SuperadminUserItem } from '@/actions/superadmin.actions'
+import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, deleteTenantById, getSuperadminUsers, deleteProfileById, type SuperadminUserItem, type SuperadminTenantItem } from '@/actions/superadmin.actions'
+import { recordClubSubscriptionPayment } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -69,21 +71,7 @@ export default function SuperadminPage() {
   const [activeTab, setActiveTab] = useState<'BILLING' | 'TENANTS' | 'USERS'>('USERS')
 
   // Listado de clubes con sus parámetros para la fórmula proporcional y plan asignado
-  const [tenants, setTenants] = useState<Array<{
-    id: string
-    name: string
-    slug: string
-    city: string
-    active_courts: number
-    highest_slot_price: number
-    total_bookings: number
-    mp_connected: boolean
-    status: string
-    subscription_status: 'AL_DIA' | 'PENDIENTE'
-    last_paid: string | null
-    plan_id: SaaSPlanId
-    is_active: boolean
-  }>>([])
+  const [tenants, setTenants] = useState<SuperadminTenantItem[]>([])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -120,17 +108,17 @@ export default function SuperadminPage() {
 
   // Listado de usuarios administradores y cancheros por club (se carga desde Supabase)
   const [clubUsers, setClubUsers] = useState<ClubUser[]>([])
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Sincronización en tiempo real con los clubes reales de la base de datos Supabase
-  useEffect(() => {
-    async function loadData() {
-      // Cargar clubes reales
+  // Cargar datos reales y frescos desde Supabase
+  const loadData = async (showToast = false) => {
+    setIsRefreshing(true)
+    try {
       const clubsRes = await getSuperadminTenants()
       if (clubsRes.success) {
         setTenants(clubsRes.data)
       }
 
-      // Cargar usuarios reales desde Supabase
       const usersRes = await getSuperadminUsers()
       if (usersRes.success && usersRes.data.length > 0) {
         const mapped: ClubUser[] = usersRes.data.map((u: SuperadminUserItem) => ({
@@ -148,8 +136,63 @@ export default function SuperadminPage() {
         }))
         setClubUsers(mapped)
       }
+      if (showToast) {
+        toast.success('Datos actualizados en tiempo real desde la base de datos')
+      }
+    } catch (err) {
+      console.error('Error al sincronizar datos superadmin:', err)
+    } finally {
+      setIsRefreshing(false)
     }
-    loadData()
+  }
+
+  // Sincronización en tiempo real y sondeo periódico cada 30 segundos
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchInitialData = async () => {
+      try {
+        const clubsRes = await getSuperadminTenants()
+        if (isMounted && clubsRes.success) {
+          setTenants(clubsRes.data)
+        }
+
+        const usersRes = await getSuperadminUsers()
+        if (isMounted && usersRes.success && usersRes.data.length > 0) {
+          const mapped: ClubUser[] = usersRes.data.map((u: SuperadminUserItem) => ({
+            id: u.id,
+            name: u.full_name,
+            email: u.email,
+            phone: '',
+            role: (u.role === 'SUPERADMIN' ? 'TENANT_ADMIN' : u.role) as 'TENANT_ADMIN' | 'TENANT_STAFF',
+            tenantId: u.tenant_id || '',
+            tenantName: u.tenant_name || 'Sin club',
+            tenantSlug: u.tenant_slug || '',
+            password: '',
+            status: 'ACTIVE' as const,
+            createdAt: u.created_at?.split('T')[0] || '',
+          }))
+          setClubUsers(mapped)
+        }
+      } catch (err) {
+        console.error('Error initial load superadmin:', err)
+      }
+    }
+
+    void fetchInitialData()
+
+    const interval = setInterval(() => {
+      void fetchInitialData()
+    }, 30000)
+
+    const handleFocus = () => void fetchInitialData()
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [])
 
   const handleOpenActivate = (t: typeof tenants[0]) => {
@@ -164,51 +207,50 @@ export default function SuperadminPage() {
   const handleConfirmActivation = async () => {
     if (!activatingTenant) return
     setIsActivating(true)
-    const res = await activateTenantAccess(activatingTenant.id, activatingTenant.plan_id)
-    setIsActivating(false)
-
-    if (!res.success) {
-      toast.error(res.error || 'Error al activar el club')
-      return
-    }
-
-    setTenants(prev => prev.map(t => {
-      if (t.id === activatingTenant.id) {
-        return {
-          ...t,
-          is_active: true,
-          status: 'ACTIVE',
-          subscription_status: 'AL_DIA',
-          plan_id: activatingTenant.plan_id,
-        }
+    try {
+      const res = await activateTenantAccess(activatingTenant.id, activatingTenant.plan_id)
+      if (res.success) {
+        setTenants(prev => prev.map(t => {
+          if (t.id === activatingTenant.id) {
+            return {
+              ...t,
+              is_active: true,
+              status: 'ACTIVE',
+              subscription_status: 'AL_DIA',
+              plan_id: activatingTenant.plan_id,
+            }
+          }
+          return t
+        }))
+        toast.success(`¡Club "${activatingTenant.name}" HABILITADO con éxito!`, {
+          description: `Se activó en producción con el plan de ${activatingTenant.active_courts} canchas.`
+        })
+        setActivatingTenant(null)
+      } else {
+        toast.error('Error al habilitar club: ' + (res.error || ''))
       }
-      return t
-    }))
-
-    toast.success(`¡Acceso otorgado a "${activatingTenant.name}"!`, {
-      description: `Plan asignado: ${SAAS_PLANS[activatingTenant.plan_id]?.name || activatingTenant.plan_id}. El club ya tiene acceso y control total.`
-    })
-    setActivatingTenant(null)
+    } catch {
+      toast.error('Error de conexión al habilitar club')
+    } finally {
+      setIsActivating(false)
+    }
   }
 
   const handleToggleDeactivate = async (tenantId: string, clubName: string) => {
-    if (!confirm(`¿Estás seguro de que deseas suspender o poner en modo lectura a "${clubName}"?`)) {
-      return
-    }
     const res = await deactivateTenantAccess(tenantId)
     if (!res.success) {
-      toast.error(res.error || 'Error al suspender el club')
+      toast.error('Error al pausar club: ' + (res.error || ''))
       return
     }
     setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, is_active: false, status: 'PENDING', subscription_status: 'PENDIENTE' } : t))
-    toast.warning(`Club "${clubName}" suspendido`, {
+    toast.info(`Club "${clubName}" pausado temporalmente`, {
       description: 'El club ahora está en modo de vista previa restringida.'
     })
   }
 
   // Cálculos SaaS basados en la fórmula y plan asignado
   const tenantsWithPricing = tenants.map(t => {
-    const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price)
+    const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price, t.created_at)
     return { 
       ...t, 
       pricing: {
@@ -229,20 +271,30 @@ export default function SuperadminPage() {
     t.slug.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const handleRegisterPayment = (tenantId: string, clubName: string, amount: number) => {
-    setTenants(prev => prev.map(t => {
-      if (t.id === tenantId) {
-        return {
-          ...t,
-          subscription_status: 'AL_DIA',
-          last_paid: new Date().toISOString().split('T')[0]
-        }
+  const handleRegisterPayment = async (tenantId: string, clubName: string, amount: number) => {
+    try {
+      const res = await recordClubSubscriptionPayment(tenantId, `Cobro mensual de ${formatARS(amount)} registrado desde Superadmin`)
+      if (res.success) {
+        setTenants(prev => prev.map(t => {
+          if (t.id === tenantId) {
+            return {
+              ...t,
+              subscription_status: 'AL_DIA',
+              last_paid: new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            }
+          }
+          return t
+        }))
+        toast.success(`Pago mensual registrado para ${clubName}`, {
+          description: `Se acreditó la cuota mensual de ${formatARS(amount)} en la base de datos.`
+        })
+      } else {
+        toast.error('Error al registrar pago en base de datos: ' + (res.error || ''))
       }
-      return t
-    }))
-    toast.success(`Pago mensual registrado para ${clubName}`, {
-      description: `Se acreditó la cuota mensual de ${formatARS(amount)}.`
-    })
+    } catch (err) {
+      console.error(err)
+      toast.error('Error al registrar pago')
+    }
   }
 
   const handleSendPaymentLink = (clubName: string, amount: number) => {
@@ -902,14 +954,27 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   Liquidación de cuotas proporcionales a pagar a fin de mes.
                 </p>
               </div>
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <Input 
-                  placeholder="Buscar club..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
-                />
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadData(true)}
+                  disabled={isRefreshing}
+                  className="h-9 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
+                  title="Consultar base de datos para información actualizada"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
+                  Actualizar
+                </Button>
+                <div className="relative flex-1 sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Input 
+                    placeholder="Buscar club..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>

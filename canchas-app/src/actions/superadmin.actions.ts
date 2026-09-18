@@ -18,6 +18,7 @@ export interface SuperadminTenantItem {
   last_paid: string | null
   plan_id: SaaSPlanId
   is_active: boolean
+  created_at?: string | null
 }
 
 /**
@@ -37,6 +38,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         subscription_status,
         base_slots_plan,
         mp_access_token,
+        created_at,
         courts (id, is_active),
         price_rules (price_cents)
       `)
@@ -45,6 +47,26 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
     if (error || !tenants) {
       console.warn('Error fetching tenants for superadmin:', error)
       return { success: false, data: [] }
+    }
+
+    // Consultar últimos pagos reales de facturas para cada club
+    const { data: paidInvoices } = await supabase
+      .from('tenant_invoices')
+      .select('tenant_id, paid_at')
+      .eq('status', 'PAID')
+      .order('paid_at', { ascending: false })
+
+    const lastPaidMap = new Map<string, string>()
+    if (paidInvoices) {
+      for (const inv of paidInvoices) {
+        if (inv.paid_at && !lastPaidMap.has(inv.tenant_id)) {
+          const d = new Date(inv.paid_at)
+          lastPaidMap.set(
+            inv.tenant_id,
+            `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+          )
+        }
+      }
     }
 
     const formatted: SuperadminTenantItem[] = tenants.map((t) => {
@@ -71,6 +93,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
       else defaultPlan = 'GRANDE_5_PLUS'
 
       const isActuallyActive = t.is_active === true
+      const realLastPaid = lastPaidMap.get(t.id) || null
 
       return {
         id: t.id,
@@ -83,9 +106,10 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         mp_connected: Boolean(t.mp_access_token),
         status: isActuallyActive ? 'ACTIVE' : 'PENDING',
         subscription_status: (t.subscription_status === 'ACTIVE' || t.subscription_status === 'AL_DIA' ? 'AL_DIA' : 'PENDIENTE'),
-        last_paid: null,
+        last_paid: realLastPaid,
         plan_id: defaultPlan,
         is_active: isActuallyActive,
+        created_at: t.created_at || null,
       }
     })
 

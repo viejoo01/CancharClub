@@ -36,6 +36,7 @@ export interface ClubPlanDetails {
   isPaid: boolean
   subscriptionStatus: TenantSubscriptionStatus
   nextDueDate: string
+  invoices: TenantInvoice[]
 }
 
 /**
@@ -125,6 +126,22 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const activePlan = getPlanByCourtsCount(courtsCount)
   const isPaid = subscriptionStatus === 'ACTIVE'
 
+  // 3. Obtener facturas reales emitidas desde la base de datos
+  let invoices: TenantInvoice[] = []
+  if (targetTenantId) {
+    const { data: dbInvoices } = await supabase
+      .from('tenant_invoices')
+      .select('*')
+      .eq('tenant_id', targetTenantId)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (dbInvoices) {
+      invoices = dbInvoices as TenantInvoice[]
+    }
+  }
+
   return {
     tenantId: targetTenantId || '',
     tenantName,
@@ -136,6 +153,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     isPaid,
     subscriptionStatus,
     nextDueDate: pricing.nextDueDate,
+    invoices,
   }
 }
 
@@ -315,10 +333,60 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
       payment_notes: notes || 'Cobro registrado manualmente por Superadmin',
     }, { onConflict: 'tenant_id,billing_period_start' })
 
-  // También marcar estado del tenant como ACTIVE
+  // 2. Registrar o actualizar factura oficial en tenant_invoices
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  const { data: existingInv } = await supabase
+    .from('tenant_invoices')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('month', currentMonth)
+    .eq('year', currentYear)
+    .maybeSingle()
+
+  let validDueDate = new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0]
+  if (periodEnd && periodEnd.includes('/')) {
+    const [dd, mm, yyyy] = periodEnd.split('/')
+    if (dd && mm && yyyy) {
+      validDueDate = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+    }
+  }
+
+  if (existingInv) {
+    await supabase
+      .from('tenant_invoices')
+      .update({
+        status: 'PAID',
+        paid_at: new Date().toISOString(),
+        amount: summary.pricing.monthlyFeeArs,
+        notes: notes || 'Cobro registrado manualmente por Superadmin',
+      })
+      .eq('id', existingInv.id)
+  } else {
+    await supabase
+      .from('tenant_invoices')
+      .insert({
+        tenant_id: tenantId,
+        month: currentMonth,
+        year: currentYear,
+        amount: summary.pricing.monthlyFeeArs,
+        status: 'PAID',
+        reference_slot_price: summary.pricing.highestSlotPriceArs,
+        slots_multiplier: summary.pricing.multiplier,
+        due_date: validDueDate,
+        paid_at: new Date().toISOString(),
+        notes: notes || 'Cobro registrado manualmente por Superadmin',
+      })
+  }
+
+  // 3. También marcar estado del tenant como ACTIVE y balance en cero
   await supabase
     .from('tenants')
-    .update({ subscription_status: 'ACTIVE' })
+    .update({ 
+      subscription_status: 'ACTIVE',
+      current_balance: 0 
+    })
     .eq('id', tenantId)
 
   const cookieStore = await cookies()
@@ -511,6 +579,31 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
         paid_at: new Date().toISOString(),
       })
       .eq('id', invoiceId)
+  } else {
+    const now = new Date()
+    const summary = await getClubBillingSummary(tenantId)
+    let validDueDate = new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0]
+    if (summary.nextDueDate && summary.nextDueDate.includes('/')) {
+      const [dd, mm, yyyy] = summary.nextDueDate.split('/')
+      if (dd && mm && yyyy) {
+        validDueDate = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+      }
+    }
+
+    await supabase
+      .from('tenant_invoices')
+      .insert({
+        tenant_id: tenantId,
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
+        amount: summary.pricing.monthlyFeeArs,
+        status: 'PAID',
+        reference_slot_price: summary.pricing.highestSlotPriceArs,
+        slots_multiplier: summary.pricing.multiplier,
+        due_date: validDueDate,
+        paid_at: new Date().toISOString(),
+        notes: 'Pago manual acreditado con Mercado Pago',
+      })
   }
 
   // 2. Levantar suspensión y pasar a ACTIVE

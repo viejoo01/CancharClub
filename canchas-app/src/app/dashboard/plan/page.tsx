@@ -38,10 +38,30 @@ export default function ClubPlanPage() {
   const tenantId = useTenantId()
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
 
-  // Cargar información oficial del club y plan asignado desde la base de datos
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const loadPlanData = async (showToast = false) => {
+    setIsRefreshing(true)
+    try {
+      const details = await getClubPlanDetails(tenantId || undefined)
+      setPlanDetails(details)
+      if (showToast) {
+        toast.success('Estado e historial contable actualizados desde la base de datos')
+      }
+    } catch (err) {
+      console.error('Error fetching club plan details:', err)
+      if (showToast) {
+        toast.error('Error al actualizar datos del club')
+      }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  // Cargar información oficial del club y sincronización continua en tiempo real
   useEffect(() => {
     let isMounted = true
-    async function loadPlan() {
+    async function fetchInitial() {
       try {
         const details = await getClubPlanDetails(tenantId || undefined)
         if (isMounted) {
@@ -51,8 +71,22 @@ export default function ClubPlanPage() {
         console.error('Error fetching club plan details:', err)
       }
     }
-    loadPlan()
-    return () => { isMounted = false }
+    void fetchInitial()
+
+    // Sondeo periódico cada 30s para mantener información fresca
+    const interval = setInterval(() => {
+      void fetchInitial()
+    }, 30000)
+
+    // Revalidar inmediatamente cuando el usuario vuelve a la pestaña
+    const handleFocus = () => void fetchInitial()
+    window.addEventListener('focus', handleFocus)
+
+    return () => { 
+      isMounted = false 
+      clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [tenantId])
 
   const [manualPaid, setManualPaid] = useState(false)
@@ -168,20 +202,100 @@ export default function ClubPlanPage() {
     }, 1200)
   }
 
+  const downloadReceiptPdf = (inv: { id: string; month: number; year: number; amount: number; paid_at: string | null; status: string }) => {
+    const monthName = new Date(inv.year, inv.month - 1, 1).toLocaleDateString('es-AR', { month: 'long' })
+    const monthCap = monthName.charAt(0).toUpperCase() + monthName.slice(1)
+    const paidDate = inv.paid_at 
+      ? new Date(inv.paid_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : 'Pendiente'
+
+    const receiptHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Recibo Oficial CancharClub - Período ${monthCap} ${inv.year}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1e293b; background: #fff; line-height: 1.5; }
+          .header { border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-start; }
+          .title { font-size: 24px; font-weight: bold; color: #0f172a; }
+          .subtitle { color: #64748b; font-size: 14px; margin-top: 4px; }
+          .badge { display: inline-block; padding: 4px 12px; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+          .details { margin: 24px 0; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+          .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+          .row:last-child { border-bottom: none; }
+          .label { color: #64748b; }
+          .val { font-weight: 600; color: #0f172a; }
+          .total { margin-top: 20px; text-align: right; }
+          .total-amount { font-size: 28px; font-weight: 800; color: #059669; font-family: monospace; }
+          .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="title">CancharClub Software SaaS</div>
+            <div class="subtitle">Comprobante Oficial de Abono Mensual</div>
+          </div>
+          <div>
+            <span class="badge">Estado: ${inv.status === 'PAID' ? 'PAGADO / AL DÍA' : 'PENDIENTE'}</span>
+          </div>
+        </div>
+        <div class="details">
+          <div class="row"><span class="label">Club / Inquilino:</span><span class="val">${clubName}</span></div>
+          <div class="row"><span class="label">Período Fiscal:</span><span class="val">${monthCap} ${inv.year}</span></div>
+          <div class="row"><span class="label">Comprobante ID:</span><span class="val">${inv.id}</span></div>
+          <div class="row"><span class="label">Fecha de Pago:</span><span class="val">${paidDate}</span></div>
+          <div class="row"><span class="label">Concepto:</span><span class="val">Abono mensual software de gestión deportiva (${courtsCount} canchas)</span></div>
+        </div>
+        <div class="total">
+          <div class="label">Total Liquidado:</div>
+          <div class="total-amount">${formatARS(Number(inv.amount))}</div>
+        </div>
+        <div class="footer">
+          CancharClub • Plataforma de Gestión de Canchas y Clubes Deportivos • www.cancharclub.com.ar
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(receiptHtml)
+      printWindow.document.close()
+    } else {
+      toast.info('Recibo generado para visualización.')
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-wider uppercase mb-1">
-          <Building2 className="w-4 h-4" />
-          Suscripción & Facturación del Club
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-wider uppercase mb-1">
+            <Building2 className="w-4 h-4" />
+            Suscripción & Facturación del Club
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Mi Plan y Abono SaaS
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Tarifa fija mensual calculada en base a la infraestructura del club.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Mi Plan y Abono SaaS
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Tarifa fija mensual calculada en base a la infraestructura del club.
-        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void loadPlanData(true)}
+          disabled={isRefreshing}
+          className="self-start sm:self-auto h-9 text-xs border-slate-800 bg-slate-900/90 text-slate-300 hover:text-white rounded-xl cursor-pointer shrink-0"
+          title="Consultar base de datos para información actualizada"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+          Actualizar Estado
+        </Button>
       </div>
 
       {/* Tarjeta Principal de Cuota Mensual */}
@@ -512,58 +626,88 @@ export default function ClubPlanPage() {
 
       {/* Historial de Comprobantes Emitidos */}
       <Card className="bg-slate-900/60 border-slate-800 rounded-2xl backdrop-blur-md overflow-hidden">
-        <CardHeader className="p-5 border-b border-slate-800">
-          <CardTitle className="text-sm font-bold text-white">
-            Historial de Facturas y Liquidaciones
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-400">
-            Descarga los recibos oficiales correspondientes a tus períodos mensuales.
-          </CardDescription>
+        <CardHeader className="p-5 border-b border-slate-800 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-bold text-white">
+              Historial de Facturas y Liquidaciones
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Descarga los recibos oficiales correspondientes a tus períodos mensuales.
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-400 font-mono">
+            {planDetails?.invoices?.length || 0} comprobantes
+          </Badge>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y divide-slate-800/60 text-xs">
-            <div className="p-4 flex items-center justify-between hover:bg-slate-800/20 transition-colors">
-              <div>
-                <div className="font-semibold text-white">Período Agosto 2026</div>
-                <div className="text-[11px] text-slate-400">Abono mensual: 2 canchas (1.5 turnos)</div>
+          {(!planDetails?.invoices || planDetails.invoices.length === 0) ? (
+            <div className="p-8 text-center space-y-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/20">
+                <Sparkles className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-4">
-                <span className="font-mono font-bold text-slate-200">{formatARS(45000)}</span>
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
-                  Pagado
-                </Badge>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => toast.info('Descargando comprobante fiscal PDF...')}
-                  className="h-8 text-xs text-slate-400 hover:text-white"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" /> PDF
-                </Button>
+              <div>
+                <h4 className="text-sm font-semibold text-white">
+                  Período de prueba bonificado en curso
+                </h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
+                  Tu club se encuentra disfrutando de los <strong>30 días de prueba gratuita</strong>. No registrás cobros anteriores ni pagos pendientes. Tu primera liquidación oficial se emitirá el <strong>{pricing.nextDueDate}</strong>.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Cuenta 100% Bonificada ($0)</span>
               </div>
             </div>
+          ) : (
+            <div className="divide-y divide-slate-800/60 text-xs">
+              {planDetails.invoices.map((inv) => {
+                const monthName = new Date(inv.year, inv.month - 1, 1).toLocaleDateString('es-AR', { month: 'long' })
+                const formattedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1)
+                const isPaidInvoice = inv.status === 'PAID'
+                const paidDateStr = inv.paid_at 
+                  ? new Date(inv.paid_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                  : null
 
-            <div className="p-4 flex items-center justify-between hover:bg-slate-800/20 transition-colors">
-              <div>
-                <div className="font-semibold text-white">Período Julio 2026</div>
-                <div className="text-[11px] text-slate-400">Abono mensual: 2 canchas (1.5 turnos)</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="font-mono font-bold text-slate-200">{formatARS(45000)}</span>
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
-                  Pagado
-                </Badge>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => toast.info('Descargando comprobante fiscal PDF...')}
-                  className="h-8 text-xs text-slate-400 hover:text-white"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" /> PDF
-                </Button>
-              </div>
+                return (
+                  <div key={inv.id} className="p-4 flex items-center justify-between hover:bg-slate-800/20 transition-colors">
+                    <div>
+                      <div className="font-semibold text-white">
+                        Período {formattedMonth} {inv.year}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Abono mensual: {courtsCount} {courtsCount === 1 ? 'cancha' : 'canchas'} ({inv.slots_multiplier || pricing.multiplier} turnos)
+                        {paidDateStr && (
+                          <span className="text-slate-500 ml-2">• Pagado el {paidDateStr}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-mono font-bold text-slate-200">
+                        {formatARS(Number(inv.amount))}
+                      </span>
+                      {isPaidInvoice ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                          Pagado
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
+                          Pendiente
+                        </Badge>
+                      )}
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => downloadReceiptPdf(inv)}
+                        className="h-8 text-xs text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1" /> PDF
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
       {/* MODAL OFICIAL: Carga de Datos de Tarjeta Mercado Pago Subscriptions */}

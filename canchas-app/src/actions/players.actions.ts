@@ -60,9 +60,9 @@ export async function getPlayersReputation(
     // 1. Obtener todas las reservas del tenant
     const { data: bookings, error } = await supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, status, total_amount_ars, starts_at, origin')
+      .select('id, customer_name, customer_phone, status, price_total_cents, booked_at, created_at')
       .eq('tenant_id', tenantId)
-      .order('starts_at', { ascending: false })
+      .order('created_at', { ascending: false })
 
     if (error) {
       console.error('[getPlayersReputation] Error:', error.message)
@@ -101,6 +101,12 @@ export async function getPlayersReputation(
 
       if (!key) continue
 
+      let startsAt: string | null = null
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match && match[1]) startsAt = match[1]
+      }
+
       let record = map.get(key)
       if (!record) {
         record = {
@@ -111,7 +117,7 @@ export async function getPlayersReputation(
           noShow: 0,
           cancelled: 0,
           spent: 0,
-          lastDate: b.starts_at || null,
+          lastDate: startsAt,
         }
         map.set(key, record)
       }
@@ -119,12 +125,14 @@ export async function getPlayersReputation(
       record.total++
 
       const status = (b.status || '').toUpperCase()
-      if (['COMPLETED', 'FULLY_PAID', 'CONFIRMED'].includes(status)) {
+      const spentAmount = Math.round((Number(b.price_total_cents) || 0) / 100)
+
+      if (['COMPLETED', 'FULLY_PAID', 'CONFIRMED', 'CONFIRMED_CASH'].includes(status)) {
         record.completed++
-        record.spent += Number(b.total_amount_ars || 0)
+        record.spent += spentAmount
       } else if (status === 'NO_SHOW') {
         record.noShow++
-      } else if (status.startsWith('CANCELLED')) {
+      } else if (status.startsWith('CANCEL')) {
         record.cancelled++
       }
     }
@@ -223,10 +231,10 @@ export async function getPlayerHistory(
     const supabase = await createServiceClient()
     const { data: bookings, error } = await supabase
       .from('bookings')
-      .select('id, starts_at, status, total_amount_ars, deposit_amount_ars, origin, court:courts(name)')
+      .select('id, booked_at, status, price_total_cents, deposit_cents, payment_method, courts(name)')
       .eq('tenant_id', tenantId)
       .eq('customer_phone', phone)
-      .order('starts_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(20)
 
     if (error) {
@@ -235,23 +243,32 @@ export async function getPlayerHistory(
 
     interface RawBooking {
       id: string
-      starts_at: string
+      booked_at?: string | null
       status: string
-      total_amount_ars?: number | null
-      deposit_amount_ars?: number | null
-      origin?: string | null
-      court?: { name?: string | null } | null
+      price_total_cents?: number | null
+      deposit_cents?: number | null
+      payment_method?: string | null
+      courts?: { name?: string | null } | Array<{ name?: string | null }> | null
     }
 
-    const history: PlayerHistoryItem[] = ((bookings as unknown as RawBooking[]) || []).map((b) => ({
-      id: b.id,
-      court_name: b.court?.name || 'Cancha',
-      starts_at: b.starts_at,
-      status: b.status,
-      total_amount_ars: Number(b.total_amount_ars || 0),
-      deposit_amount_ars: Number(b.deposit_amount_ars || 0),
-      origin: b.origin || 'ONLINE',
-    }))
+    const history: PlayerHistoryItem[] = ((bookings as unknown as RawBooking[]) || []).map((b) => {
+      let startsAt = ''
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match && match[1]) startsAt = match[1]
+      }
+      const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
+
+      return {
+        id: b.id,
+        court_name: courtObj?.name || 'Cancha',
+        starts_at: startsAt,
+        status: b.status,
+        total_amount_ars: Math.round((Number(b.price_total_cents) || 0) / 100),
+        deposit_amount_ars: Math.round((Number(b.deposit_cents) || 0) / 100),
+        origin: b.payment_method?.toUpperCase() || 'MOSTRADOR',
+      }
+    })
 
     return { success: true, history }
   } catch (err) {

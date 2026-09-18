@@ -79,66 +79,56 @@ export async function getDailyCashReport(
 ): Promise<DailyCashReport> {
   const supabase = await createServiceClient()
 
-  const dayStart = `${date}T00:00:00`
-  const dayEnd   = `${date}T23:59:59`
+  const dayStart = `${date}T00:00:00-03:00`
+  const dayEnd   = `${date}T23:59:59-03:00`
 
-  // Señas pagadas en la fecha
-  const { data: depositRows } = await supabase
+  // Pagos registrados en la fecha
+  const { data: bookingRows } = await supabase
     .from('bookings')
-    .select('id, customer_name, deposit_amount_ars, deposit_paid_at, origin, internal_notes, court:courts(name)')
+    .select('id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, staff_notes, booked_at, courts(name)')
     .eq('tenant_id', tenantId)
-    .gte('deposit_paid_at', dayStart)
-    .lte('deposit_paid_at', dayEnd)
-    .in('status', ['DEPOSIT_PAID', 'CONFIRMED', 'PARTIAL_PAID', 'FULLY_PAID', 'COMPLETED'])
-    .order('deposit_paid_at', { ascending: true })
-
-  // Saldos pagados en la fecha
-  const { data: balanceRows } = await supabase
-    .from('bookings')
-    .select('id, customer_name, total_amount_ars, deposit_amount_ars, balance_paid_at, origin, internal_notes, court:courts(name)')
-    .eq('tenant_id', tenantId)
-    .gte('balance_paid_at', dayStart)
-    .lte('balance_paid_at', dayEnd)
-    .in('status', ['FULLY_PAID', 'COMPLETED'])
-    .order('balance_paid_at', { ascending: true })
-
-  const inferMethod = (origin: string) => {
-    if (origin === 'ONLINE_PORTAL') return 'MERCADOPAGO'
-    if (origin === 'WHATSAPP') return 'TRANSFER'
-    return 'CASH'
-  }
+    .gte('paid_at', new Date(dayStart).toISOString())
+    .lte('paid_at', new Date(dayEnd).toISOString())
+    .not('status', 'in', '("cancelled")')
+    .order('paid_at', { ascending: true })
 
   const entries: DailyCashEntry[] = []
 
-  for (const row of depositRows ?? []) {
-    const courtObj = row.court as unknown as { name: string } | null
-    entries.push({
-      id: `dep-${row.id}`,
-      customer_name: row.customer_name,
-      court_name: courtObj?.name ?? 'Cancha',
-      amount_ars: row.deposit_amount_ars ?? 0,
-      payment_type: 'DEPOSIT',
-      payment_method: inferMethod(row.origin ?? ''),
-      paid_at: row.deposit_paid_at ?? '',
-      notes: row.internal_notes ?? null,
-      origin: row.origin ?? '',
-    })
-  }
+  for (const row of bookingRows ?? []) {
+    const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
+    const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
+    const depositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
+    const totalArs = Math.round((Number(row.price_total_cents) || 0) / 100)
 
-  for (const row of balanceRows ?? []) {
-    const courtObj = row.court as unknown as { name: string } | null
-    const balanceAmount = (row.total_amount_ars ?? 0) - (row.deposit_amount_ars ?? 0)
-    if (balanceAmount > 0) {
+    const method = String(row.payment_method || 'cash').toUpperCase()
+    const mappedMethod = method.includes('MERCADO') ? 'MERCADOPAGO' : method.includes('TRANSFER') ? 'TRANSFER' : 'CASH'
+
+    if (depositArs > 0) {
+      entries.push({
+        id: `dep-${row.id}`,
+        customer_name: row.customer_name || 'Cliente',
+        court_name: courtName,
+        amount_ars: depositArs,
+        payment_type: 'DEPOSIT',
+        payment_method: mappedMethod,
+        paid_at: row.paid_at ?? '',
+        notes: row.staff_notes ?? null,
+        origin: row.payment_method ?? 'cash',
+      })
+    }
+
+    const balancePaid = Math.max(0, totalArs - depositArs)
+    if (balancePaid > 0 && row.staff_notes?.includes('Cobro')) {
       entries.push({
         id: `bal-${row.id}`,
-        customer_name: row.customer_name,
-        court_name: courtObj?.name ?? 'Cancha',
-        amount_ars: balanceAmount,
+        customer_name: row.customer_name || 'Cliente',
+        court_name: courtName,
+        amount_ars: balancePaid,
         payment_type: 'BALANCE',
-        payment_method: inferMethod(row.origin ?? ''),
-        paid_at: row.balance_paid_at ?? '',
-        notes: row.internal_notes ?? null,
-        origin: row.origin ?? '',
+        payment_method: mappedMethod,
+        paid_at: row.paid_at ?? '',
+        notes: row.staff_notes ?? null,
+        origin: row.payment_method ?? 'cash',
       })
     }
   }
@@ -203,10 +193,9 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
     const { data: bookings } = await supabase
       .from('bookings')
-      .select('starts_at, total_amount_ars')
+      .select('booked_at, price_total_cents')
       .eq('tenant_id', tenantId)
-      .gte('starts_at', thirtyDaysAgo)
-      .in('status', ['CONFIRMED', 'FULLY_PAID', 'DEPOSIT_PAID', 'PARTIAL_PAID', 'COMPLETED'])
+      .not('status', 'in', '("cancelled")')
 
     const totalRealBookings = bookings?.length ?? 0
 
@@ -214,7 +203,11 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     const bookingMatrix: Record<string, number> = {}
     if (totalRealBookings >= 10 && bookings) {
       for (const b of bookings) {
-        const d = new Date(b.starts_at)
+        if (!b.booked_at) continue
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (!match || !match[1]) continue
+        const d = new Date(match[1])
+        if (d < new Date(thirtyDaysAgo)) continue
         const dow  = d.getDay()
         const hour = d.getHours()
         const slot = SLOTS_MAP.find(s => hour >= s.startHour && hour < s.endHour)

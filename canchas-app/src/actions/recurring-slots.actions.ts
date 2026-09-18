@@ -6,8 +6,9 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { computeEndsAt } from '@/lib/utils'
-import type { RecurringSlot, BookingStatus } from '@/types/database'
+import { parseArgentinaDate } from '@/lib/utils'
+import { addVenueBooking } from '@/config/venues-data'
+import type { RecurringSlot } from '@/types/database'
 
 /** Obtener todos los turnos fijos del club */
 export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot[]> {
@@ -199,7 +200,9 @@ export async function generateMonthlyBookingsForSlot(
 
     let generatedCount = 0
     const slotDuration = slot.court?.slot_duration || 'MIN_90'
-    const pricePerTurn = slot.monthly_price / (dates.length || 4)
+    const durationMinutes = slotDuration === 'MIN_60' ? 60 : slotDuration === 'MIN_120' ? 120 : 90
+    const pricePerTurn = Math.round(slot.monthly_price / (dates.length || 4))
+    const priceTotalCents = Math.round(pricePerTurn * 100)
 
     for (const date of dates) {
       const yearStr = date.getFullYear()
@@ -207,30 +210,73 @@ export async function generateMonthlyBookingsForSlot(
       const dayStr = String(date.getDate()).padStart(2, '0')
       const dateIsoStr = `${yearStr}-${monthStr}-${dayStr}`
 
-      const startsAt = `${dateIsoStr}T${slot.start_time.slice(0, 5)}:00.000Z`
-      const endsAt = computeEndsAt(startsAt, slotDuration)
-      const bookingRange = `[${startsAt},${endsAt})`
+      const startsAtLocal = `${dateIsoStr}T${slot.start_time.slice(0, 5)}:00`
+      const slotStartDate = parseArgentinaDate(startsAtLocal)
+
+      // Evitar crear reservas para turnos en el pasado
+      if (slotStartDate.getTime() <= Date.now() - 60_000) {
+        continue
+      }
+
+      const startsAtIso = slotStartDate.toISOString()
+      const endsAtIso = new Date(slotStartDate.getTime() + durationMinutes * 60000).toISOString()
+      const bookingRange = `[${startsAtIso},${endsAtIso})`
+      const bookingId = crypto.randomUUID()
+      const staffNotes = `ABONO FIJO: ${slot.customer_name} (Mensualidad día ${slot.payment_due_day})`
 
       const { error: insertErr } = await supabase
         .from('bookings')
         .insert({
+          id: bookingId,
           tenant_id: slot.tenant_id,
           court_id: slot.court_id,
-          recurring_slot_id: slot.id,
+          booked_at: bookingRange,
+          status: 'confirmed',
+          sport: (slot.court as { sport?: string } | null)?.sport || 'PADEL',
+          price_total_cents: priceTotalCents,
+          deposit_cents: priceTotalCents, // Cubierto por abono mensual
+          staff_deposit_amount_cents: priceTotalCents,
+          payment_method: 'cash',
+          paid_at: new Date().toISOString(),
           customer_name: slot.customer_name,
           customer_phone: slot.customer_phone,
-          customer_email: slot.customer_email,
-          booking_range: bookingRange,
-          status: 'CONFIRMED' as BookingStatus,
-          origin: 'ADMIN_MANUAL',
-          total_amount_ars: pricePerTurn,
-          deposit_amount_ars: pricePerTurn, // Cubierto por abono mensual
-          internal_notes: `ABONO FIJO: ${slot.customer_name} (Mensualidad día ${slot.payment_due_day})`,
+          customer_email: slot.customer_email || null,
+          staff_notes: staffNotes,
         })
 
-      if (!insertErr) {
+      if (insertErr) {
+        // Si hay conflicto de solapamiento (23P01), omitir este turno sin romper la generación de los demás
+        if (insertErr.code === '23P01') {
+          console.warn(`[generateMonthlyBookingsForSlot] Conflicto de turno ya reservado para ${startsAtIso}, omitiendo...`)
+          continue
+        }
+        console.warn('[generateMonthlyBookingsForSlot] DB insert notice:', insertErr.message)
+      } else {
         generatedCount++
       }
+
+      // Sincronizar en memoria para visualización inmediata en la grilla y portal público
+      addVenueBooking({
+        id: bookingId,
+        court_id: slot.court_id,
+        customer_name: slot.customer_name,
+        customer_phone: slot.customer_phone,
+        customer_email: slot.customer_email || undefined,
+        starts_at: startsAtIso,
+        ends_at: endsAtIso,
+        status: 'CONFIRMED',
+        origin: 'STAFF_MANUAL',
+        total_amount_ars: pricePerTurn,
+        deposit_amount_ars: pricePerTurn,
+        total_paid: pricePerTurn,
+        balance_due: 0,
+        internal_notes: staffNotes,
+        courts: {
+          name: slot.court?.name || 'Cancha',
+          sport: (slot.court as { sport?: string } | null)?.sport || 'PADEL',
+          slot_duration: slotDuration === 'MIN_60' ? 'MIN_60' : 'MIN_90',
+        },
+      })
     }
 
     // Marcar último mes generado
@@ -274,25 +320,28 @@ export async function checkAndReleaseOverdueRecurringSlots(
 
     if (slots && slots.length > 0) {
       for (const slot of slots) {
-        // Buscar reservas del mes futuro/actual sin pagar o pendientes de pago
+        // Buscar reservas del mes futuro/actual para este cliente
         const { data: pendingBookings } = await supabase
           .from('bookings')
-          .select('id, starts_at, customer_name')
-          .eq('recurring_slot_id', slot.id)
-          .gte('starts_at', today.toISOString())
-          .eq('status', 'PENDING_DEPOSIT')
+          .select('id, booked_at, customer_name, staff_notes')
+          .eq('tenant_id', tenantId)
+          .eq('court_id', slot.court_id)
+          .ilike('staff_notes', `%${slot.customer_name}%`)
+          .not('status', 'in', '("cancelled")')
 
         if (pendingBookings && pendingBookings.length > 0) {
           for (const b of pendingBookings) {
+            const cancellationNote = `Liberado por falta de pago de abono mensual (venció día ${slot.payment_due_day})`
+            const updatedNotes = b.staff_notes ? `${b.staff_notes} | ${cancellationNote}` : cancellationNote
             await supabase
               .from('bookings')
               .update({
-                status: 'CANCELLED_CLUB' as BookingStatus,
-                cancellation_reason: `Liberado por falta de pago de abono mensual (venció día ${slot.payment_due_day})`,
+                status: 'cancelled',
+                staff_notes: updatedNotes,
               })
               .eq('id', b.id)
 
-            releasedDetails.push(`${slot.customer_name} - Turno ${b.starts_at}`)
+            releasedDetails.push(`${slot.customer_name} - Turno ID: ${b.id}`)
             count++
           }
         }

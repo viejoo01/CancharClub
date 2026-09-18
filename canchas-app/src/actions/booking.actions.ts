@@ -13,14 +13,12 @@ import {
   releaseBookingLock,
 } from '@/lib/redis'
 import {
-  generateExternalReference,
   computeEndsAt,
   parseArgentinaDate,
 } from '@/lib/utils'
 import type {
   CreateBookingPayload,
   CheckoutResponse,
-  BookingStatus,
   TenantSubscriptionStatus,
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
@@ -119,7 +117,6 @@ export async function initiateOnlineCheckout(
     const endsAtIso = parseArgentinaDate(endsAt).toISOString()
     const lockKey = buildLockKey(payload.court_id, payload.starts_at)
     const bookingId = crypto.randomUUID()
-    const externalRef = generateExternalReference()
 
     // 2. ADQUIRIR LOCK EN REDIS + MEMORIA (atómico: SET NX PX)
     //    Si falla → slot ya tomado por otro checkout simultáneo
@@ -336,7 +333,7 @@ export async function initiateOnlineCheckout(
                 ? payload.customer_email
                 : undefined,
             },
-            external_reference: externalRef,
+            external_reference: bookingId,
             back_urls: {
               success: `${appUrl}/reserva/${bookingId}/confirmado`,
               failure: `${appUrl}/reserva/${bookingId}/error`,
@@ -358,8 +355,8 @@ export async function initiateOnlineCheckout(
           await supabase
             .from('bookings')
             .update({
-              status: 'PENDING_DEPOSIT' as BookingStatus,
-              deposit_mp_preference_id: mpPreferenceId,
+              status: 'pending_deposit',
+              staff_notes: noteText ? `${noteText} | [MP Pref: ${mpPreferenceId}]` : `[MP Pref: ${mpPreferenceId}]`,
             })
             .eq('id', bookingId)
         }
@@ -462,6 +459,20 @@ export async function createManualBooking(
     const startsAtDate = parseArgentinaDate(payload.starts_at)
     const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
     const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
+
+    // 1.1 Prevenir colisión simultánea con reservas en memoria o checkouts online activos
+    const dayStr = startsAtDate.toISOString().split('T')[0]
+    const memoryBookings = getVenueBookings(payload.tenant_id, dayStr)
+    const isAlreadyBookedInMemory = memoryBookings.some((b) => {
+      const matchCourt = b.court_id === payload.court_id
+      return matchCourt && b.starts_at === startsAtDate.toISOString() && !String(b.status).toUpperCase().includes('CANCEL')
+    })
+    if (isAlreadyBookedInMemory) {
+      return {
+        success: false,
+        error: 'Este turno ya ha sido reservado en el sistema.',
+      }
+    }
 
     const priceTotalCents = Math.round(Number(payload.total_amount_ars || 0) * 100)
     const depositCents = Math.round(Number(payload.deposit_amount_ars || 0) * 100)
@@ -831,18 +842,18 @@ export async function lookupPlayerBookings(query: {
           customer_name,
           customer_phone,
           customer_email,
-          booking_range,
+          booked_at,
           status,
-          origin,
-          total_amount_ars,
-          deposit_amount_ars,
-          deposit_mp_external_ref,
+          price_total_cents,
+          deposit_cents,
+          staff_notes,
+          payment_method,
           created_at,
           tenants:tenant_id (
             name,
             address,
             city,
-            phone
+            phone_whatsapp
           ),
           courts:court_id (
             name,
@@ -851,12 +862,12 @@ export async function lookupPlayerBookings(query: {
         `)
 
       if (cleanCode) {
-        // Buscar por id exacto o referencia externa
+        // Buscar por id exacto o coincidencia en staff_notes o teléfono
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode)
         if (isUUID) {
           dbQuery = dbQuery.eq('id', cleanCode.toLowerCase())
         } else {
-          dbQuery = dbQuery.or(`deposit_mp_external_ref.eq.${cleanCode},id.ilike.%${cleanCode}`)
+          dbQuery = dbQuery.or(`id.ilike.%${cleanCode}%,staff_notes.ilike.%${cleanCode}%,customer_phone.ilike.%${cleanCode}%`)
         }
       } else if (normalizedEmail) {
         dbQuery = dbQuery.ilike('customer_email', normalizedEmail)
@@ -873,13 +884,40 @@ export async function lookupPlayerBookings(query: {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) as Record<string, any> | null
 
-          const total = Number(b.total_amount_ars) || 0
-          const deposit = Number(b.deposit_amount_ars) || 0
+          const total = (Number(b.price_total_cents) || 0) / 100
+          const deposit = (Number(b.deposit_cents) || 0) / 100
           const rawId = String(b.id || '')
-          const shortCode = String(b.deposit_mp_external_ref || rawId.slice(0, 8)).toUpperCase()
-          const assignedCode = shortCode.startsWith('PCL-') || shortCode.startsWith('CAN-') || shortCode.startsWith('TEN-')
-            ? shortCode
-            : `RES-${shortCode.slice(-6)}`
+          const shortCode = rawId.slice(0, 8).toUpperCase()
+          const assignedCode = `RES-${shortCode.slice(-6)}`
+
+          // Parsear fechas desde el tstzrange booked_at
+          let startsAt = ''
+          let endsAt = ''
+          let dateFormatted = 'Próximo turno'
+          let timeFormatted = 'Turno reservado'
+          if (b.booked_at) {
+            const match = String(b.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+            if (match) {
+              startsAt = match[1]
+              endsAt = match[2]
+              try {
+                const d = new Date(startsAt)
+                if (!isNaN(d.getTime())) {
+                  dateFormatted = d.toLocaleDateString('es-AR', {
+                    timeZone: 'America/Argentina/Buenos_Aires',
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                  })
+                  timeFormatted = `${d.toLocaleTimeString('es-AR', {
+                    timeZone: 'America/Argentina/Buenos_Aires',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })} hs`
+                }
+              } catch {}
+            }
+          }
 
           // Si la búsqueda es por código, validar estrictamente que coincida con esta reserva
           if (cleanCode) {
@@ -897,20 +935,25 @@ export async function lookupPlayerBookings(query: {
             }
           }
 
+          const rawStatus = String(b.status || '').toUpperCase()
+          const statusFormatted = (rawStatus.includes('CONFIRM') || rawStatus === 'COMPLETED' || rawStatus === 'FULLY_PAID')
+            ? 'CONFIRMED'
+            : (rawStatus.includes('CANCEL') ? 'CANCELLED' : (rawStatus.includes('NO_SHOW') ? 'NO_SHOW' : 'PENDING'))
+
           results.push({
             id: rawId,
             code: assignedCode,
             clubName: String(tenant?.name || 'Club Deportivo'),
             clubAddress: String(tenant?.address || 'Dirección registrada'),
             clubCity: String(tenant?.city || 'Tucumán'),
-            clubPhone: String(tenant?.phone || '+54 9 381 411-2233'),
+            clubPhone: String(tenant?.phone_whatsapp || '+54 9 381 411-2233'),
             courtName: String(court?.name || 'Cancha'),
             sport: String(court?.sport || 'Pádel'),
-            startsAt: String(b.booking_range || new Date().toISOString()),
-            endsAt: String(b.booking_range || new Date().toISOString()),
-            dateFormatted: 'Próximo turno',
-            timeFormatted: 'Turno reservado',
-            status: (b.status === 'CONFIRMED' || b.status === 'FULLY_PAID') ? 'CONFIRMED' : (b.status === 'CANCELLED' ? 'CANCELLED' : 'PENDING'),
+            startsAt: startsAt || String(b.created_at || new Date().toISOString()),
+            endsAt: endsAt || String(b.created_at || new Date().toISOString()),
+            dateFormatted,
+            timeFormatted,
+            status: statusFormatted,
             totalAmount: total,
             depositAmount: deposit,
             balanceRemaining: Math.max(0, total - deposit),

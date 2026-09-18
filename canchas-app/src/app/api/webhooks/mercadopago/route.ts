@@ -18,7 +18,6 @@ import { releaseBookingLock } from '@/lib/redis'
 import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
-  BookingStatus,
 } from '@/types/database'
 import crypto from 'crypto'
 
@@ -173,38 +172,63 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not fetch payment' }, { status: 500 })
   }
 
+  // ── Buscar el booking por external_reference (o id de ítem) ──────────────
   const externalRef = payment.external_reference
+  const bookingIdCandidate = externalRef || (payment as unknown as { additional_info?: { items?: Array<{ id?: string }> } })?.additional_info?.items?.[0]?.id
 
-  // ── Buscar el booking por external_reference ──────────────────────────────
-  const { data: booking, error: bookingError } = await supabase
-    .from('bookings')
-    .select('id, tenant_id, status, deposit_amount_ars, redis_lock_key, deposit_mp_payment_id')
-    .eq('deposit_mp_external_ref', externalRef)
-    .single()
+  let booking: {
+    id: string
+    tenant_id: string
+    status: string
+    redis_lock_key: string | null
+    staff_notes: string | null
+    price_total_cents: number
+    deposit_cents: number
+  } | null = null
 
-  if (bookingError || !booking) {
-    console.error('[MP Webhook] Booking no encontrado para external_ref:', externalRef)
+  if (bookingIdCandidate) {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingIdCandidate)
+    if (isUUID) {
+      const { data } = await supabase
+        .from('bookings')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
+        .eq('id', bookingIdCandidate)
+        .maybeSingle()
+      booking = data
+    } else {
+      const { data } = await supabase
+        .from('bookings')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
+        .ilike('staff_notes', `%${bookingIdCandidate}%`)
+        .limit(1)
+        .maybeSingle()
+      booking = data
+    }
+  }
+
+  if (!booking) {
+    console.error('[MP Webhook] Booking no encontrado para referencia:', bookingIdCandidate)
     // Retornar 200 igualmente para que MP no reintente innecesariamente
     return NextResponse.json({ received: true, warning: 'booking not found' })
   }
 
-  // ── Idempotencia: si ya procesamos este pago, ignorar ─────────────────────
-  if (booking.deposit_mp_payment_id === paymentId.toString()) {
+  // ── Idempotencia: si ya procesamos este payment_id específico, ignorar ─────
+  if (booking.staff_notes && booking.staff_notes.includes(`MP-ID:${paymentId}`)) {
     return NextResponse.json({ received: true, idempotent: true })
   }
 
   // ── Determinar el nuevo estado según el estado del pago en MP ─────────────
-  let newStatus: BookingStatus | null = null
+  let newStatus: string | null = null
   let depositPaidAt: string | null = null
 
   switch (payment.status) {
     case 'approved':
-      newStatus = 'DEPOSIT_PAID'
+      newStatus = 'confirmed'
       depositPaidAt = payment.date_approved || new Date().toISOString()
       break
     case 'rejected':
     case 'cancelled':
-      newStatus = 'CANCELLED_USER'
+      newStatus = 'cancelled'
       break
     case 'pending':
     case 'in_process':
@@ -217,18 +241,20 @@ export async function POST(request: NextRequest) {
 
   // ── Actualizar el booking si hay cambio de estado ─────────────────────────
   if (newStatus && newStatus !== booking.status) {
+    const mpNote = `[MP-ID:${paymentId} - Estado:${payment.status.toUpperCase()} - Monto:$${payment.transaction_amount}]`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${mpNote}` : mpNote
+
     const updatePayload: Record<string, unknown> = {
       status: newStatus,
-      deposit_mp_payment_id: paymentId.toString(),
+      staff_notes: updatedNotes,
     }
 
-    if (newStatus === 'DEPOSIT_PAID') {
-      updatePayload.deposit_paid_at = depositPaidAt
-    }
-
-    if (newStatus === 'CANCELLED_USER') {
-      updatePayload.cancelled_at = new Date().toISOString()
-      updatePayload.cancellation_reason = `Pago MP ${payment.status}`
+    if (newStatus === 'confirmed') {
+      const depositCents = Math.round(Number(payment.transaction_amount || 0) * 100)
+      updatePayload.deposit_cents = depositCents
+      updatePayload.staff_deposit_amount_cents = depositCents
+      updatePayload.paid_at = depositPaidAt
+      updatePayload.payment_method = 'mercadopago'
     }
 
     const { error: updateError } = await supabase
@@ -242,20 +268,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[MP Webhook] Booking ${booking.id} → ${newStatus}`)
-
-    // ── Insertar registro de pago en booking_payments ──────────────────────
-    if (newStatus === 'DEPOSIT_PAID') {
-      await supabase.from('booking_payments').insert({
-        tenant_id: booking.tenant_id,
-        booking_id: booking.id,
-        amount_ars: payment.transaction_amount,
-        payment_method: 'MERCADOPAGO',
-        mp_payment_id: paymentId.toString(),
-        mp_status: payment.status,
-        payment_date: new Date().toISOString().split('T')[0],
-        notes: `Pago online automático. MP ID: ${paymentId}. Detalle: ${payment.status_detail}`,
-      })
-    }
 
     // ── Liberar el lock de Redis ──────────────────────────────────────────
     // Si el pago fue aprobado o rechazado, el lock ya no es necesario

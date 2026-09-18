@@ -206,6 +206,16 @@ export function QuickBookingModal({
       }
 
       toast.success('¡Turno registrado exitosamente!')
+
+      // Emitir en BroadcastChannel para sincronización instantánea en grilla y portal de jugadores (0ms)
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('canchar_bookings')
+          bc.postMessage({ type: 'BOOKING_CONFIRMED', court_id: courtId, starts_at: startsAt })
+          bc.close()
+        }
+      } catch {}
+
       onClose()
       onSuccess?.()
     } catch (err: unknown) {

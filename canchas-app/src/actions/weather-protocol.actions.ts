@@ -8,7 +8,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { formatARS, formatTime, buildWhatsAppLink } from '@/lib/utils'
 import { notifyRainCancellation } from '@/lib/whatsapp'
-import type { CustomerCredit, BookingStatus } from '@/types/database'
+import type { CustomerCredit } from '@/types/database'
 
 export interface RainCancellationResult {
   success: boolean
@@ -49,17 +49,17 @@ export async function executeRainCancellation(params: {
 
     const clubName = tenant?.name || 'CancharClub'
 
-    // 1. Obtener reservas del día
-    const startWindow = `${params.date}T${params.timeFrom}:00.000Z`
-    const endWindow = `${params.date}T${params.timeTo}:00.000Z`
+    // 1. Obtener reservas del día dentro de la ventana horaria
+    const startWindow = `${params.date}T${params.timeFrom}:00-03:00`
+    const endWindow = `${params.date}T${params.timeTo}:00-03:00`
 
     const { data: bookings, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, deposit_amount_ars, total_amount_ars, starts_at, court_id, court:courts(name)')
+      .select('id, customer_name, customer_phone, deposit_cents, price_total_cents, booked_at, staff_notes, court_id, courts(name)')
       .eq('tenant_id', params.tenantId)
       .in('court_id', params.courtIds)
-      .filter('booking_range', 'ov', `[${startWindow},${endWindow}]`)
-      .not('status', 'in', '("CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .filter('booked_at', 'ov', `[${new Date(startWindow).toISOString()},${new Date(endWindow).toISOString()}]`)
+      .not('status', 'in', '("cancelled")')
 
     if (fetchErr) {
       console.warn('[executeRainCancellation] Fetch warning:', fetchErr.message)
@@ -70,9 +70,18 @@ export async function executeRainCancellation(params: {
     const notifications: RainCancellationResult['notifications'] = []
 
     for (const b of targetBookings) {
-      const courtName = (b.court as unknown as { name: string })?.name || 'Cancha'
-      const timeStr = formatTime(b.starts_at)
-      const creditedAmount = Number(b.deposit_amount_ars) || 0
+      const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
+      const courtName = (courtObj as { name?: string } | null)?.name || 'Cancha'
+      
+      let timeStr = ''
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match && match[1]) {
+          timeStr = formatTime(match[1])
+        }
+      }
+
+      const creditedAmount = Math.round((Number(b.deposit_cents) || 0) / 100)
 
       // 2. Si tenía seña, insertar saldo a favor en customer_credits
       if (creditedAmount > 0 && b.customer_phone) {
@@ -92,13 +101,15 @@ export async function executeRainCancellation(params: {
         totalCreditedArs += creditedAmount
       }
 
-      // 3. Actualizar estado de la reserva a RAIN_CANCELLED
+      // 3. Actualizar estado de la reserva a cancelled
+      const rainNote = `Protocolo Climático: Suspensión por lluvia (${params.reason || 'Mal tiempo'})`
+      const updatedNotes = b.staff_notes ? `${b.staff_notes} | ${rainNote}` : rainNote
+
       await supabase
         .from('bookings')
         .update({
-          status: 'RAIN_CANCELLED' as BookingStatus,
-          cancellation_reason: params.reason || 'Protocolo Climático: Suspensión por lluvia',
-          cancelled_at: new Date().toISOString(),
+          status: 'cancelled',
+          staff_notes: updatedNotes,
         })
         .eq('id', b.id)
 

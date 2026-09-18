@@ -111,6 +111,13 @@ export function BookingDetailsModal({
         toast.error(res.error || 'Error al registrar cobro')
       } else {
         toast.success(`¡Cobro de ${formatARS(amount)} registrado!`)
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('canchar_bookings')
+            bc.postMessage({ type: 'BOOKING_CONFIRMED', booking_id: booking.id })
+            bc.close()
+          }
+        } catch {}
         setShowPayForm(false)
         setPayAmount('')
         onSuccess?.()
@@ -138,6 +145,13 @@ export function BookingDetailsModal({
         toast.error(res.error || 'Error al cancelar')
       } else {
         toast.success('Reserva cancelada correctamente')
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('canchar_bookings')
+            bc.postMessage({ type: 'BOOKING_CONFIRMED', booking_id: booking.id, status: 'cancelled' })
+            bc.close()
+          }
+        } catch {}
         onSuccess?.()
         onClose()
       }

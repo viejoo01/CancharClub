@@ -501,31 +501,31 @@ export async function deletePriceRule(ruleId: string, tenantId: string) {
 
 export async function getDailyCashSummary(tenantId: string, dateStr: string) {
   try {
-    const supabase = await createClient()
+    const supabase = await createServiceClient()
 
-    // Buscar pagos registrados en el día
-    const { data: payments, error } = await supabase
-      .from('booking_payments')
+    const startOfDay = new Date(`${dateStr}T00:00:00-03:00`).toISOString()
+    const endOfDay = new Date(`${dateStr}T23:59:59-03:00`).toISOString()
+
+    const { data: bookings, error } = await supabase
+      .from('bookings')
       .select(`
         id,
-        amount_ars,
+        price_total_cents,
+        deposit_cents,
+        staff_deposit_amount_cents,
         payment_method,
-        payment_date,
+        paid_at,
         created_at,
-        reference_number,
-        notes,
-        booking_id,
-        bookings (
-          customer_name,
-          courts (name)
-        )
+        staff_notes,
+        customer_name,
+        courts (name)
       `)
       .eq('tenant_id', tenantId)
-      .eq('payment_date', dateStr)
-      .order('created_at', { ascending: false })
+      .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
+      .not('status', 'in', '("cancelled")')
 
     if (error) {
-      console.warn('[getDailyCashSummary] Fallback a datos locales/demo:', error.message || error)
+      console.warn('[getDailyCashSummary] Error querying bookings:', error.message)
       return {
         totalCollected: 0,
         breakdown: { CASH: 0, TRANSFER: 0, MERCADOPAGO: 0, OTHER: 0 },
@@ -542,20 +542,40 @@ export async function getDailyCashSummary(tenantId: string, dateStr: string) {
     }
 
     let totalCollected = 0
-    payments?.forEach(p => {
-      const amt = Number(p.amount_ars)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payments = (bookings || []).map((b: any) => {
+      const depCents = Number(b.staff_deposit_amount_cents || b.deposit_cents || 0)
+      const amt = depCents / 100
       totalCollected += amt
-      if (p.payment_method === 'CASH') breakdown.CASH += amt
-      else if (p.payment_method === 'TRANSFER') breakdown.TRANSFER += amt
-      else if (p.payment_method === 'MERCADOPAGO' || p.payment_method === 'QR_MP') breakdown.MERCADOPAGO += amt
+
+      const method = String(b.payment_method || '').toLowerCase()
+      if (method.includes('cash')) breakdown.CASH += amt
+      else if (method.includes('transfer') || method.includes('bank')) breakdown.TRANSFER += amt
+      else if (method.includes('mercadopago') || method.includes('mp')) breakdown.MERCADOPAGO += amt
       else breakdown.OTHER += amt
+
+      const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
+      return {
+        id: b.id,
+        amount_ars: amt,
+        payment_method: method.toUpperCase() || 'CASH',
+        payment_date: dateStr,
+        created_at: b.paid_at || b.created_at,
+        reference_number: undefined,
+        notes: b.staff_notes || undefined,
+        booking_id: b.id,
+        bookings: {
+          customer_name: b.customer_name || 'Cliente',
+          courts: { name: (courtObj as { name?: string } | null)?.name || 'Cancha' }
+        }
+      }
     })
 
     return {
       totalCollected,
       breakdown,
-      payments: payments ?? [],
-      bookingsCount: payments?.length ?? 0,
+      payments,
+      bookingsCount: payments.length,
     }
   } catch (err) {
     console.warn('[getDailyCashSummary] Fallback por excepción:', err)

@@ -169,6 +169,9 @@ export function Sidebar({
     // Filtrar por rol
     if (!item.roles.includes(userRole)) return false
 
+    // CLUB PENDIENTE: solo ve el Calendario de Turnos
+    if (!isActive && !isSuperadmin) return item.exact === true && item.href === '/dashboard'
+
     // TENANT_STAFF: solo ve ítems marcados como staffVisible
     if (isStaff) return item.staffVisible === true
 
@@ -267,24 +270,28 @@ export function Sidebar({
           )
         })}
 
-        <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Portal Público
-        </div>
+        {!(!isActive && !isSuperadmin) && (
+          <>
+            <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Portal Público
+            </div>
 
-        <Link
-          href={`/club/${tenantSlug}`}
-          target="_blank"
-          onClick={() => onClose?.()}
-          className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 transition-colors group"
-        >
-          <div className="flex items-center gap-3">
-            <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 transition-colors" />
-            <span>Ver Portal Jugador</span>
-          </div>
-          <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">
-            En vivo
-          </span>
-        </Link>
+            <Link
+              href={`/club/${tenantSlug}`}
+              target="_blank"
+              onClick={() => onClose?.()}
+              className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+                <span>Ver Portal Jugador</span>
+              </div>
+              <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">
+                En vivo
+              </span>
+            </Link>
+          </>
+        )}
 
         {isSuperadmin && (
           <>

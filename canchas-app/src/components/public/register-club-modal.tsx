@@ -225,7 +225,7 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
                 </>
               ) : (
                 <>
-                  <span>Sumar mi club gratis</span>
+                  <span>Sumar mi club</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

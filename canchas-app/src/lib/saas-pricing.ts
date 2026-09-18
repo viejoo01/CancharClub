@@ -42,25 +42,62 @@ export function calculateSaaSMultiplier(courtsCount: number): number {
 }
 
 /**
+ * Calcula la fecha del próximo vencimiento mensual en formato DD/MM/AAAA.
+ * Es 100% dinámico con respecto al día exacto en que se registró el club:
+ * - Si el club es nuevo (primer mes / período de prueba), vence al cumplirse el primer mes (30 días).
+ * - En los meses sucesivos, vence en el mismo día del mes en que fue registrado.
+ */
+export function computeNextDueDate(createdAt?: string | Date | null): string {
+  const now = new Date()
+  const regDate = createdAt ? new Date(createdAt) : now
+  const targetDay = regDate.getDate()
+
+  // Helper para construir fecha asegurando días válidos (ej. febrero o meses de 30 días)
+  const getClampedDate = (year: number, month: number, day: number) => {
+    const maxDays = new Date(year, month + 1, 0).getDate()
+    const validDay = Math.min(day, maxDays)
+    return new Date(year, month, validDay, 23, 59, 59, 999)
+  }
+
+  let year = now.getFullYear()
+  let month = now.getMonth()
+
+  // Candidato para el mes en curso
+  let candidate = getClampedDate(year, month, targetDay)
+
+  // Si la fecha ya venció en este mes, o si el club fue creado hace menos de 25 días (primer ciclo)
+  const isTooCloseToRegistration = (candidate.getTime() - regDate.getTime()) < 25 * 24 * 60 * 60 * 1000
+  if (candidate <= now || isTooCloseToRegistration) {
+    month += 1
+    if (month > 11) {
+      month = 0
+      year += 1
+    }
+    candidate = getClampedDate(year, month, targetDay)
+  }
+
+  // Formatear en DD/MM/AAAA requerido
+  const dd = String(candidate.getDate()).padStart(2, '0')
+  const mm = String(candidate.getMonth() + 1).padStart(2, '0')
+  const yyyy = candidate.getFullYear()
+
+  return `${dd}/${mm}/${yyyy}`
+}
+
+/**
  * Calcula la cuota mensual SaaS completa para un club.
  */
 export function calculateClubSaaSFee(
   courtsCount: number,
-  highestSlotPriceArs: number
+  highestSlotPriceArs: number,
+  createdAt?: string | Date | null
 ): ClubSaaSPricing {
   const safeCourts = Math.max(1, courtsCount)
   const safePrice = Math.max(0, highestSlotPriceArs)
   const multiplier = calculateSaaSMultiplier(safeCourts)
   const monthlyFeeArs = Math.round(safePrice * multiplier)
   const plan = getPlanByCourtsCount(safeCourts)
-
-  // Próximo vencimiento: día 7 del mes (ventana de cobro del 1 al 7 de cada mes)
-  const now = new Date()
-  const nextDueDateObj = new Date(now.getFullYear(), now.getMonth(), 7)
-  if (now.getDate() > 7) {
-    nextDueDateObj.setMonth(nextDueDateObj.getMonth() + 1)
-  }
-  const nextDueDate = nextDueDateObj.toISOString().split('T')[0]
+  const nextDueDate = computeNextDueDate(createdAt)
 
   return {
     courtsCount: safeCourts,

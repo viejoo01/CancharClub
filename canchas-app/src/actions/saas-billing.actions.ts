@@ -68,11 +68,12 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || 'ACTIVE'
   let baseSlots: number | null = null
+  let tenantCreatedAt: string | null = null
 
   if (targetTenantId) {
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id, name, slug, base_slots_plan, subscription_status, is_active')
+      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at')
       .eq('id', targetTenantId)
       .maybeSingle()
 
@@ -80,6 +81,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       tenantName = tenant.name || tenantName
       tenantSlug = tenant.slug || tenantSlug
       subscriptionStatus = tenant.subscription_status || subscriptionStatus
+      tenantCreatedAt = tenant.created_at || null
       if (tenant.base_slots_plan) {
         baseSlots = Number(tenant.base_slots_plan)
       }
@@ -119,7 +121,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs)
+  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt)
   const activePlan = getPlanByCourtsCount(courtsCount)
   const isPaid = subscriptionStatus === 'ACTIVE'
 
@@ -146,7 +148,7 @@ export async function getClubBillingSummary(tenantId: string) {
   // 0. Obtener tenant para verificar plan fijado por Superadmin
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('id, name, slug, base_slots_plan, subscription_status')
+    .select('id, name, slug, base_slots_plan, subscription_status, created_at')
     .eq('id', tenantId)
     .maybeSingle()
 
@@ -178,7 +180,7 @@ export async function getClubBillingSummary(tenantId: string) {
     ? Math.round(Number(priceRules[0].price_cents) / 100)
     : 30000
 
-  const pricing = calculateClubSaaSFee(activeCourtsCount, highestPriceArs)
+  const pricing = calculateClubSaaSFee(activeCourtsCount, highestPriceArs, tenant?.created_at)
 
   // 3. Obtener suscripción del mes corriente
   const now = new Date()

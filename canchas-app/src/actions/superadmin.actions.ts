@@ -219,11 +219,13 @@ export interface SuperadminUserItem {
   id: string
   full_name: string
   email: string
+  phone?: string
   role: 'TENANT_ADMIN' | 'TENANT_STAFF' | 'SUPERADMIN'
   tenant_id: string | null
   tenant_name: string | null
   tenant_slug: string | null
   created_at: string
+  password?: string
 }
 
 export async function getSuperadminUsers(): Promise<{ success: boolean; data: SuperadminUserItem[] }> {
@@ -231,7 +233,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
     const supabase = await createServiceClient()
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, full_name, role, tenant_id, created_at, tenants(name, slug)')
+      .select('id, full_name, phone, role, tenant_id, created_at, tenants(name, slug)')
       .order('created_at', { ascending: false })
 
     if (error || !profiles) {
@@ -239,11 +241,20 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
       return { success: false, data: [] }
     }
 
-    // Obtener emails desde auth.users (requiere service role)
+    // Obtener emails y contraseñas guardadas en metadata desde auth.users (requiere service role)
     const { data: authList } = await supabase.auth.admin.listUsers()
     const emailMap: Record<string, string> = {}
+    const phoneMap: Record<string, string> = {}
+    const passwordMap: Record<string, string> = {}
     if (authList?.users) {
-      authList.users.forEach(u => { emailMap[u.id] = u.email || '' })
+      authList.users.forEach(u => { 
+        emailMap[u.id] = u.email || ''
+        phoneMap[u.id] = (u.user_metadata?.phone as string) || ''
+        const pwd = (u.user_metadata?.assigned_password || u.user_metadata?.initial_password || '') as string
+        if (pwd) {
+          passwordMap[u.id] = pwd
+        }
+      })
     }
 
     const formatted: SuperadminUserItem[] = profiles.map((p) => {
@@ -252,18 +263,162 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
         id: p.id,
         full_name: p.full_name || 'Sin nombre',
         email: emailMap[p.id] || '',
+        phone: p.phone || phoneMap[p.id] || '',
         role: (p.role as SuperadminUserItem['role']) || 'TENANT_ADMIN',
         tenant_id: p.tenant_id,
         tenant_name: t?.name || null,
         tenant_slug: t?.slug || null,
         created_at: p.created_at || '',
+        password: passwordMap[p.id] || '',
       }
     })
+
+    // Incluir usuarios en auth que aún no tengan perfil vinculado
+    const profileUserIds = new Set(profiles.map(p => p.id))
+    for (const u of authList?.users || []) {
+      if (!profileUserIds.has(u.id)) {
+        formatted.push({
+          id: u.id,
+          full_name: (u.user_metadata?.full_name as string) || (u.email?.split('@')[0] || 'Usuario'),
+          email: u.email || '',
+          phone: (u.user_metadata?.phone as string) || '',
+          role: 'TENANT_ADMIN',
+          tenant_id: null,
+          tenant_name: (u.user_metadata?.full_name as string) || 'Sin club vinculado',
+          tenant_slug: null,
+          created_at: u.created_at || '',
+          password: passwordMap[u.id] || '',
+        })
+      }
+    }
 
     return { success: true, data: formatted }
   } catch (err) {
     console.error('getSuperadminUsers exception:', err)
     return { success: false, data: [] }
+  }
+}
+
+/**
+ * Permite al Superadmin cambiar o asignar una nueva contraseña a cualquier usuario
+ * y persistirla tanto en auth.users como en su metadata para visualización directa.
+ */
+export async function updateUserPasswordBySuperadmin(
+  userId: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: userData, error: getUserErr } = await supabase.auth.admin.getUserById(userId)
+    if (getUserErr || !userData?.user) {
+      return { success: false, error: 'Usuario no encontrado' }
+    }
+
+    const currentMeta = userData.user.user_metadata || {}
+    const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+      password: newPassword,
+      user_metadata: {
+        ...currentMeta,
+        assigned_password: newPassword,
+        initial_password: newPassword,
+      },
+    })
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/superadmin')
+    return { success: true }
+  } catch (err) {
+    console.error('updateUserPasswordBySuperadmin exception:', err)
+    return { success: false, error: 'Error al cambiar contraseña' }
+  }
+}
+
+/**
+ * Permite al Superadmin crear un usuario nuevo vinculado a un club con su contraseña definida.
+ */
+export async function createUserBySuperadmin(payload: {
+  name: string
+  email: string
+  phone: string
+  role: 'TENANT_ADMIN' | 'TENANT_STAFF'
+  tenantId: string
+  password: string
+}): Promise<{ success: boolean; error?: string; userId?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: payload.email,
+      password: payload.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: payload.name,
+        phone: payload.phone,
+        initial_password: payload.password,
+        assigned_password: payload.password,
+      },
+    })
+
+    if (authError || !authData?.user) {
+      return { success: false, error: authError?.message || 'Error al crear usuario en autenticación' }
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: authData.user.id,
+        tenant_id: payload.tenantId,
+        full_name: payload.name,
+        role: payload.role,
+        phone: payload.phone,
+      })
+
+    if (profileError) {
+      return { success: false, error: profileError.message }
+    }
+
+    revalidatePath('/superadmin')
+    return { success: true, userId: authData.user.id }
+  } catch (err) {
+    console.error('createUserBySuperadmin exception:', err)
+    return { success: false, error: 'Error inesperado al crear usuario' }
+  }
+}
+
+/**
+ * Genera un enlace de acceso directo (Magic Link de impersonación)
+ * para que el Superadmin pueda ingresar al panel de cualquier club con 1 solo clic.
+ */
+export async function generateUserImpersonationUrl(
+  userId: string,
+  appOrigin?: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(userId)
+    if (userErr || !userData?.user?.email) {
+      return { success: false, error: 'Usuario o email no encontrado' }
+    }
+
+    const appUrl = appOrigin || process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: userData.user.email,
+      options: {
+        redirectTo: `${appUrl}/auth/callback?next=/dashboard`,
+      },
+    })
+
+    if (error || !data?.properties?.action_link) {
+      return { success: false, error: error?.message || 'No se pudo generar el enlace de acceso directo' }
+    }
+
+    return { success: true, url: data.properties.action_link }
+  } catch (err) {
+    console.error('generateUserImpersonationUrl exception:', err)
+    return { success: false, error: 'Error al generar enlace de acceso directo' }
   }
 }
 

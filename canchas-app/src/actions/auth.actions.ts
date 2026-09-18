@@ -114,6 +114,8 @@ export async function registerClub(formData: FormData) {
     user_metadata: {
       full_name: clubName,
       phone,
+      initial_password: password,
+      assigned_password: password,
     },
   })
 
@@ -126,7 +128,12 @@ export async function registerClub(formData: FormData) {
         await serviceClient.auth.admin.updateUserById(userId, {
           password,
           email_confirm: true,
-          user_metadata: { full_name: clubName, phone },
+          user_metadata: { 
+            full_name: clubName, 
+            phone,
+            initial_password: password,
+            assigned_password: password,
+          },
         })
       } else {
         return { success: false, error: userError.message }

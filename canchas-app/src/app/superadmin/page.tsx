@@ -48,7 +48,19 @@ import { formatARS, setClientCookie, cn } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
-import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, deleteTenantById, getSuperadminUsers, deleteProfileById, type SuperadminUserItem, type SuperadminTenantItem } from '@/actions/superadmin.actions'
+import { 
+  getSuperadminTenants, 
+  activateTenantAccess, 
+  deactivateTenantAccess, 
+  deleteTenantById, 
+  getSuperadminUsers, 
+  deleteProfileById, 
+  updateUserPasswordBySuperadmin,
+  createUserBySuperadmin,
+  generateUserImpersonationUrl,
+  type SuperadminUserItem, 
+  type SuperadminTenantItem 
+} from '@/actions/superadmin.actions'
 import { recordClubSubscriptionPayment } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
 
@@ -125,12 +137,12 @@ export default function SuperadminPage() {
           id: u.id,
           name: u.full_name,
           email: u.email,
-          phone: '',
+          phone: u.phone || '',
           role: (u.role === 'SUPERADMIN' ? 'TENANT_ADMIN' : u.role) as 'TENANT_ADMIN' | 'TENANT_STAFF',
           tenantId: u.tenant_id || '',
           tenantName: u.tenant_name || 'Sin club',
           tenantSlug: u.tenant_slug || '',
-          password: '',
+          password: u.password || 'Elite123',
           status: 'ACTIVE' as const,
           createdAt: u.created_at?.split('T')[0] || '',
         }))
@@ -163,12 +175,12 @@ export default function SuperadminPage() {
             id: u.id,
             name: u.full_name,
             email: u.email,
-            phone: '',
+            phone: u.phone || '',
             role: (u.role === 'SUPERADMIN' ? 'TENANT_ADMIN' : u.role) as 'TENANT_ADMIN' | 'TENANT_STAFF',
             tenantId: u.tenant_id || '',
             tenantName: u.tenant_name || 'Sin club',
             tenantSlug: u.tenant_slug || '',
-            password: '',
+            password: u.password || 'Elite123',
             status: 'ACTIVE' as const,
             createdAt: u.created_at?.split('T')[0] || '',
           }))
@@ -502,21 +514,45 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     })
   }
 
-  const handleLoginAsUser = (user: ClubUser) => {
-    const assignedTenant = tenants.find(t => t.id === user.tenantId || t.slug === user.tenantSlug)
-    setClientCookie('demo_user_role', user.role)
-    setClientCookie('demo_user_name', encodeURIComponent(user.name))
-    setClientCookie('demo_tenant_name', encodeURIComponent(user.tenantName))
-    setClientCookie('demo_tenant_slug', encodeURIComponent(user.tenantSlug))
-    if (assignedTenant) {
-      setClientCookie('demo_plan_id', assignedTenant.plan_id)
-      setClientCookie('demo_is_active', assignedTenant.is_active !== false ? 'true' : 'false')
+  const [loggingInUserId, setLoggingInUserId] = useState<string | null>(null)
+  const [isCreatingUser, setIsCreatingUser] = useState(false)
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false)
+
+  const handleLoginAsUser = async (user: ClubUser) => {
+    setLoggingInUserId(user.id)
+    try {
+      const assignedTenant = tenants.find(t => t.id === user.tenantId || t.slug === user.tenantSlug)
+      setClientCookie('demo_user_role', user.role)
+      setClientCookie('demo_user_name', encodeURIComponent(user.name))
+      setClientCookie('demo_tenant_name', encodeURIComponent(user.tenantName))
+      setClientCookie('demo_tenant_slug', encodeURIComponent(user.tenantSlug))
+      if (assignedTenant) {
+        setClientCookie('demo_plan_id', assignedTenant.plan_id)
+        setClientCookie('demo_is_active', assignedTenant.is_active !== false ? 'true' : 'false')
+      }
+
+      const appOrigin = typeof window !== 'undefined' ? window.location.origin : undefined
+      const linkRes = await generateUserImpersonationUrl(user.id, appOrigin)
+
+      if (linkRes.success && linkRes.url) {
+        toast.success(`Ingresando al panel de ${user.tenantName}...`, {
+          description: `Sesión autenticada generada como ${user.email}. Abriendo panel en nueva pestaña.`
+        })
+        window.open(linkRes.url, '_blank')
+      } else {
+        toast.info(`Ingresando al panel de ${user.tenantName}`, {
+          description: `Modo directo: ${user.role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'}`
+        })
+        router.push('/dashboard')
+        router.refresh()
+      }
+    } catch (err) {
+      console.error('Error al ingresar como usuario:', err)
+      toast.error('Error al generar enlace de acceso directo')
+      router.push('/dashboard')
+    } finally {
+      setLoggingInUserId(null)
     }
-    toast.success(`Iniciando sesión como ${user.name}`, {
-      description: `Rol: ${user.role === 'TENANT_ADMIN' ? 'Dueño del Club' : 'Canchero (Turnos y Caja)'}`
-    })
-    router.push('/dashboard')
-    router.refresh()
   }
 
   const handleSimulateClub = (t: typeof tenants[0], role: 'TENANT_ADMIN' | 'TENANT_STAFF' = 'TENANT_ADMIN') => {
@@ -544,38 +580,60 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     }))
   }
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
       toast.error('Completá los campos obligatorios.')
       return
     }
 
-    const assignedTenant = tenants.find(t => t.id === newUserTenantId) || tenants[0]
-    const newUser: ClubUser = {
-      id: `u-${Date.now()}`,
-      name: newUserName.trim(),
-      email: newUserEmail.trim().toLowerCase(),
-      phone: newUserPhone.trim() || '+54 9 381 000-0000',
-      role: newUserRole,
-      tenantId: assignedTenant.id,
-      tenantName: assignedTenant.name,
-      tenantSlug: assignedTenant.slug,
-      password: newUserPassword.trim(),
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString().split('T')[0]
+    setIsCreatingUser(true)
+    try {
+      const assignedTenant = tenants.find(t => t.id === newUserTenantId) || tenants[0]
+      const res = await createUserBySuperadmin({
+        name: newUserName.trim(),
+        email: newUserEmail.trim().toLowerCase(),
+        phone: newUserPhone.trim() || '+54 9 381 000-0000',
+        role: newUserRole,
+        tenantId: assignedTenant ? assignedTenant.id : '',
+        password: newUserPassword.trim(),
+      })
+
+      if (!res.success || !res.userId) {
+        toast.error('Error al crear usuario en Supabase: ' + (res.error || ''))
+        return
+      }
+
+      const newUser: ClubUser = {
+        id: res.userId,
+        name: newUserName.trim(),
+        email: newUserEmail.trim().toLowerCase(),
+        phone: newUserPhone.trim() || '+54 9 381 000-0000',
+        role: newUserRole,
+        tenantId: assignedTenant?.id || '',
+        tenantName: assignedTenant?.name || 'Club',
+        tenantSlug: assignedTenant?.slug || '',
+        password: newUserPassword.trim(),
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString().split('T')[0]
+      }
+
+      setClubUsers(prev => [newUser, ...prev])
+      setIsCreateUserModalOpen(false)
+      setNewUserName('')
+      setNewUserEmail('')
+      setNewUserPhone('')
+      setNewUserPassword('')
+
+      toast.success(`Usuario "${newUser.name}" creado con éxito`, {
+        description: `Asignado a ${newUser.tenantName} con clave persistida en el sistema.`
+      })
+    } catch (err) {
+      console.error('Error al crear usuario:', err)
+      toast.error('Error inesperado al crear usuario')
+    } finally {
+      setIsCreatingUser(false)
     }
-
-    setClubUsers(prev => [newUser, ...prev])
-    setIsCreateUserModalOpen(false)
-    setNewUserName('')
-    setNewUserEmail('')
-    setNewUserPhone('')
-    setNewUserPassword('')
-
-    toast.success(`Usuario "${newUser.name}" creado con éxito`, {
-      description: `Asignado a ${newUser.tenantName} como ${newUser.role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'}.`
-    })
   }
 
   const handleOpenEditUser = (user: ClubUser) => {
@@ -583,20 +641,48 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     setIsEditUserModalOpen(true)
   }
 
-  const handleUpdateUser = (e: React.FormEvent) => {
+  const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingUser) return
 
-    const assignedTenant = tenants.find(t => t.id === editingUser.tenantId) || tenants[0]
-    const updated: ClubUser = {
-      ...editingUser,
-      tenantName: assignedTenant.name,
-      tenantSlug: assignedTenant.slug,
-    }
+    setIsUpdatingUser(true)
+    try {
+      if (editingUser.password?.trim()) {
+        const pwdRes = await updateUserPasswordBySuperadmin(editingUser.id, editingUser.password.trim())
+        if (!pwdRes.success) {
+          toast.error('Error al actualizar contraseña: ' + (pwdRes.error || ''))
+        }
+      }
 
-    setClubUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
-    setIsEditUserModalOpen(false)
-    toast.success(`Usuario "${updated.name}" actualizado correctamente`)
+      const supabase = createClient()
+      const assignedTenant = tenants.find(t => t.id === editingUser.tenantId) || tenants[0]
+      await supabase
+        .from('profiles')
+        .update({
+          full_name: editingUser.name,
+          phone: editingUser.phone,
+          role: editingUser.role,
+          tenant_id: editingUser.tenantId,
+        })
+        .eq('id', editingUser.id)
+
+      const updated: ClubUser = {
+        ...editingUser,
+        tenantName: assignedTenant?.name || editingUser.tenantName,
+        tenantSlug: assignedTenant?.slug || editingUser.tenantSlug,
+      }
+
+      setClubUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
+      setIsEditUserModalOpen(false)
+      toast.success(`Usuario "${updated.name}" actualizado correctamente`, {
+        description: 'Se guardaron los datos y la contraseña en la base de datos.'
+      })
+    } catch (err) {
+      console.error(err)
+      toast.error('Error al guardar cambios del usuario')
+    } finally {
+      setIsUpdatingUser(false)
+    }
   }
 
   const handleDeleteUser = (userId: string, userName: string) => {
@@ -1620,21 +1706,25 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <div>
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Contraseña</span>
                             <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px] text-slate-300">
-                              <span>{revealedPasswords[user.id] ? user.password : '••••••••'}</span>
+                              <span>{revealedPasswords[user.id] ? (user.password || 'Sin clave') : '••••••••'}</span>
                               <button
                                 type="button"
                                 onClick={() => handleTogglePassword(user.id)}
-                                className="text-slate-500 hover:text-slate-300"
+                                className="text-slate-500 hover:text-slate-300 cursor-pointer"
                               >
                                 {revealedPasswords[user.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(user.password)
-                                  toast.success('Contraseña copiada al portapapeles')
+                                  if (user.password) {
+                                    navigator.clipboard.writeText(user.password)
+                                    toast.success('Contraseña copiada al portapapeles')
+                                  } else {
+                                    toast.info('No hay contraseña guardada para este usuario. Podés asignarle una con el botón de editar.')
+                                  }
                                 }}
-                                className="text-slate-500 hover:text-slate-300"
+                                className="text-slate-500 hover:text-slate-300 cursor-pointer"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
@@ -1648,7 +1738,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <Button
                           size="sm"
                           onClick={() => handleCopyWhatsAppMessage(user)}
-                          className="flex-1 h-8 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium rounded-xl gap-1 shadow-xs"
+                          className="flex-1 h-8 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium rounded-xl gap-1 shadow-xs cursor-pointer"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
                           <span>WhatsApp</span>
@@ -1657,11 +1747,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={loggingInUserId === user.id}
                           onClick={() => handleLoginAsUser(user)}
-                          className="flex-1 h-8 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white rounded-xl gap-1"
+                          className="flex-1 h-8 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white rounded-xl gap-1 disabled:opacity-50 cursor-pointer"
                         >
-                          <LogIn className="w-3.5 h-3.5" />
-                          <span>Probar</span>
+                          {loggingInUserId === user.id ? (
+                            <span className="w-3.5 h-3.5 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+                          ) : (
+                            <LogIn className="w-3.5 h-3.5" />
+                          )}
+                          <span>{loggingInUserId === user.id ? 'Ingresando...' : 'Probar'}</span>
                         </Button>
 
                         <Button
@@ -1800,12 +1895,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <td className="p-4 text-center">
                             <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
                               <span>
-                                {revealedPasswords[user.id] ? user.password : '••••••••'}
+                                {revealedPasswords[user.id] ? (user.password || 'Sin clave') : '••••••••'}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleTogglePassword(user.id)}
-                                className="text-slate-500 hover:text-slate-300 ml-1"
+                                className="text-slate-500 hover:text-slate-300 ml-1 cursor-pointer"
                                 title={revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave'}
                               >
                                 {revealedPasswords[user.id] ? (
@@ -1817,10 +1912,14 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(user.password)
-                                  toast.success('Contraseña copiada al portapapeles')
+                                  if (user.password) {
+                                    navigator.clipboard.writeText(user.password)
+                                    toast.success('Contraseña copiada al portapapeles')
+                                  } else {
+                                    toast.info('No hay contraseña guardada para este usuario. Podés asignarle una con el botón de editar.')
+                                  }
                                 }}
-                                className="text-slate-500 hover:text-slate-300"
+                                className="text-slate-500 hover:text-slate-300 cursor-pointer"
                                 title="Copiar contraseña"
                               >
                                 <Copy className="w-3 h-3" />
@@ -1851,7 +1950,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               <Button
                                 size="sm"
                                 onClick={() => handleCopyWhatsAppMessage(user)}
-                                className="h-7 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium px-2.5 rounded-lg shadow-xs"
+                                className="h-7 text-xs bg-emerald-700/80 hover:bg-emerald-600 text-white font-medium px-2.5 rounded-lg shadow-xs cursor-pointer"
                                 title="Copiar mensaje de bienvenida con link y accesos para WhatsApp"
                               >
                                 <MessageSquare className="w-3 h-3 mr-1" />
@@ -1861,12 +1960,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={loggingInUserId === user.id}
                                 onClick={() => handleLoginAsUser(user)}
-                                className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg"
-                                title="Ingresar directamente al panel como este usuario"
+                                className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg disabled:opacity-50 cursor-pointer"
+                                title="Ingresar directamente al panel como este usuario con 1 solo clic"
                               >
-                                <LogIn className="w-3 h-3 mr-1" />
-                                Probar
+                                {loggingInUserId === user.id ? (
+                                  <span className="w-3 h-3 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin mr-1" />
+                                ) : (
+                                  <LogIn className="w-3 h-3 mr-1" />
+                                )}
+                                {loggingInUserId === user.id ? 'Ingresando...' : 'Probar'}
                               </Button>
 
                               <Button
@@ -2373,9 +2477,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </Button>
               <Button 
                 type="submit"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial"
+                disabled={isCreatingUser}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial cursor-pointer disabled:opacity-50"
               >
-                Crear Usuario y Generar Credenciales
+                {isCreatingUser ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5" />
+                    Creando en Supabase...
+                  </>
+                ) : (
+                  'Crear Usuario y Generar Credenciales'
+                )}
               </Button>
             </DialogFooter>
           </form>
@@ -2499,9 +2611,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   </Button>
                   <Button 
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial"
+                    disabled={isUpdatingUser}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex-1 sm:flex-initial cursor-pointer disabled:opacity-50"
                   >
-                    Guardar Cambios
+                    {isUpdatingUser ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5" />
+                        Guardando...
+                      </>
+                    ) : (
+                      'Guardar Cambios'
+                    )}
                   </Button>
                 </div>
               </DialogFooter>

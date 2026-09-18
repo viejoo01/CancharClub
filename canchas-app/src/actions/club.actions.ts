@@ -8,6 +8,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory } from '@/config/clubs-catalog'
+import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -602,6 +603,103 @@ export async function applyBulkInflationPriceAdjustment(
   }
 }
 
+// ─── HORARIOS DE APERTURA Y CIERRE DEL CLUB ─────────────────────────────────
+
+export async function getClubSchedule(tenantId: string): Promise<ClubScheduleConfig> {
+  if (!tenantId) return DEFAULT_CLUB_SCHEDULE
+  try {
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', tenantId)
+      .maybeSingle()
+
+    if (error || !tenant || !tenant.description) {
+      return DEFAULT_CLUB_SCHEDULE
+    }
+
+    try {
+      const parsed = JSON.parse(tenant.description)
+      return {
+        opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
+        closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
+      }
+    } catch {
+      return DEFAULT_CLUB_SCHEDULE
+    }
+  } catch (err) {
+    console.error('[getClubSchedule] Exception:', err)
+    return DEFAULT_CLUB_SCHEDULE
+  }
+}
+
+export async function updateClubSchedule(
+  tenantId: string,
+  schedule: { opening_time: string; closing_time: string }
+): Promise<{ success: boolean; schedule?: ClubScheduleConfig; error?: string }> {
+  if (!tenantId) {
+    return { success: false, error: 'Identificador de club requerido' }
+  }
+
+  try {
+    const supabase = await createServiceClient()
+
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('description, slug')
+      .eq('id', tenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    meta.opening_time = schedule.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time
+    meta.closing_time = schedule.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', tenantId)
+
+    if (updateErr) {
+      console.error('[updateClubSchedule] Error updating tenants:', updateErr.message)
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+    if (tenant.slug) {
+      revalidatePath(`/club/${tenant.slug}`)
+    }
+
+    return {
+      success: true,
+      schedule: {
+        opening_time: meta.opening_time as string,
+        closing_time: meta.closing_time as string,
+      },
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al guardar horario'
+    console.error('[updateClubSchedule] Exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
 
 export async function getClubPublicData(slug: string): Promise<ClubData> {
@@ -626,7 +724,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         bank_cbu,
         bank_account_holder,
         bank_name,
-        payment_methods
+        payment_methods,
+        description
       `)
       .eq('slug', normalizedSlug)
       .maybeSingle()
@@ -691,6 +790,19 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
     const hasMp = rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO')
 
+    let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
+    if (tenant.description) {
+      try {
+        const parsed = JSON.parse(tenant.description)
+        if (parsed.opening_time || parsed.closing_time) {
+          schedule = {
+            opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
+            closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
+          }
+        }
+      } catch {}
+    }
+
     return {
       id: tenant.id,
       name: tenant.name || fallback.name,
@@ -709,7 +821,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       rating: 5.0,
       reviewsCount: 0,
       availableToday: true,
-      openHours: fallback.openHours,
+      openHours: formatScheduleHours(schedule.opening_time, schedule.closing_time),
+      schedule,
       courts: courtsMapped,
       bankDetails: tenant.bank_alias
         ? {
@@ -745,7 +858,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         bank_cbu,
         bank_account_holder,
         bank_name,
-        mp_access_token
+        mp_access_token,
+        description
       `)
       .eq('is_active', true)
 
@@ -785,6 +899,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
               features: features.length > 0 ? features : ['Césped Sintético'],
               pricePerHour,
               depositPercentage: 0.5,
+              slotDurationMinutes: c.slot_duration_minutes || 90,
             }
           })
         : []
@@ -796,6 +911,19 @@ export async function getPublicClubs(): Promise<ClubData[]> {
             courtsMapped[0]?.pricePerHour || 16000
           )
         : 0
+
+      let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
+      if (t.description) {
+        try {
+          const parsed = JSON.parse(t.description)
+          if (parsed.opening_time || parsed.closing_time) {
+            schedule = {
+              opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
+              closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
+            }
+          }
+        } catch {}
+      }
 
       clubsList.push({
         id: t.id,
@@ -815,7 +943,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         rating: 5.0,
         reviewsCount: 0,
         availableToday: true,
-        openHours: '08:00 a 00:00 hs',
+        openHours: formatScheduleHours(schedule.opening_time, schedule.closing_time),
+        schedule,
         courts: courtsMapped,
         bankDetails: t.bank_alias
           ? {

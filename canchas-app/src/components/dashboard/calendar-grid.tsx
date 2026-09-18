@@ -16,7 +16,9 @@ import { Button } from '@/components/ui/button'
 import { QuickBookingModal } from './quick-booking-modal'
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
+import { ClubScheduleModal } from './club-schedule-modal'
 import { formatARS, formatTime } from '@/lib/utils'
+import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { format, addDays, subDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
@@ -58,28 +60,38 @@ interface CalendarGridProps {
   initialBookings: CalendarBooking[]
   initialDate?: string
   initialVenueId?: string
+  initialSchedule?: ClubScheduleConfig
   onRefresh?: () => void
 }
-
-// Generar franjas de 08:00 a 23:30 (cada 30 min o 60 min)
-const TIME_SLOTS = [
-  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
-  '14:00', '15:00', '16:00', '17:00', '17:30', '18:00',
-  '18:30', '19:00', '19:30', '20:00', '20:30', '21:00',
-  '21:30', '22:00', '22:30', '23:00'
-]
 
 export function CalendarGrid({
   tenantId,
   courts,
   initialBookings,
   initialDate = new Date().toISOString().split('T')[0],
+  initialSchedule,
   onRefresh,
 }: CalendarGridProps) {
   const router = useRouter()
   const [selectedDate, setSelectedDate] = useState(initialDate)
   const [selectedSport, setSelectedSport] = useState<string>('ALL')
   const [optimisticBookings, setOptimisticBookings] = useState<CalendarBooking[]>([])
+  const [schedule, setSchedule] = useState<ClubScheduleConfig>(
+    initialSchedule || DEFAULT_CLUB_SCHEDULE
+  )
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+
+  // Sincronizar si cambia el horario inicial desde el servidor
+  useEffect(() => {
+    if (initialSchedule) {
+      setSchedule(initialSchedule)
+    }
+  }, [initialSchedule])
+
+  // Generar franjas horarias estrictamente según apertura y cierre del club (08:00 no aparece si abre 10:00)
+  const timeSlots = useMemo(() => {
+    return generateTimeSlots(schedule.opening_time, schedule.closing_time, 30)
+  }, [schedule])
 
   // Estado de sede seleccionada en caliente para respuesta instantánea (0ms)
   const [overrideVenue, setOverrideVenue] = useState<VenueItem | null>(null)
@@ -297,6 +309,18 @@ export function CalendarGrid({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Botón de Horarios de Apertura y Cierre */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="text-xs bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 hover:text-white gap-1.5 h-8 px-2.5 cursor-pointer"
+              title="Configurar horario de apertura y cierre del club"
+            >
+              <Clock className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Horario:</span> {schedule.opening_time} - {schedule.closing_time} hs
+            </Button>
+
             {/* Botón de Emergencia Protocolo Lluvia */}
             <Button
               variant="outline"
@@ -373,7 +397,7 @@ export function CalendarGrid({
 
           {/* Filas de Horarios */}
           <div className="divide-y divide-slate-800/60">
-            {TIME_SLOTS.map((time) => (
+            {timeSlots.map((time) => (
               <div
                 key={time}
                 className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[72px]"
@@ -542,6 +566,21 @@ export function CalendarGrid({
           router.refresh()
         }}
       />
+
+      {/* Modal de Horarios de Apertura y Cierre del Club */}
+      {isScheduleModalOpen && (
+        <ClubScheduleModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          tenantId={tenantId}
+          initialSchedule={schedule}
+          onSuccess={(newSchedule) => {
+            setSchedule(newSchedule)
+            onRefresh?.()
+            router.refresh()
+          }}
+        />
+      )}
     </div>
   )
 }

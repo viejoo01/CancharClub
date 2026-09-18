@@ -16,7 +16,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
-import { createCourt, updateCourt, deleteCourt } from '@/actions/club.actions'
+import { createCourt, updateCourt, deleteCourt, getClubSchedule } from '@/actions/club.actions'
+import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
+import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { useTenantId } from '@/hooks/use-tenant-id'
@@ -57,8 +59,18 @@ export default function CanchasPage() {
   const [courts, setCourts] = useState<Court[]>([])
   const [courtsLoading, setCourtsLoading] = useState(true)
   const [clubSlug, setClubSlug] = useState('club')
+  const [schedule, setSchedule] = useState<ClubScheduleConfig>(DEFAULT_CLUB_SCHEDULE)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
+  const [name, setName] = useState('')
+  const [sport, setSport] = useState<SportType>('PADEL')
+  const [slotDuration, setSlotDuration] = useState<SlotDuration>('MIN_90')
+  const [isCovered, setIsCovered] = useState(false)
+  const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
+  const [loading, setLoading] = useState(false)
 
-  // Cargar canchas reales desde Supabase
+  // Cargar canchas reales y horario del club desde Supabase
   useEffect(() => {
     if (!tenantId) return
     const supabase = createClient()
@@ -105,16 +117,12 @@ export default function CanchasPage() {
         const slug = (data?.tenants as { slug?: string } | null)?.slug
         if (slug) setClubSlug(slug)
       })
-  }, [tenantId])
 
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
-  const [name, setName] = useState('')
-  const [sport, setSport] = useState<SportType>('PADEL')
-  const [slotDuration, setSlotDuration] = useState<SlotDuration>('MIN_90')
-  const [isCovered, setIsCovered] = useState(false)
-  const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
-  const [loading, setLoading] = useState(false)
+    // Cargar horario de apertura y cierre del club
+    getClubSchedule(tenantId).then((sched) => {
+      if (sched) setSchedule(sched)
+    })
+  }, [tenantId])
 
   const handleToggleActive = async (courtId: string, current: boolean) => {
     const nextState = !current
@@ -222,7 +230,7 @@ export default function CanchasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-white">
             Gestión de Canchas
@@ -231,12 +239,52 @@ export default function CanchasPage() {
             Configurá las canchas disponibles, deportes, duración flexible de turnos y códigos QR de cantina.
           </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            onClick={() => setIsScheduleModalOpen(true)}
+            className="border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/50 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
+            title="Configurar horario de apertura y cierre del club"
+          >
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span>Horario: {schedule.opening_time} - {schedule.closing_time} hs</span>
+          </Button>
+
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 h-10 shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Nueva Cancha</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Banner de Horario Operativo del Club */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white">Horario Operativo del Club:</span>
+              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2 py-0.5">
+                {schedule.opening_time} a {schedule.closing_time} hs
+              </Badge>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Los turnos del calendario y del portal público de reservas se generan estrictamente dentro de este rango.
+            </p>
+          </div>
+        </div>
         <Button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 h-10 shrink-0"
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsScheduleModalOpen(true)}
+          className="text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
         >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Nueva Cancha</span>
+          Editar Horario
         </Button>
       </div>
 
@@ -456,6 +504,19 @@ export default function CanchasPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Horarios de Apertura y Cierre del Club */}
+      {isScheduleModalOpen && (
+        <ClubScheduleModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          tenantId={tenantId || ''}
+          initialSchedule={schedule}
+          onSuccess={(newSchedule) => {
+            setSchedule(newSchedule)
+          }}
+        />
+      )}
     </div>
   )
 }

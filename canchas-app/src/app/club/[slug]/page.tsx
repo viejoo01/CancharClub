@@ -110,7 +110,7 @@ export default function ClubPublicPage({
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   )
-  const [timeFilter, setTimeFilter] = useState<'ALL' | 'TARDE' | 'NOCHE'>('ALL')
+  const [timeFilter, setTimeFilter] = useState<'ALL' | 'MAÑANA' | 'TARDE' | 'NOCHE'>('ALL')
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('ALL')
 
   const availableDays = useMemo(() => getNextDays(14), [])
@@ -148,6 +148,7 @@ export default function ClubPublicPage({
       if (selectedCourtFilter !== 'ALL' && slot.courtId !== selectedCourtFilter) return false
       
       const hour = parseInt(slot.time.split(':')[0], 10)
+      if (timeFilter === 'MAÑANA' && hour >= 14) return false
       if (timeFilter === 'TARDE' && (hour < 14 || hour >= 19)) return false
       if (timeFilter === 'NOCHE' && hour < 19) return false
 
@@ -382,6 +383,16 @@ export default function ClubPublicPage({
               }`}
             >
               Todos los horarios
+            </button>
+            <button
+              onClick={() => setTimeFilter('MAÑANA')}
+              className={`px-3.5 py-2 min-h-10 rounded-xl text-xs font-bold shrink-0 transition-colors ${
+                timeFilter === 'MAÑANA'
+                  ? 'bg-emerald-500 text-slate-950 font-black'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Mañana (hasta 14 hs)
             </button>
             <button
               onClick={() => setTimeFilter('TARDE')}

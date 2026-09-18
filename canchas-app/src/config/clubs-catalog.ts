@@ -3,6 +3,8 @@
 // CATÁLOGO CENTRALIZADO DE CLUBES Y DISPONIBILIDAD — CANCHARCLUB
 // ==============================================================================
 
+import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
+
 export type SportCategory = 'PADEL' | 'FUTBOL' | 'TENIS' | 'BASQUET'
 
 export interface CourtDefinition {
@@ -12,6 +14,7 @@ export interface CourtDefinition {
   features: string[]
   pricePerHour: number
   depositPercentage: number // e.g. 0.5 for 50%
+  slotDurationMinutes?: number
 }
 
 export interface ClubBankDetails {
@@ -45,6 +48,7 @@ export interface ClubData {
   bankDetails?: ClubBankDetails
   paymentMethods?: ('TRANSFER' | 'MERCADOPAGO')[]
   mpConnected?: boolean
+  schedule?: ClubScheduleConfig
 }
 
 export const CLUBS_DATABASE: ClubData[] = []
@@ -96,20 +100,34 @@ export function getClubBySlug(slug: string): ClubData {
 }
 
 /**
- * Genera la grilla de turnos para un club y deporte dado
+ * Genera la grilla de turnos para un club y deporte dado respetando el horario de apertura y cierre
  */
 export function generateClubSlots(club: ClubData, sport: SportCategory): GeneratedSlot[] {
   const matchingCourts = club.courts.filter(c => c.sport === sport)
   if (matchingCourts.length === 0) return []
 
-  // Horarios estándar del día
-  const timeSlots = ['16:00', '17:30', '18:00', '19:00', '19:30', '20:30', '21:00', '22:00', '22:30', '23:00']
+  const opening = club.schedule?.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time
+  const closing = club.schedule?.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time
+
+  const [startH, startM] = opening.split(':').map(Number)
+  const [endH, endM] = closing.split(':').map(Number)
+  const startMins = startH * 60 + (startM || 0)
+  let endMins = endH * 60 + (endM || 0)
+  if (endMins < startMins) endMins += 24 * 60
+
   const slots: GeneratedSlot[] = []
 
-  // Generamos turnos disponibles
-  matchingCourts.forEach((court) => {
-    timeSlots.forEach((time) => {
-      const isOccupied = false
+  matchingCourts.forEach((court, courtIndex) => {
+    const duration = court.slotDurationMinutes || (court.sport === 'PADEL' ? 90 : 60)
+    // Si hay más de una cancha y duración 90m, escalonar 30 min la cancha secundaria para flujo parejo
+    const courtOffset = (matchingCourts.length > 1 && duration === 90 && courtIndex % 2 === 1) ? 30 : 0
+    const courtStart = startMins + courtOffset
+
+    for (let m = courtStart; m <= endMins; m += duration) {
+      const totalMinutes = m % (24 * 60)
+      const hh = Math.floor(totalMinutes / 60).toString().padStart(2, '0')
+      const mm = (totalMinutes % 60).toString().padStart(2, '0')
+      const time = `${hh}:${mm}`
 
       const totalPrice = court.pricePerHour
       const depositPrice = Math.round(totalPrice * court.depositPercentage)
@@ -121,14 +139,14 @@ export function generateClubSlots(club: ClubData, sport: SportCategory): Generat
         sport: court.sport,
         totalPrice,
         depositPrice,
-        isAvailable: !isOccupied,
+        isAvailable: true,
         features: court.features
       })
-    })
+    }
   })
 
-  // Ordenar por horario
-  return slots.sort((a, b) => a.time.localeCompare(b.time))
+  // Ordenar por horario y luego por nombre de cancha
+  return slots.sort((a, b) => a.time.localeCompare(b.time) || a.courtName.localeCompare(b.courtName))
 }
 
 /**

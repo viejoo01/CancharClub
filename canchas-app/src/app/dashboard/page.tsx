@@ -1,6 +1,6 @@
 import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
 import { createClient } from '@/lib/supabase/server'
-import { getCalendarBookings } from '@/actions/club.actions'
+import { getCalendarBookings, getClubSchedule } from '@/actions/club.actions'
 import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
@@ -54,8 +54,10 @@ export default async function DashboardPage() {
       }))
     : []
 
-  // Load real bookings from DB only (skip if no tenant)
+  // Load real bookings and club operating schedule from DB
   const bookings = tenantId ? (await getCalendarBookings(tenantId, today)) as CalendarBooking[] : []
+  const schedule = tenantId ? await getClubSchedule(tenantId) : undefined
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">
@@ -76,6 +78,7 @@ export default async function DashboardPage() {
           initialBookings={bookings as unknown as CalendarBooking[]}
           initialDate={today}
           initialVenueId={activeVenueId}
+          initialSchedule={schedule}
         />
       </div>
     </div>

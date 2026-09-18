@@ -15,6 +15,7 @@ import {
 import {
   generateExternalReference,
   computeEndsAt,
+  parseArgentinaDate,
 } from '@/lib/utils'
 import type {
   CreateBookingPayload,
@@ -24,7 +25,7 @@ import type {
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
-import { addVenueBooking } from '@/config/venues-data'
+import { addVenueBooking, getVenueBookings } from '@/config/venues-data'
 import { assertTenantMember } from '@/lib/auth-security'
 
 function isValidUuid(id?: string | null): boolean {
@@ -102,7 +103,8 @@ export async function initiateOnlineCheckout(
     }
 
     // 0.1 VERIFICACIÓN DE HORARIO PASADO (El turno debe ser posterior a la hora actual)
-    const slotStartTime = new Date(payload.starts_at).getTime()
+    const slotStartDate = parseArgentinaDate(payload.starts_at)
+    const slotStartTime = slotStartDate.getTime()
     if (!isNaN(slotStartTime) && slotStartTime <= Date.now() - 60_000) {
       return {
         success: false,
@@ -111,13 +113,15 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    // 1. Calcular ends_at desde starts_at + duración
+    // 1. Calcular ends_at desde starts_at + duración con zona horaria normalizada
     const endsAt = computeEndsAt(payload.starts_at, courtSlotDuration)
+    const startsAtIso = slotStartDate.toISOString()
+    const endsAtIso = parseArgentinaDate(endsAt).toISOString()
     const lockKey = buildLockKey(payload.court_id, payload.starts_at)
     const bookingId = crypto.randomUUID()
     const externalRef = generateExternalReference()
 
-    // 2. ADQUIRIR LOCK EN REDIS (atómico: SET NX PX)
+    // 2. ADQUIRIR LOCK EN REDIS + MEMORIA (atómico: SET NX PX)
     //    Si falla → slot ya tomado por otro checkout simultáneo
     const lockAcquired = await acquireBookingLock(lockKey, bookingId)
     if (!lockAcquired) {
@@ -128,10 +132,25 @@ export async function initiateOnlineCheckout(
       }
     }
 
+    // 2.1 PRE-VERIFICACIÓN DE DISPONIBILIDAD (evita colisiones simultáneas)
+    const dayStr = startsAtIso.split('T')[0]
+    const memoryBookings = getVenueBookings(payload.tenant_id, dayStr)
+    const isAlreadyBookedInMemory = memoryBookings.some((b) => {
+      const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
+      const matchCourt = b.court_id === payload.court_id || (payload.court_name && cName?.toLowerCase() === payload.court_name.toLowerCase())
+      return matchCourt && b.starts_at === startsAtIso && !String(b.status).toUpperCase().includes('CANCEL')
+    })
+    if (isAlreadyBookedInMemory) {
+      await releaseBookingLock(lockKey, bookingId)
+      return {
+        success: false,
+        error: 'Este turno ya ha sido reservado por otro jugador. Por favor elegí otro horario disponible.',
+        error_code: 'SLOT_UNAVAILABLE',
+      }
+    }
+
     // 3. REGISTRAR BOOKING en PostgreSQL con status='confirmed' (cierre 24hs automático del turno)
     const supabase = await createServiceClient()
-    const startsAtIso = new Date(payload.starts_at).toISOString()
-    const endsAtIso = new Date(endsAt).toISOString()
     const bookingRange = `[${startsAtIso},${endsAtIso})`
 
     const effectiveTenantId = (payload.tenant_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.tenant_id))
@@ -440,7 +459,7 @@ export async function createManualBooking(
     }
 
     const durationMinutes = court.slot_duration_minutes || 90
-    const startsAtDate = new Date(payload.starts_at)
+    const startsAtDate = parseArgentinaDate(payload.starts_at)
     const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
     const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
 
@@ -483,6 +502,29 @@ export async function createManualBooking(
       console.error('[createManualBooking] DB insert error:', error.message)
       return { success: false, error: error.message }
     }
+
+    // Sincronizar en memoria para reflejo instantáneo (0ms) en el portal de jugadores
+    addVenueBooking({
+      id: booking.id,
+      court_id: payload.court_id,
+      customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
+      customer_phone: payload.customer_phone?.trim() || null,
+      customer_email: payload.customer_email?.trim() || null,
+      starts_at: startsAtDate.toISOString(),
+      ends_at: endsAtDate.toISOString(),
+      status: 'CONFIRMED',
+      origin: 'STAFF_MANUAL',
+      total_amount_ars: Number(payload.total_amount_ars || 0),
+      deposit_amount_ars: Number(payload.deposit_amount_ars || 0),
+      total_paid: Number(payload.deposit_amount_ars || 0),
+      balance_due: Math.max(0, Number(payload.total_amount_ars || 0) - Number(payload.deposit_amount_ars || 0)),
+      internal_notes: staffNotes || 'Reserva manual mostrador',
+      courts: {
+        name: payload.court_name || 'Cancha',
+        sport: court.sport || 'PADEL',
+        slot_duration: durationMinutes === 60 ? 'MIN_60' : 'MIN_90',
+      },
+    })
 
     revalidatePath('/dashboard')
     return { success: true, booking_id: booking.id }

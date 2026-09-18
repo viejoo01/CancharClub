@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatARS } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast } from '@/lib/utils'
 import { initiateOnlineCheckout } from '@/actions/booking.actions'
 import { 
   getPlayerWalletBalance, 
@@ -47,7 +47,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
   const courtId = searchParams.get('courtId') || 'c1'
   const courtName = searchParams.get('courtName') || 'Cancha 1'
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
+  const date = searchParams.get('date') || getArgentinaTodayIso()
   const time = searchParams.get('time') || '19:00'
   const rawTotalParam = Number(searchParams.get('total'))
   const rawDepositParam = Number(searchParams.get('deposit'))
@@ -193,17 +193,20 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     return `${mins.toString().padStart(2, '0')}:${rem.toString().padStart(2, '0')}`
   }
 
+  // Reloj reactivo para detectar si el horario pasa mientras el usuario está en el formulario
+  const [currentArgTime, setCurrentArgTime] = useState(() => getArgentinaTimeStr())
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentArgTime(getArgentinaTimeStr())
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [])
+
   // Validación: si la fecha u horario seleccionado ya ha pasado
   const isSlotInPast = useMemo(() => {
-    try {
-      const now = new Date()
-      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-      return date < todayIso || (date === todayIso && time <= currentTimeStr)
-    } catch {
-      return false
-    }
-  }, [date, time])
+    if (!currentArgTime) return false
+    return isSlotTimeInPast(date, time)
+  }, [date, time, currentArgTime])
 
   // Formato de fecha amigable para móviles
   const formattedDate = (() => {
@@ -236,7 +239,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isSlotInPast) {
+    if (isSlotTimeInPast(date, time)) {
       toast.error('Este horario ya ha pasado. Por favor seleccioná un turno posterior a la hora actual.')
       return
     }
@@ -247,7 +250,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
     setLoading(true)
     try {
-      const startsAt = `${date}T${time}:00`
+      const startsAt = `${date}T${time}:00-03:00`
 
       // Si se aplicó saldo a favor de la billetera virtual, debitarlo
       if (walletApplied > 0) {

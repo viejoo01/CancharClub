@@ -16,6 +16,7 @@ import { createManualBooking, registerCashPayment } from '@/actions/booking.acti
 import { getClubPriceRules } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
+import { getArgentinaTodayIso, isSlotTimeInPast } from '@/lib/utils'
 
 export interface QuickBookingPriceRule {
   id?: string
@@ -101,7 +102,7 @@ export function QuickBookingModal({
   tenantId,
   courts,
   priceRules,
-  preselectedDate = new Date().toISOString().split('T')[0],
+  preselectedDate = getArgentinaTodayIso(),
   preselectedTime = '19:00',
   preselectedCourtId,
   onSuccess,
@@ -305,6 +306,11 @@ export function QuickBookingModal({
                 className="h-11"
                 required
               />
+              {isSlotTimeInPast(date, time) && (
+                <p className="text-[11px] text-amber-400 font-semibold mt-1">
+                  ℹ️ Turno pasado (registro histórico / caja)
+                </p>
+              )}
             </div>
           </div>
 

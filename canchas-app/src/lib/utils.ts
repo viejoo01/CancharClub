@@ -184,3 +184,54 @@ export function isWithinBusinessHours(
   const closeMinutes = closeH * 60 + closeM
   return totalMinutes >= openMinutes && totalMinutes < closeMinutes
 }
+
+// ─── Utilidades de Zona Horaria Segura (Argentina UTC-3) ──────────────────────
+
+/**
+ * Obtiene la fecha actual en formato ISO 'YYYY-MM-DD' en la zona horaria de Argentina (America/Argentina/Buenos_Aires).
+ * Previene bugs de salto de día entre las 21:00 y las 00:00 en servidores UTC.
+ */
+export function getArgentinaTodayIso(now: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  return formatter.format(now)
+}
+
+/**
+ * Obtiene la hora actual en formato 'HH:MM' (24hs) en la zona horaria de Argentina.
+ */
+export function getArgentinaTimeStr(now: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return formatter.format(now)
+}
+
+/**
+ * Convierte un starts_at o fecha+hora a objeto Date forzando el offset de Argentina (-03:00) si no tiene zona horaria.
+ * Evita desfasajes de 3 horas en entornos UTC (Vercel, Docker, Supabase).
+ */
+export function parseArgentinaDate(startsAt: string): Date {
+  if (!startsAt) return new Date(NaN)
+  const hasTimezone = startsAt.includes('Z') || startsAt.includes('+') || (startsAt.length > 10 && startsAt.slice(10).includes('-'))
+  const normalized = hasTimezone ? startsAt : `${startsAt}-03:00`
+  return new Date(normalized)
+}
+
+/**
+ * Determina si una fecha y horario de turno ya han pasado respecto a la hora oficial de Argentina.
+ */
+export function isSlotTimeInPast(dateIso: string, timeStr: string): boolean {
+  if (!dateIso || !timeStr) return false
+  const now = new Date()
+  const todayIso = getArgentinaTodayIso(now)
+  const currentTimeStr = getArgentinaTimeStr(now)
+  return dateIso < todayIso || (dateIso === todayIso && timeStr <= currentTimeStr)
+}

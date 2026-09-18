@@ -9,6 +9,8 @@ import { revalidatePath } from 'next/cache'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
+import { getArgentinaTimeStr, parseArgentinaDate } from '@/lib/utils'
+import { getVenueBookings } from '@/config/venues-data'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -931,6 +933,89 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)
     return fallback
+  }
+}
+
+export interface OccupiedSlotInfo {
+  courtId: string
+  courtName?: string
+  time: string
+}
+
+/**
+ * Consulta en tiempo real los turnos ya reservados para una fecha en un club.
+ * Combina reservas en memoria (0ms) y base de datos PostgreSQL.
+ */
+export async function getClubOccupiedSlots(
+  tenantId: string,
+  dateIso: string
+): Promise<OccupiedSlotInfo[]> {
+  try {
+    const occupied: OccupiedSlotInfo[] = []
+    const seen = new Set<string>()
+
+    const addSlot = (courtId: string, courtName: string | undefined, time: string) => {
+      const key = `${courtId || ''}_${courtName || ''}_${time}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        occupied.push({ courtId, courtName, time })
+      }
+    }
+
+    // 1. Verificar reservas en memoria (0ms, para reservas recién hechas o manuales)
+    const inMemoryBookings = getVenueBookings(tenantId, dateIso)
+    for (const b of inMemoryBookings) {
+      if (!String(b.status).toUpperCase().includes('CANCEL')) {
+        let timeStr = ''
+        if (b.starts_at) {
+          if (b.starts_at.includes('T')) {
+            timeStr = b.starts_at.split('T')[1].substring(0, 5)
+          } else if (b.starts_at.includes(' ')) {
+            timeStr = b.starts_at.split(' ')[1].substring(0, 5)
+          }
+        }
+        if (timeStr) {
+          const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
+          addSlot(b.court_id, cName, timeStr)
+        }
+      }
+    }
+
+    // 2. Consultar PostgreSQL en Supabase si tenantId es un UUID válido
+    if (tenantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      const supabase = await createServiceClient()
+      const startOfDay = new Date(`${dateIso}T00:00:00-03:00`).toISOString()
+      const endOfDay = new Date(`${dateIso}T23:59:59-03:00`).toISOString()
+
+      const { data: dbBookings } = await supabase
+        .from('bookings')
+        .select('court_id, booked_at, status, courts(id, name)')
+        .eq('tenant_id', tenantId)
+        .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
+        .not('status', 'in', '("cancelled")')
+
+      if (dbBookings && dbBookings.length > 0) {
+        for (const b of dbBookings) {
+          if (b.booked_at) {
+            const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+            if (match && match[1]) {
+              const startDate = parseArgentinaDate(match[1])
+              if (!isNaN(startDate.getTime())) {
+                const timeStr = getArgentinaTimeStr(startDate)
+                const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
+                const courtName = (courtObj as { name?: string } | null)?.name
+                addSlot(b.court_id, courtName, timeStr)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return occupied
+  } catch (err) {
+    console.warn('[getClubOccupiedSlots] Error:', err)
+    return []
   }
 }
 

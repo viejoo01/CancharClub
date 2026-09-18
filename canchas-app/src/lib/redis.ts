@@ -17,6 +17,7 @@
 // ==============================================================================
 
 import { Redis } from '@upstash/redis'
+import { parseArgentinaDate } from '@/lib/utils'
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || 'https://mock-redis.upstash.io',
@@ -25,17 +26,41 @@ export const redis = new Redis({
 
 const LOCK_TTL_MS = (parseInt(process.env.BOOKING_LOCK_TTL_SECONDS || '420')) * 1000
 
+// Registro de candados en memoria de proceso (previene colisiones simultáneas en el mismo servidor)
+const LOCAL_LOCKS = new Map<string, { bookingId: string; expiresAt: number }>()
+
+function acquireLocalLock(lockKey: string, bookingId: string): boolean {
+  const now = Date.now()
+  const existing = LOCAL_LOCKS.get(lockKey)
+  if (existing && existing.expiresAt > now) {
+    if (existing.bookingId === bookingId) return true
+    return false // Bloqueado concurrentemente por otro usuario
+  }
+  LOCAL_LOCKS.set(lockKey, { bookingId, expiresAt: now + LOCK_TTL_MS })
+  return true
+}
+
+function releaseLocalLock(lockKey: string, bookingId: string): boolean {
+  const existing = LOCAL_LOCKS.get(lockKey)
+  if (existing && existing.bookingId === bookingId) {
+    LOCAL_LOCKS.delete(lockKey)
+    return true
+  }
+  return false
+}
+
 /**
  * Genera la clave Redis para un lock de slot.
+ * Normaliza la fecha y hora a la zona horaria oficial de Argentina.
  * Formato: lock:court:{courtId}:{startTimestampMs}
  */
 export function buildLockKey(courtId: string, startsAt: string): string {
-  const ts = new Date(startsAt).getTime()
+  const ts = parseArgentinaDate(startsAt).getTime()
   return `lock:court:${courtId}:${ts}`
 }
 
 /**
- * Intenta adquirir el lock de un slot para checkout.
+ * Intenta adquirir el lock atómico de un slot para checkout.
  *
  * @param lockKey - Clave generada por buildLockKey()
  * @param bookingId - UUID de la reserva a crear (valor del lock para rastreo)
@@ -45,17 +70,28 @@ export async function acquireBookingLock(
   lockKey: string,
   bookingId: string
 ): Promise<boolean> {
-  if (!process.env.UPSTASH_REDIS_REST_URL) {
+  // 1. Candado atómico a nivel de memoria (inmune a carreras en el mismo proceso/servidor)
+  if (!acquireLocalLock(lockKey, bookingId)) {
+    return false
+  }
+
+  // 2. Si no hay Redis configurado o es mock, el candado local ya garantiza exclusión
+  if (!process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL.includes('mock-redis')) {
     return true
   }
+
   try {
     const result = await redis.set(lockKey, bookingId, {
       nx: true,          // Only if not exists
       px: LOCK_TTL_MS,   // Expire in ms
     })
-    return result === 'OK'
+    if (result !== 'OK') {
+      releaseLocalLock(lockKey, bookingId)
+      return false
+    }
+    return true
   } catch (err) {
-    console.warn('[Redis] Fallback lock granted:', err)
+    console.warn('[Redis] Fallback to local memory lock:', err)
     return true
   }
 }
@@ -72,7 +108,9 @@ export async function releaseBookingLock(
   lockKey: string,
   bookingId: string
 ): Promise<boolean> {
-  if (!process.env.UPSTASH_REDIS_REST_URL) {
+  releaseLocalLock(lockKey, bookingId)
+
+  if (!process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL.includes('mock-redis')) {
     return true
   }
   try {

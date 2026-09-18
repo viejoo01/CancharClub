@@ -6,7 +6,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { buildWhatsAppLink } from '@/lib/utils'
+import { buildWhatsAppLink, isSlotTimeInPast } from '@/lib/utils'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import type { WaitlistEntry } from '@/types/database'
 
@@ -28,6 +28,13 @@ export async function addToWaitlist(payload: {
   customer_phone: string
 }): Promise<{ success: boolean; entry?: WaitlistEntry; error?: string }> {
   try {
+    if (isSlotTimeInPast(payload.date, payload.time_slot)) {
+      return {
+        success: false,
+        error: 'No podés anotarte en lista de espera para un horario que ya pasó.',
+      }
+    }
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('waitlists')
@@ -96,6 +103,11 @@ export async function processWaitlistOnCancellation(params: {
   timeSlot: string
 }): Promise<WaitlistNotificationResult> {
   try {
+    // Si el turno a cancelar ya ha pasado en el tiempo, no despachar lista de espera
+    if (isSlotTimeInPast(params.date, params.timeSlot)) {
+      return { hasWaitlistMatch: false }
+    }
+
     const supabase = await createServiceClient()
 
     // 1. Buscar primer cliente en espera para esa fecha y horario

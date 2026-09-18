@@ -23,7 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatARS } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/utils'
 import { WaitlistModal } from '@/components/public/waitlist-modal'
 import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
 import { 
@@ -34,7 +34,7 @@ import {
   type ClubData,
   normalizeToSportCategory
 } from '@/config/clubs-catalog'
-import { getClubPublicData } from '@/actions/club.actions'
+import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo } from '@/actions/club.actions'
 
 // Generador dinámico de los próximos 14 días para el carousel táctil móvil
 function getNextDays(count = 14) {
@@ -110,26 +110,62 @@ export default function ClubPublicPage({
     return club.sports[0] ? normalizeToSportCategory(club.sports[0]) : 'PADEL'
   }, [userSelectedSport, club.sports, urlSport])
 
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  })
+  const [selectedDate, setSelectedDate] = useState<string>(() => getArgentinaTodayIso())
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'MAÑANA' | 'TARDE' | 'NOCHE'>('ALL')
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('ALL')
 
-  // Reloj reactivo para invalidar en tiempo real los turnos que ya pasaron durante el día
-  const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => {
-    const now = new Date()
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-  })
+  // Reloj reactivo para invalidar en tiempo real los turnos que ya pasaron durante el día (Zona Argentina)
+  const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getArgentinaTimeStr())
+  const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlotInfo[]>([])
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = new Date()
-      setCurrentTimeStr(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
-    }, 30000)
+      setCurrentTimeStr(getArgentinaTimeStr())
+    }, 15000)
     return () => clearInterval(interval)
   }, [])
+
+  // Sincronización en tiempo real de turnos ocupados (0ms entre pestañas + revalidación automática)
+  useEffect(() => {
+    let active = true
+    if (!club.id) return
+
+    const fetchOccupied = () => {
+      getClubOccupiedSlots(club.id, selectedDate)
+        .then((data) => {
+          if (active && data) {
+            setOccupiedSlots(data)
+          }
+        })
+        .catch((err) => console.warn('[ClubPublicPage] getClubOccupiedSlots error:', err))
+    }
+
+    fetchOccupied()
+
+    // Intervalo periódico de sincronización cada 20 segundos
+    const pollTimer = setInterval(fetchOccupied, 20000)
+
+    // Listener BroadcastChannel para recibir confirmaciones de reservas de otras pestañas o checkout
+    let bc: BroadcastChannel | null = null
+    try {
+      bc = new BroadcastChannel('canchar_bookings')
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'BOOKING_CONFIRMED') {
+          fetchOccupied()
+        }
+      }
+    } catch {}
+
+    const onFocus = () => fetchOccupied()
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      active = false
+      clearInterval(pollTimer)
+      if (bc) bc.close()
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [club.id, selectedDate])
 
   const availableDays = useMemo(() => getNextDays(14), [])
 
@@ -160,32 +196,43 @@ export default function ClubPublicPage({
     return generateClubSlots(club, selectedSport, selectedDate)
   }, [club, selectedSport, selectedDate])
 
-  // Filtros combinados de horario, canchas y exclusión de horas pasadas
+  // Filtros combinados de horario, canchas, exclusión de horas pasadas y marcado de ocupados
   const filteredSlots = useMemo(() => {
-    const now = new Date()
-    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayIso = getArgentinaTodayIso()
 
-    return slots.filter(slot => {
-      // 1. Omitir turnos cuya hora ya pasó si se está viendo el día de hoy
-      if (selectedDate === todayIso) {
-        if (slot.time <= currentTimeStr) {
+    return slots
+      .filter(slot => {
+        // 1. Omitir turnos cuya hora ya pasó si se está viendo el día de hoy en hora argentina
+        if (selectedDate === todayIso) {
+          if (slot.time <= currentTimeStr) {
+            return false
+          }
+        } else if (selectedDate < todayIso) {
+          // En fechas pasadas no se permite reservar ningún turno
           return false
         }
-      } else if (selectedDate < todayIso) {
-        // En fechas pasadas no se permite reservar ningún turno
-        return false
-      }
 
-      if (selectedCourtFilter !== 'ALL' && slot.courtId !== selectedCourtFilter) return false
-      
-      const hour = parseInt(slot.time.split(':')[0], 10)
-      if (timeFilter === 'MAÑANA' && hour >= 14) return false
-      if (timeFilter === 'TARDE' && (hour < 14 || hour >= 19)) return false
-      if (timeFilter === 'NOCHE' && hour < 19) return false
+        if (selectedCourtFilter !== 'ALL' && slot.courtId !== selectedCourtFilter) return false
+        
+        const hour = parseInt(slot.time.split(':')[0], 10)
+        if (timeFilter === 'MAÑANA' && hour >= 14) return false
+        if (timeFilter === 'TARDE' && (hour < 14 || hour >= 19)) return false
+        if (timeFilter === 'NOCHE' && hour < 19) return false
 
-      return true
-    })
-  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr])
+        return true
+      })
+      .map(slot => {
+        // 2. Comprobar si el turno ya está ocupado en memoria o base de datos
+        const isOccupied = occupiedSlots.some(occ => {
+          const matchCourt = occ.courtId === slot.courtId || (occ.courtName && slot.courtName && occ.courtName.toLowerCase() === slot.courtName.toLowerCase())
+          return matchCourt && occ.time === slot.time
+        })
+        return {
+          ...slot,
+          isAvailable: !isOccupied
+        }
+      })
+  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots])
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 

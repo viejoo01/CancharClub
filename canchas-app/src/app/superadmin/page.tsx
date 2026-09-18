@@ -47,7 +47,7 @@ import { formatARS, setClientCookie, cn } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
-import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, getSuperadminUsers, deleteProfileById, type SuperadminUserItem } from '@/actions/superadmin.actions'
+import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, deleteTenantById, getSuperadminUsers, deleteProfileById, type SuperadminUserItem } from '@/actions/superadmin.actions'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -83,23 +83,7 @@ export default function SuperadminPage() {
     last_paid: string | null
     plan_id: SaaSPlanId
     is_active: boolean
-  }>>([
-    {
-      id: 't1',
-      name: 'Club Pádel Central',
-      slug: 'padel-central',
-      city: 'Yerba Buena, Tucumán',
-      active_courts: 2,
-      highest_slot_price: 30000,
-      total_bookings: 342,
-      mp_connected: true,
-      status: 'ACTIVE',
-      subscription_status: 'AL_DIA',
-      last_paid: '2026-08-31',
-      plan_id: 'MEDIANO_2',
-      is_active: true,
-    }
-  ])
+  }>>([])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -142,7 +126,7 @@ export default function SuperadminPage() {
     async function loadData() {
       // Cargar clubes reales
       const clubsRes = await getSuperadminTenants()
-      if (clubsRes.success && clubsRes.data.length > 0) {
+      if (clubsRes.success) {
         setTenants(clubsRes.data)
       }
 
@@ -371,11 +355,16 @@ export default function SuperadminPage() {
     })
   }
 
-  const handleDeleteTenant = (tenantId: string, clubName: string) => {
-    if (confirm(`¿Estás seguro de que deseas dar de baja o eliminar el club "${clubName}"?`)) {
+  const handleDeleteTenant = async (tenantId: string, clubName: string) => {
+    if (confirm(`¿Estás seguro de que deseas dar de baja o eliminar el club "${clubName}" de la base de datos? Esta acción es irreversible.`)) {
+      const res = await deleteTenantById(tenantId)
+      if (!res.success) {
+        toast.error(res.error || `Error al eliminar "${clubName}"`)
+        return
+      }
       setTenants(prev => prev.filter(t => t.id !== tenantId))
       setIsEditModalOpen(false)
-      toast.error(`Club "${clubName}" eliminado del sistema SaaS`)
+      toast.success(`Club "${clubName}" eliminado permanentemente del sistema`)
     }
   }
 

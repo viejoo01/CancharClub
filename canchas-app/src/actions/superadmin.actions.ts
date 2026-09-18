@@ -243,3 +243,38 @@ export async function deleteProfileById(userId: string): Promise<{ success: bool
     return { success: false, error: 'Error al eliminar el usuario' }
   }
 }
+
+/**
+ * Elimina un club completamente de la base de datos (con sus canchas, perfiles, etc.).
+ * Requiere service role key.
+ */
+export async function deleteTenantById(tenantId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+
+    // 1. Eliminar dependencias
+    await supabase.from('bookings').delete().eq('tenant_id', tenantId)
+    await supabase.from('price_rules').delete().eq('tenant_id', tenantId)
+    await supabase.from('courts').delete().eq('tenant_id', tenantId)
+    await supabase.from('profiles').delete().eq('tenant_id', tenantId)
+
+    // 2. Eliminar tenant
+    const { error } = await supabase
+      .from('tenants')
+      .delete()
+      .eq('id', tenantId)
+
+    if (error) {
+      console.error('Error deleting tenant:', error)
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/')
+    return { success: true }
+  } catch (err) {
+    console.error('deleteTenantById exception:', err)
+    return { success: false, error: 'Error al eliminar el club' }
+  }
+}
+

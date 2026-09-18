@@ -147,3 +147,94 @@ export async function deactivateTenantAccess(tenantId: string) {
     return { success: false, error: 'Error al desactivar el club' }
   }
 }
+
+/**
+ * Obtiene todos los perfiles de usuario (admins y cancheros) para el panel superadmin.
+ */
+export interface SuperadminUserItem {
+  id: string
+  full_name: string
+  email: string
+  role: 'TENANT_ADMIN' | 'TENANT_STAFF' | 'SUPERADMIN'
+  tenant_id: string | null
+  tenant_name: string | null
+  tenant_slug: string | null
+  created_at: string
+}
+
+export async function getSuperadminUsers(): Promise<{ success: boolean; data: SuperadminUserItem[] }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, tenant_id, created_at, tenants(name, slug)')
+      .order('created_at', { ascending: false })
+
+    if (error || !profiles) {
+      console.warn('Error fetching profiles for superadmin:', error)
+      return { success: false, data: [] }
+    }
+
+    // Obtener emails desde auth.users (requiere service role)
+    const { data: authList } = await supabase.auth.admin.listUsers()
+    const emailMap: Record<string, string> = {}
+    if (authList?.users) {
+      authList.users.forEach(u => { emailMap[u.id] = u.email || '' })
+    }
+
+    const formatted: SuperadminUserItem[] = profiles.map((p) => {
+      const t = p.tenants as unknown as { name?: string; slug?: string } | null
+      return {
+        id: p.id,
+        full_name: p.full_name || 'Sin nombre',
+        email: emailMap[p.id] || '',
+        role: (p.role as SuperadminUserItem['role']) || 'TENANT_ADMIN',
+        tenant_id: p.tenant_id,
+        tenant_name: t?.name || null,
+        tenant_slug: t?.slug || null,
+        created_at: p.created_at || '',
+      }
+    })
+
+    return { success: true, data: formatted }
+  } catch (err) {
+    console.error('getSuperadminUsers exception:', err)
+    return { success: false, data: [] }
+  }
+}
+
+/**
+ * Elimina un usuario completamente: primero el perfil de la tabla profiles,
+ * luego el usuario de Supabase Auth. Requiere service role key.
+ */
+export async function deleteProfileById(userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+
+    // 1. Eliminar el perfil de la tabla profiles (cascada en FK maneja el resto)
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId)
+
+    if (profileError) {
+      console.error('Error deleting profile:', profileError)
+      return { success: false, error: profileError.message }
+    }
+
+    // 2. Eliminar el usuario de Supabase Auth (necesita service role)
+    const { error: authError } = await supabase.auth.admin.deleteUser(userId)
+
+    if (authError) {
+      // Si falla el borrado de auth (por ejemplo en modo demo sin service role real)
+      // el perfil ya fue borrado. Logueamos pero no fallamos.
+      console.warn('Could not delete auth user (profile was deleted):', authError.message)
+    }
+
+    revalidatePath('/superadmin')
+    return { success: true }
+  } catch (err) {
+    console.error('deleteProfileById exception:', err)
+    return { success: false, error: 'Error al eliminar el usuario' }
+  }
+}

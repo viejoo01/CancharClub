@@ -47,7 +47,7 @@ import { formatARS, setClientCookie, cn } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
-import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess } from '@/actions/superadmin.actions'
+import { getSuperadminTenants, activateTenantAccess, deactivateTenantAccess, getSuperadminUsers, deleteProfileById, type SuperadminUserItem } from '@/actions/superadmin.actions'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -134,15 +134,38 @@ export default function SuperadminPage() {
   } | null>(null)
   const [isActivating, setIsActivating] = useState(false)
 
+  // Listado de usuarios administradores y cancheros por club (se carga desde Supabase)
+  const [clubUsers, setClubUsers] = useState<ClubUser[]>([])
+
   // Sincronización en tiempo real con los clubes reales de la base de datos Supabase
   useEffect(() => {
-    async function loadClubs() {
-      const res = await getSuperadminTenants()
-      if (res.success && res.data.length > 0) {
-        setTenants(res.data)
+    async function loadData() {
+      // Cargar clubes reales
+      const clubsRes = await getSuperadminTenants()
+      if (clubsRes.success && clubsRes.data.length > 0) {
+        setTenants(clubsRes.data)
+      }
+
+      // Cargar usuarios reales desde Supabase
+      const usersRes = await getSuperadminUsers()
+      if (usersRes.success && usersRes.data.length > 0) {
+        const mapped: ClubUser[] = usersRes.data.map((u: SuperadminUserItem) => ({
+          id: u.id,
+          name: u.full_name,
+          email: u.email,
+          phone: '',
+          role: (u.role === 'SUPERADMIN' ? 'TENANT_ADMIN' : u.role) as 'TENANT_ADMIN' | 'TENANT_STAFF',
+          tenantId: u.tenant_id || '',
+          tenantName: u.tenant_name || 'Sin club',
+          tenantSlug: u.tenant_slug || '',
+          password: '',
+          status: 'ACTIVE' as const,
+          createdAt: u.created_at?.split('T')[0] || '',
+        }))
+        setClubUsers(mapped)
       }
     }
-    loadClubs()
+    loadData()
   }, [])
 
   const handleOpenActivate = (t: typeof tenants[0]) => {
@@ -357,36 +380,6 @@ export default function SuperadminPage() {
     }
   }
 
-  // Listado de usuarios administradores y cancheros por club
-  const [clubUsers, setClubUsers] = useState<ClubUser[]>([
-    {
-      id: 'u-1',
-      name: 'Gonzalo Morales',
-      email: 'admin@padelcentral.com',
-      phone: '+54 9 381 555-0101',
-      role: 'TENANT_ADMIN',
-      tenantId: 't1',
-      tenantName: 'Club Pádel Central',
-      tenantSlug: 'padel-central',
-      password: 'admin2026',
-      status: 'ACTIVE',
-      createdAt: '2026-08-01',
-    },
-    {
-      id: 'u-2',
-      name: 'Martín Sánchez (Canchero)',
-      email: 'mostrador@padelcentral.com',
-      phone: '+54 9 381 555-0102',
-      role: 'TENANT_STAFF',
-      tenantId: 't1',
-      tenantName: 'Club Pádel Central',
-      tenantSlug: 'padel-central',
-      password: 'cajero123',
-      status: 'ACTIVE',
-      createdAt: '2026-08-01',
-    }
-  ])
-
   // Filtros de usuarios
   const [userSearchTerm, setUserSearchTerm] = useState('')
   const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'TENANT_ADMIN' | 'TENANT_STAFF'>('ALL')
@@ -404,6 +397,10 @@ export default function SuperadminPage() {
   // Edición de usuario
   const [editingUser, setEditingUser] = useState<ClubUser | null>(null)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
+
+  // Modal de confirmación de eliminación de usuario (reemplaza window.confirm)
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; name: string } | null>(null)
+  const [loadingDeleteUserId, setLoadingDeleteUserId] = useState<string | null>(null)
 
   // Revelar contraseñas
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({})
@@ -563,10 +560,35 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }
 
   const handleDeleteUser = (userId: string, userName: string) => {
-    if (confirm(`¿Estás seguro de eliminar el usuario "${userName}"?`)) {
-      setClubUsers(prev => prev.filter(u => u.id !== userId))
-      toast.error(`Usuario "${userName}" eliminado`)
+    // Abre el modal de confirmación propio (window.confirm es poco confiable)
+    setConfirmDeleteUser({ id: userId, name: userName })
+  }
+
+  const handleConfirmDeleteUser = async () => {
+    if (!confirmDeleteUser) return
+    const { id, name } = confirmDeleteUser
+    setLoadingDeleteUserId(id)
+    setConfirmDeleteUser(null)
+
+    const res = await deleteProfileById(id)
+
+    setLoadingDeleteUserId(null)
+
+    if (!res.success) {
+      toast.error(`Error al eliminar a "${name}"`, {
+        description: res.error || 'Intentá nuevamente.'
+      })
+      return
     }
+
+    // Actualizar estado local
+    setClubUsers(prev => prev.filter(u => u.id !== id))
+    // Cerrar modal de edición si estaba abierto para este usuario
+    if (editingUser?.id === id) {
+      setIsEditUserModalOpen(false)
+      setEditingUser(null)
+    }
+    toast.success(`Usuario "${name}" eliminado correctamente`)
   }
 
   const handleQuickWizardSubmit = (e: React.FormEvent) => {
@@ -1603,10 +1625,15 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteUser(user.id, user.name)}
-                          className="h-8 w-8 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-xl"
+                          disabled={loadingDeleteUserId === user.id}
+                          className="h-8 w-8 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-xl disabled:opacity-50"
                           title="Eliminar usuario"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {loadingDeleteUserId === user.id ? (
+                            <span className="w-3.5 h-3.5 border-2 border-rose-400/30 border-t-rose-400 rounded-full animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -2846,6 +2873,55 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmación: Eliminar Usuario */}
+      <Dialog open={!!confirmDeleteUser} onOpenChange={(o) => { if (!o) setConfirmDeleteUser(null) }}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-400">
+              <Trash2 className="w-5 h-5" />
+              Eliminar Usuario
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Esta acción es <strong className="text-rose-400">permanente e irreversible</strong>. El usuario perderá el acceso al sistema.
+            </DialogDescription>
+          </DialogHeader>
+          {confirmDeleteUser && (
+            <div className="py-2 px-1">
+              <p className="text-sm text-slate-300">
+                ¿Segúes que querés eliminar al usuario{' '}
+                <span className="font-bold text-white">&ldquo;{confirmDeleteUser.name}&rdquo;</span>?
+              </p>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteUser(null)}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmDeleteUser}
+              disabled={loadingDeleteUserId !== null}
+              className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              {loadingDeleteUserId ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Sí, eliminar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

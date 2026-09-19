@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers } from 'lucide-react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +18,7 @@ import {
 import { InflationAdjustModal } from '@/components/dashboard/inflation-adjust-modal'
 import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-modal'
 import { formatARS } from '@/lib/utils'
-import { createPriceRule, getClubPriceRules, deletePriceRule } from '@/actions/club.actions'
+import { createPriceRule, updatePriceRule, getClubPriceRules, deletePriceRule } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { createClient } from '@/lib/supabase/client'
@@ -118,6 +118,7 @@ export default function PreciosPage() {
   }, [tenantId])
 
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null)
   const [isInflationModalOpen, setIsInflationModalOpen] = useState(false)
   const [isDynamicModalOpen, setIsDynamicModalOpen] = useState(false)
   const [name, setName] = useState('')
@@ -129,7 +130,31 @@ export default function PreciosPage() {
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 0])
   const [loading, setLoading] = useState(false)
 
-  const handleCreateRule = async (e: React.FormEvent) => {
+  const handleOpenCreateModal = () => {
+    setEditingRuleId(null)
+    setName('')
+    setSelectedCourtId('')
+    setTimeFrom('18:00')
+    setTimeTo('23:00')
+    setPrice('14000')
+    setDepositPct('50')
+    setSelectedDays([1, 2, 3, 4, 5, 6, 0])
+    setIsModalOpen(true)
+  }
+
+  const handleOpenEditModal = (rule: PriceRuleItem) => {
+    setEditingRuleId(rule.id)
+    setName(rule.name)
+    setSelectedCourtId(rule.court_id || '')
+    setTimeFrom(rule.time_from)
+    setTimeTo(rule.time_to)
+    setPrice(rule.price_ars.toString())
+    setDepositPct(rule.deposit_pct.toString())
+    setSelectedDays(rule.days_of_week && rule.days_of_week.length > 0 ? rule.days_of_week : [1, 2, 3, 4, 5, 6, 0])
+    setIsModalOpen(true)
+  }
+
+  const handleSubmitRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
 
@@ -140,30 +165,53 @@ export default function PreciosPage() {
 
     setLoading(true)
     try {
-      const res = await createPriceRule({
-        tenant_id: tenantId,
-        court_id: selectedCourtId || null,
-        name: name.trim(),
-        days_of_week: selectedDays.length > 0 ? selectedDays : [1, 2, 3, 4, 5, 6, 0],
-        time_from: timeFrom,
-        time_to: timeTo,
-        price_ars: Number(price),
-        deposit_pct: Number(depositPct),
-      })
+      if (editingRuleId) {
+        const res = await updatePriceRule({
+          id: editingRuleId,
+          tenant_id: tenantId,
+          court_id: selectedCourtId || null,
+          name: name.trim(),
+          days_of_week: selectedDays.length > 0 ? selectedDays : [1, 2, 3, 4, 5, 6, 0],
+          time_from: timeFrom,
+          time_to: timeTo,
+          price_ars: Number(price),
+          deposit_pct: Number(depositPct),
+        })
 
-      if (!res.success) {
-        toast.error(res.error || 'Error al guardar la regla de tarifa')
-        return
+        if (!res.success) {
+          toast.error(res.error || 'Error al actualizar la regla de tarifa')
+          return
+        }
+
+        toast.success('¡Tarifa actualizada exitosamente!')
+      } else {
+        const res = await createPriceRule({
+          tenant_id: tenantId,
+          court_id: selectedCourtId || null,
+          name: name.trim(),
+          days_of_week: selectedDays.length > 0 ? selectedDays : [1, 2, 3, 4, 5, 6, 0],
+          time_from: timeFrom,
+          time_to: timeTo,
+          price_ars: Number(price),
+          deposit_pct: Number(depositPct),
+        })
+
+        if (!res.success) {
+          toast.error(res.error || 'Error al guardar la regla de tarifa')
+          return
+        }
+
+        toast.success('¡Regla de tarifa guardada exitosamente!')
       }
 
-      toast.success('¡Regla de tarifa guardada exitosamente!')
       await reloadRules(tenantId)
       setIsModalOpen(false)
+      setEditingRuleId(null)
       setName('')
       setSelectedCourtId('')
       setSelectedDays([1, 2, 3, 4, 5, 6, 0])
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error inesperado al crear tarifa'
+      const msg = err instanceof Error ? err.message : 'Error inesperado al procesar tarifa'
       toast.error(msg)
     } finally {
       setLoading(false)
@@ -222,8 +270,8 @@ export default function PreciosPage() {
           </Button>
 
           <Button
-            onClick={() => setIsModalOpen(true)}
-            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl min-h-10"
+            onClick={handleOpenCreateModal}
+            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl min-h-10 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Nueva Tarifa</span>
@@ -247,9 +295,9 @@ export default function PreciosPage() {
             Configurá las tarifas por día y horario para que los jugadores puedan reservar en tu club con los precios correctos.
           </p>
           <Button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreateModal}
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 rounded-xl text-xs"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 rounded-xl text-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Crear Primera Tarifa</span>
@@ -308,12 +356,23 @@ export default function PreciosPage() {
                     </span>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-800/60 flex justify-end">
+                  <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenEditModal(rule)}
+                      className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
+                      title="Editar tarifa"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </Button>
+
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDeleteRule(rule.id, rule.name)}
-                      className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
+                      className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
                       title="Eliminar tarifa"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -327,17 +386,22 @@ export default function PreciosPage() {
         </div>
       )}
 
-      {/* Modal Nueva Tarifa */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      {/* Modal Crear / Editar Tarifa */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        setIsModalOpen(open)
+        if (!open) setEditingRuleId(null)
+      }}>
         <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
-            <DialogTitle>Nueva Regla de Tarifa</DialogTitle>
+            <DialogTitle>{editingRuleId ? 'Editar Regla de Tarifa' : 'Nueva Regla de Tarifa'}</DialogTitle>
             <DialogDescription>
-              Definí el precio y porcentaje de seña para una franja horaria.
+              {editingRuleId
+                ? 'Modificá el precio, franja horaria o días de aplicación de esta tarifa.'
+                : 'Definí el precio y porcentaje de seña para una franja horaria.'}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateRule} className="space-y-4 py-2">
+          <form onSubmit={handleSubmitRule} className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label htmlFor="ruleName">Nombre de la Tarifa *</Label>
               <Input
@@ -498,8 +562,8 @@ export default function PreciosPage() {
               <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} className="h-10 text-xs">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-10 text-xs">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : 'Guardar Tarifa'}
+              <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-10 text-xs cursor-pointer">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingRuleId ? 'Guardar Cambios' : 'Guardar Tarifa'}
               </Button>
             </DialogFooter>
           </form>

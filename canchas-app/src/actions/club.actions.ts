@@ -503,6 +503,60 @@ export async function createPriceRule(payload: {
   return { success: true, rule: data?.[0] }
 }
 
+export async function updatePriceRule(payload: {
+  id: string
+  tenant_id?: string | null
+  court_id?: string | null
+  name: string
+  days_of_week?: number[]
+  day_of_week?: number[]
+  time_from: string
+  time_to: string
+  price_ars: number
+  deposit_pct?: number
+}) {
+  const effectiveTenantId = await resolveEffectiveTenantId(payload.tenant_id)
+  if (!effectiveTenantId) {
+    return { success: false, error: 'No se pudo determinar el club' }
+  }
+
+  const supabase = await createServiceClient()
+  const days = (payload.days_of_week && payload.days_of_week.length > 0)
+    ? payload.days_of_week
+    : (payload.day_of_week && payload.day_of_week.length > 0)
+      ? payload.day_of_week
+      : [1, 2, 3, 4, 5, 6, 0]
+  const priceCents = Math.round(Number(payload.price_ars) * 100)
+  const timeFromFormatted = payload.time_from.length === 5 ? `${payload.time_from}:00` : payload.time_from
+  const timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+
+  const updateData: Record<string, unknown> = {
+    name: payload.name.trim(),
+    day_of_week: days,
+    time_from: timeFromFormatted,
+    time_to: timeToFormatted,
+    price_cents: priceCents,
+  }
+  if (payload.court_id) {
+    updateData.court_id = payload.court_id
+  }
+
+  const { data, error } = await supabase
+    .from('price_rules')
+    .update(updateData)
+    .eq('id', payload.id)
+    .eq('tenant_id', effectiveTenantId)
+    .select()
+
+  if (error) {
+    console.error('[updatePriceRule] Error updating price rule:', error.message)
+    return { success: false, error: error.message }
+  }
+
+  revalidatePath('/dashboard/precios')
+  return { success: true, rule: data?.[0] }
+}
+
 export async function deletePriceRule(ruleId: string, tenantId?: string | null) {
   const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
   if (!effectiveTenantId) {

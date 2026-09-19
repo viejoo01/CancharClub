@@ -174,7 +174,8 @@ export async function initiateOnlineCheckout(
     const isTransfer = payload.payment_method === 'TRANSFER' || !payload.payment_method
     const isFullyCovered = payload.deposit_amount_ars === 0
     const initialStatus = (isTransfer || isFullyCovered) ? 'confirmed' : 'pending_deposit'
-    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${payload.payment_method || 'TRANSFER'}) - ${payload.customer_notes || ''}`.trim()
+    const paymentLabel = payload.payment_method === 'MERCADOPAGO' ? 'MERCADO PAGO' : 'TRANSFERENCIA'
+    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${paymentLabel}) - ${payload.customer_notes || ''}`.trim()
 
     let dbInsertSuccess = false
 
@@ -705,7 +706,7 @@ export async function markBookingNoShow(bookingId: string): Promise<{ success: b
       return { success: false, error: authCheck.error || 'Sin permisos para modificar este turno' }
     }
 
-    const noShowNote = 'Jugador no asistió al turno (Marcado como NO-SHOW)'
+    const noShowNote = 'Jugador no asistió al turno (Inasistencia registrada)'
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noShowNote}` : noShowNote
 
     const { error } = await supabase
@@ -726,6 +727,50 @@ export async function markBookingNoShow(bookingId: string): Promise<{ success: b
   } catch (error) {
     console.error('[markBookingNoShow] Error:', error)
     return { success: false, error: 'Error al marcar inasistencia' }
+  }
+}
+
+// ─── ACTION: Confirmar seña / Aprobar turno transferido ─────────────────────────
+
+export async function confirmBookingDeposit(bookingId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status')
+      .eq('id', bookingId)
+      .single()
+
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
+
+    const authCheck = await assertTenantMember(booking.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para confirmar este turno' }
+    }
+
+    const noteEntry = `Seña verificada y aprobada por el club el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
+
+    const { error: upErr } = await supabase
+      .from('bookings')
+      .update({
+        status: 'confirmed',
+        staff_notes: updatedNotes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bookingId)
+
+    if (upErr) {
+      console.error('[confirmBookingDeposit] Error:', upErr.message)
+      return { success: false, error: upErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/caja')
+    return { success: true }
+  } catch (error) {
+    console.error('[confirmBookingDeposit] Error:', error)
+    return { success: false, error: 'Error interno al confirmar seña' }
   }
 }
 

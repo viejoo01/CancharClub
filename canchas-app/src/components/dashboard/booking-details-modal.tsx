@@ -13,7 +13,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { registerCashPayment, cancelBooking, markBookingNoShow, getPlayerReputation } from '@/actions/booking.actions'
+import { 
+  registerCashPayment, 
+  cancelBooking, 
+  markBookingNoShow, 
+  getPlayerReputation,
+  confirmBookingDeposit 
+} from '@/actions/booking.actions'
 import { getPlayerMatchReminderText, createWhatsAppShareUrl } from '@/lib/notifications/templates'
 import { formatARS, formatTime, buildWhatsAppLink } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -26,7 +32,9 @@ import {
   ShieldAlert, 
   BellRing,
   Star,
-  Printer
+  Printer,
+  CheckCircle2,
+  Clock
 } from 'lucide-react'
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
@@ -43,7 +51,7 @@ interface BookingDetailsModalProps {
     customer_phone?: string | null
     starts_at: string
     ends_at: string
-    status: BookingStatus
+    status: BookingStatus | string
     total_amount_ars: number
     deposit_amount_ars: number
     total_paid: number
@@ -79,11 +87,15 @@ export function BookingDetailsModal({
       })
   }, [tenantId])
 
+  const [localStatus, setLocalStatus] = useState<string | null>(null)
+  const currentStatus = localStatus || booking?.status || 'confirmed'
+
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER'>('CASH')
   const [loadingPay, setLoadingPay] = useState(false)
   const [loadingCancel, setLoadingCancel] = useState(false)
   const [loadingNoShow, setLoadingNoShow] = useState(false)
+  const [loadingConfirm, setLoadingConfirm] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const [reputation, setReputation] = useState<{
@@ -150,6 +162,33 @@ export function BookingDetailsModal({
     }
   }
 
+  const handleConfirmDeposit = async () => {
+    setLoadingConfirm(true)
+    try {
+      const res = await confirmBookingDeposit(booking.id)
+      if (res.success) {
+        toast.success('¡Turno y seña confirmados exitosamente!', {
+          description: 'El turno quedó validado en el sistema.',
+        })
+        setLocalStatus('CONFIRMED')
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('canchar_bookings')
+            bc.postMessage({ type: 'BOOKING_CONFIRMED', booking_id: booking.id, status: 'confirmed' })
+            bc.close()
+          }
+        } catch {}
+        onSuccess?.()
+      } else {
+        toast.error(res.error || 'Error al confirmar el turno')
+      }
+    } catch {
+      toast.error('Error al procesar la confirmación')
+    } finally {
+      setLoadingConfirm(false)
+    }
+  }
+
   const handleCancelBooking = async () => {
     if (!confirm('¿Estás seguro de que querés cancelar esta reserva?')) return
 
@@ -183,15 +222,16 @@ export function BookingDetailsModal({
   }
 
   const handleMarkNoShow = async () => {
-    if (!confirm('¿Confirmás marcar este turno como NO-SHOW (Inasistencia del jugador)? Impactará en su reputación.')) return
+    if (!confirm('¿Confirmás marcar este turno como Inasistencia (No Asistió)? Impactará en la reputación del cliente.')) return
 
     setLoadingNoShow(true)
     try {
       const res = await markBookingNoShow(booking.id)
       if (res.success) {
-        toast.error('Turno marcado como NO-SHOW (Inasistencia)', {
+        toast.error('Turno marcado como Inasistencia (No Asistió)', {
           description: 'Se registró la penalización en el historial del cliente.'
         })
+        setLocalStatus('NO_SHOW')
         onSuccess?.()
         onClose()
       } else {
@@ -212,7 +252,7 @@ export function BookingDetailsModal({
     ? buildWhatsAppLink(booking.customer_phone, waMessage)
     : null
 
-  // Recordatorio 3h antes (Mejora 1B)
+  // Recordatorio 3h antes
   const reminderText = getPlayerMatchReminderText({
     playerName: booking.customer_name,
     clubName: clubName || 'Club',
@@ -225,26 +265,67 @@ export function BookingDetailsModal({
     ? createWhatsAppShareUrl(booking.customer_phone, reminderText)
     : null
 
+  const getStatusBadge = (status: string) => {
+    const s = String(status || '').toUpperCase()
+    if (s === 'CONFIRMED' || s === 'DEPOSIT_PAID') {
+      return (
+        <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          CONFIRMADO
+        </Badge>
+      )
+    }
+    if (s === 'CONFIRMED_CASH' || s === 'FULLY_PAID') {
+      return (
+        <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          PAGADO TOTAL
+        </Badge>
+      )
+    }
+    if (s === 'PENDING_DEPOSIT' || s === 'PENDING') {
+      return (
+        <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          PENDIENTE SEÑA
+        </Badge>
+      )
+    }
+    if (s === 'NO_SHOW') {
+      return (
+        <Badge className="bg-red-500/15 text-red-400 border border-red-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          NO ASISTIÓ
+        </Badge>
+      )
+    }
+    if (s === 'CANCELLED') {
+      return (
+        <Badge className="bg-slate-500/15 text-slate-400 border border-slate-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          CANCELADO
+        </Badge>
+      )
+    }
+    return (
+      <Badge variant="outline" className="font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+        {status}
+      </Badge>
+    )
+  }
+
+  const isPendingDeposit = currentStatus.toUpperCase() === 'PENDING_DEPOSIT' || currentStatus.toUpperCase() === 'PENDING'
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[520px] max-h-[90dvh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[540px] max-h-[92dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between pr-4">
-            <DialogTitle>{courtDisplayName}</DialogTitle>
-            <Badge 
-              variant={booking.status === 'NO_SHOW' ? 'destructive' : 'outline'}
-              className={booking.status === 'NO_SHOW' ? 'bg-red-950 text-red-400 border-red-800' : ''}
-            >
-              {booking.status === 'NO_SHOW' ? 'NO-SHOW (Inasistencia)' : booking.status}
-            </Badge>
+            <DialogTitle className="text-xl font-bold text-slate-100">{courtDisplayName}</DialogTitle>
+            {getStatusBadge(currentStatus)}
           </div>
-          <DialogDescription>
+          <DialogDescription className="text-slate-400 text-sm">
             {booking.starts_at && formatTime(booking.starts_at)} - {booking.ends_at && formatTime(booking.ends_at)} hs
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-sm">
-          {/* Cliente Info & Reputación (Mejora 2C) */}
+          {/* Cliente Info & Reputación */}
           <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
             <div className="flex items-start justify-between">
               <div>
@@ -261,7 +342,7 @@ export function BookingDetailsModal({
                       {reputation.isHighRisk ? (
                         <>
                           <ShieldAlert className="w-3 h-3 text-red-400" />
-                          <span>{reputation.noShowCount} No-Shows</span>
+                          <span>{reputation.noShowCount} {reputation.noShowCount === 1 ? 'inasistencia' : 'inasistencias'}</span>
                         </>
                       ) : (
                         <>
@@ -284,7 +365,7 @@ export function BookingDetailsModal({
                     href={waUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 font-medium text-xs transition-colors min-h-9"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 font-medium text-xs transition-colors min-h-9"
                     title="Abrir chat en WhatsApp"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
@@ -296,12 +377,11 @@ export function BookingDetailsModal({
                     href={reminderWaUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 border border-sky-500/30 font-medium text-xs transition-colors min-h-9"
-                    title="Enviar recordatorio automático de 3 horas antes"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 border border-sky-500/30 font-medium text-xs transition-colors min-h-9"
+                    title="Enviar recordatorio de 3 horas antes"
                   >
                     <BellRing className="w-3.5 h-3.5" />
-                    <span className="hidden xs:inline">Recordatorio 3h</span>
-                    <span className="xs:hidden">3h</span>
+                    <span>3h</span>
                   </a>
                 )}
               </div>
@@ -312,7 +392,7 @@ export function BookingDetailsModal({
               <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-800/60 flex items-center gap-2 text-xs text-red-300">
                 <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
                 <span>
-                  <strong>Atención:</strong> Este jugador posee historial reiterado de inasistencias ({reputation.noShowCount} No-Shows). Exigir seña del 100%.
+                  <strong>Atención:</strong> Este jugador posee historial reiterado de inasistencias ({reputation.noShowCount} {reputation.noShowCount === 1 ? 'inasistencia' : 'inasistencias'}). Exigir seña del 100%.
                 </span>
               </div>
             )}
@@ -340,42 +420,79 @@ export function BookingDetailsModal({
             </div>
           </div>
 
-          {/* Formulario de Cobro rápido si tiene saldo pendiente */}
+          {/* Acción 1: Validación y Confirmación de Seña / Turno */}
+          {isPendingDeposit ? (
+            <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-amber-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  Seña Pendiente de Validación Bancaria
+                </span>
+                <span className="text-amber-400 font-mono font-bold">
+                  {formatARS(booking.deposit_amount_ars || 12500)}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                El jugador registró la transferencia. Verificá el ingreso en tu cuenta y confirmá el turno:
+              </p>
+              <Button
+                type="button"
+                onClick={handleConfirmDeposit}
+                disabled={loadingConfirm}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 shadow-lg shadow-emerald-950/40 text-sm"
+              >
+                {loadingConfirm ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>Confirmar Seña Recibida / Aprobar Turno</span>
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/25 text-xs text-emerald-300">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Turno Confirmado — Seña Verificada ({formatARS(booking.deposit_amount_ars || booking.total_paid)})</span>
+              </div>
+              <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
+                APROBADO
+              </Badge>
+            </div>
+          )}
+
+          {/* Acción 2: Formulario de Cobro rápido si tiene saldo pendiente */}
           {booking.balance_due > 0 && (
-            <div className="pt-1">
+            <div className="pt-0.5">
               {!showPayForm ? (
                 <Button
                   onClick={() => {
                     setShowPayForm(true)
                     setPayAmount(booking.balance_due.toString())
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 text-sm shadow-md shadow-emerald-950/30"
                 >
                   <DollarSign className="w-4 h-4" />
                   <span>Cobrar Saldo ({formatARS(booking.balance_due)})</span>
                 </Button>
               ) : (
-                <form onSubmit={handleRegisterPayment} className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3">
-                  <div className="text-xs font-bold text-emerald-400">Registrar Cobro en Caja</div>
+                <form onSubmit={handleRegisterPayment} className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3">
+                  <div className="text-xs font-bold text-emerald-400">Registrar Cobro de Saldo en Caja</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor="payAmount">Monto ($)</Label>
+                      <Label htmlFor="payAmount" className="text-xs text-slate-300">Monto ($)</Label>
                       <Input
                         id="payAmount"
                         type="number"
                         value={payAmount}
                         onChange={(e) => setPayAmount(e.target.value)}
-                        className="h-11"
+                        className="h-10 mt-1"
                         required
                       />
                     </div>
                     <div>
-                      <Label htmlFor="payMethod">Medio</Label>
+                      <Label htmlFor="payMethod" className="text-xs text-slate-300">Medio</Label>
                       <select
                         id="payMethod"
                         value={payMethod}
                         onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER')}
-                        className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                        className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 mt-1"
                       >
                         <option value="CASH">Efectivo</option>
                         <option value="TRANSFER">Transferencia</option>
@@ -388,6 +505,7 @@ export function BookingDetailsModal({
                       size="sm"
                       variant="ghost"
                       onClick={() => setShowPayForm(false)}
+                      className="h-9 text-xs"
                     >
                       Cancelar
                     </Button>
@@ -395,7 +513,7 @@ export function BookingDetailsModal({
                       type="submit"
                       size="sm"
                       disabled={loadingPay}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-9 text-xs"
                     >
                       {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirmar Cobro'}
                     </Button>
@@ -405,59 +523,75 @@ export function BookingDetailsModal({
             </div>
           )}
 
+          {/* Nota Interna con traducción a español */}
           {booking.internal_notes && (
-            <div className="text-xs text-slate-400 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-              <span className="font-semibold text-slate-300">Nota:</span> {booking.internal_notes}
+            <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-start gap-1.5 leading-relaxed">
+              <span className="font-semibold text-slate-300 shrink-0">Nota:</span>
+              <span>
+                {booking.internal_notes
+                  .replace(/\(TRANSFER\)/gi, '(TRANSFERENCIA)')
+                  .replace(/\(MERCADOPAGO\)/gi, '(MERCADO PAGO)')
+                  .replace(/\bTRANSFER\b/gi, 'TRANSFERENCIA')
+                  .replace(/\bNO-SHOW\b/gi, 'NO ASISTIÓ')}
+              </span>
             </div>
           )}
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2">
-          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 w-full sm:w-auto">
-            {/* Botón Marcar No-Show (Mejora 2C) */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={loadingNoShow || booking.status === 'NO_SHOW'}
-              onClick={handleMarkNoShow}
-              className="gap-1.5 border-red-900/50 text-red-400 hover:bg-red-950/40 text-xs h-10"
-            >
-              {loadingNoShow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
-              <span>No-Show</span>
-            </Button>
-
-            {/* Botón Imprimir Ticket Térmico (Mejora 1C) */}
+        {/* Footer con botones alineados prolijamente */}
+        <DialogFooter className="w-full border-t border-slate-800/80 pt-3 mt-2 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
+            {/* Botón Imprimir Ticket Térmico */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setIsReceiptOpen(true)}
-              className="gap-1.5 border-slate-700 text-slate-300 hover:bg-slate-800 text-xs h-10"
+              className="h-10 px-3.5 gap-1.5 border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800 hover:text-white text-xs font-medium rounded-lg"
             >
               <Printer className="w-3.5 h-3.5 text-emerald-400" />
               <span>Ticket</span>
             </Button>
 
+            {/* Botón Marcar No Asistió */}
             <Button
               type="button"
-              variant="destructive"
+              variant="outline"
+              size="sm"
+              disabled={loadingNoShow || currentStatus === 'NO_SHOW'}
+              onClick={handleMarkNoShow}
+              className="h-10 px-3.5 gap-1.5 border-amber-900/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/40 text-xs font-medium rounded-lg"
+            >
+              {loadingNoShow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+              <span>No Asistió</span>
+            </Button>
+
+            {/* Botón Cancelar Reserva */}
+            <Button
+              type="button"
+              variant="outline"
               size="sm"
               disabled={loadingCancel}
               onClick={handleCancelBooking}
-              className="gap-1.5 text-xs h-10"
+              className="h-10 px-3.5 gap-1.5 border-red-900/40 bg-red-950/20 text-red-400 hover:bg-red-950/50 hover:text-red-300 text-xs font-medium rounded-lg"
             >
               {loadingCancel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
               <span>Cancelar</span>
             </Button>
           </div>
 
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} className="h-10">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-10 px-4 text-slate-400 hover:text-slate-100 hover:bg-slate-800 text-xs font-medium rounded-lg w-full sm:w-auto"
+          >
             Cerrar
           </Button>
         </DialogFooter>
 
-        {/* Modal de Impresión Térmica (Mejora 1C) */}
+        {/* Modal de Impresión Térmica */}
         {isReceiptOpen && (
           <ThermalReceiptModal
             isOpen={isReceiptOpen}
@@ -482,4 +616,3 @@ export function BookingDetailsModal({
     </Dialog>
   )
 }
-

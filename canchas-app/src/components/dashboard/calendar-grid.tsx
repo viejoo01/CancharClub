@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -10,7 +10,10 @@ import {
   Clock, 
   CheckCircle, 
   AlertCircle,
-  CloudRain
+  CloudRain,
+  Mouse,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
@@ -94,6 +97,98 @@ export function CalendarGrid({
   const timeSlots = useMemo(() => {
     return generateTimeSlots(schedule.opening_time, schedule.closing_time, 30)
   }, [schedule])
+
+  // Referencia al contenedor con scroll de la matriz de horarios
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const [wheelNavigationEnabled, setWheelNavigationEnabled] = useState(true)
+
+  // Desplazar suavemente a un horario específico
+  const scrollToTimeSlot = useCallback((targetTime: string) => {
+    if (!gridContainerRef.current) return
+    const container = gridContainerRef.current
+    const rowEl = container.querySelector(`[data-time="${targetTime}"]`) as HTMLElement | null
+    if (rowEl) {
+      const topOffset = rowEl.offsetTop - 50
+      container.scrollTo({ top: Math.max(0, topOffset), behavior: 'smooth' })
+    }
+  }, [])
+
+  // Desplazar al horario actual (ahora)
+  const scrollToNow = useCallback(() => {
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = now.getMinutes() < 30 ? '00' : '30'
+    const currentTimeStr = `${hh}:${mm}`
+    const matchingSlot = timeSlots.find((t) => t >= currentTimeStr) || timeSlots[0]
+    if (matchingSlot) {
+      scrollToTimeSlot(matchingSlot)
+      toast.info(`Desplazado a las ${matchingSlot} hs`, { duration: 1800 })
+    }
+  }, [timeSlots, scrollToTimeSlot])
+
+  // Desplazar al inicio del día (apertura)
+  const scrollToDayStart = useCallback(() => {
+    if (gridContainerRef.current) {
+      gridContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [])
+
+  // Desplazar al final del día (horarios de noche/cierre)
+  const scrollToDayEnd = useCallback(() => {
+    if (gridContainerRef.current) {
+      gridContainerRef.current.scrollTo({
+        top: gridContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
+  }, [])
+
+  // Auto-desplazamiento suave al horario actual en el primer render si la fecha es hoy
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    if (selectedDate === todayStr && timeSlots.length > 0) {
+      const timer = setTimeout(() => {
+        const now = new Date()
+        const hh = String(now.getHours()).padStart(2, '0')
+        const mm = now.getMinutes() < 30 ? '00' : '30'
+        const currentSlot = `${hh}:${mm}`
+        const target = timeSlots.find((t) => t >= currentSlot)
+        if (target && gridContainerRef.current) {
+          const rowEl = gridContainerRef.current.querySelector(`[data-time="${target}"]`) as HTMLElement | null
+          if (rowEl) {
+            gridContainerRef.current.scrollTo({
+              top: Math.max(0, rowEl.offsetTop - 50),
+              behavior: 'smooth',
+            })
+          }
+        }
+      }, 350)
+      return () => clearTimeout(timer)
+    }
+  }, [selectedDate, timeSlots])
+
+  // Manejador del evento wheel del mouse
+  const handleGridWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (!wheelNavigationEnabled || !gridContainerRef.current) return
+
+    // Shift + rueda: desplazamiento horizontal suave entre canchas
+    if (e.shiftKey) {
+      gridContainerRef.current.scrollLeft += (e.deltaY || e.deltaX)
+      return
+    }
+
+    const container = gridContainerRef.current
+    const isAtTop = container.scrollTop <= 0 && e.deltaY < 0
+    const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 4 && e.deltaY > 0
+
+    // Si llega a los extremos superior o inferior, fluir el scroll hacia el contenedor principal (main)
+    if (isAtTop || isAtBottom) {
+      const mainEl = container.closest('main')
+      if (mainEl) {
+        mainEl.scrollTop += e.deltaY
+      }
+    }
+  }, [wheelNavigationEnabled])
 
   // Estado de sede seleccionada en caliente para respuesta instantánea (0ms)
   const [overrideVenue, setOverrideVenue] = useState<VenueItem | null>(null)
@@ -344,6 +439,73 @@ export function CalendarGrid({
         </div>
       </div>
 
+      {/* Barra de Navegación Rápida y Control de Desplazamiento con Rueda */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          {/* Botón de control de rueda de mouse */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !wheelNavigationEnabled
+              setWheelNavigationEnabled(next)
+              toast(next ? '🖱️ Desplazamiento con rueda del mouse habilitado' : 'Desplazamiento con rueda pausado')
+            }}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              wheelNavigationEnabled
+                ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 shadow-xs'
+                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Activar o pausar desplazamiento por los horarios con la rueda del mouse"
+          >
+            <Mouse className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="font-medium">Rueda del Mouse:</span>
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+              wheelNavigationEnabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+            }`}>
+              {wheelNavigationEnabled ? 'Habilitada ↕' : 'Desactivada'}
+            </span>
+          </button>
+
+          <span className="hidden lg:inline text-[11px] text-slate-400">
+            Girá la rueda para subir y bajar por los horarios de la grilla.
+          </span>
+        </div>
+
+        {/* Atajos de salto rápido entre turnos */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Saltar a:</span>
+          <button
+            type="button"
+            onClick={scrollToDayStart}
+            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px]"
+            title="Subir al horario de apertura del club"
+          >
+            <ArrowUp className="w-3 h-3 text-slate-400" />
+            <span>Apertura ({schedule.opening_time})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={scrollToNow}
+            className="px-2.5 py-1 text-xs font-bold text-amber-300 bg-amber-950/60 hover:bg-amber-900/70 border border-amber-500/40 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px] shadow-xs"
+            title="Desplazarse a la hora actual"
+          >
+            <Clock className="w-3 h-3 text-amber-400" />
+            <span>Ahora</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={scrollToDayEnd}
+            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px]"
+            title="Bajar al horario de cierre / noche"
+          >
+            <ArrowDown className="w-3 h-3 text-slate-400" />
+            <span>Cierre ({schedule.closing_time})</span>
+          </button>
+        </div>
+      </div>
+
       {/* Indicador para móviles de desplazamiento horizontal de canchas */}
       <div className="md:hidden flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
         <span className="flex items-center gap-1.5 animate-pulse">
@@ -378,18 +540,24 @@ export function CalendarGrid({
           </Button>
         </div>
       ) : (
-        <div className="flex-1 overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar touch-momentum">
+        <>
+        <div 
+          ref={gridContainerRef}
+          onWheel={handleGridWheel}
+          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto"
+          style={{ scrollBehavior: 'smooth' }}
+        >
         <div className="min-w-180 sm:min-w-200">
-          {/* Header de Canchas (Columnas) */}
-          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-10 bg-slate-950">
-            <div className="p-3 text-center text-xs font-bold text-slate-500 border-r border-slate-800 flex items-center justify-center">
-              <Clock className="w-3.5 h-3.5 mr-1" />
+          {/* Header de Canchas (Columnas) - Sticky Top */}
+          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md">
+            <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-950 shadow-xs">
+              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-400" />
               Hora
             </div>
             {filteredCourts.map((court) => (
               <div
                 key={court.id}
-                className="p-3 text-center border-r border-slate-800/80 last:border-r-0 bg-slate-900/40"
+                className="p-3 text-center border-r border-slate-800/80 last:border-r-0 bg-slate-900/90"
               >
                 <div className="text-sm font-bold text-white tracking-tight">{court.name}</div>
                 <div className="text-[11px] text-emerald-400 font-medium">{court.sport}</div>
@@ -402,10 +570,11 @@ export function CalendarGrid({
             {timeSlots.map((time) => (
               <div
                 key={time}
+                data-time={time}
                 className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[72px]"
               >
-                {/* Columna Hora */}
-                <div className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/90 flex items-center justify-center">
+                {/* Columna Hora - Sticky Left */}
+                <div className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-xs">
                   {time}
                 </div>
 
@@ -503,6 +672,16 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 text-[11px] text-slate-400">
+        <div className="flex items-center gap-1.5">
+          <Mouse className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>Girá la <strong>rueda del mouse</strong> para subir y bajar turnos. Mantené <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-mono">Shift</kbd> para desplazarte horizontalmente entre canchas.</span>
+        </div>
+        <span className="text-emerald-400 font-medium">
+          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'}
+        </span>
+      </div>
+      </>
       )}
 
       {/* Modales */}

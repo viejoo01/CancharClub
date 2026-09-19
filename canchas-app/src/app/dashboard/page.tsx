@@ -72,7 +72,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[600px]">
+      <div className="flex-1 min-h-0">
         <CalendarGrid
           tenantId={tenantId || ''}
           courts={courts}

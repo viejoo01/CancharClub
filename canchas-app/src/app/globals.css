@@ -415,7 +415,8 @@ body {
 /* Utilidades para fluidez móvil */
 .touch-momentum {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
 }
 
 /* Evitar desbordamiento horizontal indeseado en móviles */

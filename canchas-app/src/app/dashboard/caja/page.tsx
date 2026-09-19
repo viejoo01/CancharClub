@@ -30,6 +30,39 @@ function methodLabel(method: string): string {
   return method
 }
 
+function cleanNoteForDisplay(notes: string | undefined | null): string {
+  if (!notes) return ''
+  let cleaned = notes
+    // Traducir identificadores en inglés a español
+    .replace(/\(TRANSFER\)/gi, '(Transferencia)')
+    .replace(/\(CASH\)/gi, '(Efectivo)')
+    .replace(/\(MERCADOPAGO\)/gi, '(Mercado Pago)')
+    .replace(/\(MP\)/gi, '(Mercado Pago)')
+    .replace(/\bTRANSFER\b/g, 'Transferencia')
+    .replace(/\bCASH\b/g, 'Efectivo')
+    // Normalizar horas en formato 12h (p. m. / a. m.) a formato estándar argentino de 24 hs
+    .replace(/(\d{1,2}):(\d{2})\s*(?:p\.\s*m\.|pm)\s*(?:hs)?/gi, (_, h, m) => {
+      const hour = parseInt(h, 10)
+      const hour24 = hour === 12 ? 12 : hour + 12
+      return `${String(hour24).padStart(2, '0')}:${m} hs`
+    })
+    .replace(/(\d{1,2}):(\d{2})\s*(?:a\.\s*m\.|am)\s*(?:hs)?/gi, (_, h, m) => {
+      const hour = parseInt(h, 10)
+      const hour24 = hour === 12 ? 0 : hour
+      return `${String(hour24).padStart(2, '0')}:${m} hs`
+    })
+    // Ocultar IDs técnicos de pasarela de pago para el usuario
+    .replace(/\[MP Pref:[^\]]+\]/gi, '')
+    // Reemplazar separadores internos con viñetas limpias
+    .replace(/\s*-\s*\|\s*/g, ' • ')
+    .replace(/\s*\|\s*/g, ' • ')
+    .trim()
+
+  // Eliminar guiones o viñetas sueltas al final
+  cleaned = cleaned.replace(/\s*[-•]\s*$/, '').trim()
+  return cleaned
+}
+
 function methodIcon(method: string) {
   if (method === 'CASH') return <Banknote className="w-4 h-4 text-emerald-400" />
   if (method === 'TRANSFER') return <ArrowRightLeft className="w-4 h-4 text-sky-400" />
@@ -203,10 +236,10 @@ export default function CajaPage() {
               <Banknote className="w-4 h-4 text-emerald-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'cargando' : formatARS(report?.totalCash ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalCash ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">Dinero fisico en cajon de mostrador</CardContent>
+          <CardContent className="text-[11px] text-slate-400">Dinero físico en cajón de mostrador</CardContent>
         </Card>
         <Card className="border-slate-800 bg-slate-900/60">
           <CardHeader className="pb-2">
@@ -215,7 +248,7 @@ export default function CajaPage() {
               <ArrowRightLeft className="w-4 h-4 text-sky-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'cargando' : formatARS(report?.totalTransfer ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalTransfer ?? 0)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-[11px] text-slate-400">Acreditado en cuenta bancaria del club</CardContent>
@@ -227,7 +260,7 @@ export default function CajaPage() {
               <CreditCard className="w-4 h-4 text-cyan-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'cargando' : formatARS(report?.totalMP ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalMP ?? 0)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-[11px] text-slate-400">Señas y pagos online de jugadores</CardContent>
@@ -237,7 +270,7 @@ export default function CajaPage() {
       <Card className="border-slate-800 bg-slate-900/60 overflow-hidden">
         <CardHeader className="border-b border-slate-800/80 pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Detalle de Cobros del Dia</CardTitle>
+            <CardTitle className="text-base">Detalle de Cobros del Día</CardTitle>
             <Badge variant="outline" className="text-xs">Fecha: {selectedDate}</Badge>
           </div>
         </CardHeader>
@@ -250,7 +283,7 @@ export default function CajaPage() {
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-500">
             <Receipt className="w-10 h-10 opacity-30" />
             <p className="text-sm">No se registraron cobros el {selectedDate}</p>
-            <p className="text-xs text-slate-600">Los pagos aparecen aqui cuando se confirma una seña o saldo de una reserva.</p>
+            <p className="text-xs text-slate-600">Los pagos aparecen aquí cuando se confirma una seña o saldo de una reserva.</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-800/60">
@@ -272,8 +305,11 @@ export default function CajaPage() {
                           <span className="text-amber-400/80">Saldo restante</span>
                         </>
                       )}
-                      {e.notes && (
-                        <span className="italic text-slate-500 hidden sm:inline">{e.notes}</span>
+                      {e.notes && cleanNoteForDisplay(e.notes) && (
+                        <>
+                          <span>•</span>
+                          <span className="italic text-slate-400 hidden sm:inline">{cleanNoteForDisplay(e.notes)}</span>
+                        </>
                       )}
                     </div>
                   </div>

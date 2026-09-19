@@ -102,8 +102,8 @@ export async function getDailyCashReport(
     const totalPriceArs = Math.round((Number(row.price_total_cents) || 0) / 100)
     const notes = row.staff_notes || ''
 
-    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $12500 (CASH) [2026-09-19T...]")
-    const cobroMatches = [...notes.matchAll(/Cobro \$?(\d+)\s*\((CASH|TRANSFER|MERCADOPAGO|MP|DEBIT_CARD|CREDIT_CARD|QR_MP|OTHER)\)(?:\s*\[([^\]]+)\])?/gi)]
+    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $12500 (Efectivo) [2026-09-19T...]")
+    const cobroMatches = [...notes.matchAll(/Cobro \$?(\d+)\s*\((CASH|EFECTIVO|TRANSFER|TRANSFERENCIA|MERCADOPAGO|MERCADO PAGO|MP|DEBIT_CARD|CREDIT_CARD|QR_MP|OTHER)\)(?:\s*\[([^\]]+)\])?/gi)]
     let cobrosTotal = 0
 
     for (let idx = 0; idx < cobroMatches.length; idx++) {
@@ -117,6 +117,7 @@ export async function getDailyCashReport(
         let method = 'CASH'
         if (rawMeth.includes('TRANSFER')) method = 'TRANSFER'
         else if (rawMeth.includes('MERCADO') || rawMeth.includes('MP') || rawMeth.includes('QR')) method = 'MERCADOPAGO'
+        else if (rawMeth.includes('CASH') || rawMeth.includes('EFECTIVO')) method = 'CASH'
 
         entries.push({
           id: `cobro-${row.id}-${idx}`,
@@ -143,9 +144,10 @@ export async function getDailyCashReport(
       if (initialPaidAt && initialPaidAt >= dayStart && initialPaidAt <= dayEnd) {
         let initialMethod = 'CASH'
         const rawMethod = String(row.payment_method || '').toLowerCase()
-        if (rawMethod.includes('transfer') || rawMethod.includes('bank') || notes.toUpperCase().includes('TRANSFER')) {
+        const lowerNotes = notes.toLowerCase()
+        if (rawMethod.includes('transfer') || rawMethod.includes('bank') || lowerNotes.includes('transfer')) {
           initialMethod = 'TRANSFER'
-        } else if (rawMethod.includes('mercado') || rawMethod.includes('mp') || notes.toUpperCase().includes('MERCADO')) {
+        } else if (rawMethod.includes('mercado') || rawMethod.includes('mp') || lowerNotes.includes('mercado')) {
           initialMethod = 'MERCADOPAGO'
         }
 

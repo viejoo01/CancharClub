@@ -174,8 +174,9 @@ export async function initiateOnlineCheckout(
     const isTransfer = payload.payment_method === 'TRANSFER' || !payload.payment_method
     const isFullyCovered = payload.deposit_amount_ars === 0
     const initialStatus = (isTransfer || isFullyCovered) ? 'confirmed' : 'pending_deposit'
-    const paymentLabel = payload.payment_method === 'MERCADOPAGO' ? 'MERCADO PAGO' : 'TRANSFERENCIA'
-    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${paymentLabel}) - ${payload.customer_notes || ''}`.trim()
+    const paymentLabel = payload.payment_method === 'MERCADOPAGO' ? 'Mercado Pago' : 'Transferencia'
+    const customerNotesPart = payload.customer_notes?.trim() ? ` - ${payload.customer_notes.trim()}` : ''
+    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${paymentLabel})${customerNotesPart}`
 
     let dbInsertSuccess = false
 
@@ -597,7 +598,10 @@ export async function registerCashPayment(params: {
     const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
 
     const nowIso = new Date().toISOString()
-    const noteEntry = `Cobro $${params.amount_ars} (${params.payment_method || 'CASH'}) [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
+    const methodSpanish = methodStr.includes('TRANSFER') ? 'Transferencia'
+      : (methodStr.includes('MERCADO') || methodStr.includes('MP')) ? 'Mercado Pago'
+      : 'Efectivo'
+    const noteEntry = `Cobro $${params.amount_ars} (${methodSpanish}) [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
 
     // Preservar método online previo si existió seña online
@@ -768,7 +772,8 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
       return { success: false, error: authCheck.error || 'Sin permisos para confirmar este turno' }
     }
 
-    const noteEntry = `Seña verificada y aprobada por el club el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs`
+    const timeStr = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    const noteEntry = `Seña verificada y aprobada por el club el ${new Date().toLocaleDateString('es-AR')} a las ${timeStr} hs`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
 
     const nowIso = new Date().toISOString()

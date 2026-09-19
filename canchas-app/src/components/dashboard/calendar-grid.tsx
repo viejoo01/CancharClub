@@ -718,8 +718,14 @@ export function CalendarGrid({
                   if (slotInfo) {
                     const { booking, isStart, isEnd, isMiddle, endTime, totalSlots } = slotInfo
                     const isHovered = hoveredBookingId === booking.id
-                    const isFullyPaid = booking.status === 'FULLY_PAID' || booking.balance_due === 0
-                    const isConfirmed = booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID'
+                    const isPendingValidation = Boolean(
+                      String(booking.status) === 'PENDING_DEPOSIT' ||
+                      String(booking.status) === 'PENDING' ||
+                      ((booking.internal_notes?.toUpperCase().includes('TRANSFER') || booking.deposit_amount_ars > 0) &&
+                       !booking.internal_notes?.includes('Seña verificada y aprobada'))
+                    )
+                    const isFullyPaid = (booking.status === 'FULLY_PAID' || booking.balance_due === 0) && !isPendingValidation
+                    const isConfirmed = (booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID') && !isPendingValidation
                     const isAbono = Boolean(
                       booking.internal_notes?.includes('ABONO') ||
                       booking.internal_notes?.includes('FIJO')
@@ -730,6 +736,10 @@ export function CalendarGrid({
                       ? isHovered
                         ? 'bg-purple-950/70 border-purple-400 text-purple-100 shadow-md'
                         : 'bg-purple-950/40 border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/60 text-purple-100'
+                      : isPendingValidation
+                      ? isHovered
+                        ? 'bg-amber-950/80 border-amber-400 text-amber-100 shadow-md'
+                        : 'bg-amber-950/50 border-amber-500/60 hover:border-amber-400 hover:bg-amber-950/70 text-amber-100'
                       : isFullyPaid
                       ? isHovered
                         ? 'bg-emerald-950/70 border-emerald-400 text-emerald-100 shadow-md'
@@ -760,13 +770,19 @@ export function CalendarGrid({
                                 <span className="font-bold text-xs truncate block">
                                   {booking.customer_name}
                                 </span>
-                                {isAbono && (
+                                {isPendingValidation ? (
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 border border-amber-400/40 tracking-wider">
+                                    VALIDAR SEÑA
+                                  </span>
+                                ) : isAbono ? (
                                   <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
                                     ABONO FIJO
                                   </span>
-                                )}
+                                ) : null}
                               </div>
-                              {isFullyPaid ? (
+                              {isPendingValidation ? (
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                              ) : isFullyPaid ? (
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               ) : (
                                 <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -806,13 +822,19 @@ export function CalendarGrid({
                                 <span className="font-bold text-xs truncate block">
                                   {booking.customer_name}
                                 </span>
-                                {isAbono && (
+                                {isPendingValidation ? (
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 border border-amber-400/40 tracking-wider">
+                                    VALIDAR SEÑA
+                                  </span>
+                                ) : isAbono ? (
                                   <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
                                     ABONO FIJO
                                   </span>
-                                )}
+                                ) : null}
                               </div>
-                              {isFullyPaid ? (
+                              {isPendingValidation ? (
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                              ) : isFullyPaid ? (
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               ) : (
                                 <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />

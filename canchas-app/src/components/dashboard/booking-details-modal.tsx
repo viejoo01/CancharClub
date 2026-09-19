@@ -265,8 +265,31 @@ export function BookingDetailsModal({
     ? createWhatsAppShareUrl(booking.customer_phone, reminderText)
     : null
 
+  const isTransfer = Boolean(
+    booking.internal_notes?.toUpperCase().includes('TRANSFER') ||
+    booking.deposit_amount_ars > 0 ||
+    currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
+    currentStatus.toUpperCase() === 'PENDING'
+  )
+  const isAlreadyVerified = Boolean(
+    booking.internal_notes?.includes('Seña verificada y aprobada') ||
+    booking.internal_notes?.includes('verificada y aprobada')
+  )
+
+  const isPendingDeposit =
+    currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
+    currentStatus.toUpperCase() === 'PENDING' ||
+    (isTransfer && !isAlreadyVerified)
+
   const getStatusBadge = (status: string) => {
     const s = String(status || '').toUpperCase()
+    if (isPendingDeposit) {
+      return (
+        <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          SEÑA POR VALIDAR
+        </Badge>
+      )
+    }
     if (s === 'CONFIRMED' || s === 'DEPOSIT_PAID') {
       return (
         <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
@@ -278,13 +301,6 @@ export function BookingDetailsModal({
       return (
         <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
           PAGADO TOTAL
-        </Badge>
-      )
-    }
-    if (s === 'PENDING_DEPOSIT' || s === 'PENDING') {
-      return (
-        <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
-          PENDIENTE SEÑA
         </Badge>
       )
     }
@@ -308,8 +324,6 @@ export function BookingDetailsModal({
       </Badge>
     )
   }
-
-  const isPendingDeposit = currentStatus.toUpperCase() === 'PENDING_DEPOSIT' || currentStatus.toUpperCase() === 'PENDING'
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -424,36 +438,57 @@ export function BookingDetailsModal({
           {isPendingDeposit ? (
             <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-amber-300 flex items-center gap-1.5">
+                <span className="font-bold text-amber-300 flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-amber-400 shrink-0" />
                   Seña Pendiente de Validación Bancaria
                 </span>
-                <span className="text-amber-400 font-mono font-bold">
+                <span className="text-amber-400 font-mono font-bold text-sm">
                   {formatARS(booking.deposit_amount_ars || 12500)}
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                El jugador registró la transferencia. Verificá el ingreso en tu cuenta y confirmá el turno:
+                El jugador registró la reserva por transferencia. Verificá el ingreso en tu cuenta bancaria o billetera y confirmá el turno:
               </p>
               <Button
                 type="button"
                 onClick={handleConfirmDeposit}
                 disabled={loadingConfirm}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 shadow-lg shadow-emerald-950/40 text-sm"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 h-11 shadow-lg shadow-emerald-950/40 text-sm active:scale-[0.99] transition-transform cursor-pointer"
               >
                 {loadingConfirm ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 <span>Confirmar Seña Recibida / Aprobar Turno</span>
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/25 text-xs text-emerald-300">
-              <div className="flex items-center gap-2 font-medium">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Turno Confirmado — Seña Verificada ({formatARS(booking.deposit_amount_ars || booking.total_paid)})</span>
+            <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/25 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-emerald-300">
+                <div className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Turno Confirmado — Seña Verificada ({formatARS(booking.deposit_amount_ars || booking.total_paid)})</span>
+                </div>
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
+                  APROBADO
+                </Badge>
               </div>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
-                APROBADO
-              </Badge>
+              {isTransfer && (
+                <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[11px] text-slate-400">
+                  <span className="truncate max-w-[280px]">
+                    {booking.internal_notes?.includes('Seña verificada')
+                      ? '✓ Verificación registrada en historial'
+                      : 'Transferencia bancaria registrada'}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleConfirmDeposit}
+                    disabled={loadingConfirm}
+                    className="h-6 px-2 text-[10px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40"
+                  >
+                    Volver a validar
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

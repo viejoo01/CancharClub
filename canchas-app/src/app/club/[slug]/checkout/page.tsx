@@ -279,7 +279,15 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
           deposit_amount_ars: payableDeposit,
           payment_method: payableDeposit === 0 ? 'TRANSFER' : paymentMethod,
         },
-        'MIN_90'
+        (
+          courtObj?.slotDurationMinutes === 60
+            ? 'MIN_60'
+            : courtObj?.slotDurationMinutes === 120
+            ? 'MIN_120'
+            : courtObj?.slotDurationMinutes === 90
+            ? 'MIN_90'
+            : (sport.includes('FUTBOL') ? 'MIN_60' : 'MIN_90')
+        ) as 'MIN_60' | 'MIN_90' | 'MIN_120'
       )
 
       if (!res.success) {

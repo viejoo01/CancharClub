@@ -333,15 +333,23 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         end = end.replace(' ', 'T')
       }
 
+      const courtObj = b.courts
+      const courtName = courtObj?.name || 'Cancha'
+      const courtSport = courtObj?.sport || 'PADEL'
+      const courtDuration = courtObj?.slot_duration_minutes === 60 ? 'MIN_60' : (courtObj?.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90')
+
+      if (!end || end === start) {
+        const durationMins = courtObj?.slot_duration_minutes || (courtSport.includes('FUTBOL') ? 60 : 90)
+        try {
+          const startDate = new Date(start)
+          end = new Date(startDate.getTime() + durationMins * 60 * 1000).toISOString()
+        } catch {}
+      }
+
       const totalArs = b.price_total_cents ? Math.round(Number(b.price_total_cents) / 100) : 14000
       const depositArs = b.deposit_cents ? Math.round(Number(b.deposit_cents) / 100) : 7000
       const isConfirmed = b.status === 'confirmed' || b.status === 'confirmed_cash'
       const statusFormatted = isConfirmed ? 'CONFIRMED' : (b.status === 'pending_deposit' ? 'PENDING_DEPOSIT' : 'CONFIRMED')
-
-      const courtObj = b.courts
-      const courtName = courtObj?.name || 'Cancha'
-      const courtSport = courtObj?.sport || 'PADEL'
-      const courtDuration = courtObj?.slot_duration_minutes === 60 ? 'MIN_60' : 'MIN_90'
 
       return {
         id: b.id,
@@ -1026,17 +1034,19 @@ export async function getClubOccupiedSlots(
     const inMemoryBookings = getVenueBookings(tenantId, dateIso)
     for (const b of inMemoryBookings) {
       if (!String(b.status).toUpperCase().includes('CANCEL')) {
-        let timeStr = ''
         if (b.starts_at) {
-          if (b.starts_at.includes('T')) {
-            timeStr = b.starts_at.split('T')[1].substring(0, 5)
-          } else if (b.starts_at.includes(' ')) {
-            timeStr = b.starts_at.split(' ')[1].substring(0, 5)
+          const startD = parseArgentinaDate(b.starts_at)
+          const endD = b.ends_at ? parseArgentinaDate(b.ends_at) : new Date(startD.getTime() + 60 * 60 * 1000)
+          if (!isNaN(startD.getTime())) {
+            const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
+            let curr = new Date(startD.getTime())
+            const limit = !isNaN(endD.getTime()) && endD.getTime() > startD.getTime() ? endD.getTime() : startD.getTime() + 30 * 60 * 1000
+            while (curr.getTime() < limit) {
+              const timeStr = getArgentinaTimeStr(curr)
+              addSlot(b.court_id, cName, timeStr)
+              curr = new Date(curr.getTime() + 30 * 60 * 1000)
+            }
           }
-        }
-        if (timeStr) {
-          const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
-          addSlot(b.court_id, cName, timeStr)
         }
       }
     }
@@ -1060,11 +1070,17 @@ export async function getClubOccupiedSlots(
             const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
             if (match && match[1]) {
               const startDate = parseArgentinaDate(match[1])
+              const endDate = match[2] ? parseArgentinaDate(match[2]) : new Date(startDate.getTime() + 60 * 60 * 1000)
               if (!isNaN(startDate.getTime())) {
-                const timeStr = getArgentinaTimeStr(startDate)
                 const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
                 const courtName = (courtObj as { name?: string } | null)?.name
-                addSlot(b.court_id, courtName, timeStr)
+                let curr = new Date(startDate.getTime())
+                const limit = !isNaN(endDate.getTime()) && endDate.getTime() > startDate.getTime() ? endDate.getTime() : startDate.getTime() + 30 * 60 * 1000
+                while (curr.getTime() < limit) {
+                  const timeStr = getArgentinaTimeStr(curr)
+                  addSlot(b.court_id, courtName, timeStr)
+                  curr = new Date(curr.getTime() + 30 * 60 * 1000)
+                }
               }
             }
           }

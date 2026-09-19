@@ -300,19 +300,86 @@ export function CalendarGrid({
     setSelectedDate(format(new Date(), 'yyyy-MM-dd'))
   }
 
-  // Mapear reservas por courtId y hora de inicio (HH:mm)
-  const bookingMap = useMemo(() => {
-    const map = new Map<string, CalendarBooking>()
+  const [hoveredBookingId, setHoveredBookingId] = useState<string | null>(null)
+
+  // Mapear reservas por courtId cubriendo todos los intervalos de 30 minutos (ej. 13:00 y 13:30 para 1 hora exacta)
+  const slotBookingMap = useMemo(() => {
+    const map = new Map<string, {
+      booking: CalendarBooking
+      isStart: boolean
+      isEnd: boolean
+      isMiddle: boolean
+      startTime: string
+      endTime: string
+      slotIndex: number
+      totalSlots: number
+    }>()
+
     activeBookings.forEach((b) => {
       const bDate = b.starts_at.includes('T') ? b.starts_at.split('T')[0] : b.starts_at.split(' ')[0]
       if (bDate !== selectedDate) return
-      // Extraer hora local HH:mm
-      const timePart = formatTime(b.starts_at)
-      const key = `${b.court_id}_${timePart}`
-      map.set(key, b)
+
+      const startTime = formatTime(b.starts_at)
+      let endTime = b.ends_at ? formatTime(b.ends_at) : ''
+
+      if (!endTime || endTime === startTime) {
+        const courtDuration = Array.isArray(b.courts) ? b.courts[0]?.slot_duration : b.courts?.slot_duration
+        const durationMins = courtDuration === 'MIN_90' ? 90 : courtDuration === 'MIN_120' ? 120 : 60
+        const [sh, sm] = startTime.split(':').map(Number)
+        const totalMins = sh * 60 + sm + durationMins
+        const eh = Math.floor(totalMins / 60) % 24
+        const em = totalMins % 60
+        endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+      }
+
+      // Calcular cantidad de slots de 30 minutos
+      const [sh, sm] = startTime.split(':').map(Number)
+      const [eh, em] = endTime.split(':').map(Number)
+      const startMinutes = sh * 60 + sm
+      let endMinutes = eh * 60 + em
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60 // Pasa de medianoche
+      }
+
+      const totalSlots = Math.max(1, Math.round((endMinutes - startMinutes) / 30))
+      const startIndex = timeSlots.indexOf(startTime)
+
+      if (startIndex !== -1) {
+        for (let i = 0; i < totalSlots; i++) {
+          const slotTime = timeSlots[startIndex + i]
+          if (!slotTime) break
+          const isStart = i === 0
+          const isEnd = i === totalSlots - 1
+          const isMiddle = !isStart && !isEnd
+          const key = `${b.court_id}_${slotTime}`
+          map.set(key, {
+            booking: b,
+            isStart,
+            isEnd,
+            isMiddle,
+            startTime,
+            endTime,
+            slotIndex: i,
+            totalSlots,
+          })
+        }
+      } else {
+        const key = `${b.court_id}_${startTime}`
+        map.set(key, {
+          booking: b,
+          isStart: true,
+          isEnd: true,
+          isMiddle: false,
+          startTime,
+          endTime,
+          slotIndex: 0,
+          totalSlots: 1,
+        })
+      }
     })
+
     return map
-  }, [activeBookings, selectedDate])
+  }, [activeBookings, selectedDate, timeSlots])
 
   const formattedDateTitle = useMemo(() => {
     return format(parseISO(selectedDate), "EEEE d 'de' MMMM", { locale: es })
@@ -506,9 +573,11 @@ export function CalendarGrid({
                 {/* Celdas por Cancha */}
                 {filteredCourts.map((court) => {
                   const bookingKey = `${court.id}_${time}`
-                  const booking = bookingMap.get(bookingKey)
+                  const slotInfo = slotBookingMap.get(bookingKey)
 
-                  if (booking) {
+                  if (slotInfo) {
+                    const { booking, isStart, isEnd, isMiddle, endTime, totalSlots } = slotInfo
+                    const isHovered = hoveredBookingId === booking.id
                     const isFullyPaid = booking.status === 'FULLY_PAID' || booking.balance_due === 0
                     const isConfirmed = booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID'
                     const isAbono = Boolean(
@@ -516,50 +585,159 @@ export function CalendarGrid({
                       booking.internal_notes?.includes('FIJO')
                     )
 
+                    // Estilo de color coordinado
+                    const colorClasses = isAbono
+                      ? isHovered
+                        ? 'bg-purple-950/70 border-purple-400 text-purple-100 shadow-md'
+                        : 'bg-purple-950/40 border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/60 text-purple-100'
+                      : isFullyPaid
+                      ? isHovered
+                        ? 'bg-emerald-950/70 border-emerald-400 text-emerald-100 shadow-md'
+                        : 'bg-emerald-950/40 border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-950/60 text-emerald-100'
+                      : isConfirmed
+                      ? isHovered
+                        ? 'bg-cyan-950/70 border-cyan-400 text-cyan-100 shadow-md'
+                        : 'bg-cyan-950/40 border-cyan-500/40 hover:border-cyan-400 hover:bg-cyan-950/60 text-cyan-100'
+                      : isHovered
+                      ? 'bg-amber-950/70 border-amber-400 text-amber-100 shadow-md'
+                      : 'bg-amber-950/40 border-amber-500/40 hover:border-amber-400 hover:bg-amber-950/60 text-amber-100'
+
+                    // Caso 1: Turno de 1 solo slot de 30 min
+                    if (isStart && isEnd) {
+                      return (
+                        <div
+                          key={court.id}
+                          onClick={() => setSelectedBooking(booking)}
+                          onMouseEnter={() => setHoveredBookingId(booking.id)}
+                          onMouseLeave={() => setHoveredBookingId(null)}
+                          className="p-1.5 border-r border-slate-800/60 last:border-r-0 cursor-pointer group"
+                        >
+                          <div
+                            className={`h-full w-full rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold text-xs truncate block">
+                                  {booking.customer_name}
+                                </span>
+                                {isAbono && (
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
+                                    ABONO FIJO
+                                  </span>
+                                )}
+                              </div>
+                              {isFullyPaid ? (
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              ) : (
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90">
+                              <span>{formatARS(booking.total_amount_ars)}</span>
+                              {booking.balance_due > 0 ? (
+                                <span className="text-amber-400 font-semibold">
+                                  Resta: {formatARS(booking.balance_due)}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-400 font-semibold">Saldado</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Caso 2: Primer slot de un turno multislot (ej. 13:00 para 13:00 - 14:00)
+                    if (isStart) {
+                      return (
+                        <div
+                          key={court.id}
+                          onClick={() => setSelectedBooking(booking)}
+                          onMouseEnter={() => setHoveredBookingId(booking.id)}
+                          onMouseLeave={() => setHoveredBookingId(null)}
+                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
+                        >
+                          <div
+                            className={`h-full min-h-[66px] w-full rounded-t-xl rounded-b-none p-2.5 flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-[1px] relative z-10 ${colorClasses}`}
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold text-xs truncate block">
+                                  {booking.customer_name}
+                                </span>
+                                {isAbono && (
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
+                                    ABONO FIJO
+                                  </span>
+                                )}
+                              </div>
+                              {isFullyPaid ? (
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              ) : (
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90">
+                              <span>{formatARS(booking.total_amount_ars)}</span>
+                              {booking.balance_due > 0 ? (
+                                <span className="text-amber-400 font-semibold">
+                                  Resta: {formatARS(booking.balance_due)}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-400 font-semibold">Saldado</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Caso 3: Slot intermedio de un turno de 90+ min
+                    if (isMiddle) {
+                      return (
+                        <div
+                          key={court.id}
+                          onClick={() => setSelectedBooking(booking)}
+                          onMouseEnter={() => setHoveredBookingId(booking.id)}
+                          onMouseLeave={() => setHoveredBookingId(null)}
+                          className="px-1.5 py-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
+                        >
+                          <div
+                            className={`h-full min-h-[72px] w-full rounded-none px-2.5 py-1.5 flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-[1px] relative z-10 ${colorClasses}`}
+                          >
+                            <span className="text-[10px] font-medium opacity-70 italic">
+                              Turno en curso...
+                            </span>
+                            <span className="text-[10px] opacity-75 font-semibold">
+                              {booking.customer_name}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Caso 4: Último slot del turno combinado (ej. 13:30 para turno de 13:00 a 14:00)
                     return (
                       <div
                         key={court.id}
                         onClick={() => setSelectedBooking(booking)}
-                        className="p-1.5 border-r border-slate-800/60 last:border-r-0 cursor-pointer group"
+                        onMouseEnter={() => setHoveredBookingId(booking.id)}
+                        onMouseLeave={() => setHoveredBookingId(null)}
+                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
                       >
                         <div
-                          className={`h-full w-full rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border ${
-                            isAbono
-                              ? 'bg-purple-950/40 border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/60 text-purple-100'
-                              : isFullyPaid
-                              ? 'bg-emerald-950/40 border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-950/60 text-emerald-100'
-                              : isConfirmed
-                              ? 'bg-cyan-950/40 border-cyan-500/40 hover:border-cyan-400 hover:bg-cyan-950/60 text-cyan-100'
-                              : 'bg-amber-950/40 border-amber-500/40 hover:border-amber-400 hover:bg-amber-950/60 text-amber-100'
-                          }`}
+                          className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
                         >
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="min-w-0 flex-1">
-                              <span className="font-bold text-xs truncate block">
-                                {booking.customer_name}
-                              </span>
-                              {isAbono && (
-                                <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
-                                  ABONO FIJO
-                                </span>
-                              )}
+                          <div className="flex items-center justify-between w-full h-full text-[11px] opacity-90 mt-auto">
+                            <div className="flex items-center gap-1.5 font-semibold text-slate-300">
+                              <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span>Hasta las {endTime} hs</span>
                             </div>
-                            {isFullyPaid ? (
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            ) : (
-                              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            )}
-                          </div>
-
-                          <div className="flex items-center justify-between mt-1 text-[11px] opacity-90">
-                            <span>{formatARS(booking.total_amount_ars)}</span>
-                            {booking.balance_due > 0 ? (
-                              <span className="text-amber-400 font-semibold">
-                                Resta: {formatARS(booking.balance_due)}
-                              </span>
-                            ) : (
-                              <span className="text-emerald-400 font-semibold">Saldado</span>
-                            )}
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300">
+                              {totalSlots === 2 ? '1 hora' : `${totalSlots * 30} min`}
+                            </span>
                           </div>
                         </div>
                       </div>

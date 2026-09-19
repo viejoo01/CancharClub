@@ -462,7 +462,7 @@ export async function createManualBooking(
 
     const validStaffId = isValidUuid(authCheck.user?.id) ? authCheck.user?.id : null
 
-    const durationMinutes = court.slot_duration_minutes || (court.sport?.includes('FUTBOL') ? 60 : 90)
+    const durationMinutes = Number(payload.duration_minutes) || court.slot_duration_minutes || (court.sport?.includes('FUTBOL') ? 60 : 90)
     const startsAtDate = parseArgentinaDate(payload.starts_at)
     const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
     const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
@@ -534,8 +534,8 @@ export async function createManualBooking(
       origin: 'STAFF_MANUAL',
       total_amount_ars: Number(payload.total_amount_ars || 0),
       deposit_amount_ars: Number(payload.deposit_amount_ars || 0),
-      total_paid: Number(payload.deposit_amount_ars || 0),
-      balance_due: Math.max(0, Number(payload.total_amount_ars || 0) - Number(payload.deposit_amount_ars || 0)),
+      total_paid: isFullCash ? Number(payload.total_amount_ars || 0) : Number(payload.deposit_amount_ars || 0),
+      balance_due: Math.max(0, Number(payload.total_amount_ars || 0) - (isFullCash ? Number(payload.total_amount_ars || 0) : Number(payload.deposit_amount_ars || 0))),
       internal_notes: staffNotes || 'Reserva manual mostrador',
       courts: {
         name: payload.court_name || 'Cancha',

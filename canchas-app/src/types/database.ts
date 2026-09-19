@@ -469,6 +469,7 @@ export interface CreateBookingPayload {
   customer_notes?: string
   price_rule_id?: string
   payment_method?: 'TRANSFER' | 'MERCADOPAGO'
+  duration_minutes?: number
 }
 
 /** Respuesta del Server Action de checkout */

@@ -352,26 +352,47 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         } catch {}
       }
 
-      const totalArs = b.price_total_cents ? Math.round(Number(b.price_total_cents) / 100) : 14000
-      const depositArs = b.deposit_cents ? Math.round(Number(b.deposit_cents) / 100) : 7000
-      const isConfirmed = b.status === 'confirmed' || b.status === 'confirmed_cash'
-      const statusFormatted = isConfirmed ? 'CONFIRMED' : (b.status === 'pending_deposit' ? 'PENDING_DEPOSIT' : 'CONFIRMED')
+      const totalArs = (b.price_total_cents !== null && b.price_total_cents !== undefined)
+        ? Math.round(Number(b.price_total_cents) / 100)
+        : 0
+      const depositArs = (b.deposit_cents !== null && b.deposit_cents !== undefined)
+        ? Math.round(Number(b.deposit_cents) / 100)
+        : 0
+
+      const isConfirmedCash = b.status === 'confirmed_cash'
+      const isPendingDeposit = b.status === 'pending_deposit' || b.status === 'pending'
+      const isFullyPaid = isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
+      const totalPaid = isFullyPaid ? totalArs : depositArs
+      const balanceDue = Math.max(0, totalArs - totalPaid)
+
+      const statusFormatted = isFullyPaid
+        ? 'FULLY_PAID'
+        : isPendingDeposit
+        ? 'PENDING_DEPOSIT'
+        : 'CONFIRMED'
+
+      const isManual = Boolean(
+        b.staff_notes?.includes('[ABONO') ||
+        b.staff_notes?.includes('mostrador') ||
+        b.staff_notes?.includes('manual') ||
+        b.payment_method === 'cash'
+      )
 
       return {
         id: b.id,
         court_id: b.court_id,
-        customer_name: b.customer_name || 'Jugador Online',
+        customer_name: b.customer_name || 'Jugador',
         customer_phone: b.customer_phone,
         customer_email: b.customer_email,
         starts_at: start,
         ends_at: end,
         status: statusFormatted,
-        origin: 'ONLINE_PORTAL',
+        origin: isManual ? 'PHONE' : 'ONLINE_PORTAL',
         total_amount_ars: totalArs,
         deposit_amount_ars: depositArs,
-        total_paid: depositArs,
-        balance_due: Math.max(0, totalArs - depositArs),
-        internal_notes: b.staff_notes || 'Seña transferida 24hs',
+        total_paid: totalPaid,
+        balance_due: balanceDue,
+        internal_notes: b.staff_notes || null,
         courts: {
           name: courtName,
           sport: courtSport,

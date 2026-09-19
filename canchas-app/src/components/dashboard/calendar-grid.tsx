@@ -269,6 +269,7 @@ export function CalendarGrid({
       const fresh = await getCalendarBookings(tenantId, dateToFetch)
       if (Array.isArray(fresh)) {
         setLoadedBookings(fresh as CalendarBooking[])
+        setOptimisticBookings([])
       }
     } catch (err) {
       console.error('[CalendarGrid] Error fetching bookings:', err)
@@ -960,26 +961,9 @@ export function CalendarGrid({
           preselectedTime={quickBookSlot?.time || '19:00'}
           preselectedCourtId={quickBookSlot?.courtId}
           onSuccess={() => {
-            if (quickBookSlot) {
-              const court = activeCourts.find((c) => c.id === quickBookSlot.courtId)
-              const startsAt = `${selectedDate}T${quickBookSlot.time}:00`
-              const optAmount = priceRules && priceRules.length > 0 ? (priceRules[0].priceArs || 25000) : 25000
-              const newOptimistic: CalendarBooking = {
-                id: `bk-opt-${Date.now()}`,
-                court_id: quickBookSlot.courtId,
-                customer_name: 'Reserva Confirmada (Mostrador)',
-                starts_at: startsAt,
-                ends_at: `${selectedDate}T23:59:00`,
-                status: 'CONFIRMED',
-                origin: 'PHONE',
-                total_amount_ars: optAmount,
-                deposit_amount_ars: 0,
-                total_paid: 0,
-                balance_due: optAmount,
-                courts: court ? { name: court.name, sport: court.sport } : undefined,
-              }
-              setOptimisticBookings((prev) => [...prev, newOptimistic])
-            }
+            setIsQuickBookOpen(false)
+            setQuickBookSlot(null)
+            setOptimisticBookings([])
             fetchBookingsForDate(selectedDate)
             onRefresh?.()
             router.refresh()

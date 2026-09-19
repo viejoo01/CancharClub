@@ -265,11 +265,15 @@ export function BookingDetailsModal({
     ? createWhatsAppShareUrl(booking.customer_phone, reminderText)
     : null
 
+  const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
+  const hasPaidAny = (booking.total_paid || 0) > 0
+  const isFullyPaid = (booking.balance_due || 0) === 0 && (booking.total_amount_ars || 0) > 0
+
   const isTransfer = Boolean(
     booking.internal_notes?.toUpperCase().includes('TRANSFER') ||
-    booking.deposit_amount_ars > 0 ||
-    currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
-    currentStatus.toUpperCase() === 'PENDING'
+    booking.internal_notes?.toUpperCase().includes('BANCO') ||
+    booking.internal_notes?.toUpperCase().includes('ALIAS') ||
+    currentStatus.toUpperCase() === 'PENDING_DEPOSIT'
   )
   const isAlreadyVerified = Boolean(
     booking.internal_notes?.includes('Seña verificada y aprobada') ||
@@ -277,9 +281,10 @@ export function BookingDetailsModal({
   )
 
   const isPendingDeposit =
-    currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
-    currentStatus.toUpperCase() === 'PENDING' ||
-    (isTransfer && !isAlreadyVerified)
+    (currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
+      currentStatus.toUpperCase() === 'PENDING' ||
+      (isTransfer && !isAlreadyVerified)) &&
+    hasDepositAmount
 
   const getStatusBadge = (status: string) => {
     const s = String(status || '').toUpperCase()
@@ -290,17 +295,24 @@ export function BookingDetailsModal({
         </Badge>
       )
     }
-    if (s === 'CONFIRMED' || s === 'DEPOSIT_PAID') {
-      return (
-        <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
-          CONFIRMADO
-        </Badge>
-      )
-    }
-    if (s === 'CONFIRMED_CASH' || s === 'FULLY_PAID') {
+    if (isFullyPaid || s === 'CONFIRMED_CASH' || s === 'FULLY_PAID') {
       return (
         <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
           PAGADO TOTAL
+        </Badge>
+      )
+    }
+    if (s === 'CONFIRMED' || s === 'DEPOSIT_PAID') {
+      if (!hasDepositAmount && !hasPaidAny) {
+        return (
+          <Badge className="bg-blue-500/15 text-blue-300 border border-blue-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+            CONFIRMADO (SIN SEÑA)
+          </Badge>
+        )
+      }
+      return (
+        <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          CONFIRMADO
         </Badge>
       )
     }
@@ -434,7 +446,7 @@ export function BookingDetailsModal({
             </div>
           </div>
 
-          {/* Acción 1: Validación y Confirmación de Seña / Turno */}
+          {/* Acción 1: Estado de Seña / Cobro del Turno */}
           {isPendingDeposit ? (
             <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
@@ -443,7 +455,7 @@ export function BookingDetailsModal({
                   Seña Pendiente de Validación Bancaria
                 </span>
                 <span className="text-amber-400 font-mono font-bold text-sm">
-                  {formatARS(booking.deposit_amount_ars || 12500)}
+                  {formatARS(booking.deposit_amount_ars)}
                 </span>
               </div>
               <p className="text-xs text-slate-300">
@@ -459,20 +471,35 @@ export function BookingDetailsModal({
                 <span>Confirmar Seña Recibida / Aprobar Turno</span>
               </Button>
             </div>
-          ) : (
+          ) : isFullyPaid ? (
+            <div className="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/30 space-y-1">
+              <div className="flex items-center justify-between text-xs text-emerald-300">
+                <div className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Turno Pagado Totalmente ({formatARS(booking.total_paid || booking.total_amount_ars)})</span>
+                </div>
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
+                  SALDADO
+                </Badge>
+              </div>
+              <p className="text-[11px] text-slate-400 pl-6">
+                No hay saldo pendiente. El turno se encuentra completamente abonado.
+              </p>
+            </div>
+          ) : (hasDepositAmount || hasPaidAny) ? (
             <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/25 space-y-1.5">
               <div className="flex items-center justify-between text-xs text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Turno Confirmado — Seña Verificada ({formatARS(booking.deposit_amount_ars || booking.total_paid)})</span>
+                  <span>Turno Confirmado — Seña Verificada ({formatARS(booking.total_paid || booking.deposit_amount_ars)})</span>
                 </div>
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
-                  APROBADO
+                  SEÑA PAGADA
                 </Badge>
               </div>
               {isTransfer && (
                 <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[11px] text-slate-400">
-                  <span className="truncate max-w-[280px]">
+                  <span className="truncate max-w-70">
                     {booking.internal_notes?.includes('Seña verificada')
                       ? '✓ Verificación registrada en historial'
                       : 'Transferencia bancaria registrada'}
@@ -490,6 +517,21 @@ export function BookingDetailsModal({
                 </div>
               )}
             </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/60 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-300">
+                <div className="flex items-center gap-2 font-semibold text-slate-200">
+                  <DollarSign className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Turno Registrado Sin Seña Previa</span>
+                </div>
+                <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
+                  COBRO EN CANCHA
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-400">
+                No se registró pago de seña por adelantado. Cobrar el total de <strong className="text-slate-200">{formatARS(booking.total_amount_ars)}</strong> cuando los jugadores concurran al club.
+              </p>
+            </div>
           )}
 
           {/* Acción 2: Formulario de Cobro rápido si tiene saldo pendiente */}
@@ -501,10 +543,14 @@ export function BookingDetailsModal({
                     setShowPayForm(true)
                     setPayAmount(booking.balance_due.toString())
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 text-sm shadow-md shadow-emerald-950/30"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 text-sm shadow-md shadow-emerald-950/30 cursor-pointer"
                 >
                   <DollarSign className="w-4 h-4" />
-                  <span>Cobrar Saldo ({formatARS(booking.balance_due)})</span>
+                  <span>
+                    {hasPaidAny || hasDepositAmount
+                      ? `Cobrar Saldo (${formatARS(booking.balance_due)})`
+                      : `Cobrar Total en Mostrador (${formatARS(booking.balance_due)})`}
+                  </span>
                 </Button>
               ) : (
                 <form onSubmit={handleRegisterPayment} className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3">

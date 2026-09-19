@@ -110,6 +110,14 @@ export function QuickBookingModal({
   const [courtId, setCourtId] = useState(preselectedCourtId || courts[0]?.id || '')
   const [date, setDate] = useState(preselectedDate)
   const [time, setTime] = useState(preselectedTime)
+  const selectedCourt = courts.find((c) => c.id === (courtId || preselectedCourtId || courts[0]?.id))
+  const getCourtDefaultMins = (c?: { slot_duration?: string; sport?: string }) => {
+    if (c?.slot_duration === 'MIN_60') return 60
+    if (c?.slot_duration === 'MIN_120') return 120
+    if (c?.sport?.toUpperCase().includes('FUTBOL')) return 60
+    return 90
+  }
+  const [durationMinutes, setDurationMinutes] = useState<number>(() => getCourtDefaultMins(selectedCourt))
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [internalRules, setInternalRules] = useState<QuickBookingPriceRule[]>(priceRules || [])
@@ -128,6 +136,7 @@ export function QuickBookingModal({
   const [notes, setNotes] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [loading, setLoading] = useState(false)
+
 
   // Cargar reglas reales desde el backend si no fueron inyectadas por props
   useEffect(() => {
@@ -183,6 +192,7 @@ export function QuickBookingModal({
         customer_name: customerName,
         customer_phone: customerPhone || undefined,
         starts_at: startsAt,
+        duration_minutes: durationMinutes,
         origin: isRecurring ? 'ADMIN_MANUAL' : 'PHONE',
         total_amount_ars: total,
         deposit_amount_ars: deposit,
@@ -197,11 +207,12 @@ export function QuickBookingModal({
 
       // 2. Si se cobró seña o pago en el momento
       if (deposit > 0 && paymentMethod !== 'NONE' && res.booking_id) {
+        const isFull = deposit >= total && total > 0
         await registerCashPayment({
           booking_id: res.booking_id,
           amount_ars: deposit,
           payment_method: paymentMethod as 'CASH' | 'TRANSFER',
-          notes: 'Seña inicial en mostrador',
+          notes: isFull ? 'Pago total en mostrador' : 'Seña inicial en mostrador',
         })
       }
 
@@ -272,6 +283,10 @@ export function QuickBookingModal({
               onChange={(e) => {
                 const newCourt = e.target.value
                 setCourtId(newCourt)
+                const c = courts.find((court) => court.id === newCourt)
+                if (c) {
+                  setDurationMinutes(getCourtDefaultMins(c))
+                }
                 recalculatePrice(newCourt, date, time)
               }}
               className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -324,6 +339,32 @@ export function QuickBookingModal({
             </div>
           </div>
 
+          {/* Duración del Turno */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Duración del Turno</Label>
+              <span className="text-[11px] text-emerald-400 font-semibold">
+                {durationMinutes === 60 ? '1 hora (60 min)' : durationMinutes === 90 ? '1.5 horas (90 min)' : '2 horas (120 min)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[60, 90, 120].map((mins) => (
+                <button
+                  key={mins}
+                  type="button"
+                  onClick={() => setDurationMinutes(mins)}
+                  className={`h-10 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                    durationMinutes === mins
+                      ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300 shadow-sm'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                  }`}
+                >
+                  {mins === 60 ? '60 min (1h)' : mins === 90 ? '90 min (1.5h)' : '120 min (2h)'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Tarifas y Cobro */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -333,7 +374,7 @@ export function QuickBookingModal({
                 type="number"
                 value={totalAmount}
                 onChange={(e) => setTotalAmount(e.target.value)}
-                className="h-11"
+                className="h-11 font-mono font-bold"
                 required
               />
             </div>
@@ -344,17 +385,97 @@ export function QuickBookingModal({
                 type="number"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
-                className="h-11"
+                className="h-11 font-mono font-bold"
               />
+            </div>
+          </div>
+
+          {/* Presets rápidos de cobro */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-slate-400 mr-1">Opciones:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setDepositAmount('0')
+                  setPaymentMethod('NONE')
+                }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+                  Number(depositAmount) === 0
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                Sin seña (Paga en club)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const tot = Number(totalAmount) || 0
+                  setDepositAmount(String(tot))
+                  if (paymentMethod === 'NONE') setPaymentMethod('CASH')
+                }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+                  Number(depositAmount) > 0 && Number(depositAmount) === Number(totalAmount)
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                Pagó total ahora
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const tot = Number(totalAmount) || 0
+                  const half = Math.round(tot / 2)
+                  setDepositAmount(String(half))
+                  if (paymentMethod === 'NONE') setPaymentMethod('CASH')
+                }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+                  Number(depositAmount) > 0 &&
+                  Number(depositAmount) === Math.round(Number(totalAmount) / 2) &&
+                  Number(depositAmount) !== Number(totalAmount)
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                Seña 50%
+              </button>
+            </div>
+
+            {/* Cuadro de resumen explicativo */}
+            <div className="p-2.5 rounded-lg text-xs bg-slate-950/70 border border-slate-800">
+              {Number(depositAmount) === 0 ? (
+                <span className="text-amber-400 flex items-center gap-1.5">
+                  <span>⚠️</span>
+                  <span>
+                    El turno se registrará <strong>sin seña previa</strong>. Cobrar el 100% ({Number(totalAmount) > 0 ? `$ ${Number(totalAmount).toLocaleString('es-AR')}` : '$ 0'}) al jugar.
+                  </span>
+                </span>
+              ) : Number(depositAmount) >= Number(totalAmount) && Number(totalAmount) > 0 ? (
+                <span className="text-emerald-400 flex items-center gap-1.5">
+                  <span>✅</span>
+                  <span>
+                    El turno quedará registrado como <strong>PAGADO TOTAL</strong> ($ {Number(totalAmount).toLocaleString('es-AR')}).
+                  </span>
+                </span>
+              ) : (
+                <span className="text-emerald-300 flex items-center gap-1.5">
+                  <span>ℹ️</span>
+                  <span>
+                    Seña cobrada: <strong>$ {Number(depositAmount).toLocaleString('es-AR')}</strong>. Restará cobrar: <strong>$ {Math.max(0, Number(totalAmount) - Number(depositAmount)).toLocaleString('es-AR')}</strong> en cancha.
+                  </span>
+                </span>
+              )}
             </div>
           </div>
 
           {Number(depositAmount) > 0 && (
             <div className="space-y-1.5">
-              <Label htmlFor="paymentMethod">Medio de Pago de la Seña</Label>
+              <Label htmlFor="paymentMethod">Medio de Pago de la Seña / Total</Label>
               <select
                 id="paymentMethod"
-                value={paymentMethod}
+                value={paymentMethod === 'NONE' ? 'CASH' : paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as 'CASH' | 'TRANSFER')}
                 className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >

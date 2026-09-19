@@ -101,6 +101,14 @@ export default function EquipoPage() {
   }
 
   const handleRoleToggle = async (member: StaffMember) => {
+    if (member.role === 'TENANT_ADMIN') {
+      const adminCount = staff.filter((m) => m.role === 'TENANT_ADMIN').length
+      if (adminCount <= 1) {
+        toast.error('El club debe conservar al menos un Administrador principal activo.')
+        return
+      }
+    }
+
     const newRole: StaffRole = member.role === 'TENANT_ADMIN' ? 'TENANT_STAFF' : 'TENANT_ADMIN'
     try {
       const res = await updateStaffRole(member.id, newRole)
@@ -118,6 +126,14 @@ export default function EquipoPage() {
   }
 
   const handleRemove = async (member: StaffMember) => {
+    if (member.role === 'TENANT_ADMIN') {
+      const adminCount = staff.filter((m) => m.role === 'TENANT_ADMIN').length
+      if (adminCount <= 1) {
+        toast.error('No podés revocar el acceso al único Administrador del club.')
+        return
+      }
+    }
+
     if (!confirm(`¿Estás seguro de que querés revocar el acceso a ${member.full_name}?`)) {
       return
     }

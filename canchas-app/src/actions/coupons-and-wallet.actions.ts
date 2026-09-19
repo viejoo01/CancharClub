@@ -13,43 +13,14 @@ export interface PlayerWallet {
   }[]
 }
 
-// Simulación de billeteras de jugadores (sincronizada en memoria / base de datos)
-const MOCK_WALLETS: Record<string, PlayerWallet> = {
-  '3814123456': {
-    phone: '3814123456',
-    balanceArs: 4500,
-    lastUpdated: '2026-09-12',
-    history: [
-      {
-        id: 'tx-1',
-        date: '2026-09-12',
-        concept: 'Crédito automático por lluvia (Tormenta Tucumán)',
-        amountArs: 4500,
-        type: 'CREDIT'
-      }
-    ]
-  },
-  '3815998877': {
-    phone: '3815998877',
-    balanceArs: 7000,
-    lastUpdated: '2026-09-10',
-    history: [
-      {
-        id: 'tx-2',
-        date: '2026-09-10',
-        concept: 'Cancelación con 24hs de anticipación',
-        amountArs: 7000,
-        type: 'CREDIT'
-      }
-    ]
-  }
-}
+// Registro dinámico de saldo a favor de jugadores (generado por cancelaciones reales o recargas)
+const ACTIVE_WALLETS: Record<string, PlayerWallet> = {}
 
 
 
 export async function getPlayerWalletBalance(rawPhone: string): Promise<PlayerWallet> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')
-  const wallet = MOCK_WALLETS[cleanPhone]
+  const wallet = ACTIVE_WALLETS[cleanPhone]
   if (wallet) {
     return wallet
   }
@@ -67,7 +38,7 @@ export async function applyWalletCreditAction(
   amountToUse: number
 ): Promise<{ success: boolean; appliedAmount: number; remainingBalance: number; error?: string }> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')
-  const wallet = MOCK_WALLETS[cleanPhone]
+  const wallet = ACTIVE_WALLETS[cleanPhone]
 
   if (!wallet || wallet.balanceArs <= 0) {
     return { success: false, appliedAmount: 0, remainingBalance: 0, error: 'No disponés de saldo a favor' }

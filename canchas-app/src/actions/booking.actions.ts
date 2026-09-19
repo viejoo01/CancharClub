@@ -278,12 +278,12 @@ export async function initiateOnlineCheckout(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
 
     const bankDetails = {
-      bank_name: tenant?.bank_name || 'Mercado Pago / Banco Galicia',
-      account_holder: tenant?.bank_account_holder || tenant?.name || 'Club Pádel Central SRL',
-      cbu: tenant?.bank_cbu || '0000003100098765432101',
-      alias: tenant?.bank_alias || 'padelcentral.mp',
+      bank_name: tenant?.bank_name || 'Mercado Pago / Transferencia Bancaria',
+      account_holder: tenant?.bank_account_holder || tenant?.name || 'Club Deportivo',
+      cbu: tenant?.bank_cbu || '',
+      alias: tenant?.bank_alias || '',
       cuit: tenant?.bank_cuit || '',
-      whatsapp_phone: tenant?.phone_whatsapp || '5493814123456',
+      whatsapp_phone: tenant?.phone_whatsapp || '',
     }
 
     // SI EL JUGADOR SELECCIONÓ MERCADO PAGO:

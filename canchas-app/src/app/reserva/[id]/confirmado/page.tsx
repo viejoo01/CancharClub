@@ -26,16 +26,16 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
   const searchParams = useSearchParams()
 
   const clubName = searchParams.get('club') || 'Club Deportivo'
-  const courtName = searchParams.get('court') || 'Cancha 1 (Panorámica)'
+  const courtName = searchParams.get('court') || 'Cancha'
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
   const time = searchParams.get('time') || '19:00'
   const customerName = searchParams.get('name') || 'Jugador'
   const total = Number(searchParams.get('total')) || 14000
   const deposit = Number(searchParams.get('deposit')) || 7000
-  const clubSlug = searchParams.get('slug') || 'padel-central'
-  const phoneClub = searchParams.get('phoneClub') || '5493814123456'
+  const clubSlug = searchParams.get('slug') || ''
+  const phoneClub = searchParams.get('phoneClub') || ''
   const method = searchParams.get('method') || 'TRANSFER'
-  const alias = searchParams.get('alias') || 'padelcentral.mp'
+  const alias = searchParams.get('alias') || ''
 
   const [copiedAlias, setCopiedAlias] = useState(false)
   const shortCode = bookingId.slice(-6).toUpperCase()

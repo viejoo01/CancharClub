@@ -17,7 +17,7 @@ export function Navbar() {
         {/* Enlaces de Navegación */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
           <Link
-            href="/club/padel-central"
+            href="/club/elite-1244"
             className="hover:text-emerald-400 transition-colors flex items-center gap-1.5"
           >
             <span>Portal de Reservas</span>

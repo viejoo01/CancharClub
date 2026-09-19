@@ -263,7 +263,7 @@ export default function CobrosConfigPage() {
                   id="accountHolder"
                   value={accountHolder}
                   onChange={(e) => setAccountHolder(e.target.value)}
-                  placeholder="Ej. Club Pádel Central SRL"
+                  placeholder="Ej. Club Deportivo SRL"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs focus:border-emerald-500 text-white"
                   required
                 />
@@ -278,7 +278,7 @@ export default function CobrosConfigPage() {
                   id="alias"
                   value={alias}
                   onChange={(e) => setAlias(e.target.value)}
-                  placeholder="Ej. padelcentral.mp"
+                  placeholder="Ej. miclub.mp"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono font-bold text-emerald-400 focus:border-emerald-500"
                   required
                 />

@@ -32,7 +32,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
     onClose,
     court,
     tableName = '',
-    clubSlug = 'padel-central'
+    clubSlug = ''
   } = props
   const [copied, setCopied] = useState(false)
   const [selectedTable, setSelectedTable] = useState(tableName || '')
@@ -41,12 +41,13 @@ export function CourtQrModal(props: CourtQrModalProps) {
 
   if (!isOpen) return null
 
+  const effectiveSlug = clubSlug || 'club'
   const isCourtMode = Boolean(court)
   const origin = typeof window !== 'undefined' ? window.location.origin : siteConfig.url
   const tableParam = selectedTable.trim() ? `&mesa=${encodeURIComponent(selectedTable.trim())}` : ''
   const orderUrl = isCourtMode
-    ? `${origin}/club/${clubSlug}/pedido?cancha=${encodeURIComponent(court?.name || '')}`
-    : `${origin}/club/${clubSlug}/pedido?origen=mesa${tableParam}`
+    ? `${origin}/club/${effectiveSlug}/pedido?cancha=${encodeURIComponent(court?.name || '')}`
+    : `${origin}/club/${effectiveSlug}/pedido?origen=mesa${tableParam}`
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(orderUrl)}&bgcolor=ffffff&color=020617&qzone=2`
 

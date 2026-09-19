@@ -83,7 +83,8 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
   const total = calculatedPricing.total
   const deposit = calculatedPricing.deposit
-  const sport = (searchParams.get('sport') || 'PADEL') as SportType
+  const courtObj = club.courts?.find((c) => c.id === courtId || c.name === courtName)
+  const sport = ((searchParams.get('sport') as SportType) || (courtObj?.sport as SportType) || (club.sports?.[0] as SportType) || 'FUTBOL') as SportType
 
   const paramTenant = searchParams.get('tenantId')
   const [resolvedTenantId, setResolvedTenantId] = useState<string>(
@@ -325,8 +326,8 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
             internal_notes: `Reserva Online 24hs - Seña confirmada: $${payableDeposit}`,
             courts: {
               name: courtName,
-              sport: 'PADEL',
-              slot_duration: 'MIN_90',
+              sport: (sport as string) || (courtObj?.sport as string) || 'FUTBOL',
+              slot_duration: courtObj?.slotDurationMinutes ? `MIN_${courtObj.slotDurationMinutes}` : 'MIN_60',
             },
           },
         })

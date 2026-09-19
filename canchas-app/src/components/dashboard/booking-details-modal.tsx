@@ -31,6 +31,8 @@ import {
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
 import { siteConfig } from '@/config/site'
+import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
 
 interface BookingDetailsModalProps {
   isOpen: boolean
@@ -59,6 +61,24 @@ export function BookingDetailsModal({
   booking,
   onSuccess,
 }: BookingDetailsModalProps) {
+  const tenantId = useTenantId()
+  const [clubName, setClubName] = useState('Club')
+  const [clubSlug, setClubSlug] = useState('')
+
+  useEffect(() => {
+    if (!tenantId) return
+    const supabase = createClient()
+    supabase
+      .from('tenants')
+      .select('name, slug')
+      .eq('id', tenantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.name) setClubName(data.name)
+        if (data?.slug) setClubSlug(data.slug)
+      })
+  }, [tenantId])
+
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER'>('CASH')
   const [loadingPay, setLoadingPay] = useState(false)
@@ -195,11 +215,11 @@ export function BookingDetailsModal({
   // Recordatorio 3h antes (Mejora 1B)
   const reminderText = getPlayerMatchReminderText({
     playerName: booking.customer_name,
-    clubName: 'Club Pádel Central',
+    clubName: clubName || 'Club',
     courtName: courtDisplayName,
     time: booking.starts_at ? `${formatTime(booking.starts_at)} hs` : 'el horario acordado',
     hoursBefore: 3,
-    link: `${siteConfig.url}/club/padel-central`,
+    link: clubSlug ? `${siteConfig.url}/club/${clubSlug}` : `${siteConfig.url}`,
   })
   const reminderWaUrl = booking.customer_phone
     ? createWhatsAppShareUrl(booking.customer_phone, reminderText)

@@ -699,7 +699,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
       initPoint: null,
       isSimulated: true,
       monthlyAmount,
-      tenantName: tenant?.name || 'Club Pádel Central Tucumán',
+      tenantName: tenant?.name || 'Club Deportivo',
       message: `Débito automático activado para ${tenant?.name || 'el club'} por ${monthlyAmount} ARS/mes.`
     }
   }
@@ -711,7 +711,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
     // El email del pagador debe ser un correo válido registrado en Mercado Pago MLA
     const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
       ? tenant.email
-      : 'padelcentraltucuman@gmail.com'
+      : (tenant?.name ? `${tenant.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@gmail.com` : 'pagos@cancharclub.com.ar')
 
     // Regla de Cobro: 30 días de prueba gratuita y cobro unificado del 1 al 7 de cada mes.
     // El primer cobro se ejecuta el día 1 del mes siguiente a cumplir los 30 días.
@@ -749,7 +749,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
       initPoint: null,
       isSimulated: true,
       monthlyAmount,
-      tenantName: tenant?.name || 'Club Pádel Central Tucumán',
+      tenantName: tenant?.name || 'Club Deportivo',
     }
   }
 }

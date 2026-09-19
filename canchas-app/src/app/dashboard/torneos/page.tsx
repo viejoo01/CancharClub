@@ -818,7 +818,7 @@ export default function TorneosDashboardPage() {
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-300">Nombre del Torneo</Label>
               <Input
-                placeholder="Ej. Torneo Apertura Pádel Central 2026"
+                placeholder="Ej. Torneo Apertura 2026"
                 value={newTourName}
                 onChange={(e) => setNewTourName(e.target.value)}
                 required

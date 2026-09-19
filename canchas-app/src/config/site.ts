@@ -44,7 +44,7 @@ export const siteConfig = {
     },
     {
       title: 'Portal de Reservas',
-      href: '/club/padel-central',
+      href: '/club/elite-1244',
     },
     {
       title: 'Panel Administrativo',

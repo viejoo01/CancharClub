@@ -2764,7 +2764,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Input 
                     type="email"
                     required
-                    placeholder="carlos@padelcentral.com"
+                    placeholder="carlos@miclub.com"
                     value={wizardOwnerEmail}
                     onChange={(e) => setWizardOwnerEmail(e.target.value)}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
@@ -2827,7 +2827,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Input 
                     type="email"
                     required
-                    placeholder="mostrador@padelcentral.com"
+                    placeholder="mostrador@miclub.com"
                     value={wizardStaffEmail}
                     onChange={(e) => setWizardStaffEmail(e.target.value)}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"

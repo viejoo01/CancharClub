@@ -1,20 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
 import { 
   BarChart3, 
   TrendingUp, 
   Flame, 
-  Calendar, 
   Coffee, 
   DollarSign, 
-  Users, 
   ShieldCheck, 
   Layers, 
   ArrowUpRight,
   Info
 } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 
@@ -39,6 +39,8 @@ const OCCUPANCY_HEATMAP: number[][] = [
   [60, 75, 70, 65, 75, 85, 90, 85, 50],
 ]
 
+const COURT_COLORS = ['bg-emerald-500', 'bg-teal-500', 'bg-sky-500', 'bg-indigo-500', 'bg-amber-500', 'bg-purple-500']
+
 export default function MetricasPage() {
   const [selectedCell, setSelectedCell] = useState<{ day: string; hour: string; pct: number } | null>({
     day: 'Jueves',
@@ -54,12 +56,44 @@ export default function MetricasPage() {
     return 'bg-slate-900/80 text-slate-500'
   }
 
-  const courtBreakdown = [
-    { name: 'Cancha 2 (Techada)', sport: 'Pádel', occupancy: 94, revenue: 1280000, color: 'bg-emerald-500' },
-    { name: 'Cancha 1 (Panorámica)', sport: 'Pádel', occupancy: 88, revenue: 1150000, color: 'bg-teal-500' },
-    { name: 'Fútbol 5 (Sintético)', sport: 'Fútbol 5', occupancy: 75, revenue: 912000, color: 'bg-sky-500' },
-    { name: 'Cancha 3 (Blindex)', sport: 'Pádel', occupancy: 72, revenue: 810000, color: 'bg-indigo-500' },
-  ]
+  const tenantId = useTenantId()
+  const [courts, setCourts] = useState<Array<{ id: string; name: string; sport: string }>>([])
+
+  useEffect(() => {
+    if (!tenantId) return
+    const supabase = createClient()
+    supabase
+      .from('courts')
+      .select('id, name, sport')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setCourts(data)
+        }
+      })
+  }, [tenantId])
+
+  const courtBreakdown = useMemo(() => {
+    if (courts.length === 0) {
+      return [
+        { name: 'Cancha 1', sport: 'Fútbol', occupancy: 88, revenue: 1150000, color: 'bg-emerald-500' }
+      ]
+    }
+    return courts.map((c, i) => {
+      const baseOccupancy = [92, 85, 78, 70, 88][i % 5]
+      const baseRev = [1280000, 1150000, 912000, 810000, 980000][i % 5]
+      const sportLabel = c.sport?.startsWith('FUTBOL') ? 'Fútbol' : c.sport === 'PADEL' ? 'Pádel' : c.sport === 'TENIS' ? 'Tenis' : (c.sport || 'Fútbol')
+      return {
+        name: c.name,
+        sport: sportLabel,
+        occupancy: baseOccupancy,
+        revenue: baseRev,
+        color: COURT_COLORS[i % COURT_COLORS.length]
+      }
+    })
+  }, [courts])
 
   const totalCourtsRevenue = courtBreakdown.reduce((acc, c) => acc + c.revenue, 0)
   const cantinaRevenue = 912000
@@ -293,7 +327,7 @@ export default function MetricasPage() {
                   22%
                 </div>
                 <div>
-                  <div className="font-bold text-xs text-white">Cantina, Bebidas y Paletas</div>
+                  <div className="font-bold text-xs text-white">Cantina, Bebidas y Kiosco</div>
                   <div className="text-[11px] text-slate-400">Ventas en mostrador y pedidos QR</div>
                 </div>
               </div>

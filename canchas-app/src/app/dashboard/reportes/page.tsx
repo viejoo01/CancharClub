@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { 
@@ -22,6 +22,7 @@ import { getOccupancyReport, type OccupancyReportData, type PricingRecommendatio
 import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { createClient } from '@/lib/supabase/client'
 
 // tenant isolation: useTenantId hook
 
@@ -40,6 +41,22 @@ export default function ReportesPage() {
   const tenantId = useTenantId()
   const [data, setData] = useState<OccupancyReportData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [clubName, setClubName] = useState('Mi Club')
+  const [clubSlug, setClubSlug] = useState('')
+
+  useEffect(() => {
+    if (!tenantId) return
+    const supabase = createClient()
+    supabase
+      .from('tenants')
+      .select('name, slug')
+      .eq('id', tenantId)
+      .maybeSingle()
+      .then(({ data: t }) => {
+        if (t?.name) setClubName(t.name)
+        if (t?.slug) setClubSlug(t.slug)
+      })
+  }, [tenantId])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -104,7 +121,7 @@ export default function ReportesPage() {
     })
     printCleanPdfReport({
       title: 'Reporte de Ocupación y Demanda',
-      subtitle: 'Club Pádel Central - Mapa de Ocupación Semanal',
+      subtitle: `${clubName} - Mapa de Ocupación Semanal`,
       headers,
       rows,
       summaryKpis: [
@@ -123,12 +140,12 @@ export default function ReportesPage() {
   }
 
   const handleSharePromoWhatsApp = (rec: PricingRecommendation) => {
-    const text = `🔥 *${rec.suggestedPromoTitle}* en Club Pádel Central!\n\n` +
+    const text = `🔥 *${rec.suggestedPromoTitle}* en ${clubName}!\n\n` +
       `📅 Válido: ${rec.days}\n` +
       `⏰ Horario: ${rec.slotLabel}\n` +
       `💵 *Tarifa Promocional: ${formatARS(rec.suggestedPriceArs)}* (Antes ${formatARS(rec.standardPriceArs)})\n\n` +
       `¡Reservá tu cancha ahora antes de que se agoten los turnos!\n` +
-      `👉 ${window.location.origin}/club/central-tucuman`
+      `👉 ${window.location.origin}/club/${clubSlug || 'reservas'}`
 
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }

@@ -336,6 +336,8 @@ export default function CantinaPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
   const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
+  const [courts, setCourts] = useState<Array<{ id: string; name: string; sport: string }>>([])
+  const [clubSlug, setClubSlug] = useState<string>('')
 
   // Estados para Impresión Térmica
   const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
@@ -414,6 +416,26 @@ export default function CantinaPage() {
     const initTimer = setTimeout(() => {
       loadOrders(true)
       loadProducts()
+      if (tenantId) {
+        const supabase = createClient()
+        supabase
+          .from('courts')
+          .select('id, name, sport')
+          .eq('tenant_id', tenantId)
+          .eq('is_active', true)
+          .order('display_order', { ascending: true })
+          .then(({ data }) => {
+            if (data) setCourts(data)
+          })
+        supabase
+          .from('tenants')
+          .select('slug')
+          .eq('id', tenantId)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data?.slug) setClubSlug(data.slug)
+          })
+      }
     }, 0)
 
     // Listener BroadcastChannel para sincronización instantánea entre pestañas / pantallas
@@ -501,7 +523,7 @@ export default function CantinaPage() {
         createClient().removeChannel(supabaseChannel)
       }
     }
-  }, [loadOrders, loadOrderIntoCart, loadProducts])
+  }, [loadOrders, loadOrderIntoCart, loadProducts, tenantId])
 
   // Datos para Alerta Predictiva de Stock memoizados (calculado sobre productos reales con bajo stock)
   const weekendPredictions = useMemo(() => {
@@ -613,7 +635,7 @@ export default function CantinaPage() {
         }))
         const res = await createCourtOrder({
           tenant_id: tenantId!,
-          court_name: assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Venta Mostrador',
+          court_name: assignToCourt !== 'NONE' ? assignToCourt : 'Venta Mostrador',
           customer_name: 'Cliente Mostrador',
           items,
           total_ars: effectiveTotal,
@@ -629,7 +651,7 @@ export default function CantinaPage() {
             court_id: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            court_name: assignToCourt !== 'NONE' ? `Cancha ${assignToCourt}` : 'Venta Mostrador',
+            court_name: assignToCourt !== 'NONE' ? assignToCourt : 'Venta Mostrador',
             customer_name: 'Cliente Mostrador',
             items,
             total_ars: effectiveTotal,
@@ -1456,10 +1478,9 @@ export default function CantinaPage() {
                         className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                       >
                         <option value="NONE">Venta Inmediata de Mostrador</option>
-                        <option value="1">Cancha 1 (Panorámica)</option>
-                        <option value="2">Cancha 2 (Techada)</option>
-                        <option value="3">Cancha 3 (Blindex)</option>
-                        <option value="4">Fútbol 5 (Sintético)</option>
+                        {courts.map((court) => (
+                          <option key={court.id} value={court.name}>{court.name}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -1609,7 +1630,7 @@ export default function CantinaPage() {
         isOpen={isTableQrOpen}
         onClose={() => setIsTableQrOpen(false)}
         tableName=""
-        clubSlug="padel-central"
+        clubSlug={clubSlug || 'club'}
       />
 
       {/* Modal: Cargar Stock / Ingreso de Mercadería */}

@@ -262,7 +262,7 @@ export async function generatePlayoffBracket(
         team_b_id: null,
         status: 'SCHEDULED',
         scheduled_time: 'Sábado 18:00',
-        court_name: 'Cancha Panorámica',
+        court_name: 'Cancha 1',
       },
       {
         category_id: categoryId,
@@ -272,7 +272,7 @@ export async function generatePlayoffBracket(
         team_b_id: null,
         status: 'SCHEDULED',
         scheduled_time: 'Sábado 19:30',
-        court_name: 'Cancha Panorámica',
+        court_name: 'Cancha 2',
       },
     ]
 

@@ -28,7 +28,7 @@ export default async function DashboardLayout({
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
   const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
 
-  let tenantId: string | null = cookieTenantId || null
+  let tenantId: string | null = null
   let tenantName = cookieTenantName || 'Mi Club Deportivo'
   let tenantSlug = cookieTenantSlug || 'mi-club'
   let userRole = cookieRole || 'TENANT_ADMIN'
@@ -36,6 +36,22 @@ export default async function DashboardLayout({
   let mpConnected = true
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || headerStatus || 'ACTIVE'
   let planId: SaaSPlanId | undefined = cookiePlanId || undefined
+
+  const serviceClient = await createServiceClient()
+
+  // Validar si el cookieTenantId existe efectivamente en la base de datos
+  if (cookieTenantId) {
+    const { data: checkT } = await serviceClient
+      .from('tenants')
+      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+      .eq('id', cookieTenantId)
+      .maybeSingle()
+    if (checkT) {
+      tenantId = checkT.id
+      tenantName = checkT.name || tenantName
+      tenantSlug = checkT.slug || tenantSlug
+    }
+  }
 
   const cookieIsActive = cookieStore.get('demo_is_active')?.value
   let isActive = cookieIsActive === 'false' ? false : true
@@ -83,14 +99,15 @@ export default async function DashboardLayout({
   // Si aún no tenemos tenantId, buscar por slug
   if (!tenantId && tenantSlug && tenantSlug !== 'mi-club') {
     try {
-      const serviceClient = await createServiceClient()
       const { data: tData } = await serviceClient
         .from('tenants')
-        .select('id')
+        .select('id, name, slug')
         .eq('slug', tenantSlug)
         .maybeSingle()
       if (tData?.id) {
         tenantId = tData.id
+        tenantName = tData.name || tenantName
+        tenantSlug = tData.slug || tenantSlug
       }
     } catch {}
   }
@@ -98,7 +115,6 @@ export default async function DashboardLayout({
   // Si todavía no tenemos tenantId, resolver el club activo desde la base de datos
   if (!tenantId) {
     try {
-      const serviceClient = await createServiceClient()
       const { data: defaultTenant } = await serviceClient
         .from('tenants')
         .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')

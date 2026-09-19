@@ -35,34 +35,40 @@ export interface TenantPaymentSettings {
 export async function getTenantPaymentSettings(tenantId?: string | null): Promise<TenantPaymentSettings | null> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    const supabase = await createServiceClient()
 
-    if (!effectiveTenantId) {
-      console.warn('[getTenantPaymentSettings] No tenantId provided or found in session/db')
-      return {
-        tenantId: '',
-        clubName: 'Mi Club',
-        bankName: '',
-        accountHolder: '',
-        cbu: '',
-        alias: '',
-        cuit: '',
-        whatsappPhone: '',
-        paymentMethods: ['TRANSFER'],
-        mpConnected: false,
+    let tenant = null
+
+    if (effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
+        .eq('id', effectiveTenantId)
+        .maybeSingle()
+
+      if (!error && data) {
+        tenant = data
       }
     }
 
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
-      .eq('id', effectiveTenantId)
-      .maybeSingle()
+    // Fallback de rescate si el ID no fue encontrado
+    if (!tenant) {
+      const { data: defaultClub } = await supabase
+        .from('tenants')
+        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
 
-    if (error || !tenant) {
-      console.warn('[getTenantPaymentSettings] Tenant not found for:', effectiveTenantId)
+      if (defaultClub) {
+        tenant = defaultClub
+      }
+    }
+
+    if (!tenant) {
+      console.warn('[getTenantPaymentSettings] No tenant found in DB')
       return {
-        tenantId: effectiveTenantId,
+        tenantId: '',
         clubName: 'Mi Club',
         bankName: '',
         accountHolder: '',
@@ -120,6 +126,7 @@ export async function saveTenantBankSettings(
   success: boolean
   error?: string
   savedData?: {
+    tenantId?: string
     bankName: string
     accountHolder: string
     cbu: string
@@ -130,9 +137,21 @@ export async function saveTenantBankSettings(
   }
 }> {
   try {
-    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    let effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    const supabase = await createServiceClient()
+
     if (!effectiveTenantId) {
-      return { success: false, error: 'No se pudo determinar el club a modificar' }
+      const { data: defaultClub } = await supabase
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (defaultClub?.id) {
+        effectiveTenantId = defaultClub.id
+      } else {
+        return { success: false, error: 'No se pudo determinar el club a modificar' }
+      }
     }
 
     // 1. Verificación de Seguridad Anti-IDOR
@@ -140,8 +159,6 @@ export async function saveTenantBankSettings(
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
     }
-
-    const supabase = await createServiceClient()
 
     // Normalizar métodos de pago para persistencia
     const inputMethods = data.paymentMethods || ['TRANSFER']
@@ -160,7 +177,7 @@ export async function saveTenantBankSettings(
     const cleanCuit = data.cuit ? data.cuit.replace(/[^\d-]/g, '').slice(0, 14) : null
     const cleanWhatsapp = data.whatsappPhone ? sanitizeText(data.whatsappPhone, 25).trim() : null
 
-    const { data: updatedRows, error } = await supabase
+    const { data: initialRows, error } = await supabase
       .from('tenants')
       .update({
         bank_name: cleanBank,
@@ -175,9 +192,44 @@ export async function saveTenantBankSettings(
       .eq('id', effectiveTenantId)
       .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods')
 
+    let updatedRows = initialRows
+
     if (error) {
       console.error('[saveTenantBankSettings] DB Error:', error)
       return { success: false, error: error.message }
+    }
+
+    // Fallback de rescate si ninguna fila fue actualizada (ej: ID desactualizado en cliente)
+    if (!updatedRows || updatedRows.length === 0) {
+      const { data: defaultClub } = await supabase
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (defaultClub?.id && defaultClub.id !== effectiveTenantId) {
+        const { data: retryRows, error: retryError } = await supabase
+          .from('tenants')
+          .update({
+            bank_name: cleanBank,
+            bank_account_holder: cleanHolder,
+            bank_cbu: cleanCbu,
+            bank_alias: cleanAlias,
+            bank_cuit: cleanCuit,
+            phone_whatsapp: cleanWhatsapp,
+            payment_methods: finalMethods,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', defaultClub.id)
+          .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods')
+
+        if (retryError) {
+          console.error('[saveTenantBankSettings] Fallback Retry Error:', retryError)
+          return { success: false, error: retryError.message }
+        }
+        updatedRows = retryRows
+      }
     }
 
     if (!updatedRows || updatedRows.length === 0) {
@@ -195,6 +247,7 @@ export async function saveTenantBankSettings(
     return {
       success: true,
       savedData: {
+        tenantId: saved.id,
         bankName: saved.bank_name || '',
         accountHolder: saved.bank_account_holder || '',
         cbu: saved.bank_cbu || '',

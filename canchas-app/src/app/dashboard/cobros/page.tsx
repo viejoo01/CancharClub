@@ -24,6 +24,7 @@ import {
   disconnectTenantMpAccount 
 } from '@/actions/tenant-payment-settings.actions'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
 
 export default function CobrosConfigPage() {
   const tenantId = useTenantId()
@@ -62,6 +63,9 @@ export default function CobrosConfigPage() {
       try {
         const settings = await getTenantPaymentSettings(tenantId || undefined)
         if (settings && isMounted) {
+          if (settings.tenantId) {
+            setGlobalCachedTenantId(settings.tenantId)
+          }
           const hasDbData = Boolean(settings.accountHolder && (settings.alias || settings.cbu))
           setIsSavedInDb(hasDbData)
 
@@ -165,6 +169,9 @@ export default function CobrosConfigPage() {
         setHasUnsavedChanges(false)
         setIsSavedInDb(true)
         if (res.savedData) {
+          if (res.savedData.tenantId) {
+            setGlobalCachedTenantId(res.savedData.tenantId)
+          }
           setBankName(res.savedData.bankName ?? bankName)
           setAccountHolder(res.savedData.accountHolder ?? accountHolder)
           setCbu(res.savedData.cbu ?? cbu)

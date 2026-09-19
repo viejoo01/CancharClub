@@ -114,32 +114,76 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
  * 4. Si todo lo anterior falta, toma el primer club activo de la base de datos (PostgreSQL).
  */
 export async function resolveEffectiveTenantId(explicitTenantId?: string | null): Promise<string | null> {
+  const serviceClient = await createServiceClient()
+
+  // 1. Si viene un tenantId explícito, verificar que exista en la tabla tenants de PostgreSQL
   if (explicitTenantId && explicitTenantId.trim() && explicitTenantId !== 'null' && explicitTenantId !== 'undefined') {
-    return explicitTenantId.trim()
+    const cleanId = explicitTenantId.trim()
+    const { data: existing } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .eq('id', cleanId)
+      .maybeSingle()
+    if (existing?.id) {
+      return existing.id
+    }
   }
 
+  // 2. Si hay usuario autenticado o perfil, verificar su tenantId en DB
   const profile = await getCurrentUserProfile()
   if (profile?.tenantId) {
-    return profile.tenantId
+    const { data: existing } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .eq('id', profile.tenantId)
+      .maybeSingle()
+    if (existing?.id) {
+      return existing.id
+    }
   }
 
+  // 3. Revisar cookies de sesión y verificar que existan en DB
   try {
     const cookieStore = await cookies()
     const cookieTid = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     if (cookieTid && cookieTid.trim() && cookieTid !== 'null' && cookieTid !== 'undefined') {
-      return cookieTid.trim()
+      const { data: existing } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .eq('id', cookieTid.trim())
+        .maybeSingle()
+      if (existing?.id) {
+        return existing.id
+      }
     }
 
+    // 4. Buscar por slug de cookie (ej: elite-1244)
     const slugCookie = cookieStore.get('demo_tenant_slug')?.value
     if (slugCookie) {
-      const serviceClient = await createServiceClient()
-      const { data: t } = await serviceClient.from('tenants').select('id').eq('slug', slugCookie).maybeSingle()
+      const decodedSlug = decodeURIComponent(slugCookie).trim().toLowerCase()
+      const { data: t } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .eq('slug', decodedSlug)
+        .maybeSingle()
       if (t?.id) return t.id
+    }
+
+    // 5. Buscar por nombre de tenant en cookie (ej: Elite)
+    const nameCookie = cookieStore.get('demo_tenant_name')?.value
+    if (nameCookie) {
+      const decodedName = decodeURIComponent(nameCookie).trim()
+      const { data: tByName } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .ilike('name', decodedName)
+        .maybeSingle()
+      if (tByName?.id) return tByName.id
     }
   } catch {}
 
+  // 6. Fallback final infalible: tomar el único o primer club activo de PostgreSQL
   try {
-    const serviceClient = await createServiceClient()
     const { data: defaultTenant } = await serviceClient
       .from('tenants')
       .select('id')

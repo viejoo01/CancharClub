@@ -50,12 +50,12 @@ export function TenantProvider({
   value: string | null
   children: React.ReactNode
 }) {
-  if (value && !globalCachedTenantId) {
+  if (value && globalCachedTenantId !== value) {
     setGlobalCachedTenantId(value)
   }
 
   useEffect(() => {
-    if (value) {
+    if (value && globalCachedTenantId !== value) {
       setGlobalCachedTenantId(value)
     }
   }, [value])

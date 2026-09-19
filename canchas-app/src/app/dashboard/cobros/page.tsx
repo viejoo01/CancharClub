@@ -522,15 +522,6 @@ export default function CobrosConfigPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 space-y-1">
-                <p className="font-semibold text-white">
-                  ¿Querés recibir cobros con tarjeta de crédito, débito o dinero en cuenta?
-                </p>
-                <p className="text-slate-400 text-[11px]">
-                  Podés vincular tus credenciales de Mercado Pago para que las señas pagadas con tarjeta se acrediten en tu cuenta sin pasar por CancharClub.
-                </p>
-              </div>
-
               {!showMpForm ? (
                 <Button
                   type="button"

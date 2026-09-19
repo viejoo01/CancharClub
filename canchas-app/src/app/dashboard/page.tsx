@@ -1,18 +1,23 @@
 import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
+import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { getArgentinaTodayIso } from '@/lib/utils'
 import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: {
+  searchParams?: Promise<{ date?: string }>
+}) {
   const supabase = await createClient()
-  const today = new Date().toISOString().split('T')[0]
+  const searchParams = props.searchParams ? await props.searchParams : undefined
+  const today = searchParams?.date || getArgentinaTodayIso()
 
   const cookieStore = await cookies()
   const activeVenueId = cookieStore.get('canchar_active_venue_id')?.value || 'venue-main'
 
-  // Obtener tenant_id del usuario activo (null si no tiene tenant)
+  // Obtener tenant_id del usuario activo con resolución completa
   const { data: { user } } = await supabase.auth.getUser()
   let tenantId: string | null = null
 
@@ -26,6 +31,8 @@ export default async function DashboardPage() {
       tenantId = profile.tenant_id
     }
   }
+
+  tenantId = await resolveEffectiveTenantId(tenantId)
 
   // Cargar canchas reales de la base de datos
   interface DbCourtRow {

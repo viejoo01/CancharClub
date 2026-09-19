@@ -25,6 +25,54 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { BookingStatus } from '@/types/database'
 import { getVenueCourts, type VenueItem } from '@/config/venues-data'
+import { getCalendarBookings } from '@/actions/club.actions'
+
+function getBookingLocalDate(startsAtIso?: string | null): string {
+  if (!startsAtIso) return ''
+  try {
+    let s = startsAtIso
+    if (s.includes(' ') && !s.includes('T')) s = s.replace(' ', 'T')
+    if (s.endsWith('+00')) s = s.replace('+00', 'Z')
+    if (!s.includes('Z') && !s.includes('+') && !s.slice(10).includes('-')) {
+      return s.split('T')[0]
+    }
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return s.split('T')[0]
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    return formatter.format(d)
+  } catch {
+    return startsAtIso.split('T')[0]
+  }
+}
+
+function formatTimeArgentina(iso?: string | null): string {
+  if (!iso) return ''
+  try {
+    let s = iso
+    if (s.includes(' ') && !s.includes('T')) s = s.replace(' ', 'T')
+    if (s.endsWith('+00')) s = s.replace('+00', 'Z')
+    if (!s.includes('Z') && !s.includes('+') && !s.slice(10).includes('-')) {
+      const parts = s.split('T')
+      if (parts[1]) return parts[1].substring(0, 5)
+    }
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return ''
+    const formatter = new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    return formatter.format(d)
+  } catch {
+    return formatTime(iso)
+  }
+}
 
 export interface CalendarBooking {
   id: string
@@ -205,13 +253,42 @@ export function CalendarGrid({
     return courts || []
   }, [overrideVenue, courts])
 
+  const [loadedBookings, setLoadedBookings] = useState<CalendarBooking[]>(initialBookings || [])
+
+  // Sincronizar si cambia initialBookings desde el servidor
+  useEffect(() => {
+    if (initialBookings) {
+      setLoadedBookings(initialBookings)
+    }
+  }, [initialBookings])
+
+  // Cargar turnos reales de la base de datos para la fecha seleccionada
+  const fetchBookingsForDate = useCallback(async (dateToFetch: string) => {
+    if (!tenantId) return
+    try {
+      const fresh = await getCalendarBookings(tenantId, dateToFetch)
+      if (Array.isArray(fresh)) {
+        setLoadedBookings(fresh as CalendarBooking[])
+      }
+    } catch (err) {
+      console.error('[CalendarGrid] Error fetching bookings:', err)
+    }
+  }, [tenantId])
+
+  // Cargar turnos al cambiar de fecha
+  useEffect(() => {
+    if (selectedDate) {
+      fetchBookingsForDate(selectedDate)
+    }
+  }, [selectedDate, fetchBookingsForDate])
+
   const activeBookings = useMemo(() => {
-    const base: CalendarBooking[] = initialBookings || []
+    const base: CalendarBooking[] = loadedBookings || []
 
     if (optimisticBookings.length === 0) return base
 
     const currentDayOptimistic = optimisticBookings.filter((b) => {
-      const bDate = b.starts_at?.includes('T') ? b.starts_at.split('T')[0] : b.starts_at?.split(' ')[0]
+      const bDate = getBookingLocalDate(b.starts_at)
       return bDate === selectedDate
     })
     if (currentDayOptimistic.length === 0) return base
@@ -220,7 +297,7 @@ export function CalendarGrid({
     base.forEach((b) => map.set(b.id, b))
     currentDayOptimistic.forEach((b) => map.set(b.id, b))
     return Array.from(map.values())
-  }, [initialBookings, selectedDate, optimisticBookings])
+  }, [loadedBookings, selectedDate, optimisticBookings])
 
   // Modales
   const [isQuickBookOpen, setIsQuickBookOpen] = useState(false)
@@ -235,11 +312,14 @@ export function CalendarGrid({
     try {
       bc = new BroadcastChannel('canchar_bookings')
       bc.onmessage = (event) => {
-        if (event.data?.type === 'BOOKING_CONFIRMED' && event.data?.booking) {
-          toast.success('¡Nuevo turno confirmado y señado!', {
-            description: `${event.data.booking.customer_name || 'Jugador'} en ${event.data.booking.courts?.name || 'Cancha'}`
-          })
-          setOptimisticBookings((prev) => [event.data.booking, ...prev])
+        if (event.data?.type === 'BOOKING_CONFIRMED') {
+          if (event.data?.booking) {
+            toast.success('¡Nuevo turno confirmado y señado!', {
+              description: `${event.data.booking.customer_name || 'Jugador'} en ${event.data.booking.courts?.name || 'Cancha'}`
+            })
+            setOptimisticBookings((prev) => [event.data.booking, ...prev])
+          }
+          fetchBookingsForDate(selectedDate)
           router.refresh()
           onRefresh?.()
         }
@@ -263,6 +343,7 @@ export function CalendarGrid({
           toast.info('Grilla sincronizada en tiempo real', {
             description: `Actualización automática de turnos (${payload.eventType}).`
           })
+          fetchBookingsForDate(selectedDate)
           router.refresh()
           onRefresh?.()
         }
@@ -273,7 +354,7 @@ export function CalendarGrid({
       supabase.removeChannel(channel)
       bc?.close()
     }
-  }, [tenantId, onRefresh, router])
+  }, [tenantId, selectedDate, fetchBookingsForDate, onRefresh, router])
 
   // Filtro de canchas
   const filteredCourts = useMemo(() => {
@@ -316,11 +397,11 @@ export function CalendarGrid({
     }>()
 
     activeBookings.forEach((b) => {
-      const bDate = b.starts_at.includes('T') ? b.starts_at.split('T')[0] : b.starts_at.split(' ')[0]
+      const bDate = getBookingLocalDate(b.starts_at)
       if (bDate !== selectedDate) return
 
-      const startTime = formatTime(b.starts_at)
-      let endTime = b.ends_at ? formatTime(b.ends_at) : ''
+      const startTime = formatTimeArgentina(b.starts_at)
+      let endTime = b.ends_at ? formatTimeArgentina(b.ends_at) : ''
 
       if (!endTime || endTime === startTime) {
         const courtDuration = Array.isArray(b.courts) ? b.courts[0]?.slot_duration : b.courts?.slot_duration
@@ -818,6 +899,7 @@ export function CalendarGrid({
               }
               setOptimisticBookings((prev) => [...prev, newOptimistic])
             }
+            fetchBookingsForDate(selectedDate)
             onRefresh?.()
             router.refresh()
           }}
@@ -830,6 +912,7 @@ export function CalendarGrid({
           onClose={() => setSelectedBooking(null)}
           booking={selectedBooking}
           onSuccess={() => {
+            fetchBookingsForDate(selectedDate)
             onRefresh?.()
             router.refresh()
           }}
@@ -844,6 +927,7 @@ export function CalendarGrid({
         courts={activeCourts}
         currentDate={selectedDate}
         onSuccess={() => {
+          fetchBookingsForDate(selectedDate)
           onRefresh?.()
           router.refresh()
         }}

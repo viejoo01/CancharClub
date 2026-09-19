@@ -270,8 +270,8 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
     if (!effectiveTenantId) return []
 
     const supabase = await createServiceClient()
-    const startOfDay = `${dateIso}T00:00:00.000Z`
-    const endOfDay = `${dateIso}T23:59:59.999Z`
+    const startOfDay = new Date(`${dateIso}T00:00:00-03:00`).toISOString()
+    const endOfDay = new Date(`${dateIso}T23:59:59.999-03:00`).toISOString()
 
     const { data, error } = await supabase
       .from('bookings')
@@ -329,8 +329,14 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
       if (start && start.includes(' ') && !start.includes('T')) {
         start = start.replace(' ', 'T')
       }
+      if (start && start.endsWith('+00')) {
+        start = start.replace('+00', 'Z')
+      }
       if (end && end.includes(' ') && !end.includes('T')) {
         end = end.replace(' ', 'T')
+      }
+      if (end && end.endsWith('+00')) {
+        end = end.replace('+00', 'Z')
       }
 
       const courtObj = b.courts

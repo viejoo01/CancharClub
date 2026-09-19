@@ -387,7 +387,6 @@ export function QuickBookingModal({
             <Label htmlFor="notes">Notas Internas</Label>
             <Input
               id="notes"
-              placeholder="Ej. Pagará el resto al llegar, trae paletas"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />

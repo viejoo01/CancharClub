@@ -24,7 +24,7 @@ import type {
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
 import { addVenueBooking, getVenueBookings } from '@/config/venues-data'
-import { assertTenantMember } from '@/lib/auth-security'
+import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -456,14 +456,20 @@ export async function createManualBooking(
       return { success: false, error: 'Cancha no encontrada o inactiva' }
     }
 
-    const durationMinutes = court.slot_duration_minutes || 90
+    const effectiveTenantId = (isValidUuid(payload.tenant_id)
+      ? payload.tenant_id
+      : (authCheck.user?.tenantId || (await resolveEffectiveTenantId(payload.tenant_id)))) || payload.tenant_id
+
+    const validStaffId = isValidUuid(authCheck.user?.id) ? authCheck.user?.id : null
+
+    const durationMinutes = court.slot_duration_minutes || (court.sport?.includes('FUTBOL') ? 60 : 90)
     const startsAtDate = parseArgentinaDate(payload.starts_at)
     const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
     const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
 
     // 1.1 Prevenir colisión simultánea con reservas en memoria o checkouts online activos
     const dayStr = startsAtDate.toISOString().split('T')[0]
-    const memoryBookings = getVenueBookings(payload.tenant_id, dayStr)
+    const memoryBookings = getVenueBookings(effectiveTenantId, dayStr)
     const isAlreadyBookedInMemory = memoryBookings.some((b) => {
       const matchCourt = b.court_id === payload.court_id
       return matchCourt && b.starts_at === startsAtDate.toISOString() && !String(b.status).toUpperCase().includes('CANCEL')
@@ -488,7 +494,7 @@ export async function createManualBooking(
     const { data: booking, error } = await supabase
       .from('bookings')
       .insert({
-        tenant_id: payload.tenant_id,
+        tenant_id: effectiveTenantId,
         court_id: payload.court_id,
         booked_at: bookingRange,
         status: initialStatus,
@@ -502,7 +508,7 @@ export async function createManualBooking(
         customer_phone: payload.customer_phone?.trim() || null,
         customer_email: payload.customer_email?.trim() || null,
         staff_notes: staffNotes,
-        created_by_staff_id: authCheck.user?.id || null,
+        created_by_staff_id: validStaffId,
       })
       .select('id')
       .single()
@@ -539,6 +545,7 @@ export async function createManualBooking(
     })
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/caja')
     return { success: true, booking_id: booking.id }
 
   } catch (error) {

@@ -208,7 +208,7 @@ export async function saveTenantBankSettings(
         .limit(1)
         .maybeSingle()
 
-      if (defaultClub?.id && defaultClub.id !== effectiveTenantId) {
+      if (defaultClub?.id) {
         const { data: retryRows, error: retryError } = await supabase
           .from('tenants')
           .update({

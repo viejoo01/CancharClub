@@ -103,8 +103,25 @@ export default function TurnosFijosPage() {
         }
       })
 
+    // Auto-sincronización continua cada 6s y al enfocar la ventana
+    const syncFijos = () => {
+      if (document.hidden) return
+      getRecurringSlots(tenantId).then((data) => {
+        if (isMounted && data) {
+          setSlots(data)
+        }
+      }).catch(() => {})
+    }
+
+    const intervalId = setInterval(syncFijos, 6000)
+    window.addEventListener('focus', syncFijos)
+    document.addEventListener('visibilitychange', syncFijos)
+
     return () => {
       isMounted = false
+      clearInterval(intervalId)
+      window.removeEventListener('focus', syncFijos)
+      document.removeEventListener('visibilitychange', syncFijos)
     }
   }, [tenantId])
 

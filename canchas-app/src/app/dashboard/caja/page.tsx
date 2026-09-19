@@ -1,6 +1,6 @@
-﻿'use client'
+'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
   Banknote,
@@ -60,21 +60,52 @@ export default function CajaPage() {
   const [report, setReport] = useState<DailyCashReport | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const loadReport = useCallback(async (date: string) => {
-    setLoading(true)
-    try {
-      const data = await getDailyCashReport(tenantId!, date)
-      setReport(data)
-    } catch {
-      toast.error('Error al cargar el reporte de caja')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
-    loadReport(selectedDate)
-  }, [selectedDate, loadReport])
+    if (!tenantId) return
+    let isMounted = true
+
+    getDailyCashReport(tenantId, selectedDate).then((data) => {
+      if (isMounted) {
+        setReport(data)
+        setLoading(false)
+      }
+    }).catch(() => {
+      if (isMounted) {
+        toast.error('Error al cargar el reporte de caja')
+        setLoading(false)
+      }
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [tenantId, selectedDate])
+
+  // Sincronización continua en segundo plano cada 5s y al enfocar la ventana (sin recargar ni parpadear)
+  useEffect(() => {
+    if (!tenantId) return
+    let isMounted = true
+
+    const silentSync = () => {
+      if (document.hidden) return
+      getDailyCashReport(tenantId, selectedDate).then((data) => {
+        if (isMounted && data) {
+          setReport(data)
+        }
+      }).catch(() => {})
+    }
+
+    const intervalId = setInterval(silentSync, 5000)
+    window.addEventListener('focus', silentSync)
+    document.addEventListener('visibilitychange', silentSync)
+
+    return () => {
+      isMounted = false
+      clearInterval(intervalId)
+      window.removeEventListener('focus', silentSync)
+      document.removeEventListener('visibilitychange', silentSync)
+    }
+  }, [tenantId, selectedDate])
 
   const entries: DailyCashEntry[] = report?.entries ?? []
 

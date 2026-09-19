@@ -305,9 +305,44 @@ export function CalendarGrid({
   const [quickBookSlot, setQuickBookSlot] = useState<{ courtId: string; time: string } | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<CalendarBooking | null>(null)
 
-  // Supabase Realtime y BroadcastChannel para actualización automática de turnos (0ms)
+  // Sincronización continua y automática con la Base de Datos (Realtime WebSockets + Heartbeat 4s + Focus Sync)
   useEffect(() => {
-    // 1. Escucha por BroadcastChannel (sincronización instantánea entre pestañas / checkout online)
+    if (!tenantId) return
+
+    let isMounted = true
+
+    // Sincronización silenciosa en segundo plano (sin parpadeo ni loaders que interrumpan al usuario)
+    const silentSync = async () => {
+      try {
+        const fresh = await getCalendarBookings(tenantId, selectedDate)
+        if (!isMounted || !Array.isArray(fresh)) return
+
+        setLoadedBookings((prev) => {
+          const prevSig = prev.map(b => `${b.id}:${b.status}:${b.total_paid}:${b.balance_due}`).sort().join('|')
+          const freshSig = (fresh as CalendarBooking[]).map(b => `${b.id}:${b.status}:${b.total_paid}:${b.balance_due}`).sort().join('|')
+
+          if (prevSig !== freshSig) {
+            // Notificaciones en vivo de altas y bajas de turnos
+            if (fresh.length > prev.length) {
+              const newB = (fresh as CalendarBooking[]).find(f => !prev.some(p => p.id === f.id))
+              if (newB) {
+                toast.success('¡Nueva reserva registrada en el sistema!', {
+                  description: `${newB.customer_name} en ${newB.courts && !Array.isArray(newB.courts) ? newB.courts.name : 'Cancha'}`
+                })
+              }
+            } else if (fresh.length < prev.length) {
+              toast.info('Se ha cancelado o liberado un turno en la grilla.')
+            }
+            return fresh as CalendarBooking[]
+          }
+          return prev
+        })
+      } catch (err) {
+        console.warn('[silentSync] Error al sincronizar:', err)
+      }
+    }
+
+    // 1. Escucha por BroadcastChannel (sincronización instantánea 0ms entre pestañas / checkout)
     let bc: BroadcastChannel | null = null
     try {
       bc = new BroadcastChannel('canchar_bookings')
@@ -319,42 +354,66 @@ export function CalendarGrid({
             })
             setOptimisticBookings((prev) => [event.data.booking, ...prev])
           }
-          fetchBookingsForDate(selectedDate)
+          silentSync()
           router.refresh()
           onRefresh?.()
         }
       }
     } catch {}
 
-    // 2. Escucha por canal Postgres en Supabase Realtime
-    if (!tenantId) return
+    // 2. Escucha por canal Postgres en Supabase Realtime (WebSockets)
     const supabase = createClient()
     const channel = supabase
-      .channel(`tenant_${tenantId}_bookings`)
+      .channel(`tenant_${tenantId}_realtime_bookings`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'bookings',
-          filter: `tenant_id=eq.${tenantId}`,
         },
         (payload) => {
-          toast.info('Grilla sincronizada en tiempo real', {
-            description: `Actualización automática de turnos (${payload.eventType}).`
-          })
-          fetchBookingsForDate(selectedDate)
+          const newRec = payload.new as { tenant_id?: string } | null
+          const oldRec = payload.old as { tenant_id?: string } | null
+          if ((newRec?.tenant_id && newRec.tenant_id !== tenantId) || (oldRec?.tenant_id && oldRec.tenant_id !== tenantId)) {
+            return
+          }
+          silentSync()
           router.refresh()
           onRefresh?.()
         }
       )
       .subscribe()
 
+    // 3. Heartbeat continuo cada 4 segundos (Garantiza que nunca haga falta pulsar F5)
+    const intervalId = setInterval(() => {
+      if (!document.hidden) {
+        silentSync()
+      }
+    }, 4000)
+
+    // 4. Sincronización inmediata al volver a la pestaña o ventana del navegador
+    const handleFocus = () => {
+      silentSync()
+    }
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        silentSync()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
+      isMounted = false
+      clearInterval(intervalId)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
       supabase.removeChannel(channel)
       bc?.close()
     }
-  }, [tenantId, selectedDate, fetchBookingsForDate, onRefresh, router])
+  }, [tenantId, selectedDate, onRefresh, router])
 
   // Filtro de canchas
   const filteredCourts = useMemo(() => {

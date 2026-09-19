@@ -24,7 +24,8 @@ import {
   PackagePlus,
   Edit3,
   Layers,
-  DollarSign
+  DollarSign,
+  Lock
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,7 +59,7 @@ import {
   type CantinaPaymentMethod,
 } from '@/actions/cantina.actions'
 import type { CantinaProduct } from '@/config/cantina-data'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 
 
 export type Product = CantinaProduct
@@ -119,6 +120,7 @@ function playOrderChime() {
 
 export default function CantinaPage() {
   const tenantId = useTenantId()
+  const { isOwner } = useUserRole()
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY'>('POS')
   const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
@@ -141,13 +143,11 @@ export default function CantinaPage() {
     category: 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
     price: number
     stock: number
-    emoji: string
   }>({
     name: '',
     category: 'BEBIDAS',
     price: 2500,
     stock: 24,
-    emoji: '🥤',
   })
   const [productSaving, setProductSaving] = useState(false)
 
@@ -238,7 +238,6 @@ export default function CantinaPage() {
       category: 'BEBIDAS',
       price: 2500,
       stock: 24,
-      emoji: '🥤',
     })
     setIsProductModalOpen(true)
   }
@@ -251,7 +250,6 @@ export default function CantinaPage() {
       category: product.category,
       price: product.price,
       stock: product.stock,
-      emoji: product.emoji || '📦',
     })
     setIsProductModalOpen(true)
   }
@@ -263,20 +261,26 @@ export default function CantinaPage() {
       toast.error('Ingresá el nombre del producto')
       return
     }
-    if (productForm.price <= 0) {
+
+    // Si el usuario no es dueño del club y está editando, se mantiene el precio original para evitar fraude
+    const effectivePrice = (!isOwner && editingProduct) ? editingProduct.price : Number(productForm.price)
+
+    if (effectivePrice <= 0) {
       toast.error('El precio de venta debe ser mayor a 0')
       return
     }
 
     setProductSaving(true)
     try {
+      // Asignar emoji representativo automáticamente por categoría o preservar el existente
+      const categoryEmoji = productForm.category === 'BEBIDAS' ? '🥤' : productForm.category === 'EQUIPAMIENTO' ? '🎾' : '🍫'
       const productPayload: CantinaProduct = {
         id: editingProduct ? editingProduct.id : `prod_${Date.now()}`,
         name: productForm.name.trim(),
         category: productForm.category,
-        price: Number(productForm.price),
+        price: effectivePrice,
         stock: Math.max(0, Number(productForm.stock)),
-        emoji: productForm.emoji.trim() || '📦',
+        emoji: editingProduct?.emoji || categoryEmoji,
         is_active: true,
       }
 
@@ -1759,7 +1763,7 @@ export default function CantinaPage() {
               <label className="text-xs font-semibold text-slate-300 block">Nombre del Producto *</label>
               <Input
                 required
-                placeholder="Ej. Aquarius Pomelo 500ml, Sandwich Tostado..."
+                placeholder=""
                 value={productForm.name}
                 onChange={(e) => setProductForm(prev => ({ ...prev, name: e.target.value }))}
                 className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10"
@@ -1775,74 +1779,63 @@ export default function CantinaPage() {
                   onChange={(e) => setProductForm(prev => ({ ...prev, category: e.target.value as 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS' }))}
                   className="w-full h-10 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="BEBIDAS">🥤 Bebidas</option>
-                  <option value="EQUIPAMIENTO">🎾 Equipamiento</option>
-                  <option value="SNACKS">🍫 Snacks</option>
+                  <option value="BEBIDAS">Bebidas</option>
+                  <option value="EQUIPAMIENTO">Equipamiento</option>
+                  <option value="SNACKS">Snacks</option>
                 </select>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 block">Precio de Venta ($ ARS) *</label>
-                <Input
-                  type="number"
-                  required
-                  min="1"
-                  step="50"
-                  placeholder="2500"
-                  value={productForm.price || ''}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, price: Math.max(0, parseInt(e.target.value) || 0) }))}
-                  className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono"
-                />
-              </div>
-            </div>
-
-            {/* Stock y Emoji */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 block">
-                  {editingProduct ? 'Stock Actual (unidades)' : 'Stock Inicial (unidades)'}
-                </label>
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="24"
-                  value={productForm.stock}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, stock: Math.max(0, parseInt(e.target.value) || 0) }))}
-                  className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 block">Emoji / Ícono</label>
-                <Input
-                  maxLength={4}
-                  value={productForm.emoji}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, emoji: e.target.value }))}
-                  className="bg-slate-950 border-slate-800 text-white text-center text-lg rounded-xl h-10 font-mono"
-                  placeholder="🥤"
-                />
-              </div>
-            </div>
-
-            {/* Selector visual de emojis rápidos */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] text-slate-400 font-medium block">O elegí un ícono rápido:</label>
-              <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-                {['⚡', '💧', '🍺', '🥤', '🎾', '🏓', '🏸', '🍫', '🥜', '🥪', '🍕', '☕', '🧊', '🍹', '🍿', '🌭'].map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => setProductForm(prev => ({ ...prev, emoji }))}
-                    className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all ${
-                      productForm.emoji === emoji
-                        ? 'bg-emerald-600/30 border border-emerald-500 scale-110'
-                        : 'hover:bg-slate-800'
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 block">Precio de Venta ($ ARS) *</label>
+                  {!isOwner && (
+                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
+                      <Lock className="w-2.5 h-2.5" />
+                      Solo Dueño
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    required
+                    min="1"
+                    step="50"
+                    placeholder=""
+                    value={productForm.price || ''}
+                    disabled={!isOwner}
+                    onChange={(e) => setProductForm(prev => ({ ...prev, price: Math.max(0, parseInt(e.target.value) || 0) }))}
+                    className={`bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono ${
+                      !isOwner ? 'opacity-70 cursor-not-allowed bg-slate-950/80 pr-8' : ''
                     }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
+                  />
+                  {!isOwner && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400/80 pointer-events-none">
+                      <Lock className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+                </div>
+                {!isOwner && (
+                  <p className="text-[10px] text-slate-400">
+                    El precio de venta solo puede ser modificado por el dueño del club.
+                  </p>
+                )}
               </div>
+            </div>
+
+            {/* Stock */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">
+                {editingProduct ? 'Stock Actual (unidades)' : 'Stock Inicial (unidades)'}
+              </label>
+              <Input
+                type="number"
+                min="0"
+                placeholder=""
+                value={productForm.stock}
+                onChange={(e) => setProductForm(prev => ({ ...prev, stock: Math.max(0, parseInt(e.target.value) || 0) }))}
+                className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono"
+              />
             </div>
 
             <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-800">

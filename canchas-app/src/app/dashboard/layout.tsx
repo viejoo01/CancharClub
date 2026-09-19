@@ -145,7 +145,7 @@ export default async function DashboardLayout({
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       pendingScreen={<PendingActivationScreen tenantName={tenantName} />}
     >
-      <TenantProvider value={tenantId}>
+      <TenantProvider value={tenantId} role={userRole}>
         {children}
       </TenantProvider>
     </DashboardLayoutClient>

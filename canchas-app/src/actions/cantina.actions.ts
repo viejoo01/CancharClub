@@ -441,12 +441,23 @@ export async function saveSingleProduct(
   product: CantinaProduct
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
+    const { getCurrentUserProfile } = await import('@/lib/auth-security')
+    const currentUser = await getCurrentUserProfile()
+    const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+
     const currentProducts = await getCantinaProducts(tenantId)
     const existingIndex = currentProducts.findIndex(p => p.id === product.id)
     let updated: CantinaProduct[]
     if (existingIndex >= 0) {
+      const existingProduct = currentProducts[existingIndex]
+      // Protección contra fraude: Si el usuario no es Dueño del Club (ej. administrador de turno / canchero), se mantiene estrictamente el precio oficial fijado
+      const protectedPrice = (!isOwner && currentUser) ? existingProduct.price : product.price
+      const sanitizedProduct: CantinaProduct = {
+        ...product,
+        price: protectedPrice,
+      }
       updated = [...currentProducts]
-      updated[existingIndex] = product
+      updated[existingIndex] = sanitizedProduct
     } else {
       updated = [product, ...currentProducts]
     }

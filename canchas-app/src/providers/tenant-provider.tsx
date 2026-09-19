@@ -42,12 +42,15 @@ export function setGlobalCachedTenantId(val: string | null) {
 }
 
 export const TenantContext = createContext<string | null>(null)
+export const UserRoleContext = createContext<string>('TENANT_ADMIN')
 
 export function TenantProvider({
   value,
+  role = 'TENANT_ADMIN',
   children,
 }: {
   value: string | null
+  role?: string | null
   children: React.ReactNode
 }) {
   if (value && globalCachedTenantId !== value) {
@@ -62,11 +65,17 @@ export function TenantProvider({
 
   return (
     <TenantContext.Provider value={value}>
-      {children}
+      <UserRoleContext.Provider value={role || 'TENANT_ADMIN'}>
+        {children}
+      </UserRoleContext.Provider>
     </TenantContext.Provider>
   )
 }
 
 export function useTenantContext(): string | null {
   return useContext(TenantContext)
+}
+
+export function useUserRoleContext(): string {
+  return useContext(UserRoleContext)
 }

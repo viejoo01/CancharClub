@@ -10,10 +10,7 @@ import {
   Clock, 
   CheckCircle, 
   AlertCircle,
-  CloudRain,
-  Mouse,
-  ArrowUp,
-  ArrowDown
+  CloudRain
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
@@ -100,7 +97,6 @@ export function CalendarGrid({
 
   // Referencia al contenedor con scroll de la matriz de horarios
   const gridContainerRef = useRef<HTMLDivElement>(null)
-  const [wheelNavigationEnabled, setWheelNavigationEnabled] = useState(true)
 
   // Desplazar suavemente a un horario específico
   const scrollToTimeSlot = useCallback((targetTime: string) => {
@@ -126,23 +122,6 @@ export function CalendarGrid({
     }
   }, [timeSlots, scrollToTimeSlot])
 
-  // Desplazar al inicio del día (apertura)
-  const scrollToDayStart = useCallback(() => {
-    if (gridContainerRef.current) {
-      gridContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
-    }
-  }, [])
-
-  // Desplazar al final del día (horarios de noche/cierre)
-  const scrollToDayEnd = useCallback(() => {
-    if (gridContainerRef.current) {
-      gridContainerRef.current.scrollTo({
-        top: gridContainerRef.current.scrollHeight,
-        behavior: 'smooth',
-      })
-    }
-  }, [])
-
   // Auto-desplazamiento suave al horario actual en el primer render si la fecha es hoy
   useEffect(() => {
     const todayStr = new Date().toISOString().split('T')[0]
@@ -167,9 +146,9 @@ export function CalendarGrid({
     }
   }, [selectedDate, timeSlots])
 
-  // Manejador del evento wheel del mouse
+  // Manejador del evento wheel del mouse (siempre fluido y natural)
   const handleGridWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (!wheelNavigationEnabled || !gridContainerRef.current) return
+    if (!gridContainerRef.current) return
 
     // Shift + rueda: desplazamiento horizontal suave entre canchas
     if (e.shiftKey) {
@@ -188,7 +167,7 @@ export function CalendarGrid({
         mainEl.scrollTop += e.deltaY
       }
     }
-  }, [wheelNavigationEnabled])
+  }, [])
 
   // Estado de sede seleccionada en caliente para respuesta instantánea (0ms)
   const [overrideVenue, setOverrideVenue] = useState<VenueItem | null>(null)
@@ -348,6 +327,17 @@ export function CalendarGrid({
           <Button variant="outline" size="sm" onClick={handleToday} className="text-xs h-10 px-3 min-w-[52px]">
             Hoy
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={scrollToNow}
+            className="text-xs h-10 px-2.5 bg-amber-950/30 border-amber-500/30 text-amber-300 hover:bg-amber-900/50 hover:text-amber-100 flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Desplazarse en la grilla al horario actual"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Ahora</span>
+          </Button>
           <div className="flex items-center bg-slate-950 rounded-xl border border-slate-800 p-0.5 sm:p-1">
             <button
               onClick={handlePrevDay}
@@ -439,72 +429,7 @@ export function CalendarGrid({
         </div>
       </div>
 
-      {/* Barra de Navegación Rápida y Control de Desplazamiento con Rueda */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          {/* Botón de control de rueda de mouse */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !wheelNavigationEnabled
-              setWheelNavigationEnabled(next)
-              toast(next ? '🖱️ Desplazamiento con rueda del mouse habilitado' : 'Desplazamiento con rueda pausado')
-            }}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-              wheelNavigationEnabled
-                ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 shadow-xs'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Activar o pausar desplazamiento por los horarios con la rueda del mouse"
-          >
-            <Mouse className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-medium">Rueda del Mouse:</span>
-            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-              wheelNavigationEnabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
-            }`}>
-              {wheelNavigationEnabled ? 'Habilitada ↕' : 'Desactivada'}
-            </span>
-          </button>
 
-          <span className="hidden lg:inline text-[11px] text-slate-400">
-            Girá la rueda para subir y bajar por los horarios de la grilla.
-          </span>
-        </div>
-
-        {/* Atajos de salto rápido entre turnos */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Saltar a:</span>
-          <button
-            type="button"
-            onClick={scrollToDayStart}
-            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px]"
-            title="Subir al horario de apertura del club"
-          >
-            <ArrowUp className="w-3 h-3 text-slate-400" />
-            <span>Apertura ({schedule.opening_time})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={scrollToNow}
-            className="px-2.5 py-1 text-xs font-bold text-amber-300 bg-amber-950/60 hover:bg-amber-900/70 border border-amber-500/40 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px] shadow-xs"
-            title="Desplazarse a la hora actual"
-          >
-            <Clock className="w-3 h-3 text-amber-400" />
-            <span>Ahora</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={scrollToDayEnd}
-            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors flex items-center gap-1 cursor-pointer min-h-[30px]"
-            title="Bajar al horario de cierre / noche"
-          >
-            <ArrowDown className="w-3 h-3 text-slate-400" />
-            <span>Cierre ({schedule.closing_time})</span>
-          </button>
-        </div>
-      </div>
 
       {/* Indicador para móviles de desplazamiento horizontal de canchas */}
       <div className="md:hidden flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
@@ -672,11 +597,7 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 text-[11px] text-slate-400">
-        <div className="flex items-center gap-1.5">
-          <Mouse className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-          <span>Girá la <strong>rueda del mouse</strong> para subir y bajar turnos. Mantené <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 font-mono">Shift</kbd> para desplazarte horizontalmente entre canchas.</span>
-        </div>
+      <div className="flex items-center justify-end px-2 py-1 text-[11px] text-slate-400">
         <span className="text-emerald-400 font-medium">
           {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'}
         </span>

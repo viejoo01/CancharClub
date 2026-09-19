@@ -1,8 +1,9 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { emitElectronicInvoice, type AfipConfig, type EmitInvoiceParams, type EmitInvoiceResult } from '@/lib/afip'
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 
 export interface IssuedInvoice {
   id: string
@@ -22,13 +23,19 @@ export interface IssuedInvoice {
 let mockInvoices: IssuedInvoice[] = []
 
 export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
-  if (tenantId) {
+  let targetTenantId = tenantId
+  if (!targetTenantId) {
+    const cookieStore = await cookies()
+    targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+  }
+
+  if (targetTenantId) {
     try {
-      const supabase = await createClient()
+      const supabase = await createServiceClient()
       const { data } = await supabase
         .from('tenants')
         .select('name, bank_cuit, address')
-        .eq('id', tenantId)
+        .eq('id', targetTenantId)
         .maybeSingle()
       if (data) {
         return {
@@ -60,16 +67,30 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
 }
 
 export async function saveAfipConfig(
-  tenantId: string,
+  tenantId: string | undefined | null,
   config: AfipConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient()
-    await supabase.from('tenants').update({ 
+    let targetTenantId = tenantId
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const supabase = await createServiceClient()
+    const { error } = await supabase.from('tenants').update({ 
       bank_cuit: config.cuit || null,
       address: config.domicilioComercial || null,
       updated_at: new Date().toISOString() 
-    }).eq('id', tenantId)
+    }).eq('id', targetTenantId)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
     revalidatePath('/dashboard/facturacion')
     return { success: true }
   } catch (err: unknown) {

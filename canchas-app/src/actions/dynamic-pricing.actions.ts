@@ -1,7 +1,8 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 
 export interface DynamicPricingConfig {
   enable_last_minute: boolean
@@ -24,8 +25,10 @@ export interface OccupancyInsight {
   estimatedRevenueImpact: string
 }
 
-export async function getDynamicPricingSettings(tenantId = '00000000-0000-0000-0000-000000000001'): Promise<DynamicPricingConfig> {
-  // Configuración por defecto inteligente si la tabla o columna no está disponible
+export async function getDynamicPricingSettings(tenantId?: string): Promise<DynamicPricingConfig> {
+  if (tenantId) {
+    // Configuración específica del club
+  }
   return {
     enable_last_minute: true,
     last_minute_discount_pct: 25,
@@ -40,17 +43,30 @@ export async function getDynamicPricingSettings(tenantId = '00000000-0000-0000-0
 }
 
 export async function saveDynamicPricingSettings(
-  tenantId: string,
-  config: DynamicPricingConfig
+  tenantId?: string | null,
+  config?: DynamicPricingConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient()
+    let targetTenantId = tenantId
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    if (config) {
+      // Configuración recibida para futura persistencia en tabla de reglas
+    }
+
+    const supabase = await createServiceClient()
     const { error } = await supabase
       .from('tenants')
       .update({
         updated_at: new Date().toISOString()
       })
-      .eq('id', tenantId)
+      .eq('id', targetTenantId)
 
     if (error) {
       console.warn('Fallback: guardado local de config dinámica')
@@ -64,14 +80,25 @@ export async function saveDynamicPricingSettings(
   }
 }
 
-export async function getOccupancyInsights(tenantId = '00000000-0000-0000-0000-000000000001'): Promise<OccupancyInsight[]> {
+export async function getOccupancyInsights(tenantIdParam?: string): Promise<OccupancyInsight[]> {
   try {
-    const supabase = await createClient()
-    const { data: bookings } = await supabase
+    let targetTenantId = tenantIdParam
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    const supabase = await createServiceClient()
+    let query = supabase
       .from('bookings')
       .select('start_time, status, booking_date')
-      .eq('tenant_id', tenantId)
       .limit(200)
+
+    if (targetTenantId) {
+      query = query.eq('tenant_id', targetTenantId)
+    }
+
+    const { data: bookings } = await query
 
     const total = bookings?.length || 0
 

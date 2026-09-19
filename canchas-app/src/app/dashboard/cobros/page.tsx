@@ -53,15 +53,16 @@ export default function CobrosConfigPage() {
 
 
   useEffect(() => {
+    let isMounted = true
     async function loadSettings() {
       setLoading(true)
       try {
-        const settings = await getTenantPaymentSettings(tenantId!)
-        if (settings) {
-          setBankName(settings.bankName)
-          setAccountHolder(settings.accountHolder)
-          setCbu(settings.cbu)
-          setAlias(settings.alias)
+        const settings = await getTenantPaymentSettings(tenantId || undefined)
+        if (settings && isMounted) {
+          setBankName(settings.bankName || '')
+          setAccountHolder(settings.accountHolder || '')
+          setCbu(settings.cbu || '')
+          setAlias(settings.alias || '')
           setCuit(settings.cuit || '')
           setWhatsappPhone(settings.whatsappPhone || '')
           setMpConnected(settings.mpConnected)
@@ -72,10 +73,15 @@ export default function CobrosConfigPage() {
       } catch (err) {
         console.error('Error cargando configuración de cobros:', err)
       } finally {
-        setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
     loadSettings()
+    return () => {
+      isMounted = false
+    }
   }, [tenantId])
 
   const handleSaveBank = async (e: React.FormEvent) => {
@@ -92,7 +98,7 @@ export default function CobrosConfigPage() {
       if (allowMp && mpConnected) activeMethods.push('MERCADOPAGO')
       if (activeMethods.length === 0) activeMethods.push('TRANSFER')
 
-      const res = await saveTenantBankSettings(tenantId!, {
+      const res = await saveTenantBankSettings(tenantId || undefined, {
         bankName,
         accountHolder,
         cbu,
@@ -125,7 +131,7 @@ export default function CobrosConfigPage() {
 
     setSavingMp(true)
     try {
-      const res = await saveTenantMpCredentials(tenantId!, {
+      const res = await saveTenantMpCredentials(tenantId || undefined, {
         accessToken: mpAccessToken,
         publicKey: mpPublicKey || undefined,
       })
@@ -152,7 +158,7 @@ export default function CobrosConfigPage() {
     if (!confirm('¿Seguro que querés desvincular tu cuenta de Mercado Pago del club?')) return
     setDisconnectingMp(true)
     try {
-      const res = await disconnectTenantMpAccount(tenantId!)
+      const res = await disconnectTenantMpAccount(tenantId || undefined)
       if (res.success) {
         setMpConnected(false)
         setAllowMp(false)

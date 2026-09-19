@@ -1,20 +1,24 @@
 // src/hooks/use-tenant-id.ts
-// Hook para obtener el tenant_id real del usuario autenticado.
-// Reemplaza el uso de DEMO_TENANT_ID hardcodeado en todas las páginas del dashboard.
+// Hook para obtener el tenant_id del usuario autenticado de forma síncrona y reactiva.
 'use client'
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import {
+  useTenantContext,
+  getGlobalCachedTenantId,
+  setGlobalCachedTenantId,
+  TenantProvider,
+} from '@/providers/tenant-provider'
 
-let cachedTenantId: string | null = null
+export { TenantProvider }
 
 export function useTenantId(): string | null {
-  // Initialize from cache synchronously (avoids extra render cycle)
-  const [tenantId, setTenantId] = useState<string | null>(() => cachedTenantId)
+  const contextTenantId = useTenantContext()
+  const [fallbackTenantId, setFallbackTenantId] = useState<string | null>(() => getGlobalCachedTenantId())
 
   useEffect(() => {
-    // Already have the tenant_id (either from cache or previous fetch)
-    if (tenantId) return
+    if (contextTenantId || fallbackTenantId) return
 
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -25,11 +29,11 @@ export function useTenantId(): string | null {
         .eq('id', user.id)
         .single()
       if (profile?.tenant_id) {
-        cachedTenantId = profile.tenant_id
-        setTenantId(profile.tenant_id)
+        setGlobalCachedTenantId(profile.tenant_id)
+        setFallbackTenantId(profile.tenant_id)
       }
     })
-  }, [tenantId])
+  }, [contextTenantId, fallbackTenantId])
 
-  return tenantId
+  return contextTenantId || fallbackTenantId
 }

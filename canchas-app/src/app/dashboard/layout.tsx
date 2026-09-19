@@ -1,8 +1,9 @@
 import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { headers, cookies } from 'next/headers'
 import { GracePeriodBanner } from '@/components/billing/grace-period-banner'
 import { PendingActivationScreen } from '@/components/dashboard/pending-activation-screen'
+import { TenantProvider } from '@/hooks/use-tenant-id'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
@@ -25,7 +26,9 @@ export default async function DashboardLayout({
   const cookieName = cookieStore.get('demo_user_name')?.value
   const cookieTenantName = cookieStore.get('demo_tenant_name')?.value
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
+  const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
 
+  let tenantId: string | null = cookieTenantId || null
   let tenantName = cookieTenantName || 'Mi Club Deportivo'
   let tenantSlug = cookieTenantSlug || 'mi-club'
   let userRole = cookieRole || 'TENANT_ADMIN'
@@ -45,6 +48,9 @@ export default async function DashboardLayout({
       .single()
 
     if (profile) {
+      if (profile.tenant_id) {
+        tenantId = profile.tenant_id
+      }
       userRole = profile.role
       userName = profile.full_name || user.email?.split('@')[0] || 'Admin'
       const t = profile.tenants as unknown as {
@@ -74,6 +80,27 @@ export default async function DashboardLayout({
     }
   }
 
+  // Si aún no tenemos tenantId, buscar por slug
+  if (!tenantId && tenantSlug && tenantSlug !== 'mi-club') {
+    try {
+      const serviceClient = await createServiceClient()
+      const { data: tData } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .eq('slug', tenantSlug)
+        .maybeSingle()
+      if (tData?.id) {
+        tenantId = tData.id
+      }
+    } catch {}
+  }
+
+  if (tenantId) {
+    try {
+      cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 86400 })
+    } catch {}
+  }
+
   return (
     <DashboardLayoutClient
       tenantName={tenantName}
@@ -86,7 +113,9 @@ export default async function DashboardLayout({
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       pendingScreen={<PendingActivationScreen tenantName={tenantName} />}
     >
-      {children}
+      <TenantProvider value={tenantId}>
+        {children}
+      </TenantProvider>
     </DashboardLayoutClient>
   )
 }

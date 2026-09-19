@@ -10,7 +10,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { assertTenantAdmin } from '@/lib/auth-security'
+import { assertTenantAdmin, getCurrentUserProfile } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
 
 export interface TenantPaymentSettings {
@@ -29,21 +29,21 @@ export interface TenantPaymentSettings {
 }
 
 /**
- * Obtiene la configuración de cobro y datos bancarios del club
+ * Obtiene la configuración de cobro y datos bancarios del club.
+ * Si tenantId no se suministra, se auto-resuelve desde el usuario o cookies de sesión.
  */
-export async function getTenantPaymentSettings(tenantId: string): Promise<TenantPaymentSettings | null> {
+export async function getTenantPaymentSettings(tenantId?: string | null): Promise<TenantPaymentSettings | null> {
   try {
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
-      .eq('id', tenantId)
-      .maybeSingle()
+    let effectiveTenantId = tenantId
+    if (!effectiveTenantId) {
+      const profile = await getCurrentUserProfile()
+      effectiveTenantId = profile?.tenantId || null
+    }
 
-    if (error || !tenant) {
-      console.warn('[getTenantPaymentSettings] Tenant not found for:', tenantId)
+    if (!effectiveTenantId) {
+      console.warn('[getTenantPaymentSettings] No tenantId provided or found in session')
       return {
-        tenantId,
+        tenantId: '',
         clubName: 'Mi Club',
         bankName: '',
         accountHolder: '',
@@ -56,6 +56,35 @@ export async function getTenantPaymentSettings(tenantId: string): Promise<Tenant
       }
     }
 
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (error || !tenant) {
+      console.warn('[getTenantPaymentSettings] Tenant not found for:', effectiveTenantId)
+      return {
+        tenantId: effectiveTenantId,
+        clubName: 'Mi Club',
+        bankName: '',
+        accountHolder: '',
+        cbu: '',
+        alias: '',
+        cuit: '',
+        whatsappPhone: '',
+        paymentMethods: ['TRANSFER'],
+        mpConnected: false,
+      }
+    }
+
+    const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
+    const paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[] = []
+    if (rawMethods.includes('TRANSFER')) paymentMethods.push('TRANSFER')
+    if (rawMethods.includes('MERCADOPAGO') || rawMethods.includes('MERCADO_PAGO')) paymentMethods.push('MERCADOPAGO')
+    if (paymentMethods.length === 0) paymentMethods.push('TRANSFER')
+
     return {
       tenantId: tenant.id,
       clubName: tenant.name || 'Mi Club',
@@ -65,7 +94,7 @@ export async function getTenantPaymentSettings(tenantId: string): Promise<Tenant
       alias: tenant.bank_alias || '',
       cuit: tenant.bank_cuit || '',
       whatsappPhone: tenant.phone_whatsapp || '',
-      paymentMethods: (tenant.payment_methods as ('TRANSFER' | 'MERCADOPAGO')[]) || ['TRANSFER'],
+      paymentMethods,
       mpConnected: Boolean(tenant.mp_access_token),
       mpCollectorId: tenant.mp_collector_id,
       mpPublicKey: tenant.mp_public_key,
@@ -77,10 +106,11 @@ export async function getTenantPaymentSettings(tenantId: string): Promise<Tenant
 }
 
 /**
- * Guarda los datos bancarios del club para transferencias directas de seña
+ * Guarda los datos bancarios del club para transferencias directas de seña.
+ * Tolera tenantId opcional o nulo, resolviéndolo automáticamente.
  */
 export async function saveTenantBankSettings(
-  tenantId: string,
+  tenantId: string | null | undefined,
   data: {
     bankName: string
     accountHolder: string
@@ -92,26 +122,42 @@ export async function saveTenantBankSettings(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede modificar estos datos
+    // 1. Verificación de Seguridad Anti-IDOR
     const authCheck = await assertTenantAdmin(tenantId)
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
     }
 
+    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    if (!effectiveTenantId) {
+      return { success: false, error: 'No se pudo determinar el club a modificar' }
+    }
+
     const supabase = await createServiceClient()
+
+    // Normalizar métodos de pago para persistencia
+    const inputMethods = data.paymentMethods || ['TRANSFER']
+    const normalizedMethods: string[] = []
+    if (inputMethods.includes('TRANSFER')) normalizedMethods.push('TRANSFER')
+    if (inputMethods.includes('MERCADOPAGO')) {
+      normalizedMethods.push('TRANSFER')
+      normalizedMethods.push('MERCADO_PAGO')
+    }
+    const finalMethods = Array.from(new Set(normalizedMethods.length > 0 ? normalizedMethods : ['TRANSFER']))
+
     const { error } = await supabase
       .from('tenants')
       .update({
         bank_name: sanitizeText(data.bankName, 60),
         bank_account_holder: sanitizeText(data.accountHolder, 80),
-        bank_cbu: data.cbu.replace(/\D/g, '').slice(0, 22),
+        bank_cbu: (data.cbu || '').replace(/\D/g, '').slice(0, 22),
         bank_alias: sanitizeText(data.alias, 40).toLowerCase(),
         bank_cuit: data.cuit ? data.cuit.replace(/[^\d-]/g, '').slice(0, 14) : null,
         phone_whatsapp: data.whatsappPhone ? sanitizeText(data.whatsappPhone, 25) : null,
-        payment_methods: data.paymentMethods || ['TRANSFER'],
+        payment_methods: finalMethods,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
 
     if (error) {
       console.error('[saveTenantBankSettings] DB Error:', error)
@@ -120,6 +166,7 @@ export async function saveTenantBankSettings(
 
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/club/[slug]', 'page')
     return { success: true }
   } catch (err: unknown) {
     console.error('[saveTenantBankSettings] Error:', err)
@@ -132,7 +179,7 @@ export async function saveTenantBankSettings(
  * Conecta las credenciales de Mercado Pago propias del Club
  */
 export async function saveTenantMpCredentials(
-  tenantId: string,
+  tenantId: string | null | undefined,
   data: {
     accessToken: string
     publicKey?: string
@@ -140,10 +187,14 @@ export async function saveTenantMpCredentials(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede vincular credenciales
     const authCheck = await assertTenantAdmin(tenantId)
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'No tienes permisos para configurar Mercado Pago en este club' }
+    }
+
+    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    if (!effectiveTenantId) {
+      return { success: false, error: 'No se pudo determinar el club' }
     }
 
     const supabase = await createServiceClient()
@@ -161,10 +212,10 @@ export async function saveTenantMpCredentials(
         mp_public_key: data.publicKey?.trim() || null,
         mp_collector_id: data.collectorId?.trim() || null,
         mp_connected_at: new Date().toISOString(),
-        payment_methods: ['TRANSFER', 'MERCADOPAGO'],
+        payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
         updated_at: new Date().toISOString(),
       })
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
 
     if (error) {
       console.error('[saveTenantMpCredentials] DB Error:', error)
@@ -173,6 +224,7 @@ export async function saveTenantMpCredentials(
 
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/club/[slug]', 'page')
     return { success: true }
   } catch (err: unknown) {
     console.error('[saveTenantMpCredentials] Error:', err)
@@ -184,12 +236,16 @@ export async function saveTenantMpCredentials(
 /**
  * Desconecta la cuenta de Mercado Pago propia del Club
  */
-export async function disconnectTenantMpAccount(tenantId: string): Promise<{ success: boolean; error?: string }> {
+export async function disconnectTenantMpAccount(tenantId: string | null | undefined): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Verificación de Seguridad Anti-IDOR: Solo el dueño del club puede desvincular credenciales
     const authCheck = await assertTenantAdmin(tenantId)
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
+    }
+
+    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    if (!effectiveTenantId) {
+      return { success: false, error: 'No se pudo determinar el club' }
     }
 
     const supabase = await createServiceClient()
@@ -203,7 +259,7 @@ export async function disconnectTenantMpAccount(tenantId: string): Promise<{ suc
         payment_methods: ['TRANSFER'],
         updated_at: new Date().toISOString(),
       })
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
 
     if (error) {
       console.error('[disconnectTenantMpAccount] DB Error:', error)
@@ -211,6 +267,7 @@ export async function disconnectTenantMpAccount(tenantId: string): Promise<{ suc
     }
 
     revalidatePath('/dashboard/cobros')
+    revalidatePath('/club/[slug]', 'page')
     return { success: true }
   } catch (err: unknown) {
     console.error('[disconnectTenantMpAccount] Error:', err)

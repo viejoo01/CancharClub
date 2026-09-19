@@ -642,7 +642,7 @@ export async function createRecurringBooking(payload: {
 }
 
 export async function toggleRecurringBookingStatus(id: string, currentStatus: boolean) {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
   const { error } = await supabase
     .from('recurring_bookings')
     .update({ is_active: !currentStatus })

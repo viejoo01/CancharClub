@@ -2,7 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { cookies } from 'next/headers'
+import { resolveEffectiveTenantId } from '@/lib/auth-security'
 
 export interface DynamicPricingConfig {
   enable_last_minute: boolean
@@ -47,11 +47,7 @@ export async function saveDynamicPricingSettings(
   config?: DynamicPricingConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    let targetTenantId = tenantId
-    if (!targetTenantId) {
-      const cookieStore = await cookies()
-      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    }
+    const targetTenantId = await resolveEffectiveTenantId(tenantId)
     if (!targetTenantId) {
       return { success: false, error: 'No se pudo identificar el club' }
     }
@@ -82,11 +78,7 @@ export async function saveDynamicPricingSettings(
 
 export async function getOccupancyInsights(tenantIdParam?: string): Promise<OccupancyInsight[]> {
   try {
-    let targetTenantId = tenantIdParam
-    if (!targetTenantId) {
-      const cookieStore = await cookies()
-      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    }
+    const targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
 
     const supabase = await createServiceClient()
     let query = supabase

@@ -3,7 +3,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { emitElectronicInvoice, type AfipConfig, type EmitInvoiceParams, type EmitInvoiceResult } from '@/lib/afip'
 import { revalidatePath } from 'next/cache'
-import { cookies } from 'next/headers'
+import { resolveEffectiveTenantId } from '@/lib/auth-security'
 
 export interface IssuedInvoice {
   id: string
@@ -23,11 +23,7 @@ export interface IssuedInvoice {
 let mockInvoices: IssuedInvoice[] = []
 
 export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
-  let targetTenantId = tenantId
-  if (!targetTenantId) {
-    const cookieStore = await cookies()
-    targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-  }
+  const targetTenantId = await resolveEffectiveTenantId(tenantId)
 
   if (targetTenantId) {
     try {
@@ -71,11 +67,7 @@ export async function saveAfipConfig(
   config: AfipConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    let targetTenantId = tenantId
-    if (!targetTenantId) {
-      const cookieStore = await cookies()
-      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    }
+    const targetTenantId = await resolveEffectiveTenantId(tenantId)
     if (!targetTenantId) {
       return { success: false, error: 'No se pudo identificar el club' }
     }

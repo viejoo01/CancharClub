@@ -6,6 +6,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
@@ -739,20 +740,21 @@ export async function getClubSchedule(tenantId: string): Promise<ClubScheduleCon
 }
 
 export async function updateClubSchedule(
-  tenantId: string,
+  tenantId: string | null | undefined,
   schedule: { opening_time: string; closing_time: string }
 ): Promise<{ success: boolean; schedule?: ClubScheduleConfig; error?: string }> {
-  if (!tenantId) {
-    return { success: false, error: 'Identificador de club requerido' }
-  }
-
   try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Identificador de club requerido' }
+    }
+
     const supabase = await createServiceClient()
 
     const { data: tenant, error: fetchErr } = await supabase
       .from('tenants')
       .select('description, slug')
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
       .single()
 
     if (fetchErr || !tenant) {

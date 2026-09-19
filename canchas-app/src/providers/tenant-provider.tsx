@@ -32,6 +32,12 @@ export function setGlobalCachedTenantId(val: string | null) {
         localStorage.setItem('canchar_cached_tenant_id', val)
       } catch {}
     }
+    if (typeof document !== 'undefined') {
+      try {
+        document.cookie = `canchar_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
+        document.cookie = `demo_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
+      } catch {}
+    }
   }
 }
 

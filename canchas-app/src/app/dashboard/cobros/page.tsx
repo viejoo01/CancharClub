@@ -109,6 +109,14 @@ export default function CobrosConfigPage() {
       })
 
       if (res.success) {
+        if (res.savedData) {
+          setBankName(res.savedData.bankName ?? bankName)
+          setAccountHolder(res.savedData.accountHolder ?? accountHolder)
+          setCbu(res.savedData.cbu ?? cbu)
+          setAlias(res.savedData.alias ?? alias)
+          setCuit(res.savedData.cuit ?? cuit)
+          setWhatsappPhone(res.savedData.whatsappPhone ?? whatsappPhone)
+        }
         toast.success('¡Datos bancarios guardados con éxito!', {
           description: 'Los jugadores verán estos datos para transferir la seña al reservar.',
         })

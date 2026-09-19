@@ -95,9 +95,25 @@ export default async function DashboardLayout({
     } catch {}
   }
 
-  if (tenantId) {
+  // Si todavía no tenemos tenantId, resolver el club activo desde la base de datos
+  if (!tenantId) {
     try {
-      cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 86400 })
+      const serviceClient = await createServiceClient()
+      const { data: defaultTenant } = await serviceClient
+        .from('tenants')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (defaultTenant) {
+        tenantId = defaultTenant.id
+        tenantName = defaultTenant.name || tenantName
+        tenantSlug = defaultTenant.slug || tenantSlug
+        mpConnected = Boolean(defaultTenant.mp_access_token)
+        if (typeof defaultTenant.is_active === 'boolean') {
+          isActive = defaultTenant.is_active
+        }
+      }
     } catch {}
   }
 

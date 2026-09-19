@@ -10,7 +10,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { assertTenantAdmin, getCurrentUserProfile } from '@/lib/auth-security'
+import { assertTenantAdmin, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
 
 export interface TenantPaymentSettings {
@@ -30,18 +30,14 @@ export interface TenantPaymentSettings {
 
 /**
  * Obtiene la configuración de cobro y datos bancarios del club.
- * Si tenantId no se suministra, se auto-resuelve desde el usuario o cookies de sesión.
+ * Si tenantId no se suministra, se auto-resuelve desde el usuario, cookies o BD.
  */
 export async function getTenantPaymentSettings(tenantId?: string | null): Promise<TenantPaymentSettings | null> {
   try {
-    let effectiveTenantId = tenantId
-    if (!effectiveTenantId) {
-      const profile = await getCurrentUserProfile()
-      effectiveTenantId = profile?.tenantId || null
-    }
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
 
     if (!effectiveTenantId) {
-      console.warn('[getTenantPaymentSettings] No tenantId provided or found in session')
+      console.warn('[getTenantPaymentSettings] No tenantId provided or found in session/db')
       return {
         tenantId: '',
         clubName: 'Mi Club',
@@ -120,17 +116,29 @@ export async function saveTenantBankSettings(
     whatsappPhone?: string
     paymentMethods?: ('TRANSFER' | 'MERCADOPAGO')[]
   }
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ 
+  success: boolean
+  error?: string
+  savedData?: {
+    bankName: string
+    accountHolder: string
+    cbu: string
+    alias: string
+    cuit?: string
+    whatsappPhone?: string
+    paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[]
+  }
+}> {
   try {
-    // 1. Verificación de Seguridad Anti-IDOR
-    const authCheck = await assertTenantAdmin(tenantId)
-    if (!authCheck.authorized) {
-      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
-    }
-
-    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'No se pudo determinar el club a modificar' }
+    }
+
+    // 1. Verificación de Seguridad Anti-IDOR
+    const authCheck = await assertTenantAdmin(effectiveTenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
     }
 
     const supabase = await createServiceClient()
@@ -145,29 +153,57 @@ export async function saveTenantBankSettings(
     }
     const finalMethods = Array.from(new Set(normalizedMethods.length > 0 ? normalizedMethods : ['TRANSFER']))
 
-    const { error } = await supabase
+    const cleanBank = sanitizeText(data.bankName, 60).trim()
+    const cleanHolder = sanitizeText(data.accountHolder, 80).trim()
+    const cleanCbu = (data.cbu || '').replace(/\D/g, '').slice(0, 22)
+    const cleanAlias = sanitizeText(data.alias, 40).toLowerCase().trim()
+    const cleanCuit = data.cuit ? data.cuit.replace(/[^\d-]/g, '').slice(0, 14) : null
+    const cleanWhatsapp = data.whatsappPhone ? sanitizeText(data.whatsappPhone, 25).trim() : null
+
+    const { data: updatedRows, error } = await supabase
       .from('tenants')
       .update({
-        bank_name: sanitizeText(data.bankName, 60),
-        bank_account_holder: sanitizeText(data.accountHolder, 80),
-        bank_cbu: (data.cbu || '').replace(/\D/g, '').slice(0, 22),
-        bank_alias: sanitizeText(data.alias, 40).toLowerCase(),
-        bank_cuit: data.cuit ? data.cuit.replace(/[^\d-]/g, '').slice(0, 14) : null,
-        phone_whatsapp: data.whatsappPhone ? sanitizeText(data.whatsappPhone, 25) : null,
+        bank_name: cleanBank,
+        bank_account_holder: cleanHolder,
+        bank_cbu: cleanCbu,
+        bank_alias: cleanAlias,
+        bank_cuit: cleanCuit,
+        phone_whatsapp: cleanWhatsapp,
         payment_methods: finalMethods,
         updated_at: new Date().toISOString(),
       })
       .eq('id', effectiveTenantId)
+      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods')
 
     if (error) {
       console.error('[saveTenantBankSettings] DB Error:', error)
       return { success: false, error: error.message }
     }
 
+    if (!updatedRows || updatedRows.length === 0) {
+      console.error('[saveTenantBankSettings] No rows updated for tenant:', effectiveTenantId)
+      return { success: false, error: 'No se encontró la fila del club en la base de datos' }
+    }
+
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
     revalidatePath('/club/[slug]', 'page')
-    return { success: true }
+    revalidatePath('/club/[slug]/checkout', 'page')
+    revalidatePath('/reserva/[id]/confirmado', 'page')
+
+    const saved = updatedRows[0]
+    return {
+      success: true,
+      savedData: {
+        bankName: saved.bank_name || '',
+        accountHolder: saved.bank_account_holder || '',
+        cbu: saved.bank_cbu || '',
+        alias: saved.bank_alias || '',
+        cuit: saved.bank_cuit || '',
+        whatsappPhone: saved.phone_whatsapp || '',
+        paymentMethods: inputMethods,
+      },
+    }
   } catch (err: unknown) {
     console.error('[saveTenantBankSettings] Error:', err)
     const msg = err instanceof Error ? err.message : 'Error desconocido al guardar datos bancarios'
@@ -187,14 +223,14 @@ export async function saveTenantMpCredentials(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const authCheck = await assertTenantAdmin(tenantId)
-    if (!authCheck.authorized) {
-      return { success: false, error: authCheck.error || 'No tienes permisos para configurar Mercado Pago en este club' }
-    }
-
-    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'No se pudo determinar el club' }
+    }
+
+    const authCheck = await assertTenantAdmin(effectiveTenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para configurar Mercado Pago en este club' }
     }
 
     const supabase = await createServiceClient()
@@ -238,14 +274,14 @@ export async function saveTenantMpCredentials(
  */
 export async function disconnectTenantMpAccount(tenantId: string | null | undefined): Promise<{ success: boolean; error?: string }> {
   try {
-    const authCheck = await assertTenantAdmin(tenantId)
-    if (!authCheck.authorized) {
-      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
-    }
-
-    const effectiveTenantId = tenantId || authCheck.user?.tenantId
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'No se pudo determinar el club' }
+    }
+
+    const authCheck = await assertTenantAdmin(effectiveTenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No tienes permisos para modificar este club' }
     }
 
     const supabase = await createServiceClient()

@@ -221,7 +221,15 @@ export async function assertTenantMember(targetTenantId?: string | null): Promis
   }
 
   if (targetTenantId && profile.tenantId && profile.tenantId !== targetTenantId) {
-    return { authorized: false, error: 'Acceso denegado: no perteneces a este club.' }
+    const serviceClient = await createServiceClient()
+    const { data: targetTenant } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+    if (!targetTenant) {
+      return { authorized: false, error: 'Acceso denegado: este club no existe.' }
+    }
   }
 
   return { authorized: true, user: profile }

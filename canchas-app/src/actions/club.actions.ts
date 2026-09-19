@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Gestión del Club: Canchas, Precios, Calendario y Caja
 // ==============================================================================
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
@@ -34,13 +34,16 @@ function normalizeSurfaceEnum(surface?: string | null): 'CESPED_SINTETICO' | 'PA
 
 // ─── CANCHAS ──────────────────────────────────────────────────────────────────
 
-export async function getClubCourts(tenantId: string) {
+export async function getClubCourts(tenantId?: string | null) {
   try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return []
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('courts')
       .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, display_order')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .order('display_order', { ascending: true })
 
     if (error) {
@@ -60,7 +63,7 @@ export async function getClubCourts(tenantId: string) {
 }
 
 export async function createCourt(payload: {
-  tenant_id: string
+  tenant_id?: string | null
   name: string
   sport: SportType
   slot_duration?: SlotDuration
@@ -71,6 +74,11 @@ export async function createCourt(payload: {
   is_indoor?: boolean
   is_active?: boolean
 }) {
+  const effectiveTenantId = await resolveEffectiveTenantId(payload.tenant_id)
+  if (!effectiveTenantId) {
+    return { success: false, error: 'No se pudo determinar el club' }
+  }
+
   const supabase = await createServiceClient()
   const durationMinutes = payload.slot_duration_minutes || (payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90)
   const hasLights = payload.has_lights !== undefined ? payload.has_lights : (payload.has_lighting !== undefined ? payload.has_lighting : true)
@@ -78,7 +86,7 @@ export async function createCourt(payload: {
   const surfaceEnum = normalizeSurfaceEnum(payload.surface)
 
   const insertData = {
-    tenant_id: payload.tenant_id,
+    tenant_id: effectiveTenantId,
     name: payload.name.trim(),
     sport: sportEnum,
     slot_duration_minutes: durationMinutes,
@@ -256,9 +264,12 @@ export async function deleteCourt(
 
 // ─── CALENDARIO & TURNOS DEL DÍA ──────────────────────────────────────────────
 
-export async function getCalendarBookings(tenantId: string, dateIso: string) {
+export async function getCalendarBookings(tenantId: string | null | undefined, dateIso: string) {
   try {
-    const supabase = await createClient()
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return []
+
+    const supabase = await createServiceClient()
     const startOfDay = `${dateIso}T00:00:00.000Z`
     const endOfDay = `${dateIso}T23:59:59.999Z`
 
@@ -278,7 +289,7 @@ export async function getCalendarBookings(tenantId: string, dateIso: string) {
         payment_method,
         courts (id, name, sport, slot_duration_minutes)
       `)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
       .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: true })
@@ -362,8 +373,11 @@ export async function getCalendarBookings(tenantId: string, dateIso: string) {
 
 // ─── REGLAS DE PRECIOS ────────────────────────────────────────────────────────
 
-export async function getClubPriceRules(tenantId: string) {
+export async function getClubPriceRules(tenantId?: string | null) {
   try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return []
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('price_rules')
@@ -380,7 +394,7 @@ export async function getClubPriceRules(tenantId: string) {
         is_active,
         courts(name, sport)
       `)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -401,7 +415,7 @@ export async function getClubPriceRules(tenantId: string) {
 }
 
 export async function createPriceRule(payload: {
-  tenant_id: string
+  tenant_id?: string | null
   court_id?: string | null
   name: string
   days_of_week?: number[]
@@ -411,6 +425,11 @@ export async function createPriceRule(payload: {
   price_ars: number
   deposit_pct?: number
 }) {
+  const effectiveTenantId = await resolveEffectiveTenantId(payload.tenant_id)
+  if (!effectiveTenantId) {
+    return { success: false, error: 'No se pudo determinar el club' }
+  }
+
   const supabase = await createServiceClient()
   const days = (payload.days_of_week && payload.days_of_week.length > 0)
     ? payload.days_of_week
@@ -429,7 +448,7 @@ export async function createPriceRule(payload: {
     const { data: clubCourts } = await supabase
       .from('courts')
       .select('id')
-      .eq('tenant_id', payload.tenant_id)
+      .eq('tenant_id', effectiveTenantId)
       .eq('is_active', true)
 
     if (clubCourts && clubCourts.length > 0) {
@@ -445,7 +464,7 @@ export async function createPriceRule(payload: {
   }
 
   const rowsToInsert = targetCourtIds.map(cid => ({
-    tenant_id: payload.tenant_id,
+    tenant_id: effectiveTenantId,
     court_id: cid,
     name: payload.name.trim(),
     day_of_week: days,
@@ -470,7 +489,12 @@ export async function createPriceRule(payload: {
   return { success: true, rule: data?.[0] }
 }
 
-export async function deletePriceRule(ruleId: string, tenantId: string) {
+export async function deletePriceRule(ruleId: string, tenantId?: string | null) {
+  const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+  if (!effectiveTenantId) {
+    return { success: false, error: 'No se pudo determinar el club' }
+  }
+
   const supabase = await createServiceClient()
   try {
     // Desvincular de bookings si alguna reserva apunta a esta regla de precios
@@ -485,7 +509,7 @@ export async function deletePriceRule(ruleId: string, tenantId: string) {
       .from('price_rules')
       .delete()
       .eq('id', ruleId)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
 
     if (error) {
       return { success: false, error: error.message }
@@ -500,8 +524,11 @@ export async function deletePriceRule(ruleId: string, tenantId: string) {
 
 // ─── CAJA DIARIA & ARQUEO ─────────────────────────────────────────────────────
 
-export async function getDailyCashSummary(tenantId: string, dateStr: string) {
+export async function getDailyCashSummary(tenantId: string | null | undefined, dateStr: string) {
   try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return null
+
     const supabase = await createServiceClient()
 
     const startOfDay = new Date(`${dateStr}T00:00:00-03:00`).toISOString()
@@ -521,7 +548,7 @@ export async function getDailyCashSummary(tenantId: string, dateStr: string) {
         customer_name,
         courts (name)
       `)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
       .not('status', 'in', '("cancelled")')
 
@@ -591,13 +618,16 @@ export async function getDailyCashSummary(tenantId: string, dateStr: string) {
 
 // ─── TURNOS FIJOS / ABONADOS (Mejora 2A) ──────────────────────────────────────
 
-export async function getRecurringBookings(tenantId: string) {
+export async function getRecurringBookings(tenantId?: string | null) {
   try {
-    const supabase = await createClient()
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return []
+
+    const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('recurring_bookings')
       .select('*, courts(name, sport)')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .order('day_of_week', { ascending: true })
 
     if (error) {
@@ -611,7 +641,7 @@ export async function getRecurringBookings(tenantId: string) {
 }
 
 export async function createRecurringBooking(payload: {
-  tenant_id: string
+  tenant_id?: string | null
   court_id: string
   day_of_week: number
   start_time: string
@@ -622,19 +652,25 @@ export async function createRecurringBooking(payload: {
   deposit_amount_ars: number
   notes?: string
 }) {
-  const supabase = await createClient()
+  const effectiveTenantId = await resolveEffectiveTenantId(payload.tenant_id)
+  if (!effectiveTenantId) {
+    return { success: false, error: 'No se pudo determinar el club' }
+  }
+
+  const supabase = await createServiceClient()
   const { data, error } = await supabase
     .from('recurring_bookings')
     .insert({
       ...payload,
+      tenant_id: effectiveTenantId,
       is_active: true,
     })
     .select()
     .single()
 
   if (error) {
-    console.warn('[createRecurringBooking] DB insert fallback warning:', error.message)
-    return { success: true, warning: 'Guardado localmente' }
+    console.warn('[createRecurringBooking] DB insert error:', error.message)
+    return { success: false, error: error.message }
   }
 
   revalidatePath('/dashboard/fijos')
@@ -710,14 +746,16 @@ export async function applyBulkInflationPriceAdjustment(
 
 // ─── HORARIOS DE APERTURA Y CIERRE DEL CLUB ─────────────────────────────────
 
-export async function getClubSchedule(tenantId: string): Promise<ClubScheduleConfig> {
-  if (!tenantId) return DEFAULT_CLUB_SCHEDULE
+export async function getClubSchedule(tenantId?: string | null): Promise<ClubScheduleConfig> {
+  const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+  if (!effectiveTenantId) return DEFAULT_CLUB_SCHEDULE
+
   try {
     const supabase = await createServiceClient()
     const { data: tenant, error } = await supabase
       .from('tenants')
       .select('description')
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
       .maybeSingle()
 
     if (error || !tenant || !tenant.description) {
@@ -941,11 +979,11 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       schedule,
       courts: courtsMapped,
       priceRules: priceRulesMapped,
-      bankDetails: tenant.bank_alias
+      bankDetails: (tenant.bank_alias || tenant.bank_cbu)
         ? {
-            bankName: tenant.bank_name || 'Mercado Pago',
+            bankName: tenant.bank_name || 'Transferencia Bancaria',
             accountHolder: tenant.bank_account_holder || tenant.name,
-            alias: tenant.bank_alias,
+            alias: tenant.bank_alias || '',
             cbu: tenant.bank_cbu || '',
           }
         : undefined,

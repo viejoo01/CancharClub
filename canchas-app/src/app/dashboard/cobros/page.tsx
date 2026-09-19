@@ -51,6 +51,9 @@ export default function CobrosConfigPage() {
   const [allowTransfer, setAllowTransfer] = useState(true)
   const [allowMp, setAllowMp] = useState(false)
 
+  // Estado de persistencia y borrador
+  const [isSavedInDb, setIsSavedInDb] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -59,12 +62,42 @@ export default function CobrosConfigPage() {
       try {
         const settings = await getTenantPaymentSettings(tenantId || undefined)
         if (settings && isMounted) {
-          setBankName(settings.bankName || '')
-          setAccountHolder(settings.accountHolder || '')
-          setCbu(settings.cbu || '')
-          setAlias(settings.alias || '')
-          setCuit(settings.cuit || '')
-          setWhatsappPhone(settings.whatsappPhone || '')
+          const hasDbData = Boolean(settings.accountHolder && (settings.alias || settings.cbu))
+          setIsSavedInDb(hasDbData)
+
+          // Revisar si había borrador en sessionStorage
+          let draft: Record<string, string> | null = null
+          try {
+            const raw = sessionStorage.getItem('canchar_draft_bank_settings')
+            if (raw) draft = JSON.parse(raw)
+          } catch {}
+
+          if (hasDbData) {
+            setBankName(settings.bankName || '')
+            setAccountHolder(settings.accountHolder || '')
+            setCbu(settings.cbu || '')
+            setAlias(settings.alias || '')
+            setCuit(settings.cuit || '')
+            setWhatsappPhone(settings.whatsappPhone || '')
+            setHasUnsavedChanges(false)
+          } else if (draft && (draft.accountHolder || draft.alias || draft.bankName || draft.cbu)) {
+            setBankName(draft.bankName || '')
+            setAccountHolder(draft.accountHolder || '')
+            setCbu(draft.cbu || '')
+            setAlias(draft.alias || '')
+            setCuit(draft.cuit || '')
+            setWhatsappPhone(draft.whatsappPhone || '')
+            setHasUnsavedChanges(true)
+          } else {
+            setBankName(settings.bankName || '')
+            setAccountHolder(settings.accountHolder || '')
+            setCbu(settings.cbu || '')
+            setAlias(settings.alias || '')
+            setCuit(settings.cuit || '')
+            setWhatsappPhone(settings.whatsappPhone || '')
+            setHasUnsavedChanges(false)
+          }
+
           setMpConnected(settings.mpConnected)
           setMpCollectorId(settings.mpCollectorId || null)
           setAllowTransfer(settings.paymentMethods.includes('TRANSFER'))
@@ -84,10 +117,27 @@ export default function CobrosConfigPage() {
     }
   }, [tenantId])
 
+  const handleFieldChange = (fieldKey: string, setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setter(val)
+    setHasUnsavedChanges(true)
+    try {
+      const current = {
+        bankName: fieldKey === 'bankName' ? val : bankName,
+        accountHolder: fieldKey === 'accountHolder' ? val : accountHolder,
+        cbu: fieldKey === 'cbu' ? val : cbu,
+        alias: fieldKey === 'alias' ? val : alias,
+        cuit: fieldKey === 'cuit' ? val : cuit,
+        whatsappPhone: fieldKey === 'whatsappPhone' ? val : whatsappPhone,
+      }
+      sessionStorage.setItem('canchar_draft_bank_settings', JSON.stringify(current))
+    } catch {}
+  }
+
   const handleSaveBank = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!alias.trim() || !accountHolder.trim() || !cbu.trim()) {
-      toast.error('Completá al menos el Titular, CBU y Alias de tu cuenta')
+    if (!accountHolder.trim() || (!alias.trim() && !cbu.trim())) {
+      toast.error('Completá al menos el Titular y el Alias o CBU de tu cuenta')
       return
     }
 
@@ -109,6 +159,11 @@ export default function CobrosConfigPage() {
       })
 
       if (res.success) {
+        try {
+          sessionStorage.removeItem('canchar_draft_bank_settings')
+        } catch {}
+        setHasUnsavedChanges(false)
+        setIsSavedInDb(true)
         if (res.savedData) {
           setBankName(res.savedData.bankName ?? bankName)
           setAccountHolder(res.savedData.accountHolder ?? accountHolder)
@@ -117,7 +172,7 @@ export default function CobrosConfigPage() {
           setCuit(res.savedData.cuit ?? cuit)
           setWhatsappPhone(res.savedData.whatsappPhone ?? whatsappPhone)
         }
-        toast.success('¡Datos bancarios guardados con éxito!', {
+        toast.success('¡Datos bancarios guardados en la base de datos!', {
           description: 'Los jugadores verán estos datos para transferir la seña al reservar.',
         })
       } else {
@@ -209,7 +264,7 @@ export default function CobrosConfigPage() {
       </div>
 
       {/* Banner de Garantía y Transparencia */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/30 flex items-start gap-3.5 shadow-md">
+      <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/30 flex items-start gap-3.5 shadow-md">
         <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
           <ShieldCheck className="w-5 h-5" />
         </div>
@@ -240,9 +295,22 @@ export default function CobrosConfigPage() {
                 </CardDescription>
               </div>
             </div>
-            <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[11px] font-bold">
-              Recomendado
-            </Badge>
+            <div>
+              {isSavedInDb && !hasUnsavedChanges ? (
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[11px] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Activo en Base de Datos
+                </Badge>
+              ) : hasUnsavedChanges ? (
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[11px] font-bold flex items-center gap-1 animate-pulse">
+                  Cambios pendientes de guardar
+                </Badge>
+              ) : (
+                <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[11px] font-bold">
+                  Recomendado
+                </Badge>
+              )}
+            </div>
           </div>
         </CardHeader>
 
@@ -256,7 +324,7 @@ export default function CobrosConfigPage() {
                 <Input
                   id="bankName"
                   value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
+                  onChange={handleFieldChange('bankName', setBankName)}
                   placeholder="Ej. Mercado Pago, Banco Galicia, Santander"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs focus:border-emerald-500 text-white"
                   required
@@ -270,7 +338,7 @@ export default function CobrosConfigPage() {
                 <Input
                   id="accountHolder"
                   value={accountHolder}
-                  onChange={(e) => setAccountHolder(e.target.value)}
+                  onChange={handleFieldChange('accountHolder', setAccountHolder)}
                   placeholder="Ej. Club Deportivo SRL"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs focus:border-emerald-500 text-white"
                   required
@@ -285,7 +353,7 @@ export default function CobrosConfigPage() {
                 <Input
                   id="alias"
                   value={alias}
-                  onChange={(e) => setAlias(e.target.value)}
+                  onChange={handleFieldChange('alias', setAlias)}
                   placeholder="Ej. miclub.mp"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono font-bold text-emerald-400 focus:border-emerald-500"
                   required
@@ -294,15 +362,14 @@ export default function CobrosConfigPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="cbu" className="text-xs font-semibold text-slate-300">
-                  CBU o CVU (22 dígitos) *
+                  CBU o CVU (22 dígitos)
                 </Label>
                 <Input
                   id="cbu"
                   value={cbu}
-                  onChange={(e) => setCbu(e.target.value)}
+                  onChange={handleFieldChange('cbu', setCbu)}
                   placeholder="0000003100098765432101"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-slate-200 focus:border-emerald-500"
-                  required
                 />
               </div>
 
@@ -313,7 +380,7 @@ export default function CobrosConfigPage() {
                 <Input
                   id="cuit"
                   value={cuit}
-                  onChange={(e) => setCuit(e.target.value)}
+                  onChange={handleFieldChange('cuit', setCuit)}
                   placeholder="Ej. 30-71234567-9"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs text-slate-200 focus:border-emerald-500"
                 />
@@ -327,7 +394,7 @@ export default function CobrosConfigPage() {
                 <Input
                   id="whatsapp"
                   value={whatsappPhone}
-                  onChange={(e) => setWhatsappPhone(e.target.value)}
+                  onChange={handleFieldChange('whatsappPhone', setWhatsappPhone)}
                   placeholder="Ej. 5493814123456"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs text-slate-200 focus:border-emerald-500"
                   required
@@ -335,7 +402,49 @@ export default function CobrosConfigPage() {
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
+            {/* Vista Previa en Vivo de lo que ve el Jugador */}
+            {(alias || accountHolder || bankName) && (
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Vista previa de cómo lo ve el jugador al transferir la seña:
+                  </span>
+                  {isSavedInDb && !hasUnsavedChanges && (
+                    <span className="text-[10px] text-emerald-400 font-semibold">
+                      ✓ Sincronizado con reservas
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300 pt-1">
+                  <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block">Banco / Billetera:</span>
+                    <strong className="text-white">{bankName || 'A definir'}</strong>
+                  </div>
+                  <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block">Titular de la cuenta:</span>
+                    <strong className="text-white">{accountHolder || 'A definir'}</strong>
+                  </div>
+                  <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block">Alias para transferir:</span>
+                    <strong className="text-emerald-400 font-mono text-sm">{alias || 'A definir'}</strong>
+                  </div>
+                  <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block">CBU / CVU:</span>
+                    <strong className="text-slate-200 font-mono text-xs">{cbu || 'Opcional (solo si se ingresa)'}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-between">
+              <div>
+                {hasUnsavedChanges && (
+                  <span className="text-xs text-amber-400 font-medium">
+                    Hay cambios sin guardar. Presioná &quot;Guardar Datos Bancarios&quot;.
+                  </span>
+                )}
+              </div>
               <Button
                 type="submit"
                 disabled={savingBank}
@@ -391,6 +500,11 @@ export default function CobrosConfigPage() {
                   <p className="text-[11px] text-slate-400">
                     Las señas cobradas con tarjeta de tus canchas se depositan al instante en tu billetera de MP.
                   </p>
+                  {mpCollectorId && (
+                    <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                      ID de Cuenta MP: {mpCollectorId}
+                    </span>
+                  )}
                 </div>
               </div>
 

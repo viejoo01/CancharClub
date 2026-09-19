@@ -491,6 +491,11 @@ export async function createManualBooking(
     if (payload.customer_notes) noteParts.push(`Nota cliente: ${payload.customer_notes}`)
     const staffNotes = noteParts.join(' | ') || null
 
+    const rawMethod = String(payload.payment_method || 'cash').toLowerCase()
+    const mappedPaymentMethod = rawMethod.includes('transfer') ? 'bank_transfer'
+      : (rawMethod.includes('mercado') || rawMethod.includes('mp')) ? 'mercadopago'
+      : 'cash'
+
     const { data: booking, error } = await supabase
       .from('bookings')
       .insert({
@@ -502,7 +507,7 @@ export async function createManualBooking(
         price_total_cents: priceTotalCents,
         deposit_cents: depositCents,
         staff_deposit_amount_cents: depositCents,
-        payment_method: 'cash',
+        payment_method: mappedPaymentMethod,
         paid_at: depositCents > 0 ? new Date().toISOString() : null,
         customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
         customer_phone: payload.customer_phone?.trim() || null,
@@ -559,7 +564,7 @@ export async function createManualBooking(
 export async function registerCashPayment(params: {
   booking_id: string
   amount_ars: number
-  payment_method: 'CASH' | 'TRANSFER' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'QR_MP' | 'OTHER'
+  payment_method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'QR_MP' | 'OTHER'
   reference_number?: string
   notes?: string
 }): Promise<{ success: boolean; error?: string }> {
@@ -567,7 +572,7 @@ export async function registerCashPayment(params: {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status')
+      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status')
       .eq('id', params.booking_id)
       .single()
 
@@ -583,26 +588,33 @@ export async function registerCashPayment(params: {
     const newDepositCents = currentDeposit + amountCents
     const totalPriceCents = Number(booking.price_total_cents) || 0
 
-    const methodStr = String(params.payment_method)
-    const methodEnum = methodStr === 'TRANSFER' ? 'bank_transfer'
-      : (methodStr === 'MERCADOPAGO' || methodStr === 'QR_MP') ? 'mercadopago'
+    const methodStr = String(params.payment_method).toUpperCase()
+    const methodEnum = methodStr.includes('TRANSFER') ? 'bank_transfer'
+      : (methodStr.includes('MERCADO') || methodStr.includes('MP') || methodStr.includes('QR')) ? 'mercadopago'
       : 'cash'
 
     const isFullyPaid = newDepositCents >= totalPriceCents
     const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
 
-    const noteEntry = `Cobro $${params.amount_ars} (${params.payment_method})${params.notes ? ` - ${params.notes}` : ''}`
+    const nowIso = new Date().toISOString()
+    const noteEntry = `Cobro $${params.amount_ars} (${params.payment_method || 'CASH'}) [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
+
+    // Preservar método online previo si existió seña online
+    const finalPaymentMethod = (booking.payment_method && booking.payment_method !== 'cash' && currentDeposit > 0)
+      ? booking.payment_method
+      : methodEnum
 
     const { error: upErr } = await supabase
       .from('bookings')
       .update({
         deposit_cents: newDepositCents,
         staff_deposit_amount_cents: newDepositCents,
-        payment_method: methodEnum,
-        paid_at: new Date().toISOString(),
+        payment_method: finalPaymentMethod,
+        paid_at: nowIso,
         status: newStatus,
         staff_notes: updatedNotes,
+        updated_at: nowIso,
       })
       .eq('id', params.booking_id)
 
@@ -612,6 +624,7 @@ export async function registerCashPayment(params: {
     }
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/caja')
     return { success: true }
   } catch (error) {
     console.error('[registerCashPayment] Error:', error)
@@ -758,12 +771,14 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
     const noteEntry = `Seña verificada y aprobada por el club el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
 
+    const nowIso = new Date().toISOString()
     const { error: upErr } = await supabase
       .from('bookings')
       .update({
         status: 'confirmed',
+        paid_at: nowIso,
         staff_notes: updatedNotes,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       })
       .eq('id', bookingId)
 

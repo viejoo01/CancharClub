@@ -91,7 +91,7 @@ export function BookingDetailsModal({
   const currentStatus = localStatus || booking?.status || 'confirmed'
 
   const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER'>('CASH')
+  const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO'>('CASH')
   const [loadingPay, setLoadingPay] = useState(false)
   const [loadingCancel, setLoadingCancel] = useState(false)
   const [loadingNoShow, setLoadingNoShow] = useState(false)
@@ -572,11 +572,12 @@ export function BookingDetailsModal({
                       <select
                         id="payMethod"
                         value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER')}
+                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO')}
                         className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 mt-1"
                       >
-                        <option value="CASH">Efectivo</option>
-                        <option value="TRANSFER">Transferencia</option>
+                        <option value="CASH">Efectivo en Caja</option>
+                        <option value="TRANSFER">Transferencia / Alias</option>
+                        <option value="MERCADOPAGO">Mercado Pago / QR</option>
                       </select>
                     </div>
                   </div>

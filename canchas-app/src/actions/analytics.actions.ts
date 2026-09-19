@@ -5,6 +5,7 @@
 // ==============================================================================
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { resolveEffectiveTenantId } from '@/lib/auth-security'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -67,73 +68,104 @@ export interface DailyCashReport {
 }
 
 /**
- * Obtiene todos los cobros del día (señas + saldos pagados) de la BD real.
- * Infiere el método de pago según el origen de la reserva:
- *   ONLINE_PORTAL  → MERCADOPAGO
- *   WHATSAPP       → TRANSFER
- *   WALK_IN / resto → CASH
+ * Obtiene todos los cobros del día (señas online por MP/Transferencia, pagos manuales y saldos pagados en mostrador).
+ * Separa de forma precisa:
+ *   - EFECTIVO EN CAJA (CASH)
+ *   - TRANSFERENCIAS (TRANSFER - alias / CBU / banco)
+ *   - MERCADO PAGO (MERCADOPAGO - online / QR)
+ *   - TOTAL RECAUDADO (suma íntegra sin pérdidas ni duplicados)
  */
 export async function getDailyCashReport(
   tenantId: string,
   date: string // 'YYYY-MM-DD'
 ): Promise<DailyCashReport> {
   const supabase = await createServiceClient()
+  const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
 
-  const dayStart = `${date}T00:00:00-03:00`
-  const dayEnd   = `${date}T23:59:59-03:00`
+  // Límites del día en huso horario de Argentina (UTC-3)
+  const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
+  const dayEnd   = new Date(`${date}T23:59:59.999-03:00`).toISOString()
 
-  // Pagos registrados en la fecha
+  // Consultar todas las reservas vigentes del club
   const { data: bookingRows } = await supabase
     .from('bookings')
-    .select('id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, staff_notes, booked_at, courts(name)')
-    .eq('tenant_id', tenantId)
-    .gte('paid_at', new Date(dayStart).toISOString())
-    .lte('paid_at', new Date(dayEnd).toISOString())
+    .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
+    .eq('tenant_id', effectiveTenantId)
     .not('status', 'in', '("cancelled")')
-    .order('paid_at', { ascending: true })
 
   const entries: DailyCashEntry[] = []
 
   for (const row of bookingRows ?? []) {
     const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
     const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
-    const depositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
-    const totalArs = Math.round((Number(row.price_total_cents) || 0) / 100)
+    const totalDepositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
+    const totalPriceArs = Math.round((Number(row.price_total_cents) || 0) / 100)
+    const notes = row.staff_notes || ''
 
-    const method = String(row.payment_method || 'cash').toUpperCase()
-    const mappedMethod = method.includes('MERCADO') ? 'MERCADOPAGO' : method.includes('TRANSFER') ? 'TRANSFER' : 'CASH'
+    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $12500 (CASH) [2026-09-19T...]")
+    const cobroMatches = [...notes.matchAll(/Cobro \$?(\d+)\s*\((CASH|TRANSFER|MERCADOPAGO|MP|DEBIT_CARD|CREDIT_CARD|QR_MP|OTHER)\)(?:\s*\[([^\]]+)\])?/gi)]
+    let cobrosTotal = 0
 
-    if (depositArs > 0) {
-      entries.push({
-        id: `dep-${row.id}`,
-        customer_name: row.customer_name || 'Cliente',
-        court_name: courtName,
-        amount_ars: depositArs,
-        payment_type: 'DEPOSIT',
-        payment_method: mappedMethod,
-        paid_at: row.paid_at ?? '',
-        notes: row.staff_notes ?? null,
-        origin: row.payment_method ?? 'cash',
-      })
+    for (let idx = 0; idx < cobroMatches.length; idx++) {
+      const m = cobroMatches[idx]
+      const amt = Number(m[1])
+      const rawMeth = m[2].toUpperCase()
+      const isoTimestamp = m[3] || row.paid_at || row.updated_at || row.created_at
+      cobrosTotal += amt
+
+      if (isoTimestamp && isoTimestamp >= dayStart && isoTimestamp <= dayEnd) {
+        let method = 'CASH'
+        if (rawMeth.includes('TRANSFER')) method = 'TRANSFER'
+        else if (rawMeth.includes('MERCADO') || rawMeth.includes('MP') || rawMeth.includes('QR')) method = 'MERCADOPAGO'
+
+        entries.push({
+          id: `cobro-${row.id}-${idx}`,
+          customer_name: row.customer_name || 'Cliente',
+          court_name: courtName,
+          amount_ars: amt,
+          payment_type: 'BALANCE',
+          payment_method: method,
+          paid_at: isoTimestamp,
+          notes: notes,
+          origin: method.toLowerCase(),
+        })
+      }
     }
 
-    const balancePaid = Math.max(0, totalArs - depositArs)
-    if (balancePaid > 0 && row.staff_notes?.includes('Cobro')) {
-      entries.push({
-        id: `bal-${row.id}`,
-        customer_name: row.customer_name || 'Cliente',
-        court_name: courtName,
-        amount_ars: balancePaid,
-        payment_type: 'BALANCE',
-        payment_method: mappedMethod,
-        paid_at: row.paid_at ?? '',
-        notes: row.staff_notes ?? null,
-        origin: row.payment_method ?? 'cash',
-      })
+    // 2. Seña previa inicial (online o seña tomada al momento de reservar)
+    const initialDeposit = Math.max(0, totalDepositArs - cobrosTotal)
+    if (initialDeposit > 0) {
+      // Fecha en que se cobró la seña inicial
+      const initialPaidAt = cobroMatches.length > 0
+        ? (row.paid_at || row.created_at)
+        : (row.paid_at || row.updated_at || row.created_at)
+
+      if (initialPaidAt && initialPaidAt >= dayStart && initialPaidAt <= dayEnd) {
+        let initialMethod = 'CASH'
+        const rawMethod = String(row.payment_method || '').toLowerCase()
+        if (rawMethod.includes('transfer') || rawMethod.includes('bank') || notes.toUpperCase().includes('TRANSFER')) {
+          initialMethod = 'TRANSFER'
+        } else if (rawMethod.includes('mercado') || rawMethod.includes('mp') || notes.toUpperCase().includes('MERCADO')) {
+          initialMethod = 'MERCADOPAGO'
+        }
+
+        const isFull = initialDeposit >= totalPriceArs && totalPriceArs > 0
+        entries.push({
+          id: `dep-${row.id}`,
+          customer_name: row.customer_name || 'Cliente',
+          court_name: courtName,
+          amount_ars: initialDeposit,
+          payment_type: isFull ? 'BALANCE' : 'DEPOSIT',
+          payment_method: initialMethod,
+          paid_at: initialPaidAt,
+          notes: notes,
+          origin: row.payment_method || 'online',
+        })
+      }
     }
   }
 
-  entries.sort((a, b) => a.paid_at.localeCompare(b.paid_at))
+  entries.sort((a, b) => (a.paid_at || '').localeCompare(b.paid_at || ''))
 
   const totalCash     = entries.filter(e => e.payment_method === 'CASH').reduce((s, e) => s + e.amount_ars, 0)
   const totalTransfer = entries.filter(e => e.payment_method === 'TRANSFER').reduce((s, e) => s + e.amount_ars, 0)

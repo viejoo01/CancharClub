@@ -70,6 +70,7 @@ export function sportLabel(sport: SportType): string {
     FUTBOL7: 'Fútbol 7',
     TENIS: 'Tenis',
     SQUASH: 'Squash',
+    BASQUET: 'Básquet',
     OTHER: 'Otro',
   }
   return map[sport] ?? sport

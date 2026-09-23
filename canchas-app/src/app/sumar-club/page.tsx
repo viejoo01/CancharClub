@@ -142,7 +142,10 @@ export default function SumarClubLandingPage() {
               Tenis
             </span>
             <span className="px-5 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs sm:text-sm font-medium shadow-2xs">
-              Y más deportes
+              Básquet
+            </span>
+            <span className="px-5 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs sm:text-sm font-medium shadow-2xs">
+              Otros deportes
             </span>
           </div>
         </div>

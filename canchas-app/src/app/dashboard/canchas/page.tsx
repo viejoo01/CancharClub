@@ -51,6 +51,7 @@ function formatSport(sport?: string | null) {
   if (sport === 'FUTBOL7' || sport === 'FUTBOL_7') return 'Fútbol 7'
   if (sport === 'TENIS') return 'Tenis'
   if (sport === 'PADEL') return 'Pádel'
+  if (sport === 'BASQUET' || sport === 'BASKET') return 'Básquet'
   return sport
 }
 
@@ -463,6 +464,7 @@ export default function CanchasPage() {
                   <option value="FUTBOL5">Fútbol 5</option>
                   <option value="FUTBOL7">Fútbol 7</option>
                   <option value="TENIS">Tenis</option>
+                  <option value="BASQUET">Básquet</option>
                 </select>
               </div>
 

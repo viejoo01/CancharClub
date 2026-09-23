@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers, Pencil } from 'lucide-react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers, Pencil, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +20,7 @@ import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-moda
 import { formatARS } from '@/lib/utils'
 import { createPriceRule, updatePriceRule, getClubPriceRules, deletePriceRule } from '@/actions/club.actions'
 import { toast } from 'sonner'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { createClient } from '@/lib/supabase/client'
 
 interface PriceRuleItem {
@@ -42,6 +42,7 @@ interface ClubCourtSimple {
 
 export default function PreciosPage() {
   const tenantId = useTenantId()
+  const { isOwner } = useUserRole()
   const [rules, setRules] = useState<PriceRuleItem[]>([])
   const [availableCourts, setAvailableCourts] = useState<ClubCourtSimple[]>([])
   const [loadingRules, setLoadingRules] = useState(true)
@@ -131,6 +132,10 @@ export default function PreciosPage() {
   const [loading, setLoading] = useState(false)
 
   const handleOpenCreateModal = () => {
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para crear tarifas.')
+      return
+    }
     setEditingRuleId(null)
     setName('')
     setSelectedCourtId('')
@@ -143,6 +148,10 @@ export default function PreciosPage() {
   }
 
   const handleOpenEditModal = (rule: PriceRuleItem) => {
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para modificar tarifas.')
+      return
+    }
     setEditingRuleId(rule.id)
     setName(rule.name)
     setSelectedCourtId(rule.court_id || '')
@@ -157,6 +166,11 @@ export default function PreciosPage() {
   const handleSubmitRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
+
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para crear o modificar tarifas.')
+      return
+    }
 
     if (!tenantId) {
       toast.error('No se pudo identificar el club activo')
@@ -219,6 +233,10 @@ export default function PreciosPage() {
   }
 
   const handleDeleteRule = async (ruleId: string, ruleName: string) => {
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para eliminar tarifas.')
+      return
+    }
     if (!tenantId) return
     if (!confirm(`¿Estás seguro de eliminar la tarifa "${ruleName}"?`)) return
 
@@ -251,33 +269,52 @@ export default function PreciosPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <Button
-            variant="outline"
-            onClick={() => setIsDynamicModalOpen(true)}
-            className="flex-1 sm:flex-none border-purple-500/30 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 font-bold gap-2 text-xs rounded-xl min-h-10"
-          >
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <span>Dinámicas (IA)</span>
-          </Button>
+          {isOwner ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setIsDynamicModalOpen(true)}
+                className="flex-1 sm:flex-none border-purple-500/30 bg-purple-950/20 text-purple-300 hover:bg-purple-900/30 font-bold gap-2 text-xs rounded-xl min-h-10 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span>Dinámicas (IA)</span>
+              </Button>
 
-          <Button
-            variant="outline"
-            onClick={() => setIsInflationModalOpen(true)}
-            className="flex-1 sm:flex-none border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold gap-2 text-xs rounded-xl min-h-10"
-          >
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span>Ajuste Inflación (+%)</span>
-          </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsInflationModalOpen(true)}
+                className="flex-1 sm:flex-none border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold gap-2 text-xs rounded-xl min-h-10 cursor-pointer"
+              >
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <span>Ajuste Inflación (+%)</span>
+              </Button>
 
-          <Button
-            onClick={handleOpenCreateModal}
-            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl min-h-10 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nueva Tarifa</span>
-          </Button>
+              <Button
+                onClick={handleOpenCreateModal}
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl min-h-10 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nueva Tarifa</span>
+              </Button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-amber-400 font-medium">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Modificación restringida al Dueño</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Banner de solo lectura para administradores de turno / personal */}
+      {!isOwner && (
+        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs">
+          <Lock className="w-4 h-4 shrink-0 text-amber-400" />
+          <div className="leading-relaxed">
+            <strong className="text-amber-200">Modo Consulta (Solo Lectura):</strong> Las tarifas y reglas de precios de las canchas son administradas exclusivamente por el dueño del club para garantizar la seguridad financiera y evitar discrepancias de caja.
+          </div>
+        </div>
+      )}
 
       {/* Grid de Tarifas */}
       {loadingRules ? (
@@ -357,27 +394,36 @@ export default function PreciosPage() {
                   </div>
 
                   <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleOpenEditModal(rule)}
-                      className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
-                      title="Editar tarifa"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      <span>Editar</span>
-                    </Button>
+                    {isOwner ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenEditModal(rule)}
+                          className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
+                          title="Editar tarifa"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </Button>
 
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDeleteRule(rule.id, rule.name)}
-                      className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
-                      title="Eliminar tarifa"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Eliminar</span>
-                    </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteRule(rule.id, rule.name)}
+                          className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
+                          title="Eliminar tarifa"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Eliminar</span>
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-400/80" />
+                        <span className="text-[11px] text-slate-400">Tarifa fijada por el dueño</span>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -406,7 +452,7 @@ export default function PreciosPage() {
               <Label htmlFor="ruleName">Nombre de la Tarifa *</Label>
               <Input
                 id="ruleName"
-                placeholder="Ej. Noche Fin de Semana"
+                placeholder=""
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

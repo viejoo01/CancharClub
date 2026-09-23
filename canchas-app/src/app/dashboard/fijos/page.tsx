@@ -12,7 +12,8 @@ import {
   MessageCircle, 
   Loader2, 
   CalendarDays, 
-  ShieldAlert 
+  ShieldAlert,
+  Lock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,7 +39,7 @@ import {
 import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { createClient } from '@/lib/supabase/client'
 
 
@@ -50,6 +51,7 @@ const DAYS_NAME = [
 
 export default function TurnosFijosPage() {
   const tenantId = useTenantId()
+  const { isOwner } = useUserRole()
   const [slots, setSlots] = useState<RecurringSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -142,6 +144,10 @@ export default function TurnosFijosPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para crear turnos fijos o fijar precios mensuales.')
+      return
+    }
     if (!customerName || !customerPhone) {
       toast.error('Completá nombre y teléfono del abonado')
       return
@@ -506,14 +512,34 @@ export default function TurnosFijosPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-300">Precio Mensual ($ARS)</Label>
-                <Input
-                  type="number"
-                  value={monthlyPrice}
-                  onChange={(e) => setMonthlyPrice(e.target.value)}
-                  required
-                  className="bg-slate-900 border-slate-800 text-xs font-mono font-bold"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-300">Precio Mensual ($ARS)</Label>
+                  {!isOwner && (
+                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
+                      <Lock className="w-2.5 h-2.5" /> Solo Dueño
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    value={monthlyPrice}
+                    onChange={(e) => setMonthlyPrice(e.target.value)}
+                    disabled={!isOwner}
+                    required
+                    className={`bg-slate-900 border-slate-800 text-xs font-mono font-bold ${
+                      !isOwner ? 'cursor-not-allowed opacity-90 pr-8' : ''
+                    }`}
+                  />
+                  {!isOwner && (
+                    <Lock className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  )}
+                </div>
+                {!isOwner && (
+                  <p className="text-[10px] text-slate-500">
+                    Solo el dueño del club puede fijar o modificar el abono mensual.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">

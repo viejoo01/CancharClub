@@ -13,10 +13,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { TrendingUp, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { TrendingUp, ArrowRight, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import { formatARS } from '@/lib/utils'
 import { applyBulkInflationPriceAdjustment } from '@/actions/club.actions'
 import { toast } from 'sonner'
+import { useUserRole } from '@/hooks/use-tenant-id'
 
 interface PriceRulePreview {
   id: string
@@ -40,6 +41,7 @@ export function InflationAdjustModal({
   tenantId,
   onSuccess,
 }: InflationAdjustModalProps) {
+  const { isOwner } = useUserRole()
   const [percentage, setPercentage] = useState<number>(15)
   const [roundingStep, setRoundingStep] = useState<number>(500)
   const [isApplying, setIsApplying] = useState(false)
@@ -52,6 +54,11 @@ export function InflationAdjustModal({
   }
 
   const handleApply = async () => {
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para aplicar aumentos de precios por inflación.')
+      return
+    }
+
     if (percentage <= 0) {
       toast.error('Ingresá un porcentaje de aumento válido')
       return
@@ -106,6 +113,13 @@ export function InflationAdjustModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
+          {!isOwner && (
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs">
+              <Lock className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>Solo el dueño del club tiene permisos para aplicar aumentos de precios por inflación.</span>
+            </div>
+          )}
+
           {/* Controles de Porcentaje y Redondeo */}
           <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
             <div>
@@ -228,11 +242,20 @@ export function InflationAdjustModal({
 
           <Button
             onClick={handleApply}
-            disabled={isApplying}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 text-xs rounded-xl shadow-lg shadow-emerald-950/40 min-h-10 sm:min-h-9"
+            disabled={isApplying || !isOwner}
+            className={`font-bold gap-2 text-xs rounded-xl shadow-lg shadow-emerald-950/40 min-h-10 sm:min-h-9 ${
+              !isOwner
+                ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            }`}
           >
             {isApplying ? (
               <Loader2 className="w-4 h-4 animate-spin" />
+            ) : !isOwner ? (
+              <>
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>Solo Dueño del Club</span>
+              </>
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />

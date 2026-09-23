@@ -52,6 +52,17 @@ export async function saveDynamicPricingSettings(
       return { success: false, error: 'No se pudo identificar el club' }
     }
 
+    // Protección antifraude: Solo el dueño del club puede configurar tarifas dinámicas
+    const { getCurrentUserProfile } = await import('@/lib/auth-security')
+    const currentUser = await getCurrentUserProfile()
+    const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+    if (currentUser && !isOwner) {
+      return {
+        success: false,
+        error: 'Solo el dueño del club tiene permisos para configurar tarifas dinámicas.',
+      }
+    }
+
     if (config) {
       // Configuración recibida para futura persistencia en tabla de reglas
     }

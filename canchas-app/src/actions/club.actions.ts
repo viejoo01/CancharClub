@@ -465,6 +465,17 @@ export async function createPriceRule(payload: {
     return { success: false, error: 'No se pudo determinar el club' }
   }
 
+  // Protección antifraude: Solo el dueño del club puede crear nuevas tarifas de canchas
+  const { getCurrentUserProfile } = await import('@/lib/auth-security')
+  const currentUser = await getCurrentUserProfile()
+  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+  if (currentUser && !isOwner) {
+    return {
+      success: false,
+      error: 'Solo el dueño del club tiene permisos para crear tarifas de canchas.',
+    }
+  }
+
   const supabase = await createServiceClient()
   const days = (payload.days_of_week && payload.days_of_week.length > 0)
     ? payload.days_of_week
@@ -541,6 +552,17 @@ export async function updatePriceRule(payload: {
     return { success: false, error: 'No se pudo determinar el club' }
   }
 
+  // Protección antifraude: Solo el dueño del club puede modificar tarifas de canchas existentes
+  const { getCurrentUserProfile } = await import('@/lib/auth-security')
+  const currentUser = await getCurrentUserProfile()
+  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+  if (currentUser && !isOwner) {
+    return {
+      success: false,
+      error: 'Solo el dueño del club tiene permisos para modificar tarifas de canchas.',
+    }
+  }
+
   const supabase = await createServiceClient()
   const days = (payload.days_of_week && payload.days_of_week.length > 0)
     ? payload.days_of_week
@@ -582,6 +604,17 @@ export async function deletePriceRule(ruleId: string, tenantId?: string | null) 
   const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
   if (!effectiveTenantId) {
     return { success: false, error: 'No se pudo determinar el club' }
+  }
+
+  // Protección antifraude: Solo el dueño del club puede eliminar tarifas de canchas
+  const { getCurrentUserProfile } = await import('@/lib/auth-security')
+  const currentUser = await getCurrentUserProfile()
+  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+  if (currentUser && !isOwner) {
+    return {
+      success: false,
+      error: 'Solo el dueño del club tiene permisos para eliminar tarifas de canchas.',
+    }
   }
 
   const supabase = await createServiceClient()
@@ -790,6 +823,17 @@ export async function applyBulkInflationPriceAdjustment(
   percentage: number,
   roundingStep: number = 500
 ) {
+  // Protección antifraude: Solo el dueño del club puede aplicar ajustes masivos de precios
+  const { getCurrentUserProfile } = await import('@/lib/auth-security')
+  const currentUser = await getCurrentUserProfile()
+  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+  if (currentUser && !isOwner) {
+    return {
+      success: false,
+      error: 'Solo el dueño del club tiene permisos para aplicar ajustes de precios por inflación.',
+    }
+  }
+
   const supabase = await createServiceClient()
 
   // 1. Obtener reglas de precios actuales desde la columna price_cents real

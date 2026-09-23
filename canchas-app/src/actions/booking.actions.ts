@@ -482,7 +482,37 @@ export async function createManualBooking(
       }
     }
 
-    const priceTotalCents = Math.round(Number(payload.total_amount_ars || 0) * 100)
+    const isOwner = authCheck.user?.role === 'TENANT_ADMIN' || authCheck.user?.role === 'SUPERADMIN'
+    let priceTotalCents = Math.round(Number(payload.total_amount_ars || 0) * 100)
+
+    // Protección antifraude: Si el usuario es administrador de turno / canchero (TENANT_STAFF),
+    // se asegura que el precio total de la cancha corresponda estrictamente a la tarifa oficial fijada por el dueño.
+    if (!isOwner && authCheck.user?.role === 'TENANT_STAFF') {
+      const dayOfWeek = startsAtDate.getDay()
+      const timeStr = `${String(startsAtDate.getHours()).padStart(2, '0')}:${String(startsAtDate.getMinutes()).padStart(2, '0')}:00`
+
+      const { data: priceRules } = await supabase
+        .from('price_rules')
+        .select('id, price_cents, day_of_week, time_from, time_to, court_id')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('is_active', true)
+
+      if (priceRules && priceRules.length > 0) {
+        const courtRules = priceRules.filter((r) => !r.court_id || r.court_id === payload.court_id)
+        const dayRules = courtRules.filter((r) => !r.day_of_week || r.day_of_week.length === 0 || r.day_of_week.includes(dayOfWeek))
+        const matchingRule = dayRules.find((r) => {
+          const from = (r.time_from || '00:00:00').substring(0, 5)
+          const to = (r.time_to || '23:59:59').substring(0, 5)
+          const tShort = timeStr.substring(0, 5)
+          return tShort >= from && tShort <= to
+        }) || dayRules[0] || courtRules[0]
+
+        if (matchingRule && Number(matchingRule.price_cents) > 0) {
+          priceTotalCents = Number(matchingRule.price_cents)
+        }
+      }
+    }
+
     const depositCents = Math.round(Number(payload.deposit_amount_ars || 0) * 100)
     const isFullCash = depositCents >= priceTotalCents && priceTotalCents > 0
     const initialStatus = isFullCash ? 'confirmed_cash' : 'confirmed'

@@ -62,6 +62,17 @@ export async function createRecurringSlot(payload: {
   notes?: string
 }): Promise<{ success: boolean; slot?: RecurringSlot; error?: string }> {
   try {
+    // Protección antifraude: Solo el dueño del club puede fijar precios y crear turnos fijos recurrentes
+    const { getCurrentUserProfile } = await import('@/lib/auth-security')
+    const currentUser = await getCurrentUserProfile()
+    const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
+    if (currentUser && !isOwner) {
+      return {
+        success: false,
+        error: 'Solo el dueño del club tiene permisos para crear turnos fijos (abonados) y fijar tarifas mensuales.',
+      }
+    }
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('recurring_slots')

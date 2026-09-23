@@ -15,8 +15,9 @@ import { Label } from '@/components/ui/label'
 import { createManualBooking, registerCashPayment } from '@/actions/booking.actions'
 import { getClubPriceRules } from '@/actions/club.actions'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Lock } from 'lucide-react'
 import { getArgentinaTodayIso, isSlotTimeInPast } from '@/lib/utils'
+import { useUserRole } from '@/hooks/use-tenant-id'
 
 export interface QuickBookingPriceRule {
   id?: string
@@ -107,6 +108,7 @@ export function QuickBookingModal({
   preselectedCourtId,
   onSuccess,
 }: QuickBookingModalProps) {
+  const { isOwner } = useUserRole()
   const [courtId, setCourtId] = useState(preselectedCourtId || courts[0]?.id || '')
   const [date, setDate] = useState(preselectedDate)
   const [time, setTime] = useState(preselectedTime)
@@ -179,7 +181,8 @@ export function QuickBookingModal({
     setLoading(true)
     try {
       const startsAt = `${date}T${time}:00`
-      const total = Number(totalAmount) || 0
+      const officialSlotPrice = computeSlotPrice(courtId, date, time, internalRules)
+      const total = (!isOwner && officialSlotPrice > 0) ? officialSlotPrice : (Number(totalAmount) || 0)
       const deposit = Number(depositAmount) || 0
       const fullNotes = isRecurring 
         ? `[ABONO SEMANAL FIJO] ${notes}`.trim()
@@ -368,15 +371,35 @@ export function QuickBookingModal({
           {/* Tarifas y Cobro */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="totalAmount">Precio Total ($ ARS)</Label>
-              <Input
-                id="totalAmount"
-                type="number"
-                value={totalAmount}
-                onChange={(e) => setTotalAmount(e.target.value)}
-                className="h-11 font-mono font-bold"
-                required
-              />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="totalAmount">Precio Total ($ ARS)</Label>
+                {!isOwner && (
+                  <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
+                    <Lock className="w-2.5 h-2.5" /> Solo Dueño
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Input
+                  id="totalAmount"
+                  type="number"
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  disabled={!isOwner}
+                  className={`h-11 font-mono font-bold ${
+                    !isOwner ? 'bg-slate-900/80 text-slate-300 border-slate-700/60 cursor-not-allowed opacity-90 pr-8' : ''
+                  }`}
+                  required
+                />
+                {!isOwner && (
+                  <Lock className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                )}
+              </div>
+              {!isOwner && (
+                <p className="text-[10px] text-slate-500">
+                  Tarifa oficial fijada por el club. Solo el dueño puede modificar el precio de la cancha.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="depositAmount">Seña Cobrada Ahora ($)</Label>

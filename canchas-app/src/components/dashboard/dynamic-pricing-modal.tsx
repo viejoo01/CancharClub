@@ -8,7 +8,8 @@ import {
   Zap, 
   Save, 
   Loader2,
-  Sliders
+  Sliders,
+  Lock
 } from 'lucide-react'
 import {
   Dialog,
@@ -29,7 +30,7 @@ import {
   type DynamicPricingConfig,
   type OccupancyInsight
 } from '@/actions/dynamic-pricing.actions'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { toast } from 'sonner'
 
 interface DynamicPricingModalProps {
@@ -44,6 +45,7 @@ export function DynamicPricingModal({
   tenantId: propTenantId,
 }: DynamicPricingModalProps) {
   const hookTenantId = useTenantId()
+  const { isOwner } = useUserRole()
   const tenantId = propTenantId || hookTenantId || ''
   const [config, setConfig] = useState<DynamicPricingConfig>({
     enable_last_minute: true,
@@ -84,6 +86,10 @@ export function DynamicPricingModal({
   }, [open, tenantId])
 
   const handleSave = async () => {
+    if (!isOwner) {
+      toast.error('Solo el dueño del club tiene permisos para configurar tarifas dinámicas.')
+      return
+    }
     setSaving(true)
     try {
       const res = await saveDynamicPricingSettings(tenantId, config)
@@ -118,6 +124,13 @@ export function DynamicPricingModal({
             </div>
           </div>
         </DialogHeader>
+
+        {!isOwner && (
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs">
+            <Lock className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>Solo el dueño del club tiene autorización para modificar y activar reglas de tarifas dinámicas.</span>
+          </div>
+        )}
 
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
@@ -341,11 +354,26 @@ export function DynamicPricingModal({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving}
-            className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-purple-950/40"
+            disabled={saving || !isOwner}
+            className={`font-bold text-xs gap-1.5 shadow-lg shadow-purple-950/40 ${
+              !isOwner
+                ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                : 'bg-purple-600 hover:bg-purple-500 text-white'
+            }`}
           >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Guardar y Activar Reglas</span>
+            {saving ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : !isOwner ? (
+              <>
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Solo Dueño del Club</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" />
+                <span>Guardar y Activar Reglas</span>
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

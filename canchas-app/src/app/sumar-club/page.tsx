@@ -66,9 +66,9 @@ export default function SumarClubLandingPage() {
       <section className="w-full pt-16 pb-16 sm:pt-24 sm:pb-20 px-4 sm:px-6 flex flex-col items-center text-center">
         <div className="max-w-3xl mx-auto flex flex-col items-center">
           
-          {/* Badge: 1 mes de prueba gratis */}
+          {/* Badge: 15 días de prueba gratis */}
           <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs sm:text-[13px] font-semibold mb-8 shadow-xs">
-            <span>1 mes de prueba gratis</span>
+            <span>15 días de prueba gratis</span>
           </div>
 
           {/* Gran Título: Tu club, siempre lleno */}
@@ -222,7 +222,7 @@ export default function SumarClubLandingPage() {
 
           {/* Subtítulo aclaratorio de Mercado Pago */}
           <p className="mt-3 text-sm sm:text-base text-slate-400 font-normal max-w-2xl mx-auto leading-relaxed">
-            1 mes de prueba gratis. Mercado Pago te pide un medio de pago, pero el primer cobro es recién a los 30 días.
+            15 días de prueba gratis. Mercado Pago te pide un medio de pago, pero el primer cobro es recién a los 15 días.
           </p>
 
           {/* Grilla de 4 Tarjetas de Precios Segmentadas por Predio */}
@@ -332,7 +332,7 @@ export default function SumarClubLandingPage() {
 
             {/* Subtítulo */}
             <p className="mt-3 text-sm sm:text-lg text-emerald-50/95 font-normal max-w-xl mx-auto">
-              Sumá tu club hoy y empezá tu mes de prueba gratis.
+              Sumá tu club hoy y empezá tus 15 días de prueba gratis.
             </p>
 
             {/* Botones de Acción */}

@@ -651,27 +651,23 @@ export async function updateTenantSubscriptionStatus(tenantId: string, newStatus
 
 /**
  * Calcula la fecha del primer cobro por débito automático:
- * Garantiza un mínimo de 30 días de prueba gratuita, y programa el primer cobro
- * para el día 1 del mes calendario que inicia inmediatamente después de cumplirse los 30 días.
- * 
- * Ejemplos:
- *  - Alta 1 de Agosto -> 30 días = 31 de Agosto -> 1er cobro: 1 de Septiembre
- *  - Alta 20 de Agosto -> 30 días = 19 de Septiembre -> 1er cobro: 1 de Octubre
- *  - Alta 29 de Agosto -> 30 días = 28 de Septiembre -> 1er cobro: 1 de Octubre
+ * Garantiza un período de 15 días de prueba gratuita.
+ * Si el club cuenta con trial_ends_at, se programa el cobro para dicha fecha.
+ * En caso contrario, se computan 15 días corridos a partir del momento de registro o actual.
  */
 function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: string | null): Date {
   const baseDate = trialEndsAt 
     ? new Date(trialEndsAt) 
     : createdAt 
-      ? new Date(new Date(createdAt).getTime() + 30 * 24 * 60 * 60 * 1000)
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      ? new Date(new Date(createdAt).getTime() + 15 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
 
-  // Primer día del mes siguiente a que finalicen los 30 días de prueba
-  const nextMonthYear = baseDate.getMonth() === 11 ? baseDate.getFullYear() + 1 : baseDate.getFullYear()
-  const nextMonth = (baseDate.getMonth() + 1) % 12
+  // Mercado Pago Preapproval requiere que start_date sea estrictamente en el futuro
+  if (baseDate <= new Date()) {
+    return new Date(Date.now() + 24 * 60 * 60 * 1000)
+  }
 
-  // Se programa para el día 1 del mes a las 09:00 AM (horario laboral argentino)
-  return new Date(nextMonthYear, nextMonth, 1, 9, 0, 0)
+  return baseDate
 }
 
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
@@ -713,8 +709,8 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
       ? tenant.email
       : (tenant?.name ? `${tenant.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@gmail.com` : 'pagos@cancharclub.com.ar')
 
-    // Regla de Cobro: 30 días de prueba gratuita y cobro unificado del 1 al 7 de cada mes.
-    // El primer cobro se ejecuta el día 1 del mes siguiente a cumplir los 30 días.
+    // Regla de Cobro: 15 días de prueba gratuita.
+    // El primer cobro se ejecuta al cumplirse los 15 días de prueba.
     // Al registrar la tarjeta hoy en Mercado Pago se cobra $0.
     const firstBillingDate = calculateFirstBillingDate(tenant?.trial_ends_at, tenant?.created_at)
     const startDate = firstBillingDate.toISOString()

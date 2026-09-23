@@ -44,13 +44,23 @@ export function calculateSaaSMultiplier(courtsCount: number): number {
 /**
  * Calcula la fecha del próximo vencimiento mensual en formato DD/MM/AAAA.
  * Es 100% dinámico con respecto al día exacto en que se registró el club:
- * - Si el club es nuevo (primer mes / período de prueba), vence al cumplirse el primer mes (30 días).
- * - En los meses sucesivos, vence en el mismo día del mes en que fue registrado.
+ * - Si el club es nuevo (período de prueba de 15 días), vence al cumplirse los 15 días de prueba.
+ * - En los meses sucesivos, vence en el mismo día del mes en que finalizó la prueba.
  */
 export function computeNextDueDate(createdAt?: string | Date | null): string {
   const now = new Date()
   const regDate = createdAt ? new Date(createdAt) : now
-  const targetDay = regDate.getDate()
+
+  // Período de prueba bonificado de 15 días desde la creación
+  const trialEnd = new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000)
+
+  // Si aún está dentro de los 15 días de prueba gratis, el próximo vencimiento es exactamente el fin del trial
+  if (now < trialEnd) {
+    const dd = String(trialEnd.getDate()).padStart(2, '0')
+    const mm = String(trialEnd.getMonth() + 1).padStart(2, '0')
+    const yyyy = trialEnd.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  }
 
   // Helper para construir fecha asegurando días válidos (ej. febrero o meses de 30 días)
   const getClampedDate = (year: number, month: number, day: number) => {
@@ -59,15 +69,14 @@ export function computeNextDueDate(createdAt?: string | Date | null): string {
     return new Date(year, month, validDay, 23, 59, 59, 999)
   }
 
+  const targetDay = trialEnd.getDate()
   let year = now.getFullYear()
   let month = now.getMonth()
 
   // Candidato para el mes en curso
   let candidate = getClampedDate(year, month, targetDay)
 
-  // Si la fecha ya venció en este mes, o si el club fue creado hace menos de 25 días (primer ciclo)
-  const isTooCloseToRegistration = (candidate.getTime() - regDate.getTime()) < 25 * 24 * 60 * 60 * 1000
-  if (candidate <= now || isTooCloseToRegistration) {
+  if (candidate <= now) {
     month += 1
     if (month > 11) {
       month = 0

@@ -487,12 +487,12 @@ export default function ClubPlanPage() {
               Adherí tu Club al Débito Automático Mensual
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Disfrutá de <strong>30 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 30 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.
+              Disfrutá de <strong>15 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 15 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.
             </p>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
               <span className="flex items-center gap-1 text-emerald-300 font-semibold">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Prueba: <strong className="text-white">30 días gratis ($0 hoy)</strong>
+                Prueba: <strong className="text-white">15 días gratis ($0 hoy)</strong>
               </span>
               <span className="text-slate-600">•</span>
               <span className="flex items-center gap-1 text-emerald-300 font-semibold">
@@ -650,7 +650,7 @@ export default function ClubPlanPage() {
                   Período de prueba bonificado en curso
                 </h4>
                 <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
-                  Tu club se encuentra disfrutando de los <strong>30 días de prueba gratuita</strong>. No registrás cobros anteriores ni pagos pendientes. Tu primera liquidación oficial se emitirá el <strong>{pricing.nextDueDate}</strong>.
+                  Tu club se encuentra disfrutando de los <strong>15 días de prueba gratuita</strong>. No registrás cobros anteriores ni pagos pendientes. Tu primera liquidación oficial se emitirá el <strong>{pricing.nextDueDate}</strong>.
                 </p>
               </div>
               <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
@@ -744,13 +744,13 @@ export default function ClubPlanPage() {
             <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> 30 DÍAS GRATIS — HOY SE COBRA $0
+                  <CheckCircle2 className="w-3.5 h-3.5" /> 15 DÍAS GRATIS — HOY SE COBRA $0
                 </div>
-                <span className="text-slate-400 block text-[11px]">Primer cobro recién en el día 31. Resumen bancario:</span>
+                <span className="text-slate-400 block text-[11px]">Primer cobro recién en el día 16. Resumen bancario:</span>
                 <span className="text-sm font-black text-white font-mono tracking-wider">CancharClub</span>
               </div>
               <div className="sm:text-right">
-                <span className="text-slate-400 block text-[11px]">Monto mensual (desde día 31):</span>
+                <span className="text-slate-400 block text-[11px]">Monto mensual (desde día 16):</span>
                 <span className="text-base font-extrabold text-emerald-400 font-mono">
                   {formatARS(pricing.monthlyFeeArs)}/mes
                 </span>

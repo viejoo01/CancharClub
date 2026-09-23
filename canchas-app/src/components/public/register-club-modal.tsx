@@ -122,7 +122,7 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
                 Plan seleccionado:
               </span>
               <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-                1er mes 100% gratis
+                15 días 100% gratis
               </span>
             </div>
 

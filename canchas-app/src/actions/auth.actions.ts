@@ -172,6 +172,7 @@ export async function registerClub(formData: FormData) {
     GRANDE_5_PLUS: 6,
   }
   const baseSlots = baseSlotsMap[planId] || 2
+  const trialEndsAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: tenant, error: tenantError } = await serviceClient
     .from('tenants')
@@ -187,6 +188,7 @@ export async function registerClub(formData: FormData) {
       is_active: false, // Inicia desactivado esperando confirmación de activación
       subscription_status: 'PENDING_PAYMENT', // Estado de activación pendiente
       base_slots_plan: baseSlots,
+      trial_ends_at: trialEndsAt,
       payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
     })
     .select()

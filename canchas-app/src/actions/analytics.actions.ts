@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { cleanNoteForDisplay } from '@/lib/utils'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export async function getDailyCashReport(
           payment_type: 'BALANCE',
           payment_method: method,
           paid_at: isoTimestamp,
-          notes: notes,
+          notes: cleanNoteForDisplay(notes),
           origin: method.toLowerCase(),
         })
       }
@@ -160,7 +161,7 @@ export async function getDailyCashReport(
           payment_type: isFull ? 'BALANCE' : 'DEPOSIT',
           payment_method: initialMethod,
           paid_at: initialPaidAt,
-          notes: notes,
+          notes: cleanNoteForDisplay(notes),
           origin: row.payment_method || 'online',
         })
       }

@@ -109,17 +109,70 @@ export function bookingStatusColor(status: BookingStatus): string {
   return map[status] ?? 'bg-gray-100 text-gray-600'
 }
 
-export function paymentMethodLabel(method: PaymentMethod): string {
-  const map: Record<PaymentMethod, string> = {
-    CASH: 'Efectivo',
-    TRANSFER: 'Transferencia',
-    MERCADOPAGO: 'Mercado Pago',
-    DEBIT_CARD: 'Tarjeta Débito',
-    CREDIT_CARD: 'Tarjeta Crédito',
-    QR_MP: 'QR MP',
-    OTHER: 'Otro',
-  }
-  return map[method] ?? method
+export function paymentMethodLabel(method: string | PaymentMethod): string {
+  const m = String(method || '').toUpperCase()
+  if (m.includes('CASH') || m === 'EFECTIVO') return 'Efectivo'
+  if (m.includes('TRANSFER') || m.includes('BANK')) return 'Transferencia'
+  if (m.includes('MERCADO') || m.includes('MP')) return 'Mercado Pago'
+  if (m.includes('DEBIT')) return 'Tarjeta Débito'
+  if (m.includes('CREDIT')) return 'Tarjeta Crédito'
+  if (m.includes('CARD') || m === 'TARJETA') return 'Tarjeta'
+  if (m.includes('QR')) return 'QR Mercado Pago'
+  if (m === 'OTHER' || m === 'OTRO') return 'Otro'
+  return 'Efectivo'
+}
+
+/**
+ * Traduce y normaliza notas internas eliminando identificadores en inglés (TRANSFER, CASH, etc.)
+ * y dando formato estándar argentino (24hs, viñetas limpias, sin guiones sueltos).
+ */
+export function cleanNoteForDisplay(notes: string | undefined | null): string {
+  if (!notes) return ''
+  let cleaned = notes
+    // Traducir identificadores y siglas técnicas en inglés a español
+    .replace(/\(TRANSFER\)/gi, '(Transferencia)')
+    .replace(/\(TRANSFERENCIA\)/gi, '(Transferencia)')
+    .replace(/\(CASH\)/gi, '(Efectivo)')
+    .replace(/\(EFECTIVO\)/gi, '(Efectivo)')
+    .replace(/\(MERCADOPAGO\)/gi, '(Mercado Pago)')
+    .replace(/\(MERCADO PAGO\)/gi, '(Mercado Pago)')
+    .replace(/\(MP\)/gi, '(Mercado Pago)')
+    .replace(/\(CARD\)/gi, '(Tarjeta)')
+    .replace(/\(DEBIT_CARD\)/gi, '(Tarjeta Débito)')
+    .replace(/\(CREDIT_CARD\)/gi, '(Tarjeta Crédito)')
+    .replace(/\bTRANSFER\b/gi, 'Transferencia')
+    .replace(/\bCASH\b/gi, 'Efectivo')
+    .replace(/\bDEPOSIT\b/gi, 'Seña')
+    .replace(/\bBALANCE\b/gi, 'Saldo')
+    .replace(/\bNO-SHOW\b/gi, 'No asistió')
+    .replace(/\bNO SHOW\b/gi, 'No asistió')
+    .replace(/\bCONFIRMED\b/gi, 'Confirmado')
+    .replace(/\bPENDING\b/gi, 'Pendiente')
+    .replace(/\bCANCELLED\b/gi, 'Cancelado')
+    .replace(/\bCANCELED\b/gi, 'Cancelado')
+    // Normalizar horas en formato 12h (p. m. / a. m. / pm / am) a formato estándar argentino de 24 hs
+    .replace(/(\d{1,2}):(\d{2})\s*(?:p\.\s*m\.|pm)\s*(?:hs)?/gi, (_, h, m) => {
+      const hour = parseInt(h, 10)
+      const hour24 = hour === 12 ? 12 : hour + 12
+      return `${String(hour24).padStart(2, '0')}:${m} hs`
+    })
+    .replace(/(\d{1,2}):(\d{2})\s*(?:a\.\s*m\.|am)\s*(?:hs)?/gi, (_, h, m) => {
+      const hour = parseInt(h, 10)
+      const hour24 = hour === 12 ? 0 : hour
+      return `${String(hour24).padStart(2, '0')}:${m} hs`
+    })
+    // Ocultar IDs técnicos y hashes internos de pasarelas
+    .replace(/\[MP Pref:[^\]]+\]/gi, '')
+    .replace(/\[MP-ID:[^\]]+\]/gi, '')
+    // Reemplazar separadores internos con viñetas limpias
+    .replace(/\s*-\s*\|\s*/g, ' • ')
+    .replace(/\s*\|\s*/g, ' • ')
+    .replace(/\s*-\s*-\s*/g, ' - ')
+    .trim()
+
+  // Eliminar guiones, barras o viñetas sueltas al inicio y al final
+  cleaned = cleaned.replace(/^[\s\-•|]+/, '').replace(/[\s\-•|]+$/, '').trim()
+  return cleaned
 }
 
 // ─── Moneda argentina ─────────────────────────────────────────────────────────

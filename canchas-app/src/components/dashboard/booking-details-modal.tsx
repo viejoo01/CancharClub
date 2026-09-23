@@ -21,7 +21,7 @@ import {
   confirmBookingDeposit 
 } from '@/actions/booking.actions'
 import { getPlayerMatchReminderText, createWhatsAppShareUrl } from '@/lib/notifications/templates'
-import { formatARS, formatTime, buildWhatsAppLink } from '@/lib/utils'
+import { formatARS, formatTime, buildWhatsAppLink, cleanNoteForDisplay } from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
   MessageCircle, 
@@ -605,17 +605,11 @@ export function BookingDetailsModal({
             </div>
           )}
 
-          {/* Nota Interna con traducción a español */}
-          {booking.internal_notes && (
+          {/* Nota Interna con traducción y limpieza a español */}
+          {booking.internal_notes && cleanNoteForDisplay(booking.internal_notes) && (
             <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-start gap-1.5 leading-relaxed">
               <span className="font-semibold text-slate-300 shrink-0">Nota:</span>
-              <span>
-                {booking.internal_notes
-                  .replace(/\(TRANSFER\)/gi, '(TRANSFERENCIA)')
-                  .replace(/\(MERCADOPAGO\)/gi, '(MERCADO PAGO)')
-                  .replace(/\bTRANSFER\b/gi, 'TRANSFERENCIA')
-                  .replace(/\bNO-SHOW\b/gi, 'NO ASISTIÓ')}
-              </span>
+              <span>{cleanNoteForDisplay(booking.internal_notes)}</span>
             </div>
           )}
         </div>

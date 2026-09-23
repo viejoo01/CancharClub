@@ -10,7 +10,7 @@ import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
-import { getArgentinaTimeStr, parseArgentinaDate } from '@/lib/utils'
+import { getArgentinaTimeStr, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
@@ -392,7 +392,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         deposit_amount_ars: depositArs,
         total_paid: totalPaid,
         balance_due: balanceDue,
-        internal_notes: b.staff_notes || null,
+        internal_notes: cleanNoteForDisplay(b.staff_notes) || null,
         courts: {
           name: courtName,
           sport: courtSport,
@@ -712,7 +712,7 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
         payment_date: dateStr,
         created_at: b.paid_at || b.created_at,
         reference_number: undefined,
-        notes: b.staff_notes || undefined,
+        notes: cleanNoteForDisplay(b.staff_notes) || undefined,
         booking_id: b.id,
         bookings: {
           customer_name: b.customer_name || 'Cliente',

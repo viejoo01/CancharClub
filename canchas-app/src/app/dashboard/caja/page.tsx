@@ -18,49 +18,13 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS } from '@/lib/utils'
+import { formatARS, cleanNoteForDisplay, paymentMethodLabel } from '@/lib/utils'
 import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 
 function methodLabel(method: string): string {
-  if (method === 'CASH') return 'Efectivo'
-  if (method === 'TRANSFER') return 'Transferencia'
-  if (method === 'MERCADOPAGO') return 'Mercado Pago'
-  return method
-}
-
-function cleanNoteForDisplay(notes: string | undefined | null): string {
-  if (!notes) return ''
-  let cleaned = notes
-    // Traducir identificadores en inglés a español
-    .replace(/\(TRANSFER\)/gi, '(Transferencia)')
-    .replace(/\(CASH\)/gi, '(Efectivo)')
-    .replace(/\(MERCADOPAGO\)/gi, '(Mercado Pago)')
-    .replace(/\(MP\)/gi, '(Mercado Pago)')
-    .replace(/\bTRANSFER\b/g, 'Transferencia')
-    .replace(/\bCASH\b/g, 'Efectivo')
-    // Normalizar horas en formato 12h (p. m. / a. m.) a formato estándar argentino de 24 hs
-    .replace(/(\d{1,2}):(\d{2})\s*(?:p\.\s*m\.|pm)\s*(?:hs)?/gi, (_, h, m) => {
-      const hour = parseInt(h, 10)
-      const hour24 = hour === 12 ? 12 : hour + 12
-      return `${String(hour24).padStart(2, '0')}:${m} hs`
-    })
-    .replace(/(\d{1,2}):(\d{2})\s*(?:a\.\s*m\.|am)\s*(?:hs)?/gi, (_, h, m) => {
-      const hour = parseInt(h, 10)
-      const hour24 = hour === 12 ? 0 : hour
-      return `${String(hour24).padStart(2, '0')}:${m} hs`
-    })
-    // Ocultar IDs técnicos de pasarela de pago para el usuario
-    .replace(/\[MP Pref:[^\]]+\]/gi, '')
-    // Reemplazar separadores internos con viñetas limpias
-    .replace(/\s*-\s*\|\s*/g, ' • ')
-    .replace(/\s*\|\s*/g, ' • ')
-    .trim()
-
-  // Eliminar guiones o viñetas sueltas al final
-  cleaned = cleaned.replace(/\s*[-•]\s*$/, '').trim()
-  return cleaned
+  return paymentMethodLabel(method)
 }
 
 function methodIcon(method: string) {
@@ -161,7 +125,7 @@ export default function CajaPage() {
       methodLabel(e.payment_method),
       e.amount_ars,
       formatTime(e.paid_at),
-      '"' + (e.notes || '') + '"',
+      '"' + cleanNoteForDisplay(e.notes) + '"',
     ])
     const csv = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -222,7 +186,7 @@ export default function CajaPage() {
               <TrendingUp className="w-4 h-4" />
             </div>
             <CardTitle className="text-2xl font-black text-white mt-1">
-              {loading ? 'cargando' : formatARS(report?.totalGeneral ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalGeneral ?? 0)}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-[11px] text-emerald-300/80">

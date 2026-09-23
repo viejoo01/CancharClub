@@ -58,7 +58,7 @@ export default function RegisterPage() {
           <CardHeader className="pb-4 text-center">
             <CardTitle className="text-lg">Crear Cuenta de Club</CardTitle>
             <CardDescription className="text-xs">
-              Configurá tu tenant B2B en la plataforma
+              Configurá el acceso y panel exclusivo para tu club
             </CardDescription>
           </CardHeader>
 

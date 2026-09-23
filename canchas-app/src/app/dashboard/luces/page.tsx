@@ -77,7 +77,7 @@ export default function LucesPage() {
     if (result.success) {
       if (result.isMock) {
         toast.success(current ? 'Iluminación apagada (simulado)' : 'Iluminación encendida (simulado)', {
-          description: 'Configura la IP del relé IoT para control real.'
+          description: 'Configurá la IP del relé IoT para control real.'
         })
       } else {
         toast.success(current ? 'Iluminación de cancha apagada' : 'Iluminación encendida', {

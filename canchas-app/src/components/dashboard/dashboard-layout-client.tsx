@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
 interface DashboardLayoutClientProps {
+  tenantId?: string | null
   tenantName: string
   tenantSlug: string
   userRole: string
@@ -31,6 +32,7 @@ interface DashboardLayoutClientProps {
 }
 
 export function DashboardLayoutClient({
+  tenantId,
   tenantName,
   tenantSlug,
   userRole,
@@ -150,11 +152,12 @@ export function DashboardLayoutClient({
 
         {isActive && gracePeriodBanner}
 
-        {/* Modal emergente de advertencia para activar plan */}
+        {/* Modal obligatorio de vinculación de tarjeta para activar plan */}
         <PlanActivationModal
           isOpen={showActivationModal}
           onOpenChange={setShowActivationModal}
           tenantName={tenantName}
+          tenantId={tenantId}
           planId={planId}
         />
 
@@ -166,12 +169,12 @@ export function DashboardLayoutClient({
               <div
                 onClick={() => {
                   setShowActivationModal(true)
-                  toast.error('Acciones bloqueadas en modo de prueba', {
-                    description: 'Para habilitar botones, cobros y reservas en tu club, activá tu abono por WhatsApp o Email.',
+                  toast.error('Tarjeta requerida para operar', {
+                    description: 'Para habilitar turnos, reservas y cobros, vinculá tu tarjeta de débito o crédito (15 días gratis, $0 hoy).',
                   })
                 }}
                 className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"
-                title="Modo sólo lectura: activá tu plan para usar las funciones."
+                title="Para usar las funciones de CancharClub, vinculá tu tarjeta de débito o crédito."
               />
             )}
             <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>

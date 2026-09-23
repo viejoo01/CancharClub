@@ -4,12 +4,11 @@ import { useState, useEffect } from 'react'
 import { 
   CreditCard, 
   CheckCircle2, 
+  Check,
   Calendar, 
   Building2, 
   Calculator, 
   Download,
-  Copy,
-  Check,
   Lock as LockIcon,
   RefreshCw,
   X,
@@ -23,14 +22,12 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
-  createTenantInvoicePreference, 
-  recordTenantInvoicePayment, 
   setupMonthlySubscriptionPreapproval,
+  confirmAndActivateSubscriptionWithCard,
   getClubPlanDetails,
   type ClubPlanDetails
 } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
-import { siteConfig } from '@/config/site'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
 import { useTenantId } from '@/hooks/use-tenant-id'
 
@@ -89,19 +86,6 @@ export default function ClubPlanPage() {
     }
   }, [tenantId])
 
-  const [manualPaid, setManualPaid] = useState(false)
-  const isPaid = manualPaid || (planDetails?.isPaid ?? false)
-
-  const clubName = planDetails?.tenantName || 'Cargando club...'
-  const courtsCount = planDetails?.courtsCount || 2
-  const highestSlotPrice = planDetails?.highestSlotPriceArs || 30000
-  const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice)
-  const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
-
-  const [copied, setCopied] = useState(false)
-  const [paying, setPaying] = useState(false)
-  const [subscribing, setSubscribing] = useState(false)
-
   const [hasAutoDebit, setHasAutoDebit] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -110,35 +94,15 @@ export default function ClubPlanPage() {
     return false
   })
 
-  const handleCopyAlias = () => {
-    navigator.clipboard.writeText(siteConfig.billing.aliasCbu)
-    setCopied(true)
-    toast.success(`Alias copiado: ${siteConfig.billing.aliasCbu}`)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const isPaid = (planDetails?.isPaid ?? false) || hasAutoDebit
 
-  const handlePayWithMercadoPago = async () => {
-    setPaying(true)
-    try {
-      const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const res = await createTenantInvoicePreference(activeTenant)
-      if (res.initPoint) {
-        if (res.isSimulated) {
-          await recordTenantInvoicePayment(activeTenant)
-          setManualPaid(true)
-          toast.success('Pago Aprobado con Mercado Pago', {
-            description: `Se acreditó el abono mensual de ${formatARS(pricing.monthlyFeeArs)}. ¡Tu club está al día!`
-          })
-        } else {
-          window.location.assign(res.initPoint)
-        }
-      }
-    } catch {
-      toast.error('Error al generar checkout de Mercado Pago')
-    } finally {
-      setPaying(false)
-    }
-  }
+  const clubName = planDetails?.tenantName || 'Cargando club...'
+  const courtsCount = planDetails?.courtsCount || 2
+  const highestSlotPrice = planDetails?.highestSlotPriceArs || 30000
+  const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice)
+  const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
+
+  const [subscribing, setSubscribing] = useState(false)
 
   // Modal de carga de tarjeta Mercado Pago
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
@@ -149,17 +113,19 @@ export default function ClubPlanPage() {
   const [cardDni, setCardDni] = useState('')
   const [savingCard, setSavingCard] = useState(false)
 
-  // Notificar si regresa de Mercado Pago con la suscripción aprobada
+  // Notificar y activar si regresa de Mercado Pago con la suscripción aprobada
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true') {
+        const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
+        confirmAndActivateSubscriptionWithCard(activeTenant).catch(() => {})
         toast.success('¡Débito Automático Adherido con Éxito!', {
-          description: 'Tu suscripción mensual a CancharClub está activa. Se debitará automáticamente cada mes bajo el concepto "CancharClub".'
+          description: 'Tu suscripción mensual a CancharClub está activa con tarjeta. En tu resumen bancario aparecerá bajo el concepto "CancharClub".'
         })
       }
     }
-  }, [])
+  }, [tenantId, planDetails?.tenantId])
 
   const handleSetupAutoDebit = async () => {
     setSubscribing(true)
@@ -185,21 +151,32 @@ export default function ClubPlanPage() {
     }
   }
 
-  const handleConfirmCardSubscription = (e: React.FormEvent) => {
+  const handleConfirmCardSubscription = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv) {
       toast.error('Por favor completá los datos de la tarjeta')
       return
     }
     setSavingCard(true)
-    setTimeout(() => {
-      setSavingCard(false)
-      setShowSubscriptionModal(false)
+    try {
+      const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
+      const cardLast4 = cardNumber.replace(/\D/g, '').slice(-4)
+      await confirmAndActivateSubscriptionWithCard(activeTenant, {
+        cardHolder: cardHolder.toUpperCase(),
+        cardLast4,
+        cardBrand: 'TARJETA',
+      })
       setHasAutoDebit(true)
+      setShowSubscriptionModal(false)
       toast.success('¡Débito Automático Adherido con Éxito!', {
         description: `Tu suscripción a CancharClub (${formatARS(pricing.monthlyFeeArs)}/mes) fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
       })
-    }, 1200)
+      loadPlanData(false)
+    } catch {
+      toast.error('Error al registrar la tarjeta')
+    } finally {
+      setSavingCard(false)
+    }
   }
 
   const downloadReceiptPdf = (inv: { id: string; month: number; year: number; amount: number; paid_at: string | null; status: string }) => {
@@ -416,40 +393,55 @@ export default function ClubPlanPage() {
           </div>
         </Card>
 
-        {/* Canales de Pago */}
+        {/* Medio de Pago Único Oficial: Tarjeta de Débito o Crédito */}
         <Card className="bg-slate-900/60 border-slate-800 rounded-3xl p-6 flex flex-col justify-between backdrop-blur-md">
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-indigo-400" />
-              Abonar Suscripción
-            </h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              El abono se paga a fin de mes. Puedes abonar mediante Mercado Pago o transferencia bancaria directa.
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-400" />
+                Medio de Pago Único Oficial
+              </h3>
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] uppercase font-bold">
+                Débito Automático
+              </Badge>
+            </div>
+            
+            <p className="text-xs text-slate-300 leading-relaxed">
+              El abono mensual se gestiona <strong>exclusivamente por débito automático con tarjeta de débito o crédito</strong> mediante Mercado Pago Subscriptions. No se aceptan transferencias ni otros medios.
             </p>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs">
-              <div className="text-slate-400 text-[11px]">Alias para transferencias ({siteConfig.name}):</div>
-              <div className="flex items-center justify-between font-mono font-semibold text-white">
-                <span>{siteConfig.billing.aliasCbu}</span>
-                <button 
-                  onClick={handleCopyAlias}
-                  className="p-1 hover:text-emerald-400 transition-colors"
-                  title="Copiar alias"
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                </button>
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400">Estado de medio de pago:</span>
+                {hasAutoDebit ? (
+                  <span className="font-bold text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Tarjeta Vinculada
+                  </span>
+                ) : (
+                  <span className="font-bold text-amber-400 flex items-center gap-1">
+                    <LockIcon className="w-3.5 h-3.5" /> Pendiente de Carga
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400">Concepto en resumen bancario:</span>
+                <span className="font-mono font-bold text-white">CancharClub</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400">Próximo vencimiento:</span>
+                <span className="font-semibold text-white">{pricing.nextDueDate}</span>
               </div>
             </div>
           </div>
 
           <div className="pt-4 space-y-2">
-            {!isPaid ? (
+            {!hasAutoDebit ? (
               <Button
-                onClick={handlePayWithMercadoPago}
-                disabled={paying}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-600/20 py-5"
+                onClick={handleSetupAutoDebit}
+                disabled={subscribing}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-600/20 py-5 cursor-pointer"
               >
-                {paying ? (
+                {subscribing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
                     Conectando con Mercado Pago...
@@ -457,14 +449,23 @@ export default function ClubPlanPage() {
                 ) : (
                   <>
                     <CreditCard className="w-4 h-4 mr-1.5" />
-                    Pagar {formatARS(pricing.monthlyFeeArs)} con Mercado Pago
+                    Cargar Tarjeta de Débito / Crédito ($0 hoy)
                   </>
                 )}
               </Button>
             ) : (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-semibold flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                Abono mensual saldado • Club al día
+              <div className="space-y-2">
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-semibold flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Suscripción activa con Débito Automático Oficial</span>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSubscriptionModal(true)}
+                  className="w-full border-slate-700 hover:bg-slate-800 text-slate-300 text-xs py-2 cursor-pointer"
+                >
+                  Actualizar datos de tarjeta
+                </Button>
               </div>
             )}
           </div>

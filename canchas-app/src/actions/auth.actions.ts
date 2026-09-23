@@ -189,7 +189,7 @@ export async function registerClub(formData: FormData) {
       subscription_status: 'PENDING_PAYMENT', // Estado de activación pendiente
       base_slots_plan: baseSlots,
       trial_ends_at: trialEndsAt,
-      payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
+      payment_methods: ['CARD', 'MERCADO_PAGO'],
     })
     .select()
     .single()

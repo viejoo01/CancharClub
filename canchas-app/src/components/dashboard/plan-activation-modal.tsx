@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,19 +9,27 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import {
-  MessageCircle,
-  Mail,
+  CreditCard,
   CheckCircle2,
   Lock,
-  ArrowRight,
   Sparkles,
+  ShieldCheck,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react'
 import { SAAS_PLANS, type SaaSPlanId } from '@/config/saas-plans'
+import { 
+  confirmAndActivateSubscriptionWithCard,
+  setupMonthlySubscriptionPreapproval 
+} from '@/actions/saas-billing.actions'
+import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 interface PlanActivationModalProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   tenantName: string
+  tenantId?: string | null
   planId?: SaaSPlanId
 }
 
@@ -29,11 +37,22 @@ export function PlanActivationModal({
   isOpen,
   onOpenChange,
   tenantName,
+  tenantId,
   planId = 'MEDIANO_2',
 }: PlanActivationModalProps) {
+  const router = useRouter()
   const plan = SAAS_PLANS[planId] || SAAS_PLANS.MEDIANO_2
 
-  // Escuchar eventos globales para abrir este modal desde cualquier punto de la app
+  // Estados del formulario de tarjeta
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardHolder, setCardHolder] = useState('')
+  const [cardExpiry, setCardExpiry] = useState('')
+  const [cardCvv, setCardCvv] = useState('')
+  const [cardDni, setCardDni] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isOpeningMp, setIsOpeningMp] = useState(false)
+
+  // Escuchar eventos globales para abrir este modal si el usuario intenta interactuar con funciones bloqueadas
   useEffect(() => {
     const handleOpenEvent = () => onOpenChange(true)
     window.addEventListener('open-activation-modal', handleOpenEvent)
@@ -42,135 +61,338 @@ export function PlanActivationModal({
     }
   }, [onOpenChange])
 
-  const whatsappNumber =
-    process.env.NEXT_PUBLIC_WHATSAPP_DEFAULT?.replace(/\D/g, '') || '5493816839320'
-  const whatsappMessage = encodeURIComponent(
-    `Hola, acabo de registrar mi club "${tenantName}" con el plan "${plan.name}" (${plan.courtsLabel}) en Canchar Club y quisiera activarlo para comenzar a operar.`
-  )
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`
+  // Detección de marca de tarjeta
+  const cleanCardNumber = cardNumber.replace(/\D/g, '')
+  const cardBrand = cleanCardNumber.startsWith('4')
+    ? 'VISA'
+    : cleanCardNumber.startsWith('5')
+    ? 'MASTERCARD'
+    : cleanCardNumber.startsWith('3')
+    ? 'AMEX'
+    : cleanCardNumber.startsWith('6')
+    ? 'CABAL'
+    : 'TARJETA'
 
-  const emailSubject = encodeURIComponent(
-    `Activación de club: ${tenantName} - Plan ${plan.name}`
-  )
-  const emailBody = encodeURIComponent(
-    `Hola Canchar Club,\n\nAcabo de registrar el club "${tenantName}" con el plan "${plan.name}" (${plan.courtsLabel}) y solicito la activación para empezar a cargar turnos y cobrar reservas.\n\nDatos del club:\n- Nombre: ${tenantName}\n- Plan: ${plan.name} (${plan.courtsLabel})\n\nMuchas gracias.`
-  )
-  const emailUrl = `mailto:cancharclub@gmail.com?subject=${emailSubject}&body=${emailBody}`
+  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 16)
+    const formatted = val.replace(/(\d{4})(?=\d)/g, '$1 ')
+    setCardNumber(formatted)
+  }
+
+  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '').slice(0, 4)
+    if (val.length >= 3) {
+      val = `${val.slice(0, 2)}/${val.slice(2)}`
+    }
+    setCardExpiry(val)
+  }
+
+  const handleSubmitCard = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const rawNum = cardNumber.replace(/\D/g, '')
+    if (rawNum.length < 15) {
+      toast.error('Número de tarjeta incompleto', {
+        description: 'Por favor ingresá los 16 dígitos de tu tarjeta de crédito o débito.'
+      })
+      return
+    }
+
+    if (!cardHolder.trim() || cardHolder.trim().length < 4) {
+      toast.error('Titular de la tarjeta requerido', {
+        description: 'Ingresá el nombre y apellido tal como figura impreso en el plástico.'
+      })
+      return
+    }
+
+    if (cardExpiry.length < 5) {
+      toast.error('Fecha de vencimiento requerida', {
+        description: 'Ingresá el mes y año de vencimiento en formato MM/AA.'
+      })
+      return
+    }
+
+    if (cardCvv.length < 3) {
+      toast.error('Código de seguridad (CVV) requerido', {
+        description: 'Ingresá el código de 3 o 4 dígitos al dorso de la tarjeta.'
+      })
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const cardLast4 = rawNum.slice(-4)
+
+      const res = await confirmAndActivateSubscriptionWithCard(activeTenant, {
+        cardHolder: cardHolder.trim().toUpperCase(),
+        cardLast4,
+        cardBrand,
+      })
+
+      if (res.success) {
+        toast.success('¡Tarjeta Vinculada con Éxito!', {
+          description: `Tu abono a CancharClub está activo con 15 días gratis ($0 hoy). Primer cobro automático recién en el día 16.`,
+          duration: 5000,
+        })
+        onOpenChange(false)
+        router.refresh()
+        // Recargar suavemente para que todo el dashboard y los layouts reconozcan el estado activo
+        setTimeout(() => {
+          window.location.reload()
+        }, 600)
+      } else {
+        toast.error('Error al procesar la vinculación de la tarjeta')
+      }
+    } catch (err) {
+      console.error('Error activating with card:', err)
+      toast.error('Ocurrió un error al vincular la tarjeta')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleOpenMpPortal = async () => {
+    setIsOpeningMp(true)
+    try {
+      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
+      const res = await setupMonthlySubscriptionPreapproval(activeTenant)
+      if (res.success && res.initPoint) {
+        toast.info('Abriendo portal de Mercado Pago Subscriptions...', {
+          description: 'Cargá tu tarjeta en la pasarela segura para activar tu prueba gratis.'
+        })
+        window.location.assign(res.initPoint)
+      } else {
+        toast.error('No se pudo conectar con Mercado Pago. Podés cargar la tarjeta directamente en el formulario superior.')
+      }
+    } catch {
+      toast.error('Error al inicializar la pasarela de Mercado Pago')
+    } finally {
+      setIsOpeningMp(false)
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl w-[95vw] sm:w-full bg-slate-900 border border-amber-500/40 text-slate-100 rounded-[28px] p-5 sm:p-7 shadow-2xl shadow-amber-950/40 max-h-[92dvh] overflow-y-auto custom-scrollbar">
+      <DialogContent 
+        hideCloseButton={true}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="sm:max-w-xl w-[95vw] sm:w-full bg-slate-900 border-2 border-emerald-500/50 text-slate-100 rounded-[28px] p-5 sm:p-7 shadow-2xl shadow-emerald-950/60 max-h-[94dvh] overflow-y-auto custom-scrollbar"
+      >
         <DialogHeader className="space-y-2 text-left">
-          {/* Badge de alerta de activación pendiente */}
+          {/* Badge obligatorio */}
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              Activación de Plan Pendiente
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              <CreditCard className="w-3.5 h-3.5" />
+              Tarjeta Requerida • 15 Días Gratis ($0 Hoy)
             </span>
             <span className="text-[11px] font-semibold text-slate-400">
-              Modo Vista Previa
+              Paso Obligatorio
             </span>
           </div>
 
           <DialogTitle className="text-xl sm:text-2xl font-black text-white tracking-tight pt-1">
-            ¡Bienvenido a Canchar Club!
+            Vinculá tu Tarjeta para Activar tu Club
           </DialogTitle>
-          <DialogDescription className="text-sm text-slate-300">
-            Tu complejo <strong className="text-white font-bold">&quot;{tenantName}&quot;</strong> fue registrado con éxito. Para comenzar a recibir reservas online y operar el sistema, activá tu abono.
+          <DialogDescription className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            Para comenzar a utilizar CancharClub y recibir reservas online en <strong className="text-white font-bold">&quot;{tenantName}&quot;</strong>, es obligatorio cargar una tarjeta de débito o crédito.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Tarjeta del Plan Seleccionado */}
-        <div className="mt-3 p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-emerald-500/30 relative overflow-hidden">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                Plan Seleccionado
-              </span>
+        {/* Resumen del Plan Seleccionado */}
+        <div className="mt-2 p-3.5 sm:p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              {plan.name} ({plan.courtsLabel})
             </div>
-            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-              {plan.badge}
+            <p className="text-[11px] text-slate-400">
+              {plan.priceTurnosLabel} • {plan.priceSubtext}
+            </p>
+          </div>
+          <span className="shrink-0 text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+            {plan.badge}
+          </span>
+        </div>
+
+        {/* Banner de Garantía y Condiciones Claras */}
+        <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-1.5 text-xs">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>HOY SE COBRA $0 — 15 DÍAS DE PRUEBA 100% BONIFICADOS</span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed">
+            Mercado Pago valida tu tarjeta sin costo. Tu primer débito mensual se realizará <strong>recién al cumplirse los 15 días</strong>. El débito con tarjeta es el único medio de pago oficial habilitado para el abono.
+          </p>
+          <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-0.5 font-mono">
+            <span className="flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              Débito automático oficial
             </span>
+            <span>•</span>
+            <span>Resumen de tarjeta: <strong>CancharClub</strong></span>
+          </div>
+        </div>
+
+        {/* Previsualización visual de Tarjeta */}
+        <div className="relative h-40 rounded-2xl p-4 bg-linear-to-tr from-slate-950 via-indigo-950 to-blue-900 border border-indigo-500/40 shadow-xl flex flex-col justify-between text-white overflow-hidden font-mono select-none">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-6 rounded bg-amber-400/80 border border-amber-300/40 flex items-center justify-center text-[8px] font-bold text-amber-950">
+                CHIP
+              </div>
+              <span className="text-[10px] text-slate-300 font-sans font-medium">Débito / Crédito</span>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-black tracking-wider text-emerald-400">{cardBrand}</span>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 sm:gap-4">
-            <div>
-              <h3 className="text-lg sm:text-xl font-black text-white">
-                {plan.name} ({plan.courtsLabel})
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {plan.priceSubtext}
-              </p>
+          <div className="space-y-1">
+            <div className="text-base sm:text-lg font-bold tracking-widest text-slate-100">
+              {cardNumber || '•••• •••• •••• ••••'}
             </div>
-            <div className="text-left sm:text-right shrink-0 mt-1 sm:mt-0">
-              <span className="text-base sm:text-lg font-black text-emerald-400">
-                {plan.priceTurnosLabel}
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] pt-1">
+            <div>
+              <span className="text-[8px] block text-slate-400 uppercase font-sans">Titular</span>
+              <span className="font-bold tracking-wider truncate max-w-[200px] block">
+                {cardHolder || 'NOMBRE Y APELLIDO'}
               </span>
             </div>
-          </div>
-
-          {/* Lista de prestaciones incluidas */}
-          <div className="mt-4 pt-3 border-t border-slate-800/80">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Qué incluye tu plan:
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
-              {plan.features.slice(0, 4).map((feat, idx) => (
-                <div key={idx} className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                  <span className="leading-tight">{feat}</span>
-                </div>
-              ))}
+            <div className="text-right">
+              <span className="text-[8px] block text-slate-400 uppercase font-sans">Vence</span>
+              <span className="font-bold tracking-wider">{cardExpiry || 'MM/AA'}</span>
             </div>
           </div>
         </div>
 
-        {/* Recuadro de advertencia sobre funciones bloqueadas */}
-        <div className="mt-3.5 p-3.5 sm:p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
-            <Lock className="w-4 h-4" />
+        {/* Formulario de Carga de Tarjeta */}
+        <form onSubmit={handleSubmitCard} className="space-y-3.5 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Número de Tarjeta (Débito o Crédito)
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="4500 0000 0000 0000"
+                value={cardNumber}
+                onChange={handleCardNumberChange}
+                maxLength={19}
+                required
+                className="w-full h-11 px-3.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 font-mono focus:outline-none focus:border-emerald-500 text-sm"
+              />
+              <CreditCard className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
+            </div>
           </div>
-          <div className="space-y-1 text-xs">
-            <p className="font-bold text-amber-300">
-              Funciones operativas temporalmente bloqueadas
-            </p>
-            <p className="text-slate-300 leading-relaxed font-normal">
-              Podés navegar libremente por los menús del panel para explorar el sistema. Sin embargo, la creación de turnos reales, cobros por Mercado Pago y reservas públicas permanecerán inactivos hasta que se active tu cuenta.
-            </p>
-          </div>
-        </div>
 
-        {/* Botones de Acción */}
-        <div className="mt-5 space-y-2.5">
-          <a
-            href={whatsappUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full h-12 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Nombre y Apellido del Titular
+            </label>
+            <input
+              type="text"
+              placeholder="Como figura en la tarjeta"
+              value={cardHolder}
+              onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+              required
+              className="w-full h-11 px-3.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 font-sans focus:outline-none focus:border-emerald-500 text-sm uppercase"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Vencimiento
+              </label>
+              <input
+                type="text"
+                placeholder="MM/AA"
+                value={cardExpiry}
+                onChange={handleExpiryChange}
+                maxLength={5}
+                required
+                className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 font-mono text-center focus:outline-none focus:border-emerald-500 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                CVV / Seg.
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  placeholder="123"
+                  value={cardCvv}
+                  onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  maxLength={4}
+                  required
+                  className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 font-mono text-center focus:outline-none focus:border-emerald-500 text-sm"
+                />
+                <Lock className="w-3 h-3 text-slate-500 absolute right-2.5 top-4 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                DNI Titular
+              </label>
+              <input
+                type="text"
+                placeholder="Sin puntos"
+                value={cardDni}
+                onChange={(e) => setCardDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                maxLength={8}
+                required
+                className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 font-mono text-center focus:outline-none focus:border-emerald-500 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Botón Principal: Validar Tarjeta y Empezar 15 Días Gratis */}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full h-12 mt-2 rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
-            <MessageCircle className="w-5 h-5 fill-white text-transparent" />
-            <span>Activar mi Club por WhatsApp</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
-          </a>
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <span>Validando tarjeta y activando club...</span>
+              </>
+            ) : (
+              <>
+                <CreditCard className="w-5 h-5" />
+                <span>Cargar Tarjeta y Comenzar 15 Días Gratis ($0 Hoy)</span>
+              </>
+            )}
+          </button>
+        </form>
 
-          <div className="flex flex-col sm:flex-row items-center gap-2">
-            <a
-              href={emailUrl}
-              className="w-full sm:flex-1 h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs sm:text-sm border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Mail className="w-4 h-4 text-slate-400" />
-              <span>Contactar por Email</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="w-full sm:w-auto h-10 px-4 rounded-xl text-slate-400 hover:text-slate-200 text-xs sm:text-sm font-medium transition-colors hover:bg-slate-800/60 cursor-pointer"
-            >
-              Recorrer panel en modo prueba
-            </button>
-          </div>
+        {/* Separador o enlace alternativo a portal de Mercado Pago */}
+        <div className="pt-2 border-t border-slate-800 text-center">
+          <button
+            type="button"
+            onClick={handleOpenMpPortal}
+            disabled={isOpeningMp}
+            className="text-xs text-slate-400 hover:text-emerald-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer py-1"
+          >
+            {isOpeningMp ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Conectando con Mercado Pago...</span>
+              </>
+            ) : (
+              <>
+                <span>¿Preferís cargarla en el portal oficial de Mercado Pago?</span>
+                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+              </>
+            )}
+          </button>
         </div>
       </DialogContent>
     </Dialog>

@@ -222,7 +222,7 @@ export default function SumarClubLandingPage() {
 
           {/* Subtítulo aclaratorio de Mercado Pago */}
           <p className="mt-3 text-sm sm:text-base text-slate-400 font-normal max-w-2xl mx-auto leading-relaxed">
-            15 días de prueba gratis. Mercado Pago te pide un medio de pago, pero el primer cobro es recién a los 15 días.
+            15 días de prueba gratis. Mercado Pago te pide una tarjeta de débito o crédito para comenzar, pero el primer cobro es recién a los 15 días ($0 hoy).
           </p>
 
           {/* Grilla de 4 Tarjetas de Precios Segmentadas por Predio */}

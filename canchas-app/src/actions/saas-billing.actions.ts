@@ -750,3 +750,64 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
   }
 }
 
+/**
+ * Confirma la vinculación obligatoria de tarjeta de débito/crédito para el abono del club
+ * y activa inmediatamente el club para que pueda comenzar a operar sus 15 días gratis.
+ */
+export async function confirmAndActivateSubscriptionWithCard(
+  tenantId: string, 
+  cardData?: { 
+    cardHolder?: string
+    cardLast4?: string
+    cardBrand?: string 
+  }
+) {
+  const supabase = await createClient()
+
+  // 1. Activar el club en la base de datos
+  if (tenantId && !tenantId.startsWith('demo-')) {
+    await supabase
+      .from('tenants')
+      .update({
+        is_active: true,
+        subscription_status: 'ACTIVE',
+        payment_methods: ['CARD', 'MERCADO_PAGO'],
+      })
+      .eq('id', tenantId)
+
+    // Registrar o actualizar registro en saas_subscriptions
+    const summary = await getClubBillingSummary(tenantId)
+    const now = new Date()
+    const periodStart = now.toISOString().split('T')[0]
+    const periodEnd = summary.nextDueDate
+
+    await supabase
+      .from('saas_subscriptions')
+      .upsert({
+        tenant_id: tenantId,
+        plan: 'STANDARD',
+        status: 'active',
+        billing_period_start: periodStart,
+        billing_period_end: periodEnd,
+        reference_slot_price_cents: summary.pricing.highestSlotPriceArs * 100,
+        plan_multiplier: summary.pricing.multiplier,
+        minimum_fee_cents: 0,
+        paid_at: null, // Prueba gratuita activa ($0 cobrado hoy)
+        payment_notes: `Tarjeta ${cardData?.cardBrand || 'Crédito/Débito'} terminada en ${cardData?.cardLast4 || 'XXXX'} vinculada. 15 días de prueba bonificados.`,
+      }, { onConflict: 'tenant_id,billing_period_start' })
+  }
+
+  // 2. Actualizar cookies de sesión para reflejar estado activo inmediatamente
+  const cookieStore = await cookies()
+  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.delete('new_club_pending_activation')
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
+  revalidatePath('/billing/suspended')
+  revalidatePath('/superadmin')
+
+  return { success: true }
+}
+

@@ -135,6 +135,7 @@ export default async function DashboardLayout({
 
   return (
     <DashboardLayoutClient
+      tenantId={tenantId}
       tenantName={tenantName}
       tenantSlug={tenantSlug}
       userRole={userRole}

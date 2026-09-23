@@ -15,6 +15,8 @@ import {
 import {
   computeEndsAt,
   parseArgentinaDate,
+  getArgentinaTimeStr,
+  getArgentinaDateStr,
 } from '@/lib/utils'
 import type {
   CreateBookingPayload,
@@ -603,7 +605,7 @@ export async function registerCashPayment(params: {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status')
+      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status, paid_at')
       .eq('id', params.booking_id)
       .single()
 
@@ -627,11 +629,14 @@ export async function registerCashPayment(params: {
     const isFullyPaid = newDepositCents >= totalPriceCents
     const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
 
-    const nowIso = new Date().toISOString()
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const timeStr = getArgentinaTimeStr(now)
     const methodSpanish = methodStr.includes('TRANSFER') ? 'Transferencia'
       : (methodStr.includes('MERCADO') || methodStr.includes('MP')) ? 'Mercado Pago'
       : 'Efectivo'
-    const noteEntry = `Cobro $${params.amount_ars} (${methodSpanish}) [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
+    const formattedAmount = Number(params.amount_ars).toLocaleString('es-AR')
+    const noteEntry = `Cobro $${formattedAmount} (${methodSpanish}) a las ${timeStr} hs [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
 
     // Preservar método online previo si existió seña online
@@ -639,13 +644,16 @@ export async function registerCashPayment(params: {
       ? booking.payment_method
       : methodEnum
 
+    // Preservar paid_at original de la seña si ya existía para no alterar la hora del cobro inicial en la caja
+    const finalPaidAt = booking.paid_at || nowIso
+
     const { error: upErr } = await supabase
       .from('bookings')
       .update({
         deposit_cents: newDepositCents,
         staff_deposit_amount_cents: newDepositCents,
         payment_method: finalPaymentMethod,
-        paid_at: nowIso,
+        paid_at: finalPaidAt,
         status: newStatus,
         staff_notes: updatedNotes,
         updated_at: nowIso,
@@ -802,11 +810,12 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
       return { success: false, error: authCheck.error || 'Sin permisos para confirmar este turno' }
     }
 
-    const timeStr = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
-    const noteEntry = `Seña verificada y aprobada por el club el ${new Date().toLocaleDateString('es-AR')} a las ${timeStr} hs`
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const timeStr = getArgentinaTimeStr(now)
+    const dateStr = getArgentinaDateStr(now)
+    const noteEntry = `Seña verificada y aprobada por el club el ${dateStr} a las ${timeStr} hs [${nowIso}]`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
-
-    const nowIso = new Date().toISOString()
     const { error: upErr } = await supabase
       .from('bookings')
       .update({

@@ -161,6 +161,28 @@ export function cleanNoteForDisplay(notes: string | undefined | null): string {
       const hour24 = hour === 12 ? 0 : hour
       return `${String(hour24).padStart(2, '0')}:${m} hs`
     })
+    // Convertir timestamps ISO [YYYY-MM-DDTHH:mm:ss.sssZ] a hora local argentina (UTC-3)
+    .replace(/\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\]/gi, (_, iso) => {
+      try {
+        const d = new Date(iso)
+        if (isNaN(d.getTime())) return ''
+        const timeStr = d.toLocaleTimeString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })
+        return `a las ${timeStr} hs`
+      } catch {
+        return ''
+      }
+    })
+    // Formatear montos sin separador de miles: $12500 -> $12.500
+    .replace(/\$(\d{4,})/g, (_, num) => {
+      return `$${Number(num).toLocaleString('es-AR')}`
+    })
+    // Si quedó duplicado 'a las XX:XX hs a las XX:XX hs' o 'a las XX:XX hs • a las XX:XX hs'
+    .replace(/a las (\d{2}:\d{2} hs)(?:\s+(?:•\s+)?a las \1)+/gi, 'a las $1')
     // Ocultar IDs técnicos y hashes internos de pasarelas
     .replace(/\[MP Pref:[^\]]+\]/gi, '')
     .replace(/\[MP-ID:[^\]]+\]/gi, '')
@@ -168,6 +190,7 @@ export function cleanNoteForDisplay(notes: string | undefined | null): string {
     .replace(/\s*-\s*\|\s*/g, ' • ')
     .replace(/\s*\|\s*/g, ' • ')
     .replace(/\s*-\s*-\s*/g, ' - ')
+    .replace(/\s*•\s*•\s*/g, ' • ')
     .trim()
 
   // Eliminar guiones, barras o viñetas sueltas al inicio y al final
@@ -263,6 +286,19 @@ export function getArgentinaTimeStr(now: Date = new Date()): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+  })
+  return formatter.format(now)
+}
+
+/**
+ * Obtiene la fecha actual en formato 'D/M/AAAA' en la zona horaria de Argentina.
+ */
+export function getArgentinaDateStr(now: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
   })
   return formatter.format(now)
 }

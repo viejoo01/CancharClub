@@ -44,7 +44,12 @@ function formatTime(iso: string): string {
   if (!iso) return ''
   try {
     const d = new Date(iso)
-    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return d.toLocaleTimeString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
   } catch {
     return iso
   }

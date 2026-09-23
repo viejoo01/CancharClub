@@ -138,9 +138,31 @@ export async function getDailyCashReport(
     const initialDeposit = Math.max(0, totalDepositArs - cobrosTotal)
     if (initialDeposit > 0) {
       // Fecha en que se cobró la seña inicial
-      const initialPaidAt = cobroMatches.length > 0
-        ? (row.paid_at || row.created_at)
-        : (row.paid_at || row.updated_at || row.created_at)
+      const señaIsoMatch = notes.match(/Seña verificada[^\[]*\[([^\]]+)\]/i)
+      let initialPaidAt: string | null = señaIsoMatch ? señaIsoMatch[1] : null
+
+      if (!initialPaidAt) {
+        if (cobroMatches.length > 0) {
+          const firstCobroIso = cobroMatches[0]?.[3]
+          if (row.paid_at && row.paid_at !== firstCobroIso) {
+            initialPaidAt = row.paid_at
+          } else {
+            const horaMatch = notes.match(/Seña verificada y aprobada.*?el\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+a las\s+(\d{1,2}):(\d{2})/i)
+            if (horaMatch) {
+              const [, dStr, hStr, mStr] = horaMatch
+              const [d, m, y] = dStr.split('/')
+              const paddedM = m.padStart(2, '0')
+              const paddedD = d.padStart(2, '0')
+              const paddedH = hStr.padStart(2, '0')
+              initialPaidAt = `${y}-${paddedM}-${paddedD}T${paddedH}:${mStr}:00-03:00`
+            } else {
+              initialPaidAt = row.created_at || row.paid_at
+            }
+          }
+        } else {
+          initialPaidAt = row.paid_at || row.created_at
+        }
+      }
 
       if (initialPaidAt && initialPaidAt >= dayStart && initialPaidAt <= dayEnd) {
         let initialMethod = 'CASH'

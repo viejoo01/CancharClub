@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
+import { PlanActivationModal } from './plan-activation-modal'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
@@ -42,6 +43,7 @@ export function DashboardLayoutClient({
   pendingScreen,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showActivationModal, setShowActivationModal] = useState(!isActive)
   const pathname = usePathname()
 
   // Cerrar menú móvil automáticamente al navegar a otra ruta (patrón oficial React docs)
@@ -148,6 +150,14 @@ export function DashboardLayoutClient({
 
         {isActive && gracePeriodBanner}
 
+        {/* Modal emergente de advertencia para activar plan */}
+        <PlanActivationModal
+          isOpen={showActivationModal}
+          onOpenChange={setShowActivationModal}
+          tenantName={tenantName}
+          planId={planId}
+        />
+
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
           {!isActive && pendingScreen}
 
@@ -155,8 +165,9 @@ export function DashboardLayoutClient({
             {!isActive && (
               <div
                 onClick={() => {
+                  setShowActivationModal(true)
                   toast.error('Acciones bloqueadas en modo de prueba', {
-                    description: 'Para habilitar botones, cobros y reservas en tu club, contactá al administrador por WhatsApp o Email.',
+                    description: 'Para habilitar botones, cobros y reservas en tu club, activá tu abono por WhatsApp o Email.',
                   })
                 }}
                 className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"

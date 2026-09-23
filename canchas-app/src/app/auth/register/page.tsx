@@ -26,6 +26,7 @@ export default function RegisterPage() {
     formData.append('email', email)
     formData.append('phone', phone)
     formData.append('password', password)
+    formData.append('planId', 'MEDIANO_2')
 
     try {
       const res = await registerClub(formData)

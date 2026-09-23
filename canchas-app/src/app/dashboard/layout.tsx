@@ -143,7 +143,7 @@ export default async function DashboardLayout({
       planId={planId}
       isActive={isActive}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
-      pendingScreen={<PendingActivationScreen tenantName={tenantName} />}
+      pendingScreen={<PendingActivationScreen tenantName={tenantName} planId={planId} />}
     >
       <TenantProvider value={tenantId} role={userRole}>
         {children}

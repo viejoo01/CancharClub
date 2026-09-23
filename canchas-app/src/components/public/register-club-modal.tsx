@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Building2,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react'
 import {
   Dialog,
@@ -14,11 +16,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { registerClub } from '@/actions/auth.actions'
+import { SAAS_PLANS, SAAS_PLANS_LIST, type SaaSPlanId } from '@/config/saas-plans'
 import { toast } from 'sonner'
 
 interface RegisterClubModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  selectedPlanId?: SaaSPlanId
 }
 
 const SPORTS_OPTIONS = [
@@ -28,7 +32,10 @@ const SPORTS_OPTIONS = [
   { id: 'BASQUET', label: 'Básquet', icon: '🏀' },
 ]
 
-export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps) {
+export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIANO_2' }: RegisterClubModalProps) {
+  const router = useRouter()
+  const [selectedPlanOverride, setSelectedPlanOverride] = useState<SaaSPlanId | null>(null)
+  const currentPlanId = selectedPlanOverride || selectedPlanId
   const [clubName, setClubName] = useState('')
   const [city, setCity] = useState('San Miguel de Tucumán')
   const [email, setEmail] = useState('')
@@ -37,6 +44,8 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
   const [selectedSports, setSelectedSports] = useState<string[]>(['PADEL'])
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const activePlanDef = SAAS_PLANS[currentPlanId] || SAAS_PLANS.MEDIANO_2
 
   const toggleSport = (sportId: string) => {
     setSelectedSports(prev =>
@@ -57,7 +66,6 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
 
     setIsLoading(true)
 
-
     const formData = new FormData()
     formData.append('clubName', clubName)
     formData.append('city', city)
@@ -65,6 +73,7 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
     formData.append('phone', phone)
     formData.append('password', password)
     formData.append('sports', JSON.stringify(selectedSports))
+    formData.append('planId', currentPlanId)
 
     try {
       const res = await registerClub(formData)
@@ -73,11 +82,11 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
         setIsLoading(false)
       } else {
         toast.success('¡Club registrado exitosamente!')
-        window.location.href = '/dashboard'
+        router.push('/dashboard')
       }
     } catch {
       // Redirección de Next.js
-      window.location.href = '/dashboard'
+      router.push('/dashboard')
     }
   }
 
@@ -105,8 +114,53 @@ export function RegisterClubModal({ open, onOpenChange }: RegisterClubModalProps
             Comenzá a gestionar tus canchas, turnos y cobros con Canchar Club
           </p>
 
+          {/* Selector de Plan SaaS */}
+          <div className="w-full mt-5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-left">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Plan seleccionado:
+              </span>
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                1er mes 100% gratis
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {SAAS_PLANS_LIST.map(p => {
+                const isSelected = p.id === currentPlanId
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPlanOverride(p.id)}
+                    className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white/80 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-emerald-500/50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold truncate">{p.courtsLabel}</div>
+                    <div className={`text-[10px] truncate ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
+                      {p.priceTurnosLabel.split('(')[0].trim()}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-2.5 pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs">
+              <span className="text-slate-600 dark:text-slate-300 font-medium">
+                {activePlanDef.name}:
+              </span>
+              <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                {activePlanDef.priceSubtext}
+              </span>
+            </div>
+          </div>
+
           {/* Formulario de Registro */}
-          <form onSubmit={handleSubmit} className="w-full space-y-3.5 mt-6 text-left">
+          <form onSubmit={handleSubmit} className="w-full space-y-3.5 mt-4 text-left">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                 Nombre del Club o Complejo

@@ -12,10 +12,11 @@ import {
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
-import { SAAS_PLANS_LIST } from '@/config/saas-plans'
+import { SAAS_PLANS_LIST, type SaaSPlanId } from '@/config/saas-plans'
 
 export default function SumarClubLandingPage() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
+  const [selectedPlanId, setSelectedPlanId] = useState<SaaSPlanId>('MEDIANO_2')
 
   const whatsappUrl =
     'https://wa.me/543816839320?text=Hola%20me%20llamo%20...%20quisiera%20agregar%20mi%20club%20a%20CancharClub%2C%20me%20podr%C3%ADas%20comentar%20un%20poco%20m%C3%A1s%20sobre%20c%C3%B3mo%20funciona%20el%20sistema%3F'
@@ -104,7 +105,10 @@ export default function SumarClubLandingPage() {
           {/* Botón secundario para registro online instantáneo */}
           <div className="mt-5 text-center">
             <button
-              onClick={() => setIsRegisterModalOpen(true)}
+              onClick={() => {
+                setSelectedPlanId('MEDIANO_2')
+                setIsRegisterModalOpen(true)
+              }}
               className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
             >
               ¿Preferís registrarlo online vos mismo? Hacé clic acá →
@@ -289,7 +293,10 @@ export default function SumarClubLandingPage() {
                 {/* Botón de acción */}
                 <div className="mt-8 pt-4 border-t border-slate-800/60">
                   <button
-                    onClick={() => setIsRegisterModalOpen(true)}
+                    onClick={() => {
+                      setSelectedPlanId(plan.id)
+                      setIsRegisterModalOpen(true)
+                    }}
                     className={`w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       plan.isPopular
                         ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-950/50'
@@ -364,6 +371,7 @@ export default function SumarClubLandingPage() {
       <RegisterClubModal
         open={isRegisterModalOpen}
         onOpenChange={setIsRegisterModalOpen}
+        selectedPlanId={selectedPlanId}
       />
     </div>
   )

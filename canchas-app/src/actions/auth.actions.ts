@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
+import type { SaaSPlanId } from '@/config/saas-plans'
 
 export async function loginWithEmail(formData: FormData) {
   const email = (formData.get('email') as string)?.trim()
@@ -60,12 +61,16 @@ export async function loginWithEmail(formData: FormData) {
     redirect('/superadmin')
   }
 
-  const t = profile?.tenants as unknown as { name?: string; slug?: string; subscription_status?: string; is_active?: boolean } | null
+  const t = profile?.tenants as unknown as { name?: string; slug?: string; subscription_status?: string; is_active?: boolean; base_slots_plan?: number } | null
 
   if (t?.name) cookieStore.set('demo_tenant_name', t.name, { path: '/', maxAge: 86400 })
   if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, { path: '/', maxAge: 86400 })
   if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_is_active', t?.is_active === true ? 'true' : 'false', { path: '/', maxAge: 86400 })
+  if (t?.base_slots_plan) {
+    const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+    cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
+  }
 
   if (profile?.role === 'TENANT_STAFF') {
     cookieStore.set('demo_user_role', 'TENANT_STAFF', { path: '/', maxAge: 86400 })
@@ -85,6 +90,7 @@ export async function registerClub(formData: FormData) {
   const phone = (formData.get('phone') as string)?.trim() || '+5493816839320'
   const city = (formData.get('city') as string)?.trim() || 'San Miguel de Tucumán'
   const sportsRaw = formData.get('sports') as string
+  const planId = ((formData.get('planId') as string) || 'MEDIANO_2') as SaaSPlanId
 
   if (!clubName || !email || !password) {
     return { success: false, error: 'Completá todos los campos requeridos' }
@@ -159,6 +165,14 @@ export async function registerClub(formData: FormData) {
 
   const slug = `${baseSlug || 'club'}-${Date.now().toString().slice(-4)}`
 
+  const baseSlotsMap: Record<SaaSPlanId, number> = {
+    CHICO_1: 1,
+    MEDIANO_2: 2,
+    CONSOLIDADO_3_4: 4,
+    GRANDE_5_PLUS: 6,
+  }
+  const baseSlots = baseSlotsMap[planId] || 2
+
   const { data: tenant, error: tenantError } = await serviceClient
     .from('tenants')
     .insert({
@@ -170,8 +184,9 @@ export async function registerClub(formData: FormData) {
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: true,
-      subscription_status: 'ACTIVE',
+      is_active: false, // Inicia desactivado esperando confirmación de activación
+      subscription_status: 'PENDING_PAYMENT', // Estado de activación pendiente
+      base_slots_plan: baseSlots,
       payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
     })
     .select()
@@ -193,9 +208,12 @@ export async function registerClub(formData: FormData) {
       phone,
     })
 
-  // 4. Crear canchas iniciales según deportes seleccionados
+  // 4. Crear canchas iniciales según plan y deportes seleccionados
   try {
-    const courtsToInsert = sports.map((sport: string, index: number) => {
+    const targetCourts = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
+    const courtsToInsert = []
+    for (let index = 0; index < targetCourts; index++) {
+      const sport = sports[index % sports.length] || 'PADEL'
       const s = sport.toUpperCase()
       const isPadel = s.includes('PADEL')
       let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' = 'PADEL'
@@ -203,7 +221,7 @@ export async function registerClub(formData: FormData) {
       else if (s.includes('FUTBOL') || s.includes('SOCCER') || s.includes('5')) sportEnum = 'FUTBOL5'
       else if (s.includes('TENIS') || s.includes('TENNIS')) sportEnum = 'TENIS'
 
-      return {
+      courtsToInsert.push({
         tenant_id: tenant.id,
         name: `Cancha ${index + 1} (${isPadel ? 'Cristal' : 'Sintético'})`,
         sport: sportEnum,
@@ -212,8 +230,8 @@ export async function registerClub(formData: FormData) {
         has_lights: true,
         display_order: index + 1,
         is_active: true,
-      }
-    })
+      })
+    }
     const { error: insertCourtsErr } = await serviceClient.from('courts').insert(courtsToInsert)
     if (insertCourtsErr) console.error('Error creating initial courts:', insertCourtsErr.message)
   } catch (courtErr) {
@@ -233,8 +251,10 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'PENDING_PAYMENT', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
+  cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })
 
   redirect('/dashboard')
 }

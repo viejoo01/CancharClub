@@ -206,6 +206,8 @@ export default async function DashboardLayout({
   const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
   const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
 
+  const isNewClub = !isActive && (subscriptionStatus === 'PAYMENT_PENDING' || !tenantCreatedAt)
+
   return (
     <DashboardLayoutClient
       tenantId={tenantId}
@@ -220,6 +222,9 @@ export default async function DashboardLayout({
       sports={initialSports}
       dueDate={effectiveDueDate}
       daysRemaining={daysRemaining}
+      subscriptionStatus={subscriptionStatus}
+      monthlyFeeArs={pricing.monthlyFeeArs}
+      isNewClub={isNewClub}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       pendingScreen={<PendingActivationScreen tenantName={tenantName} planId={planId} />}
     >

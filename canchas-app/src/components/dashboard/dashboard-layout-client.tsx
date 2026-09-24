@@ -16,9 +16,11 @@ import { PlanActivationModal } from './plan-activation-modal'
 import { PlanExpirationAlert } from './plan-expiration-alert'
 import { AutoDebitAlertModal } from './auto-debit-alert-modal'
 import { ChangePasswordModal } from './change-password-modal'
+import { PausedClubScreen, type PausedSubState } from './paused-club-screen'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
+import type { TenantSubscriptionStatus } from '@/types/database'
 
 interface DashboardLayoutClientProps {
   tenantId?: string | null
@@ -36,6 +38,9 @@ interface DashboardLayoutClientProps {
   pendingScreen?: React.ReactNode
   dueDate?: string
   daysRemaining?: number
+  subscriptionStatus?: TenantSubscriptionStatus
+  monthlyFeeArs?: number
+  isNewClub?: boolean
 }
 
 export function DashboardLayoutClient({
@@ -54,11 +59,41 @@ export function DashboardLayoutClient({
   pendingScreen,
   dueDate,
   daysRemaining,
+  subscriptionStatus,
+  monthlyFeeArs,
+  isNewClub = false,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(!isActive)
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const pathname = usePathname()
+
+  // Manejo de estado de club pausado con soporte para query params y simulación
+  const [overridePaused, setOverridePaused] = useState<boolean | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const p = params.get('paused')
+      if (p === 'true') return true
+      if (p === 'false') return false
+    }
+    return null
+  })
+
+  const [initialSubStateOverride] = useState<PausedSubState | undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return (params.get('substate') as PausedSubState | null) || undefined
+    }
+    return undefined
+  })
+
+  // Un club se encuentra en estado de "Pausa" ya sea por ser nuevo club o por no haber realizado el pago mensual:
+  // - subscriptionStatus === 'PAUSED'
+  // - subscriptionStatus === 'LOCKED'
+  // - !isActive (nuevo club o desactivado)
+  const isClubPaused = overridePaused !== null
+    ? overridePaused
+    : (subscriptionStatus === 'PAUSED' || subscriptionStatus === 'LOCKED' || !isActive)
 
   // Cerrar menú móvil automáticamente al navegar a otra ruta (patrón oficial React docs)
   const [currentPath, setCurrentPath] = useState(pathname)
@@ -127,45 +162,51 @@ export function DashboardLayoutClient({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-100 relative">
-      {/* ─── 1. SIDEBAR DESKTOP (visible sólo en md y superior) ─── */}
-      <div className="hidden md:flex shrink-0">
-        <Sidebar
-          tenantName={tenantName}
-          tenantSlug={tenantSlug}
-          userRole={userRole}
-          isActive={isActive}
-          planId={planId}
-        />
-      </div>
+      {/* ─── 1. SIDEBAR DESKTOP (visible sólo si el club NO está en pausa) ─── */}
+      {!isClubPaused && (
+        <div className="hidden md:flex shrink-0">
+          <Sidebar
+            tenantName={tenantName}
+            tenantSlug={tenantSlug}
+            userRole={userRole}
+            isActive={isActive}
+            planId={planId}
+          />
+        </div>
+      )}
 
-      {/* ─── 2. DRAWER MÓVIL (Off-canvas en celulares) ─── */}
-      {/* Backdrop con desenfoque */}
-      <div
-        onClick={() => setMobileMenuOpen(false)}
-        className={cn(
-          'fixed inset-0 z-50 bg-black/70 backdrop-blur-xs transition-opacity duration-300 md:hidden cursor-pointer',
-          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        )}
-        aria-hidden="true"
-      />
+      {/* ─── 2. DRAWER MÓVIL (Off-canvas en celulares, sólo si NO está en pausa) ─── */}
+      {!isClubPaused && (
+        <>
+          {/* Backdrop con desenfoque */}
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'fixed inset-0 z-50 bg-black/70 backdrop-blur-xs transition-opacity duration-300 md:hidden cursor-pointer',
+              mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            )}
+            aria-hidden="true"
+          />
 
-      {/* Panel deslizante lateral */}
-      <div
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-slate-950 border-r border-slate-800 shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
-        <Sidebar
-          tenantName={tenantName}
-          tenantSlug={tenantSlug}
-          userRole={userRole}
-          isActive={isActive}
-          planId={planId}
-          isMobile={true}
-          onClose={() => setMobileMenuOpen(false)}
-        />
-      </div>
+          {/* Panel deslizante lateral */}
+          <div
+            className={cn(
+              'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-slate-950 border-r border-slate-800 shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
+              mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+            )}
+          >
+            <Sidebar
+              tenantName={tenantName}
+              tenantSlug={tenantSlug}
+              userRole={userRole}
+              isActive={isActive}
+              planId={planId}
+              isMobile={true}
+              onClose={() => setMobileMenuOpen(false)}
+            />
+          </div>
+        </>
+      )}
 
       {/* ─── 3. ÁREA PRINCIPAL DE CONTENIDO ─── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden relative">
@@ -176,30 +217,8 @@ export function DashboardLayoutClient({
           courtsCount={courtsCount}
           sports={sports}
           mpConnected={mpConnected}
-          onToggleMobileMenu={() => setMobileMenuOpen(true)}
-        />
-
-        {isActive && gracePeriodBanner}
-
-        {/* Modal obligatorio de vinculación de tarjeta para activar plan */}
-        <PlanActivationModal
-          isOpen={!isActive && showActivationModal}
-          onOpenChange={setShowActivationModal}
-          tenantName={tenantName}
-          tenantId={tenantId}
-          planId={planId}
-        />
-
-        {/* Alerta Progresiva Emergente de Vencimiento de Plan (3, 2, 1 días) con botón Entendido */}
-        <PlanExpirationAlert
-          tenantId={tenantId}
-          dueDate={dueDate}
-          daysRemaining={daysRemaining}
-        />
-
-        {/* Alerta de Débito Automático (Cobro Fallido o Exitoso) con botón Entendido */}
-        <AutoDebitAlertModal
-          tenantId={tenantId}
+          isClubPaused={isClubPaused}
+          onToggleMobileMenu={isClubPaused ? undefined : () => setMobileMenuOpen(true)}
         />
 
         {/* Modal de cambio de contraseña para dueño y encargado */}
@@ -211,38 +230,86 @@ export function DashboardLayoutClient({
         />
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
-          {!isActive && pendingScreen}
+          {isClubPaused ? (
+            /* ─── INTERFAZ DE CLUB PAUSADO (BLOQUEO TOTAL DE MENÚS) ─── */
+            <PausedClubScreen
+              tenantId={tenantId}
+              tenantName={tenantName}
+              subscriptionStatus={subscriptionStatus}
+              baseMonthlyFeeArs={monthlyFeeArs || 45000}
+              dueDate={dueDate}
+              isNewClub={isNewClub}
+              initialSubState={initialSubStateOverride}
+              onReactivateSuccess={() => {
+                setOverridePaused(false)
+                toast.success('¡Club reactivado con éxito!')
+              }}
+              onToggleSimulatedActive={() => {
+                setOverridePaused(false)
+                toast.success('Pausa desactivada en modo de prueba')
+              }}
+            />
+          ) : (
+            /* ─── CONTENIDO NORMAL DEL DASHBOARD ─── */
+            <>
+              {isActive && gracePeriodBanner}
 
-          <div className="relative w-full">
-            {!isActive && (
-              <div
-                onClick={() => {
-                  setShowActivationModal(true)
-                  toast.error('Tarjeta requerida para operar', {
-                    description: 'Para habilitar turnos, reservas y cobros, vinculá tu tarjeta de débito o crédito (15 días gratis, $0 hoy).',
-                  })
-                }}
-                className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"
-                title="Para usar las funciones de CancharClub, vinculá tu tarjeta de débito o crédito."
+              {/* Modal obligatorio de vinculación de tarjeta para activar plan */}
+              <PlanActivationModal
+                isOpen={!isActive && showActivationModal}
+                onOpenChange={setShowActivationModal}
+                tenantName={tenantName}
+                tenantId={tenantId}
+                planId={planId}
               />
-            )}
-            <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>
-              {children}
-            </div>
 
-            {/* Pie de página con copyright */}
-            <footer className="mt-12 pt-6 pb-4 border-t border-slate-800/60 text-center text-xs text-slate-500 select-none">
-              <p>© 2026 CancharClub. Todos los derechos reservados.</p>
-            </footer>
-          </div>
+              {/* Alerta Progresiva Emergente de Vencimiento de Plan (3, 2, 1 días) con botón Entendido */}
+              <PlanExpirationAlert
+                tenantId={tenantId}
+                dueDate={dueDate}
+                daysRemaining={daysRemaining}
+              />
+
+              {/* Alerta de Débito Automático (Cobro Fallido o Exitoso) con botón Entendido */}
+              <AutoDebitAlertModal
+                tenantId={tenantId}
+              />
+
+              {!isActive && pendingScreen}
+
+              <div className="relative w-full">
+                {!isActive && (
+                  <div
+                    onClick={() => {
+                      setShowActivationModal(true)
+                      toast.error('Tarjeta requerida para operar', {
+                        description: 'Para habilitar turnos, reservas y cobros, vinculá tu tarjeta de débito o crédito (15 días gratis, $0 hoy).',
+                      })
+                    }}
+                    className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"
+                    title="Para usar las funciones de CancharClub, vinculá tu tarjeta de débito o crédito."
+                  />
+                )}
+                <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>
+                  {children}
+                </div>
+
+                {/* Pie de página con copyright */}
+                <footer className="mt-12 pt-6 pb-4 border-t border-slate-800/60 text-center text-xs text-slate-500 select-none">
+                  <p>© 2026 CancharClub. Todos los derechos reservados.</p>
+                </footer>
+              </div>
+            </>
+          )}
         </main>
 
-        {/* ─── 4. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM BAR) PARA CELULARES ─── */}
-        <nav 
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 pt-1.5 flex items-center justify-around shadow-2xl select-none"
-          style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
-          aria-label="Navegación inferior móvil"
-        >
+        {/* ─── 4. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM BAR) PARA CELULARES (sólo si NO está pausado) ─── */}
+        {!isClubPaused && (
+          <nav 
+            className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 pt-1.5 flex items-center justify-around shadow-2xl select-none"
+            style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
+            aria-label="Navegación inferior móvil"
+          >
             {quickBottomNav.map((item) => {
               const isActiveRoute = item.exact 
                 ? pathname === item.href 
@@ -288,6 +355,7 @@ export function DashboardLayoutClient({
               </span>
             </button>
           </nav>
+        )}
       </div>
     </div>
   )

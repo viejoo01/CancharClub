@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { VenueSwitcher } from './venue-switcher'
 
+import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
+
 interface HeaderProps {
   onQuickBookClick?: () => void
   onToggleMobileMenu?: () => void
@@ -17,6 +19,7 @@ interface HeaderProps {
   tenantId?: string | null
   courtsCount?: number
   sports?: string[]
+  isClubPaused?: boolean
 }
 
 export function Header({
@@ -28,6 +31,7 @@ export function Header({
   tenantId,
   courtsCount,
   sports,
+  isClubPaused = false,
 }: HeaderProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -51,44 +55,60 @@ export function Header({
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
       <div className="flex items-center gap-2.5 sm:gap-4">
-        {/* Botón menú hamburguesa para celulares */}
-        {onToggleMobileMenu && (
-          <button
-            type="button"
-            onClick={onToggleMobileMenu}
-            className="md:hidden p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
-            aria-label="Abrir menú de navegación"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        )}
-
-        <h1 className="text-sm sm:text-base font-semibold text-slate-100 hidden lg:block">
-          Gestión Operativa
-        </h1>
-
-        {/* Selector de Sede / Sucursal Multisede */}
-        <VenueSwitcher 
-          tenantName={tenantName} 
-          tenantId={tenantId}
-          initialCourtsCount={courtsCount}
-          initialSports={sports}
-        />
-
-        {mpConnected ? (
-          <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
-            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 transition-colors cursor-pointer">
-              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
-              <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
-            </Badge>
-          </Link>
+        {/* En estado pausado o sin toggle: mostrar logo directo de CancharClub */}
+        {isClubPaused ? (
+          <div className="flex items-center gap-2.5">
+            <CancharClubIcon className="w-7 h-7" />
+            <span className="font-black text-base tracking-tight text-slate-100 hidden sm:inline">
+              Canchar<span className="text-emerald-400">Club</span>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              Club Pausado
+            </span>
+          </div>
         ) : (
-          <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-600 transition-colors cursor-pointer">
-              <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
-              <span className="hidden md:inline">Señas:</span> Transferencia / Alias
-            </Badge>
-          </Link>
+          <>
+            {/* Botón menú hamburguesa para celulares */}
+            {onToggleMobileMenu && (
+              <button
+                type="button"
+                onClick={onToggleMobileMenu}
+                className="md:hidden p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
+                aria-label="Abrir menú de navegación"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+
+            <h1 className="text-sm sm:text-base font-semibold text-slate-100 hidden lg:block">
+              Gestión Operativa
+            </h1>
+
+            {/* Selector de Sede / Sucursal Multisede */}
+            <VenueSwitcher 
+              tenantName={tenantName} 
+              tenantId={tenantId}
+              initialCourtsCount={courtsCount}
+              initialSports={sports}
+            />
+
+            {mpConnected ? (
+              <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
+                <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 transition-colors cursor-pointer">
+                  <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+                  <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
+                </Badge>
+              </Link>
+            ) : (
+              <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
+                <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-600 transition-colors cursor-pointer">
+                  <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+                  <span className="hidden md:inline">Señas:</span> Transferencia / Alias
+                </Badge>
+              </Link>
+            )}
+          </>
         )}
       </div>
 

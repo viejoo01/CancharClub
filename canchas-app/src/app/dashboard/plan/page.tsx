@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
+import { ClubReactivationModal } from '@/components/dashboard/club-reactivation-modal'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
@@ -53,6 +54,13 @@ export default function ClubPlanPage() {
 
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSimulatedPaused, setIsSimulatedPaused] = useState(false)
+  const [showReactivationModal, setShowReactivationModal] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('action') === 'reactivate'
+    }
+    return false
+  })
 
   const loadPlanData = async (showToast = false) => {
     setIsRefreshing(true)
@@ -381,6 +389,16 @@ export default function ClubPlanPage() {
           >
             {isSimulatedPaused ? '⏸️ Quitar Pausa' : '⏸️ Probar Estado de Pausa'}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowReactivationModal(true)}
+            className="h-7 text-[11px] border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 rounded-lg cursor-pointer flex items-center gap-1"
+            title="Abonar reactivación con cuota base + 3% por día de mora"
+          >
+            <Sparkles className="w-3 h-3 text-emerald-400" />
+            <span>Abonar Reactivación (+3%/día)</span>
+          </Button>
           <div className="h-4 w-px bg-slate-800 hidden sm:block mx-1" />
           <Button
             size="sm"
@@ -432,13 +450,20 @@ export default function ClubPlanPage() {
                 </Badge>
               </div>
               <p className="text-xs text-rose-200/90 mt-1 max-w-2xl leading-relaxed">
-                Las reservas online públicas para clientes en tu portal web han sido <strong>pausadas temporalmente</strong> debido a que la cuota del servicio no fue regularizada a tiempo. Podés continuar operando en tu mostrador interno, pero para rehabilitar las reservas web inmediatas debés abonar la suscripción.
+                Las reservas online públicas para clientes en tu portal web han sido <strong>pausadas temporalmente</strong> debido a que la cuota del servicio no fue regularizada a tiempo. Podés continuar operando en tu mostrador interno, pero para rehabilitar las reservas web inmediatas debés abonar la reactivación reglamentaria (cuota base + 3% diario por mora).
               </p>
+              {planDetails?.reactivationDetails && (
+                <div className="mt-2.5 inline-flex flex-wrap items-center gap-2 text-xs bg-rose-950/80 border border-rose-700/60 rounded-xl px-3 py-1.5 text-rose-200">
+                  <span>Monto de reactivación estimado:</span>
+                  <strong className="text-white font-mono text-sm">{formatARS(planDetails.reactivationDetails.totalAmount)}</strong>
+                  <span className="text-[11px] text-rose-300/80">({formatARS(planDetails.reactivationDetails.baseAmount)} cuota + {planDetails.reactivationDetails.daysOverdue > 0 ? `${planDetails.reactivationDetails.daysOverdue}d al 3%/día: +${formatARS(planDetails.reactivationDetails.surchargeAmount)}` : 'al día'})</span>
+                </div>
+              )}
             </div>
           </div>
           <Button
             size="sm"
-            onClick={() => setShowSubscriptionModal(true)}
+            onClick={() => setShowReactivationModal(true)}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs h-10 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <CreditCard className="w-4 h-4" />
@@ -1455,6 +1480,19 @@ export default function ClubPlanPage() {
           </div>
         </div>
       )}
+      {/* MODAL OFICIAL: Reactivación de Club (Cuota + 3% por día de mora) */}
+      <ClubReactivationModal
+        isOpen={showReactivationModal}
+        onClose={() => setShowReactivationModal(false)}
+        tenantId={tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'}
+        clubName={clubName}
+        baseMonthlyFeeArs={pricing.monthlyFeeArs}
+        dueDateStr={pricing.nextDueDate}
+        onSuccess={() => {
+          setIsSimulatedPaused(false)
+          loadPlanData(true)
+        }}
+      />
     </div>
   )
 }

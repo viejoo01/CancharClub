@@ -45,7 +45,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { formatARS, setClientCookie, cn } from '@/lib/utils'
-import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
+import { calculateClubSaaSFee, calculateSaaSMultiplier, calculateReactivationFee } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
 import { 
@@ -1274,8 +1274,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <span>Pagado {t.last_paid}</span>
                         </div>
                       ) : (
-                        <div className="flex-1 text-[11px] text-rose-400 font-semibold flex items-center justify-end gap-1 px-1">
-                          <span>En Pausa</span>
+                        <div className="flex-1 text-[11px] text-rose-400 font-semibold flex flex-col items-end justify-center px-1">
+                          <span>⏸️ En Pausa</span>
+                          <span className="text-[10px] text-amber-400 font-mono font-normal">
+                            Reactivar: {formatARS(calculateReactivationFee(t.pricing.monthlyFeeArs, t.pricing.nextDueDate).totalAmount)}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1339,9 +1342,14 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 text-center">
                         {t.subscription_status === 'PAUSADO' ? (
-                          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
-                            ⏸️ En Pausa
-                          </Badge>
+                          <div>
+                            <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
+                              ⏸️ En Pausa
+                            </Badge>
+                            <div className="text-[10px] text-amber-400 font-mono mt-0.5" title="Cuota base + 3% diario por mora">
+                              Reactivar: {formatARS(calculateReactivationFee(t.pricing.monthlyFeeArs, t.pricing.nextDueDate).totalAmount)}
+                            </div>
+                          </div>
                         ) : t.subscription_status === 'AL_DIA' ? (
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
                             Al Día

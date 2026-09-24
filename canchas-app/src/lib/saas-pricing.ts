@@ -154,3 +154,87 @@ export function calculateDaysUntilDueDate(dueDateStr?: string | null): number {
   return 999
 }
 
+export interface ReactivationFeeDetails {
+  baseAmount: number
+  dueDate: string
+  paymentDate: string
+  daysOverdue: number
+  dailyRatePercent: number // 3
+  surchargePercent: number // daysOverdue * 3
+  surchargeAmount: number // Math.round(baseAmount * (surchargePercent / 100))
+  totalAmount: number // baseAmount + surchargeAmount
+  formulaDescription: string
+}
+
+/**
+ * Calcula el monto de reactivación de un club:
+ * Monto de la suscripción + 3% por cada día transcurrido desde la fecha de vencimiento hasta el día del pago.
+ */
+export function calculateReactivationFee(
+  baseAmount: number,
+  dueDateStr?: string | null,
+  paymentDate: Date = new Date(),
+  overrideDays?: number
+): ReactivationFeeDetails {
+  const safeBase = Math.max(0, baseAmount)
+  const payYear = paymentDate.getFullYear()
+  const payMonth = paymentDate.getMonth()
+  const payDay = paymentDate.getDate()
+  const paymentMidnight = new Date(payYear, payMonth, payDay).getTime()
+
+  let dueMidnight = paymentMidnight
+  let formattedDueDate = `${String(payDay).padStart(2, '0')}/${String(payMonth + 1).padStart(2, '0')}/${payYear}`
+
+  if (dueDateStr) {
+    if (dueDateStr.includes('/')) {
+      const parts = dueDateStr.split('/')
+      if (parts.length === 3) {
+        const d = parseInt(parts[0], 10)
+        const m = parseInt(parts[1], 10) - 1
+        const y = parseInt(parts[2], 10)
+        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+          dueMidnight = new Date(y, m, d).getTime()
+          formattedDueDate = `${String(d).padStart(2, '0')}/${String(m + 1).padStart(2, '0')}/${y}`
+        }
+      }
+    } else {
+      const parsed = new Date(dueDateStr)
+      if (!isNaN(parsed.getTime())) {
+        dueMidnight = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime()
+        formattedDueDate = `${String(parsed.getDate()).padStart(2, '0')}/${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`
+      }
+    }
+  }
+
+  // Días transcurridos desde el vencimiento hasta la fecha de pago
+  let daysOverdue = 0
+  if (typeof overrideDays === 'number') {
+    daysOverdue = Math.max(0, overrideDays)
+  } else if (paymentMidnight > dueMidnight) {
+    const diffMs = paymentMidnight - dueMidnight
+    daysOverdue = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+  }
+
+  const dailyRatePercent = 3
+  const surchargePercent = daysOverdue * dailyRatePercent
+  const surchargeAmount = Math.round(safeBase * (surchargePercent / 100))
+  const totalAmount = safeBase + surchargeAmount
+
+  const formattedPayDate = `${String(payDay).padStart(2, '0')}/${String(payMonth + 1).padStart(2, '0')}/${payYear}`
+
+  return {
+    baseAmount: safeBase,
+    dueDate: formattedDueDate,
+    paymentDate: formattedPayDate,
+    daysOverdue,
+    dailyRatePercent,
+    surchargePercent,
+    surchargeAmount,
+    totalAmount,
+    formulaDescription: daysOverdue > 0
+      ? `$${safeBase.toLocaleString('es-AR')} suscripción + ${daysOverdue} día${daysOverdue > 1 ? 's' : ''} de mora (+3% diario = +${surchargePercent}%)`
+      : `$${safeBase.toLocaleString('es-AR')} (Sin mora acumulada)`,
+  }
+}
+
+

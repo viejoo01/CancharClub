@@ -31,6 +31,7 @@ import {
   recordTenantInvoicePayment
 } from '@/actions/saas-billing.actions'
 import type { TenantSubscriptionStatus } from '@/types/database'
+import type { ReactivationFeeDetails } from '@/lib/saas-pricing'
 
 export default function BillingSuspendedPage() {
   return (
@@ -73,6 +74,7 @@ function BillingSuspendedContent() {
       formulaDescription: string
       nextDueDate: string
     }
+    reactivation?: ReactivationFeeDetails
   } | null>(null)
 
   // Cargar datos de la deuda
@@ -181,7 +183,8 @@ function BillingSuspendedContent() {
 
   const invoice = dunningData?.invoice
   const pricing = dunningData?.pricing
-  const amountToPay = invoice?.amount ?? pricing?.monthlyFeeArs ?? 45000
+  const reactivation = dunningData?.reactivation
+  const amountToPay = reactivation?.totalAmount ?? (invoice?.amount ?? pricing?.monthlyFeeArs ?? 45000)
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -260,6 +263,11 @@ function BillingSuspendedContent() {
                 ${amountToPay.toLocaleString('es-AR')}{' '}
                 <span className="text-xs font-normal text-slate-400">ARS</span>
               </div>
+              {reactivation && reactivation.daysOverdue > 0 && (
+                <div className="text-[11px] text-amber-400 font-mono mt-1">
+                  Cuota (${reactivation.baseAmount.toLocaleString('es-AR')}) + {reactivation.daysOverdue}d de mora (+{reactivation.surchargePercent}%: +${reactivation.surchargeAmount.toLocaleString('es-AR')})
+                </div>
+              )}
             </div>
 
             <Button

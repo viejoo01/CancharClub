@@ -5,7 +5,12 @@
 // ==============================================================================
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { calculateClubSaaSFee, type ClubSaaSPricing } from '@/lib/saas-pricing'
+import { 
+  calculateClubSaaSFee, 
+  calculateReactivationFee, 
+  type ClubSaaSPricing, 
+  type ReactivationFeeDetails 
+} from '@/lib/saas-pricing'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { MercadoPagoConfig, Preference, PreApproval } from 'mercadopago'
@@ -47,6 +52,7 @@ export interface ClubPlanDetails {
   cancelAtPeriodEnd?: boolean
   cancellationRequestedAt?: string | null
   cancellationEffectiveDate?: string | null
+  reactivationDetails?: ReactivationFeeDetails
 }
 
 /**
@@ -257,6 +263,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     cancelAtPeriodEnd = true
   }
 
+  const lastUnpaidInvoice = invoices.find(inv => inv.status === 'UNPAID' || inv.status === 'DRAFT')
+  const baseReactivationAmount = lastUnpaidInvoice ? Number(lastUnpaidInvoice.amount) : pricing.monthlyFeeArs
+  const reactivationDueDate = lastUnpaidInvoice?.due_date || pricing.nextDueDate
+  const reactivationDetails = calculateReactivationFee(baseReactivationAmount, reactivationDueDate)
+
   return {
     tenantId: targetTenantId || '',
     tenantName,
@@ -275,6 +286,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     cancelAtPeriodEnd,
     cancellationRequestedAt,
     cancellationEffectiveDate: cancellationEffectiveDate || pricing.nextDueDate,
+    reactivationDetails,
   }
 }
 
@@ -580,6 +592,8 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
 
   const effectiveStatus: TenantSubscriptionStatus = demoStatus || tenant?.subscription_status || 'LOCKED'
   const debtAmountArs = invoice ? Number(invoice.amount) : summary.pricing.monthlyFeeArs
+  const dueDateCandidate = invoice?.due_date || summary.pricing.nextDueDate
+  const reactivation = calculateReactivationFee(debtAmountArs, dueDateCandidate)
 
   return {
     tenantId: defaultTenantId,
@@ -600,6 +614,7 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
       created_at: new Date().toISOString(),
     },
     pricing: summary.pricing,
+    reactivation,
   }
 }
 
@@ -610,7 +625,7 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
   const serviceClient = await createServiceClient()
   const dunning = await getTenantDunningDetails(tenantId)
   const invoice = dunning.invoice
-  const amountToPay = invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs
+  const amountToPay = dunning.reactivation?.totalAmount || (invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -1314,5 +1329,224 @@ export async function undoSubscriptionRevocationAction(
     return { success: false, error: msg }
   }
 }
+
+/**
+ * Obtiene el cálculo detallado de reactivación de un club en mora/pausa:
+ * Cuota base + 3% diario desde la fecha de vencimiento hasta el día del pago.
+ */
+export async function getClubReactivationDetails(tenantIdParam?: string, overrideDays?: number) {
+  const serviceClient = await createServiceClient()
+  const cookieStore = await cookies()
+
+  let targetTenantId = tenantIdParam
+  if (!targetTenantId) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await serviceClient
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      targetTenantId = profile?.tenant_id
+    }
+  }
+
+  const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+  if (!targetTenantId && cookieTenantId && !cookieTenantId.startsWith('demo-')) {
+    targetTenantId = cookieTenantId
+  }
+
+  const defaultTenantId = targetTenantId || '00000000-0000-0000-0000-000000000001'
+
+  const { data: tenant } = await serviceClient
+    .from('tenants')
+    .select('id, name, slug, phone_whatsapp, subscription_status, current_balance')
+    .eq('id', defaultTenantId)
+    .maybeSingle()
+
+  const summary = await getClubBillingSummary(defaultTenantId)
+
+  const { data: invoice } = await serviceClient
+    .from('tenant_invoices')
+    .select('*')
+    .eq('tenant_id', defaultTenantId)
+    .in('status', ['UNPAID', 'DRAFT'])
+    .order('year', { ascending: false })
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const baseAmount = invoice ? Number(invoice.amount) : summary.pricing.monthlyFeeArs
+  const dueDate = invoice?.due_date || summary.pricing.nextDueDate
+
+  const reactivation = calculateReactivationFee(baseAmount, dueDate, new Date(), overrideDays)
+
+  return {
+    tenantId: defaultTenantId,
+    tenantName: tenant?.name || 'Mi Club',
+    tenantSlug: tenant?.slug || 'mi-club',
+    subscriptionStatus: (tenant?.subscription_status || 'PAUSED') as TenantSubscriptionStatus,
+    reactivation,
+  }
+}
+
+/**
+ * Registra el pago de reactivación de un club (cuota base + recargo por mora 3%/día),
+ * levantando la pausa inmediatamente a ACTIVE y dejando al día el balance y la facturación.
+ */
+export async function recordReactivationPaymentAction(params: {
+  tenantId: string
+  totalPaid: number
+  daysOverdue: number
+  surchargeAmount: number
+  paymentMethod: 'MERCADO_PAGO' | 'TRANSFERENCIA' | 'SIMULADO'
+  notes?: string
+}) {
+  const serviceClient = await createServiceClient()
+  const { tenantId, totalPaid, daysOverdue, surchargeAmount, paymentMethod, notes } = params
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  // 1. Buscar si hay una factura pendiente existente para saldar
+  const { data: existingInv } = await serviceClient
+    .from('tenant_invoices')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .in('status', ['UNPAID', 'DRAFT'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const paymentNote = notes || `Reactivación de suscripción - ${paymentMethod} (Cuota base + ${daysOverdue} días de mora al 3%/día: +$${surchargeAmount.toLocaleString('es-AR')})`
+
+  if (existingInv) {
+    await serviceClient
+      .from('tenant_invoices')
+      .update({
+        status: 'PAID',
+        amount: totalPaid,
+        paid_at: now.toISOString(),
+        notes: paymentNote,
+      })
+      .eq('id', existingInv.id)
+  } else {
+    const summary = await getClubBillingSummary(tenantId)
+    await serviceClient
+      .from('tenant_invoices')
+      .insert({
+        tenant_id: tenantId,
+        month: currentMonth,
+        year: currentYear,
+        amount: totalPaid,
+        status: 'PAID',
+        reference_slot_price: summary.pricing.highestSlotPriceArs,
+        slots_multiplier: summary.pricing.multiplier,
+        due_date: now.toISOString().split('T')[0],
+        paid_at: now.toISOString(),
+        notes: paymentNote,
+      })
+  }
+
+  // 2. Levantar la pausa/suspensión del club
+  await serviceClient
+    .from('tenants')
+    .update({
+      is_active: true,
+      subscription_status: 'ACTIVE',
+      current_balance: 0,
+      updated_at: now.toISOString(),
+    })
+    .eq('id', tenantId)
+
+  // 3. Sincronizar cookies de sesión activa
+  try {
+    const cookieStore = await cookies()
+    cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  } catch {}
+
+  // 4. Revalidar todas las rutas afectadas
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
+  revalidatePath('/superadmin')
+  revalidatePath('/billing/suspended')
+
+  return { success: true, totalPaid }
+}
+
+/**
+ * Genera la preferencia de Mercado Pago específica para la reactivación con el 3% diario incluido.
+ */
+export async function createReactivationPreferenceAction(tenantId: string, overrideDays?: number) {
+  const details = await getClubReactivationDetails(tenantId, overrideDays)
+  const amountToPay = details.reactivation.totalAmount
+
+  const mpToken = process.env.MP_ACCESS_TOKEN
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    return {
+      success: true,
+      isSimulated: true,
+      preferenceId: `mock_pref_reactivation_${Date.now()}`,
+      initPoint: `${appUrl}/dashboard/plan?reactivation_simulated=true&tenant_id=${tenantId}&amount=${amountToPay}&days=${details.reactivation.daysOverdue}`,
+      amountToPay,
+      reactivation: details.reactivation,
+    }
+  }
+
+  try {
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+    const preferenceClient = new Preference(mpConfig)
+
+    const externalRef = `reactivation_tenant_${tenantId}_${Date.now()}`
+
+    const preference = await preferenceClient.create({
+      body: {
+        items: [
+          {
+            id: `reactivation_${tenantId}`,
+            title: `Reactivación CancharClub - ${details.tenantName}`,
+            description: details.reactivation.formulaDescription,
+            quantity: 1,
+            unit_price: amountToPay,
+            currency_id: 'ARS',
+          }
+        ],
+        external_reference: externalRef,
+        back_urls: {
+          success: `${appUrl}/dashboard/plan?reactivation_success=true`,
+          pending: `${appUrl}/dashboard/plan?reactivation_pending=true`,
+          failure: `${appUrl}/dashboard/plan?reactivation_error=true`,
+        },
+        auto_return: 'approved',
+        statement_descriptor: 'CANCHARCLUB',
+      }
+    })
+
+    return {
+      success: true,
+      isSimulated: false,
+      preferenceId: preference.id,
+      initPoint: preference.init_point || preference.sandbox_init_point,
+      amountToPay,
+      reactivation: details.reactivation,
+    }
+  } catch (err: unknown) {
+    console.error('Error creating MP preference for reactivation:', err)
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al conectar con Mercado Pago',
+      initPoint: `${appUrl}/dashboard/plan?reactivation_simulated=true&tenant_id=${tenantId}&amount=${amountToPay}&days=${details.reactivation.daysOverdue}`,
+      isSimulated: true,
+      amountToPay,
+      reactivation: details.reactivation,
+    }
+  }
+}
+
 
 

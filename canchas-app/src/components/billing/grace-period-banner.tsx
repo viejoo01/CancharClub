@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { TenantSubscriptionStatus } from '@/types/database'
 
+import { calculateReactivationFee } from '@/lib/saas-pricing'
+
 interface GracePeriodBannerProps {
   initialStatus?: TenantSubscriptionStatus
   amountArs?: number
@@ -38,6 +40,7 @@ export function GracePeriodBanner({
 
   const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
   const isGrace = status === 'GRACE_PERIOD'
+  const reactivation = calculateReactivationFee(amountArs, dueDate)
 
   return (
     <div className={`w-full border-b transition-all animate-in slide-in-from-top duration-300 ${
@@ -76,7 +79,7 @@ export function GracePeriodBanner({
             <p className="text-xs text-slate-300 mt-0.5">
               {isPartiallySuspended ? (
                 <>
-                  Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo vencido: <strong>${amountArs.toLocaleString('es-AR')}</strong>.
+                  Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo para reactivar: <strong>${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (cuota base + 3% diario por mora).
                 </>
               ) : (
                 <>
@@ -97,7 +100,7 @@ export function GracePeriodBanner({
                 : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/30'
             }`}
           >
-            <Link href="/dashboard/plan">
+            <Link href={isPartiallySuspended ? "/dashboard/plan?action=reactivate" : "/dashboard/plan"}>
               <CreditCard className="w-3.5 h-3.5 mr-1.5" />
               {isPartiallySuspended ? 'Abonar y Reactivar Club' : 'Pagar Cuota Mensual'}
               <ArrowRight className="w-3.5 h-3.5 ml-1.5" />

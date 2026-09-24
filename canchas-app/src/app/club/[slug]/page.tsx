@@ -77,6 +77,16 @@ export default function ClubPublicPage({
   // Buscar datos del club: inicial sincronizado + carga reactiva desde Supabase
   const initialClub = useMemo(() => getClubBySlug(slug), [slug])
   const [club, setClub] = useState<ClubData>(initialClub)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>(() => {
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split('; ')
+      const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
+      if (statusCookie) {
+        return statusCookie.split('=')[1]
+      }
+    }
+    return initialClub.subscriptionStatus || 'ACTIVE'
+  })
 
   useEffect(() => {
     let active = true
@@ -84,6 +94,9 @@ export default function ClubPublicPage({
       .then((data) => {
         if (active && data) {
           setClub(data)
+          if (data.subscriptionStatus) {
+            setSubscriptionStatus(data.subscriptionStatus)
+          }
         }
       })
       .catch((err) => console.error('[ClubPublicPage] getClubPublicData error:', err))
@@ -169,17 +182,6 @@ export default function ClubPublicPage({
 
   const availableDays = useMemo(() => getNextDays(14), [])
 
-  const [subscriptionStatus] = useState<string>(() => {
-    if (typeof document !== 'undefined') {
-      const cookies = document.cookie.split('; ')
-      const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
-      if (statusCookie) {
-        return statusCookie.split('=')[1]
-      }
-    }
-    return 'ACTIVE'
-  })
-
   const [waitlistSlot, setWaitlistSlot] = useState<{
     courtId: string
     courtName: string
@@ -189,7 +191,13 @@ export default function ClubPublicPage({
   const [isWaitlistOpen, setIsWaitlistOpen] = useState(false)
   const [isReservasModalOpen, setIsReservasModalOpen] = useState(false)
 
-  const isPublicPaused = subscriptionStatus === 'PARTIALLY_SUSPENDED' || subscriptionStatus === 'LOCKED'
+  const isPublicPaused = 
+    subscriptionStatus === 'PARTIALLY_SUSPENDED' || 
+    subscriptionStatus === 'PAUSED' || 
+    subscriptionStatus === 'LOCKED' ||
+    club.subscriptionStatus === 'PARTIALLY_SUSPENDED' ||
+    club.subscriptionStatus === 'PAUSED' ||
+    club.subscriptionStatus === 'LOCKED'
 
   // Generar turnos dinámicos del club para el deporte seleccionado y la fecha elegida
   const slots: GeneratedSlot[] = useMemo(() => {

@@ -58,6 +58,7 @@ import {
   updateUserPasswordBySuperadmin,
   createUserBySuperadmin,
   generateUserImpersonationUrl,
+  updateTenantSubscriptionStatusAction,
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
@@ -86,6 +87,7 @@ export default function SuperadminPage() {
   const [tenants, setTenants] = useState<SuperadminTenantItem[]>([])
 
   const [searchTerm, setSearchTerm] = useState('')
+  const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'>('ALL')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newClubName, setNewClubName] = useState('')
   const [newCity, setNewCity] = useState('San Miguel de Tucumán')
@@ -102,7 +104,7 @@ export default function SuperadminPage() {
     active_courts: number
     highest_slot_price: number
     status: string
-    subscription_status: 'AL_DIA' | 'PENDIENTE'
+    subscription_status: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'
     mp_connected: boolean
     plan_id: SaaSPlanId
     is_active: boolean
@@ -260,6 +262,25 @@ export default function SuperadminPage() {
     })
   }
 
+  const handleTogglePause = async (tenantId: string, clubName: string, currentStatus: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO') => {
+    const newStatus: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' = currentStatus === 'PAUSADO' ? 'AL_DIA' : 'PAUSADO'
+    const res = await updateTenantSubscriptionStatusAction(tenantId, newStatus)
+    if (!res.success) {
+      toast.error('Error al cambiar estado de pausa: ' + (res.error || ''))
+      return
+    }
+    setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, subscription_status: newStatus } : t))
+    if (newStatus === 'PAUSADO') {
+      toast.warning(`Club "${clubName}" puesto EN PAUSA`, {
+        description: 'Las reservas públicas online han sido pausadas temporalmente por no abonar la suscripción a tiempo.'
+      })
+    } else {
+      toast.success(`Club "${clubName}" REANUDADO`, {
+        description: 'El club ahora está Al Día y sus reservas públicas online están habilitadas nuevamente.'
+      })
+    }
+  }
+
   // Cálculos SaaS basados en la fórmula y plan asignado
   const tenantsWithPricing = tenants.map(t => {
     const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price, t.created_at)
@@ -277,11 +298,17 @@ export default function SuperadminPage() {
   const totalCourts = tenants.reduce((acc, t) => acc + t.active_courts, 0)
   const upToDateCount = tenants.filter(t => t.subscription_status === 'AL_DIA').length
   const pendingCount = tenants.filter(t => t.subscription_status === 'PENDIENTE').length
+  const pausedCount = tenants.filter(t => t.subscription_status === 'PAUSADO').length
 
-  const filteredTenants = tenantsWithPricing.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.slug.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredTenants = tenantsWithPricing.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.slug.toLowerCase().includes(searchTerm.toLowerCase())
+    if (!matchesSearch) return false
+    if (subscriptionFilter === 'AL_DIA') return t.subscription_status === 'AL_DIA'
+    if (subscriptionFilter === 'PENDIENTE') return t.subscription_status === 'PENDIENTE'
+    if (subscriptionFilter === 'PAUSADO') return t.subscription_status === 'PAUSADO'
+    return true
+  })
 
   const handleRegisterPayment = async (tenantId: string, clubName: string, amount: number) => {
     try {
@@ -391,7 +418,13 @@ export default function SuperadminPage() {
 
     try {
       if (editingTenant.is_active) {
-        await activateTenantAccess(editingTenant.id, editingTenant.plan_id)
+        if (editingTenant.subscription_status === 'PAUSADO') {
+          await updateTenantSubscriptionStatusAction(editingTenant.id, 'PAUSADO')
+        } else if (editingTenant.subscription_status === 'AL_DIA') {
+          await activateTenantAccess(editingTenant.id, editingTenant.plan_id)
+        } else {
+          await updateTenantSubscriptionStatusAction(editingTenant.id, 'PENDIENTE')
+        }
       } else {
         await deactivateTenantAccess(editingTenant.id)
       }
@@ -903,7 +936,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               {formatARS(totalMRR)}
             </div>
             <p className="text-xs text-indigo-400 font-medium mt-1">
-              {upToDateCount} clubes al día • {pendingCount} pendientes
+              {upToDateCount} al día • {pendingCount} pendientes{pausedCount > 0 ? ` • ${pausedCount} en pausa` : ''}
             </p>
           </CardContent>
         </Card>
@@ -1034,7 +1067,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       {/* Pestaña: FACTURACIÓN Y COBROS SAAS */}
       {activeTab === 'BILLING' && (
         <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
-          <CardHeader className="border-b border-slate-800/80 p-5">
+          <CardHeader className="border-b border-slate-800/80 p-5 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-base font-bold text-white">
@@ -1067,6 +1100,58 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
             </div>
+
+            {/* Filtros rápidos por estado de suscripción */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+              <button
+                type="button"
+                onClick={() => setSubscriptionFilter('ALL')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  subscriptionFilter === 'ALL'
+                    ? "bg-slate-700 text-white"
+                    : "bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800"
+                )}
+              >
+                Todos ({tenants.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionFilter('AL_DIA')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  subscriptionFilter === 'AL_DIA'
+                    ? "bg-emerald-600 text-white"
+                    : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40 border border-emerald-500/20"
+                )}
+              >
+                ✓ Al Día ({upToDateCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionFilter('PENDIENTE')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  subscriptionFilter === 'PENDIENTE'
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-950/30 text-amber-400 hover:bg-amber-900/40 border border-amber-500/20"
+                )}
+              >
+                ⏳ Pendientes ({pendingCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionFilter('PAUSADO')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  subscriptionFilter === 'PAUSADO'
+                    ? "bg-rose-600 text-white animate-pulse"
+                    : "bg-rose-950/30 text-rose-300 hover:bg-rose-900/40 border border-rose-500/30"
+                )}
+              >
+                ⏸️ En Pausa ({pausedCount})
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {/* VISTA MÓVIL: Tarjetas de Facturación (<md) */}
@@ -1091,7 +1176,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <div className="text-[11px] text-slate-400 mt-0.5">{t.city}</div>
                       </div>
                       <div className="shrink-0">
-                        {t.subscription_status === 'AL_DIA' ? (
+                        {t.subscription_status === 'PAUSADO' ? (
+                          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
+                            ⏸️ En Pausa
+                          </Badge>
+                        ) : t.subscription_status === 'AL_DIA' ? (
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
                             Al Día
                           </Badge>
@@ -1131,11 +1220,33 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         size="sm"
                         variant="outline"
                         onClick={() => handleOpenEdit(t)}
-                        className="flex-1 h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl"
+                        className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl px-2.5"
                       >
                         <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
                         Editar
                       </Button>
+
+                      {t.subscription_status === 'PAUSADO' ? (
+                        <Button
+                          size="sm"
+                          onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                          className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs px-2.5 cursor-pointer"
+                          title="Reanudar reservas públicas del club"
+                        >
+                          <Sparkles className="w-3 h-3 mr-1 text-amber-300" />
+                          Reanudar
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                          className="h-8 text-xs border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-xl px-2 cursor-pointer"
+                          title="Pausar reservas públicas por no abonar a tiempo"
+                        >
+                          ⏸️ Pausar
+                        </Button>
+                      )}
 
                       {t.subscription_status === 'PENDIENTE' ? (
                         <>
@@ -1143,7 +1254,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             size="sm"
                             variant="outline"
                             onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
-                            className="flex-1 h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl"
+                            className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl px-2"
                           >
                             <Send className="w-3 h-3 mr-1" />
                             Link
@@ -1151,16 +1262,20 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <Button
                             size="sm"
                             onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
-                            className="flex-1 h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs"
+                            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs px-2.5"
                           >
                             <CheckCircle2 className="w-3 h-3 mr-1" />
                             Cobrar
                           </Button>
                         </>
-                      ) : (
-                        <div className="flex-1 text-[11px] text-emerald-400/80 font-medium flex items-center justify-end gap-1 px-2">
+                      ) : t.subscription_status === 'AL_DIA' ? (
+                        <div className="flex-1 text-[11px] text-emerald-400/80 font-medium flex items-center justify-end gap-1 px-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Pagado {t.last_paid}</span>
+                        </div>
+                      ) : (
+                        <div className="flex-1 text-[11px] text-rose-400 font-semibold flex items-center justify-end gap-1 px-1">
+                          <span>En Pausa</span>
                         </div>
                       )}
                     </div>
@@ -1223,7 +1338,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         {t.pricing.nextDueDate}
                       </td>
                       <td className="p-4 text-center">
-                        {t.subscription_status === 'AL_DIA' ? (
+                        {t.subscription_status === 'PAUSADO' ? (
+                          <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
+                            ⏸️ En Pausa
+                          </Badge>
+                        ) : t.subscription_status === 'AL_DIA' ? (
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
                             Al Día
                           </Badge>
@@ -1239,12 +1358,35 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             size="sm"
                             variant="outline"
                             onClick={() => handleOpenEdit(t)}
-                            className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5"
+                            className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5 cursor-pointer"
                             title="Editar datos del club y cuota"
                           >
                             <Pencil className="w-3.5 h-3.5 mr-1 text-indigo-400" />
                             Editar
                           </Button>
+
+                          {t.subscription_status === 'PAUSADO' ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                              title="Reanudar reservas públicas del club"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                              Reanudar Club
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                              className="h-8 text-xs border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-xl px-2.5 cursor-pointer"
+                              title="Pausar reservas públicas del club por no abonar suscripción a tiempo"
+                            >
+                              ⏸️ Pausar
+                            </Button>
+                          )}
+
                           {t.subscription_status === 'PENDIENTE' ? (
                             <>
                               <Button
@@ -1266,10 +1408,14 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                 Registrar Cobro
                               </Button>
                             </>
-                          ) : (
+                          ) : t.subscription_status === 'AL_DIA' ? (
                             <div className="text-[11px] text-emerald-400/80 font-medium flex items-center gap-1 ml-1">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Pagado el {t.last_paid}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-rose-400 font-semibold flex items-center gap-1 ml-1">
+                              <span>Falta de pago</span>
                             </div>
                           )}
                         </div>
@@ -2260,11 +2406,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Label className="text-xs text-slate-300">Estado Suscripción</Label>
                   <select
                     value={editingTenant.subscription_status}
-                    onChange={(e) => setEditingTenant({ ...editingTenant, subscription_status: e.target.value as 'AL_DIA' | 'PENDIENTE' })}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, subscription_status: e.target.value as 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' })}
                     className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <option value="AL_DIA">Al Día (Sin deuda)</option>
                     <option value="PENDIENTE">Pendiente de Pago</option>
+                    <option value="PAUSADO">⏸️ En Pausa (Por no abonar suscripción a tiempo)</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">

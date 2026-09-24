@@ -91,12 +91,31 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     paramTenant || (club?.id && club.id.length > 10 ? club.id : '')
   )
 
+  const [isPublicPaused, setIsPublicPaused] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split('; ')
+      const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
+      if (statusCookie) {
+        const val = statusCookie.split('=')[1]
+        return val === 'PARTIALLY_SUSPENDED' || val === 'PAUSED' || val === 'LOCKED'
+      }
+    }
+    return club?.subscriptionStatus === 'PARTIALLY_SUSPENDED' || club?.subscriptionStatus === 'PAUSED' || club?.subscriptionStatus === 'LOCKED'
+  })
+
   useEffect(() => {
     let isMounted = true
     getClubPublicData(slug).then((data) => {
       if (isMounted && data) {
         setLiveClub(data)
         if (data.id) setResolvedTenantId(data.id)
+        if (
+          data.subscriptionStatus === 'PARTIALLY_SUSPENDED' ||
+          data.subscriptionStatus === 'PAUSED' ||
+          data.subscriptionStatus === 'LOCKED'
+        ) {
+          setIsPublicPaused(true)
+        }
       }
     })
     return () => {
@@ -119,18 +138,6 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
   // Método de pago: Por defecto Transferencia directa a la cuenta del club
   const [paymentMethod, setPaymentMethod] = useState<'TRANSFER' | 'MERCADOPAGO'>('TRANSFER')
-
-  const [isPublicPaused] = useState<boolean>(() => {
-    if (typeof document !== 'undefined') {
-      const cookies = document.cookie.split('; ')
-      const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
-      if (statusCookie) {
-        const val = statusCookie.split('=')[1]
-        return val === 'PARTIALLY_SUSPENDED' || val === 'LOCKED'
-      }
-    }
-    return false
-  })
 
   // Temporizador de 7 minutos para el Redis Lock
   const [secondsLeft, setSecondsLeft] = useState(420)

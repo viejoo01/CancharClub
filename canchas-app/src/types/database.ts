@@ -31,6 +31,7 @@ export type TenantSubscriptionStatus =
   | 'PAYMENT_PENDING'      // Días 1 al 7: Factura emitida, período ordinario de pago
   | 'GRACE_PERIOD'         // Días 8 al 12: Aviso suave (banner flotante sin bloqueo)
   | 'PARTIALLY_SUSPENDED'  // Días 13 al 14: Degradación parcial (pausa de reservas públicas)
+  | 'PAUSED'               // Estado de Pausa de club por no abonar la suscripción a tiempo
   | 'LOCKED'               // Día 15+: Bloqueo total del panel de administración
 
 export type InvoiceStatus = 'DRAFT' | 'UNPAID' | 'PAID' | 'VOID'

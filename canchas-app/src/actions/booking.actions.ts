@@ -94,10 +94,10 @@ export async function initiateOnlineCheckout(
 
     const effectiveStatus: TenantSubscriptionStatus = demoStatus || tenantCheck?.subscription_status || 'ACTIVE'
 
-    if (effectiveStatus === 'PARTIALLY_SUSPENDED' || effectiveStatus === 'LOCKED') {
+    if (effectiveStatus === 'PARTIALLY_SUSPENDED' || effectiveStatus === 'PAUSED' || effectiveStatus === 'LOCKED') {
       return {
         success: false,
-        error: 'Las reservas online para este club están momentáneamente en pausa. Por favor contactá al club directamente por WhatsApp para reservar.',
+        error: 'Las reservas online para este club están momentáneamente en pausa por regularización de suscripción. Por favor contactá al club directamente por WhatsApp para reservar.',
         error_code: 'CLUB_SUSPENDED_DUNNING',
       }
     }

@@ -79,6 +79,8 @@ export interface ClubData {
   paymentMethods?: ('TRANSFER' | 'MERCADOPAGO')[]
   mpConnected?: boolean
   schedule?: ClubScheduleConfig
+  subscriptionStatus?: string
+  isActive?: boolean
 }
 
 export const CLUBS_DATABASE: ClubData[] = []

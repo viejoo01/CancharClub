@@ -36,7 +36,7 @@ export function GracePeriodBanner({
     return null
   }
 
-  const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED'
+  const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
   const isGrace = status === 'GRACE_PERIOD'
 
   return (
@@ -62,21 +62,21 @@ export function GracePeriodBanner({
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs sm:text-sm text-white">
                 {isPartiallySuspended
-                  ? '⚠️ Suspensión Parcial del Club: Reservas Públicas en Pausa'
+                  ? '⚠️ Club en Pausa por Falta de Pago: Reservas Públicas Deshabilitadas'
                   : 'Aviso de Pago Pendiente (Período de Gracia)'}
               </span>
               <Badge className={`text-[10px] uppercase font-mono px-2 py-0.5 ${
                 isPartiallySuspended
-                  ? 'bg-red-500/30 text-red-300 border-red-500/40'
+                  ? 'bg-rose-500/30 text-rose-200 border-rose-500/40 font-bold'
                   : 'bg-amber-500/30 text-amber-300 border-amber-500/40'
               }`}>
-                {status}
+                {isPartiallySuspended ? '⏸️ EN PAUSA' : status}
               </Badge>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
               {isPartiallySuspended ? (
                 <>
-                  Las reservas online para clientes están <strong className="text-red-300">deshabilitadas temporalmente</strong>. Puedes continuar registrando turnos en mostrador. Saldo vencido: <strong>${amountArs.toLocaleString('es-AR')}</strong>.
+                  Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo vencido: <strong>${amountArs.toLocaleString('es-AR')}</strong>.
                 </>
               ) : (
                 <>
@@ -99,7 +99,7 @@ export function GracePeriodBanner({
           >
             <Link href="/dashboard/plan">
               <CreditCard className="w-3.5 h-3.5 mr-1.5" />
-              Pagar Cuota Mensual
+              {isPartiallySuspended ? 'Abonar y Reactivar Club' : 'Pagar Cuota Mensual'}
               <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
             </Link>
           </Button>

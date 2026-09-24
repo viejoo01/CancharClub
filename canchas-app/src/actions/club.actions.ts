@@ -1173,6 +1173,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         : undefined,
       paymentMethods: hasMp ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
       mpConnected: hasMp,
+      subscriptionStatus: tenant.subscription_status || undefined,
+      isActive: tenant.is_active !== false,
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)

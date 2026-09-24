@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   Undo2,
   AlertCircle,
-  Clock
+  Clock,
+  ShieldAlert
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
@@ -51,6 +52,7 @@ export default function ClubPlanPage() {
   })
 
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isSimulatedPaused, setIsSimulatedPaused] = useState(false)
 
   const loadPlanData = async (showToast = false) => {
     setIsRefreshing(true)
@@ -110,8 +112,14 @@ export default function ClubPlanPage() {
     }
   }, [tenantId])
 
-  const isAutoDebitActive = hasAutoDebit || Boolean(planDetails?.hasAutoDebit) || (planDetails?.subscriptionStatus === 'ACTIVE')
-  const isPaid = (planDetails?.isPaid ?? false) || isAutoDebitActive
+  const isPaused = 
+    planDetails?.subscriptionStatus === 'PARTIALLY_SUSPENDED' ||
+    planDetails?.subscriptionStatus === 'PAUSED' ||
+    planDetails?.subscriptionStatus === 'LOCKED' ||
+    isSimulatedPaused
+
+  const isAutoDebitActive = !isPaused && (hasAutoDebit || Boolean(planDetails?.hasAutoDebit) || (planDetails?.subscriptionStatus === 'ACTIVE'))
+  const isPaid = !isPaused && ((planDetails?.isPaid ?? false) || isAutoDebitActive)
 
   const clubName = planDetails?.tenantName || 'Cargando club...'
   const courtsCount = planDetails?.courtsCount || 2
@@ -353,14 +361,27 @@ export default function ClubPlanPage() {
         </Button>
       </div>
 
-      {/* Simulador interactivo de Alertas Progresivas Emergentes */}
+      {/* Simulador interactivo de Alertas Progresivas Emergentes y Estado de Pausa */}
       <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-slate-300">
           <Clock className="w-4 h-4 text-amber-400" />
-          <span className="font-semibold text-white">Alertas Progresivas de Vencimiento:</span>
-          <span className="text-slate-400 hidden sm:inline">Probar alertas emergentes en pantalla</span>
+          <span className="font-semibold text-white">Simulador de Estados & Alertas:</span>
+          <span className="text-slate-400 hidden sm:inline">Probar alertas emergentes y pausa en pantalla</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsSimulatedPaused(prev => !prev)}
+            className={`h-7 text-[11px] rounded-lg cursor-pointer transition-colors ${
+              isSimulatedPaused
+                ? 'bg-rose-600 text-white border-rose-500 hover:bg-rose-700'
+                : 'border-rose-500/30 text-rose-300 hover:bg-rose-500/10'
+            }`}
+          >
+            {isSimulatedPaused ? '⏸️ Quitar Pausa' : '⏸️ Probar Estado de Pausa'}
+          </Button>
+          <div className="h-4 w-px bg-slate-800 hidden sm:block mx-1" />
           <Button
             size="sm"
             variant="outline"
@@ -393,6 +414,38 @@ export default function ClubPlanPage() {
           </Button>
         </div>
       </div>
+
+      {/* Banner Prominente de Club en Pausa por Falta de Pago */}
+      {isPaused && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950/80 via-red-950/70 to-rose-950/80 border-2 border-rose-600/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-rose-950/40 backdrop-blur-md">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 mt-0.5 sm:mt-0">
+              <ShieldAlert className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm sm:text-base font-extrabold text-white">
+                  ⏸️ Club en Pausa por Falta de Pago de Suscripción
+                </h4>
+                <Badge className="bg-rose-500/30 text-rose-300 border border-rose-500/50 text-[10px] px-2 py-0.5 font-bold uppercase tracking-wider animate-pulse">
+                  Acceso Público Suspendido
+                </Badge>
+              </div>
+              <p className="text-xs text-rose-200/90 mt-1 max-w-2xl leading-relaxed">
+                Las reservas online públicas para clientes en tu portal web han sido <strong>pausadas temporalmente</strong> debido a que la cuota del servicio no fue regularizada a tiempo. Podés continuar operando en tu mostrador interno, pero para rehabilitar las reservas web inmediatas debés abonar la suscripción.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setShowSubscriptionModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs h-10 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Abonar y Reactivar Club</span>
+          </Button>
+        </div>
+      )}
 
       {/* Banner de Baja Programada por Arrepentimiento */}
       {planDetails?.cancelAtPeriodEnd && (
@@ -498,6 +551,10 @@ export default function ClubPlanPage() {
             {isPaid ? (
               <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs px-3 py-1 shrink-0 self-start">
                 Al Día (Pagado)
+              </Badge>
+            ) : isPaused ? (
+              <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-xs px-3 py-1 font-bold animate-pulse shrink-0 self-start">
+                ⏸️ En Pausa (Por falta de pago)
               </Badge>
             ) : (
               <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs px-3 py-1 shrink-0 self-start">

@@ -14,7 +14,7 @@ export interface SuperadminTenantItem {
   total_bookings: number
   mp_connected: boolean
   status: string
-  subscription_status: 'AL_DIA' | 'PENDIENTE'
+  subscription_status: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'
   last_paid: string | null
   plan_id: SaaSPlanId
   is_active: boolean
@@ -95,6 +95,19 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
       const isActuallyActive = t.is_active === true
       const realLastPaid = lastPaidMap.get(t.id) || null
 
+      let subStatus: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' = 'PENDIENTE'
+      if (t.subscription_status === 'ACTIVE' || t.subscription_status === 'AL_DIA') {
+        subStatus = 'AL_DIA'
+      } else if (
+        t.subscription_status === 'PARTIALLY_SUSPENDED' ||
+        t.subscription_status === 'PAUSED' ||
+        t.subscription_status === 'LOCKED'
+      ) {
+        subStatus = 'PAUSADO'
+      } else {
+        subStatus = 'PENDIENTE'
+      }
+
       return {
         id: t.id,
         name: t.name,
@@ -105,7 +118,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         total_bookings: 0,
         mp_connected: Boolean(t.mp_access_token),
         status: isActuallyActive ? 'ACTIVE' : 'PENDING',
-        subscription_status: (t.subscription_status === 'ACTIVE' || t.subscription_status === 'AL_DIA' ? 'AL_DIA' : 'PENDIENTE'),
+        subscription_status: subStatus,
         last_paid: realLastPaid,
         plan_id: defaultPlan,
         is_active: isActuallyActive,
@@ -117,6 +130,51 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
   } catch (err) {
     console.error('getSuperadminTenants exception:', err)
     return { success: false, data: [] }
+  }
+}
+
+/**
+ * Permite al Superadmin cambiar el estado de suscripción de un club (AL_DIA, PENDIENTE, PAUSADO).
+ * Si se pausa, las reservas públicas web quedan deshabilitadas temporalmente por falta de pago.
+ */
+export async function updateTenantSubscriptionStatusAction(
+  tenantId: string,
+  status: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const dbStatus = status === 'PAUSADO' 
+      ? 'PARTIALLY_SUSPENDED' 
+      : status === 'PENDIENTE' 
+      ? 'PAYMENT_PENDING' 
+      : 'ACTIVE'
+
+    const updatePayload: Record<string, unknown> = {
+      subscription_status: dbStatus,
+    }
+
+    if (status === 'AL_DIA') {
+      updatePayload.is_active = true
+    }
+
+    const { error } = await supabase
+      .from('tenants')
+      .update(updatePayload)
+      .eq('id', tenantId)
+
+    if (error) {
+      console.error('Error updating tenant subscription status:', error)
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
+    revalidatePath('/')
+    return { success: true }
+  } catch (err) {
+    console.error('updateTenantSubscriptionStatusAction exception:', err)
+    return { success: false, error: 'Error al actualizar el estado de suscripción' }
   }
 }
 

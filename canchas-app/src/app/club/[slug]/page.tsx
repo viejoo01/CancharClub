@@ -18,7 +18,15 @@ import {
   Star,
   Coffee,
   Car,
-  Bell
+  Bell,
+  Droplets,
+  Video,
+  Flame,
+  Wifi,
+  Navigation,
+  ExternalLink,
+  Copy,
+  Check
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +34,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/utils'
 import { WaitlistModal } from '@/components/public/waitlist-modal'
 import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
+import { toast } from 'sonner'
 import { 
   getClubBySlug, 
   generateClubSlots, 
@@ -35,6 +44,9 @@ import {
   normalizeToSportCategory,
   normalizeSocialUrl,
   extractSocialHandle,
+  getGoogleMapsEmbedUrl,
+  getGoogleMapsDirectUrl,
+  getWazeDirectUrl,
 } from '@/config/clubs-catalog'
 import {
   InstagramIcon,
@@ -256,6 +268,167 @@ export default function ClubPublicPage({
     return club.courts.filter(c => normalizeToSportCategory(c.sport) === selectedSport)
   }, [club.courts, selectedSport])
 
+  // Estado para copiar la dirección al portapapeles
+  const [copiedAddress, setCopiedAddress] = useState(false)
+
+  const handleCopyAddress = (textToCopy: string) => {
+    if (!textToCopy) return
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(textToCopy)
+        setCopiedAddress(true)
+        toast.success('Dirección copiada al portapapeles')
+        setTimeout(() => setCopiedAddress(false), 2000)
+      }
+    } catch {}
+  }
+
+  // Lista de servicios activos para mostrar en la sección dedicada
+  const activeServicesList = useMemo(() => {
+    const list: Array<{ id: string; label: string; description: string; icon: React.ReactNode; color: string; bg: string; border: string }> = []
+    
+    const s = club.services || {
+      parking: club.hasParking,
+      cantina: club.hasCantina,
+      showers: club.hasShowers,
+      cameras: club.hasCameras,
+      lighting: club.hasLighting,
+      indoor: club.isIndoor,
+      grill: club.hasGrill,
+      wifi: club.hasWifi,
+      equipment_rental: club.hasEquipmentRental,
+    }
+
+    if (s.parking ?? club.hasParking) {
+      list.push({
+        id: 'parking',
+        label: 'Estacionamiento',
+        description: 'Espacio disponible para autos y motos dentro o frente al predio.',
+        icon: <Car className="w-4 h-4 text-blue-400" />,
+        color: 'text-blue-300',
+        bg: 'bg-blue-500/10',
+        border: 'border-blue-500/30',
+      })
+    }
+    if (s.cantina ?? club.hasCantina) {
+      list.push({
+        id: 'cantina',
+        label: 'Cantina / Bar',
+        description: 'Bebidas frías, cafetería, tercer tiempo y comidas rápidas.',
+        icon: <Coffee className="w-4 h-4 text-amber-400" />,
+        color: 'text-amber-300',
+        bg: 'bg-amber-500/10',
+        border: 'border-amber-500/30',
+      })
+    }
+    if (s.showers ?? club.hasShowers) {
+      list.push({
+        id: 'showers',
+        label: 'Duchas y Vestuarios',
+        description: 'Vestuarios completos con agua caliente para refrescarte post-partido.',
+        icon: <Droplets className="w-4 h-4 text-cyan-400" />,
+        color: 'text-cyan-300',
+        bg: 'bg-cyan-500/10',
+        border: 'border-cyan-500/30',
+      })
+    }
+    if (s.cameras ?? club.hasCameras) {
+      list.push({
+        id: 'cameras',
+        label: 'Cámaras de Partidos',
+        description: 'Cámaras para ver partidos en vivo o revivir tus mejores jugadas.',
+        icon: <Video className="w-4 h-4 text-purple-400" />,
+        color: 'text-purple-300',
+        bg: 'bg-purple-500/10',
+        border: 'border-purple-500/30',
+      })
+    }
+    if (s.lighting ?? club.hasLighting) {
+      list.push({
+        id: 'lighting',
+        label: 'Iluminación LED',
+        description: 'Luces profesionales de alta potencia para turnos nocturnos.',
+        icon: <Zap className="w-4 h-4 text-yellow-400" />,
+        color: 'text-yellow-300',
+        bg: 'bg-yellow-500/10',
+        border: 'border-yellow-500/30',
+      })
+    }
+    if (s.indoor ?? club.isIndoor) {
+      list.push({
+        id: 'indoor',
+        label: 'Canchas Techadas',
+        description: 'Instalaciones cubiertas para jugar sin preocuparte por la lluvia o el sol.',
+        icon: <Sparkles className="w-4 h-4 text-teal-400" />,
+        color: 'text-teal-300',
+        bg: 'bg-teal-500/10',
+        border: 'border-teal-500/30',
+      })
+    }
+    if (s.grill ?? club.hasGrill) {
+      list.push({
+        id: 'grill',
+        label: 'Parrilla / Quincho',
+        description: 'Espacio de asador o quincho habilitado para tercer tiempo y peñas.',
+        icon: <Flame className="w-4 h-4 text-orange-400" />,
+        color: 'text-orange-300',
+        bg: 'bg-orange-500/10',
+        border: 'border-orange-500/30',
+      })
+    }
+    if (s.wifi ?? club.hasWifi) {
+      list.push({
+        id: 'wifi',
+        label: 'Wi-Fi Libre',
+        description: 'Internet inalámbrico de alta velocidad en todo el predio.',
+        icon: <Wifi className="w-4 h-4 text-emerald-400" />,
+        color: 'text-emerald-300',
+        bg: 'bg-emerald-500/10',
+        border: 'border-emerald-500/30',
+      })
+    }
+    if (s.equipment_rental ?? club.hasEquipmentRental) {
+      list.push({
+        id: 'equipment_rental',
+        label: 'Alquiler de Paletas/Pelotas',
+        description: 'Paletas de pádel, raquetas y tubos de pelotas disponibles para alquilar.',
+        icon: <Trophy className="w-4 h-4 text-rose-400" />,
+        color: 'text-rose-300',
+        bg: 'bg-rose-500/10',
+        border: 'border-rose-500/30',
+      })
+    }
+
+    return list
+  }, [club])
+
+  // URLs generadas para Google Maps y Waze
+  const mapsEmbedUrl = useMemo(() => {
+    return getGoogleMapsEmbedUrl({
+      address: club.exactAddress || club.address,
+      city: club.city,
+      province: club.province || 'Argentina',
+      google_maps_url: club.googleMapsUrl,
+    })
+  }, [club])
+
+  const mapsDirectUrl = useMemo(() => {
+    return getGoogleMapsDirectUrl({
+      address: club.exactAddress || club.address,
+      city: club.city,
+      province: club.province || 'Argentina',
+      google_maps_url: club.googleMapsUrl,
+    })
+  }, [club])
+
+  const wazeDirectUrl = useMemo(() => {
+    return getWazeDirectUrl({
+      address: club.exactAddress || club.address,
+      city: club.city,
+      province: club.province || 'Argentina',
+    })
+  }, [club])
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center">
       {/* Contenedor Mobile First optimizado para Smartphones, Tablets y Notebooks */}
@@ -301,10 +474,19 @@ export default function ClubPublicPage({
                 </Badge>
               </div>
 
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
-                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="truncate">{club.address}, {club.city}</span>
-              </div>
+              <a
+                href="#ubicacion"
+                className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-emerald-400 transition-colors mt-1 group"
+                title="Ver ubicación en Google Maps"
+              >
+                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
+                <span className="truncate font-medium underline underline-offset-2 decoration-slate-700 group-hover:decoration-emerald-400">
+                  {club.address}, {club.city}
+                </span>
+                <span className="text-[10px] text-emerald-400/90 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0 hidden sm:inline-block">
+                  Ver Mapa
+                </span>
+              </a>
 
               {/* Rating y contacto rápido */}
               <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-800/80 text-xs">
@@ -327,26 +509,46 @@ export default function ClubPublicPage({
             </div>
           </div>
 
-          {/* Chips de Características del Club */}
+          {/* Chips de Características y Servicios del Club */}
           <div className="flex items-center gap-1.5 mt-3.5 overflow-x-auto no-scrollbar pb-0.5">
-            {club.hasLighting && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
-                <Zap className="w-3 h-3 text-amber-400" /> Iluminación LED
-              </span>
-            )}
-            {club.hasCantina && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
-                <Coffee className="w-3 h-3 text-emerald-400" /> Cantina / Bar
-              </span>
-            )}
-            {club.hasParking && (
+            {(club.services?.parking ?? club.hasParking) && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
                 <Car className="w-3 h-3 text-blue-400" /> Estacionamiento
               </span>
             )}
-            {club.isIndoor && (
+            {(club.services?.cantina ?? club.hasCantina) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Coffee className="w-3 h-3 text-amber-400" /> Cantina / Bar
+              </span>
+            )}
+            {(club.services?.showers ?? club.hasShowers) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Droplets className="w-3 h-3 text-cyan-400" /> Duchas
+              </span>
+            )}
+            {(club.services?.cameras ?? club.hasCameras) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Video className="w-3 h-3 text-purple-400" /> Cámaras Partidos
+              </span>
+            )}
+            {(club.services?.lighting ?? club.hasLighting) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Zap className="w-3 h-3 text-yellow-400" /> Iluminación LED
+              </span>
+            )}
+            {(club.services?.indoor ?? club.isIndoor) && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
                 <Sparkles className="w-3 h-3 text-teal-400" /> Canchas Techadas
+              </span>
+            )}
+            {(club.services?.grill ?? club.hasGrill) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Flame className="w-3 h-3 text-orange-400" /> Parrilla
+              </span>
+            )}
+            {(club.services?.wifi ?? club.hasWifi) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shrink-0">
+                <Wifi className="w-3 h-3 text-emerald-400" /> Wi-Fi
               </span>
             )}
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-400 shrink-0">
@@ -778,6 +980,145 @@ export default function ClubPublicPage({
               ))}
             </div>
           )}
+        </section>
+
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* SERVICIOS E INSTALACIONES DEL CLUB                          */}
+        {/* ────────────────────────────────────────────────────────── */}
+        {activeServicesList.length > 0 && (
+          <section className="px-4 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Servicios e Instalaciones</h3>
+                  <p className="text-[11px] text-slate-400">Comodidades disponibles para los jugadores en {club.name}</p>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-slate-400 border-slate-800 text-[10px]">
+                {activeServicesList.length} servicios
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {activeServicesList.map((srv) => (
+                <div
+                  key={srv.id}
+                  className="p-3 rounded-xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition-colors flex items-start gap-3"
+                >
+                  <div className={`p-2 rounded-lg ${srv.bg} ${srv.border} border shrink-0 mt-0.5`}>
+                    {srv.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className={`text-xs font-bold ${srv.color} block`}>
+                      {srv.label}
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                      {srv.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* UBICACIÓN Y CÓMO LLEGAR (GOOGLE MAPS)                      */}
+        {/* ────────────────────────────────────────────────────────── */}
+        <section id="ubicacion" className="px-4 pt-6 scroll-mt-6">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 mt-0.5">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white">Ubicación y Cómo Llegar</h3>
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] px-2 py-0.5">
+                      GPS Directo
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 font-medium">
+                    {club.exactAddress || club.address}, {club.city}{club.province ? `, ${club.province}` : ''}
+                  </p>
+                  {club.addressReference && (
+                    <p className="text-[11px] text-emerald-400/90 mt-1 flex items-center gap-1 font-medium">
+                      <span>💡 Referencia:</span>
+                      <span className="italic">{club.addressReference}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Botones de acción rápida */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleCopyAddress(`${club.exactAddress || club.address}, ${club.city}`)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium transition-colors cursor-pointer"
+                  title="Copiar dirección"
+                >
+                  {copiedAddress ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copiada</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar</span>
+                    </>
+                  )}
+                </button>
+
+                <a
+                  href={mapsDirectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-950/40 transition-colors cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Google Maps</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </a>
+
+                <a
+                  href={wazeDirectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <Navigation className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Waze</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </a>
+              </div>
+            </div>
+
+            {/* Mapa Interactivo Google Maps */}
+            <div className="relative w-full h-64 sm:h-72 rounded-xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-inner">
+              <iframe
+                title={`Mapa de ubicación de ${club.name}`}
+                src={mapsEmbedUrl}
+                width="100%"
+                height="100%"
+                style={{ border: 0, filter: 'contrast(1.05)' }}
+                allowFullScreen={false}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                className="w-full h-full"
+              />
+              <div className="absolute bottom-2 right-2 pointer-events-none">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] text-slate-400 font-mono shadow-md backdrop-blur-xs">
+                  <MapPin className="w-2.5 h-2.5 text-emerald-400" /> Google Maps
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Footer Seguridad y Confianza */}

@@ -60,6 +60,76 @@ export interface ClubSocialLinks {
   tiktok?: string
 }
 
+export interface ClubServicesConfig {
+  parking?: boolean           // Estacionamiento para jugadores/socios
+  cantina?: boolean           // Cantina, buffet, bar y cafetería
+  showers?: boolean           // Duchas y vestuarios
+  cameras?: boolean           // Cámaras para ver partidos en vivo o grabar jugadas
+  lighting?: boolean          // Iluminación LED profesional
+  indoor?: boolean            // Canchas techadas / cubiertas
+  grill?: boolean             // Parrilla / Quincho para tercer tiempo
+  wifi?: boolean              // Wi-Fi libre de alta velocidad
+  equipment_rental?: boolean  // Alquiler de paletas o pelotas
+}
+
+export interface ClubLocationConfig {
+  address?: string
+  city?: string
+  province?: string
+  reference?: string
+  google_maps_url?: string
+}
+
+export interface ClubServicesAndLocationData {
+  services: ClubServicesConfig
+  location: ClubLocationConfig
+}
+
+/**
+ * Genera la URL para incrustar el mapa interactivo de Google Maps (iframe)
+ */
+export function getGoogleMapsEmbedUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string }): string {
+  if (location.google_maps_url) {
+    const raw = location.google_maps_url.trim()
+    if (raw.includes('google.com/maps/embed') || raw.includes('output=embed')) {
+      return raw
+    }
+  }
+
+  const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
+  const query = queryParts.join(', ')
+  if (!query) return ''
+
+  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`
+}
+
+/**
+ * Genera el enlace de navegación para abrir directamente en Google Maps
+ */
+export function getGoogleMapsDirectUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string }): string {
+  if (location.google_maps_url && location.google_maps_url.trim()) {
+    const raw = location.google_maps_url.trim()
+    if (/^https?:\/\//i.test(raw)) return raw
+    return `https://${raw}`
+  }
+
+  const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
+  const query = queryParts.join(', ')
+  if (!query) return 'https://maps.google.com'
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
+/**
+ * Genera el enlace de navegación para abrir en Waze
+ */
+export function getWazeDirectUrl(location: { address?: string; city?: string; province?: string }): string {
+  const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
+  const query = queryParts.join(', ')
+  if (!query) return 'https://waze.com'
+  return `https://waze.com/ul?q=${encodeURIComponent(query)}`
+}
+
 /**
  * Normaliza cualquier entrada de red social (handle, @handle, url corta o completa) a una URL válida
  */
@@ -125,6 +195,10 @@ export interface ClubData {
   slug: string
   address: string
   city: string
+  province?: string
+  exactAddress?: string
+  addressReference?: string
+  googleMapsUrl?: string
   phone: string
   whatsappPhone: string
   sports: SportCategory[]
@@ -134,6 +208,12 @@ export interface ClubData {
   isIndoor: boolean
   hasCantina: boolean
   hasParking: boolean
+  hasShowers?: boolean
+  hasCameras?: boolean
+  hasGrill?: boolean
+  hasWifi?: boolean
+  hasEquipmentRental?: boolean
+  services?: ClubServicesConfig
   rating: number
   reviewsCount: number
   availableToday: boolean
@@ -192,6 +272,26 @@ export function getClubBySlug(slug: string): ClubData {
     isIndoor: false,
     hasCantina: false,
     hasParking: false,
+    hasShowers: false,
+    hasCameras: false,
+    hasGrill: false,
+    hasWifi: false,
+    hasEquipmentRental: false,
+    services: {
+      parking: false,
+      cantina: false,
+      showers: false,
+      cameras: false,
+      lighting: false,
+      indoor: false,
+      grill: false,
+      wifi: false,
+      equipment_rental: false,
+    },
+    exactAddress: '',
+    addressReference: '',
+    googleMapsUrl: '',
+    province: 'Argentina',
     rating: 5.0,
     reviewsCount: 0,
     availableToday: true,

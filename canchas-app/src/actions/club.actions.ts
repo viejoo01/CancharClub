@@ -8,7 +8,19 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
-import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory, type ClubSocialLinks, normalizeSocialUrl } from '@/config/clubs-catalog'
+import { 
+  getClubBySlug, 
+  type ClubData, 
+  type CourtDefinition, 
+  type SportCategory, 
+  type PriceRuleDefinition, 
+  normalizeToSportCategory, 
+  type ClubSocialLinks, 
+  normalizeSocialUrl,
+  type ClubServicesConfig,
+  type ClubLocationConfig,
+  type ClubServicesAndLocationData
+} from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 import { getArgentinaTimeStr, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
@@ -1285,6 +1297,190 @@ export async function updateClubSocialLinks(
   }
 }
 
+// ─── SERVICIOS Y UBICACIÓN DEL CLUB (ESTACIONAMIENTO, CANTINA, DUCHAS, CÁMARAS, GOOGLE MAPS) ─────
+
+export async function getClubServicesAndLocation(
+  tenantId?: string | null
+): Promise<ClubServicesAndLocationData> {
+  const defaultData: ClubServicesAndLocationData = {
+    services: {
+      parking: false,
+      cantina: false,
+      showers: false,
+      cameras: false,
+      lighting: false,
+      indoor: false,
+      grill: false,
+      wifi: false,
+      equipment_rental: false,
+    },
+    location: {
+      address: '',
+      city: '',
+      province: '',
+      reference: '',
+      google_maps_url: '',
+    },
+  }
+
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return defaultData
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('address, city, province, google_maps_url, description')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (error || !tenant) return defaultData
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    const services = (meta.services as Record<string, boolean> | undefined) || {}
+    const locationRef = typeof meta.location_reference === 'string' ? meta.location_reference : ''
+
+    return {
+      services: {
+        parking: Boolean(services.parking),
+        cantina: Boolean(services.cantina),
+        showers: Boolean(services.showers),
+        cameras: Boolean(services.cameras),
+        lighting: Boolean(services.lighting),
+        indoor: Boolean(services.indoor),
+        grill: Boolean(services.grill),
+        wifi: Boolean(services.wifi),
+        equipment_rental: Boolean(services.equipment_rental),
+      },
+      location: {
+        address: tenant.address || '',
+        city: tenant.city || '',
+        province: tenant.province || '',
+        reference: locationRef,
+        google_maps_url: tenant.google_maps_url || '',
+      },
+    }
+  } catch (err) {
+    console.error('[getClubServicesAndLocation] Exception:', err)
+    return defaultData
+  }
+}
+
+export async function updateClubServicesAndLocation(
+  tenantId: string | null | undefined,
+  payload: {
+    services?: ClubServicesConfig
+    location?: ClubLocationConfig
+  }
+): Promise<{ success: boolean; data?: ClubServicesAndLocationData; error?: string }> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('description, slug, address, city, province, google_maps_url')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    if (payload.services) {
+      meta.services = {
+        parking: Boolean(payload.services.parking),
+        cantina: Boolean(payload.services.cantina),
+        showers: Boolean(payload.services.showers),
+        cameras: Boolean(payload.services.cameras),
+        lighting: Boolean(payload.services.lighting),
+        indoor: Boolean(payload.services.indoor),
+        grill: Boolean(payload.services.grill),
+        wifi: Boolean(payload.services.wifi),
+        equipment_rental: Boolean(payload.services.equipment_rental),
+      }
+    }
+
+    if (payload.location?.reference !== undefined) {
+      meta.location_reference = (payload.location.reference || '').trim()
+    }
+
+    const updateTenantPayload: Record<string, unknown> = {
+      description: JSON.stringify(meta),
+      updated_at: new Date().toISOString(),
+    }
+
+    if (payload.location) {
+      if (payload.location.address !== undefined) {
+        updateTenantPayload.address = payload.location.address.trim() || null
+      }
+      if (payload.location.city !== undefined) {
+        updateTenantPayload.city = payload.location.city.trim() || null
+      }
+      if (payload.location.province !== undefined) {
+        updateTenantPayload.province = payload.location.province.trim() || null
+      }
+      if (payload.location.google_maps_url !== undefined) {
+        updateTenantPayload.google_maps_url = payload.location.google_maps_url.trim() || null
+      }
+    }
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update(updateTenantPayload)
+      .eq('id', effectiveTenantId)
+
+    if (updateErr) {
+      console.error('[updateClubServicesAndLocation] Error updating tenants:', updateErr.message)
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+    if (tenant.slug) {
+      revalidatePath(`/club/${tenant.slug}`)
+    }
+
+    return {
+      success: true,
+      data: {
+        services: (meta.services as ClubServicesConfig) || {},
+        location: {
+          address: (updateTenantPayload.address as string) ?? tenant.address ?? '',
+          city: (updateTenantPayload.city as string) ?? tenant.city ?? '',
+          province: (updateTenantPayload.province as string) ?? tenant.province ?? '',
+          reference: (meta.location_reference as string) ?? '',
+          google_maps_url: (updateTenantPayload.google_maps_url as string) ?? tenant.google_maps_url ?? '',
+        },
+      },
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al guardar servicios y ubicación'
+    console.error('[updateClubServicesAndLocation] Exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
 
 export async function getClubPublicData(slug: string): Promise<ClubData> {
@@ -1303,6 +1499,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         slug,
         address,
         city,
+        province,
+        google_maps_url,
         phone_whatsapp,
         is_active,
         bank_alias,
@@ -1394,6 +1592,18 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     let highlightBadge: string | undefined = undefined
     let isHighlightActive: boolean | undefined = undefined
     let socialLinks: ClubSocialLinks | undefined = undefined
+    let services: ClubServicesConfig = {
+      parking: false,
+      cantina: false,
+      showers: false,
+      cameras: false,
+      lighting: false,
+      indoor: false,
+      grill: false,
+      wifi: false,
+      equipment_rental: false,
+    }
+    let locationReference = ''
 
     if (tenant.description) {
       try {
@@ -1416,6 +1626,22 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             tiktok: parsed.social_links.tiktok || undefined,
           }
         }
+        if (parsed.services) {
+          services = {
+            parking: Boolean(parsed.services.parking),
+            cantina: Boolean(parsed.services.cantina),
+            showers: Boolean(parsed.services.showers),
+            cameras: Boolean(parsed.services.cameras),
+            lighting: Boolean(parsed.services.lighting),
+            indoor: Boolean(parsed.services.indoor),
+            grill: Boolean(parsed.services.grill),
+            wifi: Boolean(parsed.services.wifi),
+            equipment_rental: Boolean(parsed.services.equipment_rental),
+          }
+        }
+        if (typeof parsed.location_reference === 'string') {
+          locationReference = parsed.location_reference
+        }
       } catch {}
     }
 
@@ -1431,15 +1657,25 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       slug: tenant.slug || normalizedSlug,
       address: tenant.address || fallback.address,
       city: tenant.city || fallback.city,
+      province: tenant.province || 'Argentina',
+      exactAddress: tenant.address || fallback.address,
+      addressReference: locationReference || undefined,
+      googleMapsUrl: tenant.google_maps_url || undefined,
       phone: tenant.phone_whatsapp || fallback.phone,
       whatsappPhone: tenant.phone_whatsapp ? tenant.phone_whatsapp.replace(/\D/g, '') : fallback.whatsappPhone,
       sports: sports.length > 0 ? sports : [],
       courtsCount: courtsMapped.length,
       startingPrice,
-      hasLighting: courtsMapped.some((c) => c.features.includes('Iluminación LED')),
-      isIndoor: courtsMapped.some((c) => c.features.includes('Techada')),
-      hasCantina: fallback.hasCantina,
-      hasParking: fallback.hasParking,
+      hasLighting: services.lighting ?? courtsMapped.some((c) => c.features.includes('Iluminación LED')),
+      isIndoor: services.indoor ?? courtsMapped.some((c) => c.features.includes('Techada')),
+      hasCantina: services.cantina ?? fallback.hasCantina,
+      hasParking: services.parking ?? fallback.hasParking,
+      hasShowers: Boolean(services.showers),
+      hasCameras: Boolean(services.cameras),
+      hasGrill: Boolean(services.grill),
+      hasWifi: Boolean(services.wifi),
+      hasEquipmentRental: Boolean(services.equipment_rental),
+      services,
       rating: 5.0,
       reviewsCount: 0,
       availableToday: true,
@@ -1572,6 +1808,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         slug,
         address,
         city,
+        province,
+        google_maps_url,
         phone_whatsapp,
         is_active,
         bank_alias,
@@ -1653,6 +1891,18 @@ export async function getPublicClubs(): Promise<ClubData[]> {
       let highlightBadge: string | undefined = undefined
       let isHighlightActive: boolean | undefined = undefined
       let socialLinks: ClubSocialLinks | undefined = undefined
+      let services: ClubServicesConfig = {
+        parking: false,
+        cantina: false,
+        showers: false,
+        cameras: false,
+        lighting: false,
+        indoor: false,
+        grill: false,
+        wifi: false,
+        equipment_rental: false,
+      }
+      let locationReference = ''
 
       if (t.description) {
         try {
@@ -1675,6 +1925,22 @@ export async function getPublicClubs(): Promise<ClubData[]> {
               tiktok: parsed.social_links.tiktok || undefined,
             }
           }
+          if (parsed.services) {
+            services = {
+              parking: Boolean(parsed.services.parking),
+              cantina: Boolean(parsed.services.cantina),
+              showers: Boolean(parsed.services.showers),
+              cameras: Boolean(parsed.services.cameras),
+              lighting: Boolean(parsed.services.lighting),
+              indoor: Boolean(parsed.services.indoor),
+              grill: Boolean(parsed.services.grill),
+              wifi: Boolean(parsed.services.wifi),
+              equipment_rental: Boolean(parsed.services.equipment_rental),
+            }
+          }
+          if (typeof parsed.location_reference === 'string') {
+            locationReference = parsed.location_reference
+          }
         } catch {}
       }
 
@@ -1690,15 +1956,25 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         slug: t.slug || t.id,
         address: t.address || 'Argentina',
         city: t.city || 'Argentina',
+        province: t.province || 'Argentina',
+        exactAddress: t.address || 'Argentina',
+        addressReference: locationReference || undefined,
+        googleMapsUrl: t.google_maps_url || undefined,
         phone: t.phone_whatsapp || '',
         whatsappPhone: t.phone_whatsapp ? t.phone_whatsapp.replace(/\D/g, '') : '',
         sports: sports.length > 0 ? sports : ['PADEL'],
         courtsCount: courtsMapped.length,
         startingPrice: courtsMapped.length > 0 ? startingPrice : 0,
-        hasLighting: courtsMapped.some((c) => c.features.includes('Iluminación LED')),
-        isIndoor: courtsMapped.some((c) => c.features.includes('Techada')),
-        hasCantina: false,
-        hasParking: false,
+        hasLighting: services.lighting ?? courtsMapped.some((c) => c.features.includes('Iluminación LED')),
+        isIndoor: services.indoor ?? courtsMapped.some((c) => c.features.includes('Techada')),
+        hasCantina: Boolean(services.cantina),
+        hasParking: Boolean(services.parking),
+        hasShowers: Boolean(services.showers),
+        hasCameras: Boolean(services.cameras),
+        hasGrill: Boolean(services.grill),
+        hasWifi: Boolean(services.wifi),
+        hasEquipmentRental: Boolean(services.equipment_rental),
+        services,
         rating: 5.0,
         reviewsCount: 0,
         availableToday: true,

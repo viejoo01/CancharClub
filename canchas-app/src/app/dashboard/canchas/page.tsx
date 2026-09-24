@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone, Share2 } from 'lucide-react'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone, Share2, MapPin } from 'lucide-react'
 import { InstagramIcon, FacebookIcon, TikTokIcon } from '@/components/icons/social-icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -17,11 +17,21 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
-import { createCourt, updateCourt, deleteCourt, getClubSchedule, getClubHighlightInfo, type ClubHighlightInfo, getClubSocialLinks } from '@/actions/club.actions'
-import { extractSocialHandle, type ClubSocialLinks } from '@/config/clubs-catalog'
+import { 
+  createCourt, 
+  updateCourt, 
+  deleteCourt, 
+  getClubSchedule, 
+  getClubHighlightInfo, 
+  type ClubHighlightInfo, 
+  getClubSocialLinks,
+  getClubServicesAndLocation,
+} from '@/actions/club.actions'
+import { extractSocialHandle, type ClubSocialLinks, type ClubServicesAndLocationData } from '@/config/clubs-catalog'
 import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
 import { ClubHighlightModal } from '@/components/dashboard/club-highlight-modal'
 import { ClubSocialLinksModal } from '@/components/dashboard/club-social-links-modal'
+import { ClubServicesLocationModal } from '@/components/dashboard/club-services-location-modal'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
@@ -78,6 +88,27 @@ export default function CanchasPage() {
     tiktok: '',
   })
   const [isSocialLinksModalOpen, setIsSocialLinksModalOpen] = useState(false)
+  const [servicesLocation, setServicesLocation] = useState<ClubServicesAndLocationData>({
+    services: {
+      parking: false,
+      cantina: false,
+      showers: false,
+      cameras: false,
+      lighting: false,
+      indoor: false,
+      grill: false,
+      wifi: false,
+      equipment_rental: false,
+    },
+    location: {
+      address: '',
+      city: '',
+      province: '',
+      reference: '',
+      google_maps_url: '',
+    },
+  })
+  const [isServicesLocationModalOpen, setIsServicesLocationModalOpen] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
   const [name, setName] = useState('')
@@ -135,6 +166,11 @@ export default function CanchasPage() {
     try {
       const sLinks = await getClubSocialLinks(tenantId)
       if (sLinks) setSocialLinks(sLinks)
+    } catch {}
+
+    try {
+      const sLoc = await getClubServicesAndLocation(tenantId)
+      if (sLoc) setServicesLocation(sLoc)
     } catch {}
 
     if (isInitial) setCourtsLoading(false)
@@ -324,6 +360,21 @@ export default function CanchasPage() {
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <Button
             variant="outline"
+            onClick={() => setIsServicesLocationModalOpen(true)}
+            className="border-sky-500/40 bg-sky-950/20 text-sky-300 hover:bg-sky-900/40 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
+            title="Configurar servicios (estacionamiento, cantina, duchas, cámaras) y ubicación con Google Maps"
+          >
+            <MapPin className="w-4 h-4 text-sky-400" />
+            <span className="hidden md:inline">Servicios y Mapa:</span>
+            <span>
+              {servicesLocation.location.address || Object.values(servicesLocation.services).some(Boolean)
+                ? 'Configurado'
+                : 'Configurar'}
+            </span>
+          </Button>
+
+          <Button
+            variant="outline"
             onClick={() => setIsSocialLinksModalOpen(true)}
             className="border-pink-500/40 bg-pink-950/20 text-pink-300 hover:bg-pink-900/40 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
             title="Configurar links de Instagram, Facebook y TikTok para que los jugadores puedan ver"
@@ -489,6 +540,72 @@ export default function CanchasPage() {
             className="text-xs text-pink-400 hover:text-pink-300 hover:bg-pink-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
           >
             {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? 'Editar Redes' : 'Conectar Redes'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Banner de Servicios y Ubicación (Google Maps) para Jugadores */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-sky-500/30">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
+            <MapPin className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-white">Servicios e Instalaciones y Google Maps:</span>
+              {Object.values(servicesLocation.services).some(Boolean) || servicesLocation.location.address ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {servicesLocation.services.parking && (
+                    <Badge className="bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] px-2 py-0.5">
+                      🅿️ Estacionamiento
+                    </Badge>
+                  )}
+                  {servicesLocation.services.cantina && (
+                    <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-2 py-0.5">
+                      ☕ Cantina / Bar
+                    </Badge>
+                  )}
+                  {servicesLocation.services.showers && (
+                    <Badge className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] px-2 py-0.5">
+                      🚿 Duchas
+                    </Badge>
+                  )}
+                  {servicesLocation.services.cameras && (
+                    <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] px-2 py-0.5">
+                      📹 Cámaras Partidos
+                    </Badge>
+                  )}
+                  {servicesLocation.location.address && (
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] px-2 py-0.5">
+                      📍 {servicesLocation.location.address}
+                    </Badge>
+                  )}
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 ml-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Visible en reservas
+                  </span>
+                </div>
+              ) : (
+                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
+                  Sin servicios ni dirección configurada
+                </Badge>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
+              {servicesLocation.location.address || Object.values(servicesLocation.services).some(Boolean)
+                ? 'Los jugadores pueden ver los servicios disponibles y la ubicación exacta con mapa interactivo de Google Maps y Waze.'
+                : 'Indicá si ofrecés estacionamiento, cantina, duchas, cámaras para ver partidos y cargá la dirección con mapa de Google Maps.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsServicesLocationModalOpen(true)}
+            className="text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
+          >
+            {servicesLocation.location.address || Object.values(servicesLocation.services).some(Boolean) ? 'Editar Servicios y Mapa' : 'Configurar'}
           </Button>
         </div>
       </div>
@@ -748,6 +865,20 @@ export default function CanchasPage() {
           initialLinks={socialLinks}
           onSuccess={(newLinks) => {
             setSocialLinks(newLinks)
+          }}
+        />
+      )}
+
+      {/* Modal de Servicios y Ubicación (Google Maps) para Jugadores */}
+      {isServicesLocationModalOpen && (
+        <ClubServicesLocationModal
+          isOpen={isServicesLocationModalOpen}
+          onClose={() => setIsServicesLocationModalOpen(false)}
+          tenantId={tenantId || ''}
+          clubSlug={clubSlug}
+          initialData={servicesLocation}
+          onSuccess={(newData) => {
+            setServicesLocation(newData)
           }}
         />
       )}

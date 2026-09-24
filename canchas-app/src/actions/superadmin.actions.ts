@@ -42,7 +42,6 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         base_slots_plan,
         mp_access_token,
         created_at,
-        trial_ends_at,
         description,
         courts (id, is_active),
         price_rules (price_cents)
@@ -328,11 +327,10 @@ export async function activateTenantTrialPeriodAction(
     meta.trial_activated_at = new Date().toISOString()
     meta.trial_days = days
 
-    // 2. Intentar actualizar tenants con trial_ends_at y description
+    // 2. Actualizar tenant en Supabase guardando metadata del trial en description
     const updateData: Record<string, unknown> = {
       is_active: true,
       subscription_status: 'ACTIVE',
-      trial_ends_at: trialEndsAtIso,
       description: JSON.stringify(meta),
       updated_at: new Date().toISOString(),
     }
@@ -343,22 +341,8 @@ export async function activateTenantTrialPeriodAction(
       .eq('id', tenantId)
 
     if (updateErr) {
-      // Fallback si la columna trial_ends_at no existe en Postgres
-      console.warn('[activateTenantTrialPeriodAction] Reintentando sin columna trial_ends_at:', updateErr.message)
-      const fallbackData = {
-        is_active: true,
-        subscription_status: 'ACTIVE',
-        description: JSON.stringify(meta),
-        updated_at: new Date().toISOString(),
-      }
-      const { error: fallbackErr } = await supabase
-        .from('tenants')
-        .update(fallbackData)
-        .eq('id', tenantId)
-
-      if (fallbackErr) {
-        return { success: false, error: fallbackErr.message }
-      }
+      console.error('[activateTenantTrialPeriodAction] Error al actualizar tenant:', updateErr.message)
+      return { success: false, error: updateErr.message }
     }
 
     // 3. Crear o actualizar suscripción saas con estado 'trialing'

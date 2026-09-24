@@ -15,7 +15,10 @@ import {
   ShieldCheck,
   Sparkles,
   Info,
-  Scale
+  Scale,
+  AlertTriangle,
+  Undo2,
+  AlertCircle
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
@@ -27,6 +30,8 @@ import {
   setupMonthlySubscriptionPreapproval,
   confirmAndActivateSubscriptionWithCard,
   getClubPlanDetails,
+  requestSubscriptionRevocationAction,
+  undoSubscriptionRevocationAction,
   type ClubPlanDetails
 } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
@@ -112,6 +117,7 @@ export default function ClubPlanPage() {
   const highestSlotPrice = planDetails?.highestSlotPriceArs || 30000
   const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice)
   const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
+  const cancellationDate = planDetails?.cancellationEffectiveDate || pricing.nextDueDate
 
   const [subscribing, setSubscribing] = useState(false)
 
@@ -123,6 +129,50 @@ export default function ClubPlanPage() {
   const [cardCvv, setCardCvv] = useState('')
   const [cardDni, setCardDni] = useState('')
   const [savingCard, setSavingCard] = useState(false)
+
+  // Botón de Arrepentimiento / Revocación de Suscripción (Ley 24.240 - Res. 424/2020)
+  const [showRevocationModal, setShowRevocationModal] = useState(false)
+  const [revocationReason, setRevocationReason] = useState('')
+  const [isRevoking, setIsRevoking] = useState(false)
+  const [isUndoingRevocation, setIsUndoingRevocation] = useState(false)
+
+  const handleRequestRevocation = async () => {
+    setIsRevoking(true)
+    try {
+      const activeTenant = tenantId || planDetails?.tenantId
+      const res = await requestSubscriptionRevocationAction(activeTenant || undefined, revocationReason)
+      if (res.success) {
+        toast.success(`Baja programada registrada con éxito. El servicio continuará activo hasta el ${res.effectiveDate || cancellationDate}.`)
+        setShowRevocationModal(false)
+        setRevocationReason('')
+        await loadPlanData()
+      } else {
+        toast.error(res.error || 'Error al procesar el arrepentimiento')
+      }
+    } catch {
+      toast.error('Ocurrió un error al procesar el arrepentimiento')
+    } finally {
+      setIsRevoking(false)
+    }
+  }
+
+  const handleUndoRevocation = async () => {
+    setIsUndoingRevocation(true)
+    try {
+      const activeTenant = tenantId || planDetails?.tenantId
+      const res = await undoSubscriptionRevocationAction(activeTenant || undefined)
+      if (res.success) {
+        toast.success('¡Suscripción reactivada! Tu plan continuará activo y renovándose con normalidad.')
+        await loadPlanData()
+      } else {
+        toast.error(res.error || 'Error al revertir la cancelación')
+      }
+    } catch {
+      toast.error('Ocurrió un error al reactivar la suscripción')
+    } finally {
+      setIsUndoingRevocation(false)
+    }
+  }
 
   // Notificar y activar si regresa de Mercado Pago con la suscripción aprobada
   useEffect(() => {
@@ -296,6 +346,48 @@ export default function ClubPlanPage() {
           Actualizar Estado
         </Button>
       </div>
+
+      {/* Banner de Baja Programada por Arrepentimiento */}
+      {planDetails?.cancelAtPeriodEnd && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-amber-950/20 backdrop-blur-md">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 sm:mt-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-bold text-white">
+                  Baja por Arrepentimiento Programada
+                </h4>
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] px-2 py-0.5 font-bold">
+                  Baja efectiva al fin del ciclo ({cancellationDate})
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                Ejerciste tu derecho de revocación. El club continúa con <strong>acceso total y operativo al 100%</strong> hasta el <strong>{cancellationDate}</strong>. Luego de esa fecha la suscripción finalizará definitivamente y <strong>no se realizarán nuevos cobros ni débitos automáticos</strong>.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleUndoRevocation}
+            disabled={isUndoingRevocation}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 px-4 rounded-xl shrink-0 cursor-pointer shadow-md flex items-center gap-1.5 self-start md:self-auto"
+          >
+            {isUndoingRevocation ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Reactivando...</span>
+              </>
+            ) : (
+              <>
+                <Undo2 className="w-3.5 h-3.5" />
+                <span>Deshacer y Mantener Plan</span>
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Aviso de Aceptación Obligatoria Pendiente */}
       {!planDetails?.termsAcceptedAt && (
@@ -514,10 +606,17 @@ export default function ClubPlanPage() {
               </Button>
             ) : (
               <div className="space-y-2">
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-semibold flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Suscripción activa con Débito Automático Oficial</span>
-                </div>
+                {planDetails?.cancelAtPeriodEnd ? (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center text-xs text-amber-400 font-semibold flex items-center justify-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Baja programada: Activo hasta {cancellationDate}</span>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-semibold flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Suscripción activa con Débito Automático Oficial</span>
+                  </div>
+                )}
                 <Button
                   variant="outline"
                   onClick={() => setShowSubscriptionModal(true)}
@@ -525,6 +624,25 @@ export default function ClubPlanPage() {
                 >
                   Actualizar datos de tarjeta
                 </Button>
+                {planDetails?.cancelAtPeriodEnd ? (
+                  <Button
+                    variant="ghost"
+                    onClick={handleUndoRevocation}
+                    disabled={isUndoingRevocation}
+                    className="w-full text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 py-1.5 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    Mantener plan activo (Deshacer)
+                  </Button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowRevocationModal(true)}
+                    className="w-full text-center text-[11px] text-slate-400 hover:text-rose-400 underline decoration-slate-600 hover:decoration-rose-400 transition-colors py-1 cursor-pointer"
+                  >
+                    Botón de Arrepentimiento (Baja al fin del ciclo)
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -771,6 +889,75 @@ export default function ClubPlanPage() {
         </CardContent>
       </Card>
 
+      {/* Botón de Arrepentimiento Oficial (Ley 24.240 - Res. 424/2020) */}
+      <Card className="bg-linear-to-br from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[11px] font-semibold">
+                Defensa de las y los Consumidores
+              </Badge>
+              <Badge variant="outline" className="text-slate-400 border-slate-800 text-[10px]">
+                Ley 24.240 • Res. 424/2020
+              </Badge>
+              {planDetails?.cancelAtPeriodEnd && (
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px] font-bold">
+                  Baja en curso
+                </Badge>
+              )}
+            </div>
+            <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <Scale className="w-5 h-5 text-indigo-400" />
+              Botón de Arrepentimiento y Revocación de Suscripción
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Conforme a la normativa legal vigente, tenés la facultad de revocar o dar de baja la contratación del abono del club en cualquier momento. 
+              La baja <strong>se hace efectiva al terminar el período vigente actual ({cancellationDate})</strong>. Durante todo el ciclo restante, tu club seguirá contando con el servicio activo y no se generarán cobros ni renovaciones posteriores.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1">
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Sin cortes abruptos ni pérdida de reservas
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> 0 cargos adicionales
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Trámite 100% digital
+              </span>
+            </div>
+          </div>
+
+          <div className="shrink-0 w-full md:w-auto flex flex-col items-stretch sm:items-end gap-2">
+            {planDetails?.cancelAtPeriodEnd ? (
+              <div className="space-y-2 text-right">
+                <div className="px-4 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold text-center md:text-right">
+                  Baja programada: finaliza el {cancellationDate}
+                </div>
+                <Button
+                  onClick={handleUndoRevocation}
+                  disabled={isUndoingRevocation}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-10 px-5 shadow-lg shadow-emerald-950/40 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span>Deshacer y continuar suscripción</span>
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setShowRevocationModal(true)}
+                className="w-full md:w-auto border-rose-500/40 hover:border-rose-500 text-rose-300 hover:text-white hover:bg-rose-500/20 font-semibold text-xs rounded-xl h-11 px-5 transition-colors cursor-pointer shadow-md flex items-center justify-center gap-2"
+              >
+                <AlertCircle className="w-4 h-4 text-rose-400" />
+                <span>Botón de Arrepentimiento</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
       {/* Apartado Oficial: Términos y Condiciones del Servicio */}
       <ClubTermsCard
         tenantId={tenantId || undefined}
@@ -978,6 +1165,105 @@ export default function ClubPlanPage() {
                 .
               </p>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL OFICIAL: Confirmación de Botón de Arrepentimiento */}
+      {showRevocationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-rose-500/40 rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-7 space-y-5">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30 text-xs font-bold px-2.5 py-0.5">
+                    Derecho de Arrepentimiento
+                  </Badge>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Ley 24.240 • Res. 424/2020
+                  </span>
+                </div>
+                <h3 className="text-xl font-extrabold text-white mt-2">
+                  ¿Deseás solicitar la baja de la suscripción?
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowRevocationModal(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Explicación de vigencia hasta el fin de período */}
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs text-slate-300">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                Tu club continuará activo hasta el fin del ciclo
+              </div>
+              <p>
+                Al confirmar el arrepentimiento, la suscripción <strong>no se cancela de inmediato</strong>:
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                <li>
+                  Tu club mantendrá <strong>todas sus funciones activas normalmente</strong> hasta el <strong>{cancellationDate}</strong>.
+                </li>
+                <li>
+                  <strong>No se realizarán cobros futuros</strong> ni renovaciones en tu tarjeta después de dicha fecha.
+                </li>
+                <li>
+                  Tus datos de reservas, canchas y clientes se conservan íntegramente. Podrás reactivar el plan cuando gustes.
+                </li>
+              </ul>
+            </div>
+
+            {/* Motivo Opcional */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300">
+                Motivo de la baja (opcional)
+              </label>
+              <textarea
+                value={revocationReason}
+                onChange={(e) => setRevocationReason(e.target.value)}
+                placeholder="Contanos brevemente el motivo para ayudarnos a mejorar el servicio..."
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-rose-500 resize-none"
+              />
+            </div>
+
+            {/* Botones de acción */}
+            <div className="pt-2 flex flex-col-reverse sm:flex-row gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowRevocationModal(false)}
+                className="w-full sm:w-1/2 border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs py-5 cursor-pointer"
+              >
+                Conservar mi suscripción
+              </Button>
+              <Button
+                type="button"
+                disabled={isRevoking}
+                onClick={handleRequestRevocation}
+                className="w-full sm:w-1/2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs py-5 shadow-lg shadow-rose-950/50 gap-2 cursor-pointer"
+              >
+                {isRevoking ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Registrando baja...</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Confirmar Arrepentimiento</span>
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <p className="text-[10px] text-center text-slate-500">
+              Podrás deshacer esta solicitud en cualquier momento antes del {cancellationDate} desde este mismo panel.
+            </p>
           </div>
         </div>
       )}

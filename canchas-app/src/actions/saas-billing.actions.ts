@@ -44,6 +44,9 @@ export interface ClubPlanDetails {
     holder?: string
   } | null
   termsAcceptedAt?: string | null
+  cancelAtPeriodEnd?: boolean
+  cancellationRequestedAt?: string | null
+  cancellationEffectiveDate?: string | null
 }
 
 /**
@@ -103,6 +106,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let baseSlots: number | null = null
   let tenantCreatedAt: string | null = null
   let termsAcceptedAt: string | null = null
+  let cancelAtPeriodEnd = false
+  let cancellationRequestedAt: string | null = null
+  let cancellationEffectiveDate: string | null = null
 
   if (targetTenantId) {
     const { data: tenant } = await serviceClient
@@ -116,6 +122,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
         const parsedDesc = JSON.parse(tenant.description)
         if (parsedDesc.terms_accepted_at) {
           termsAcceptedAt = String(parsedDesc.terms_accepted_at)
+        }
+        if (parsedDesc.cancel_at_period_end) {
+          cancelAtPeriodEnd = true
+          cancellationRequestedAt = parsedDesc.cancellation_requested_at || null
+          cancellationEffectiveDate = parsedDesc.cancellation_effective_date || null
         }
       } catch {}
     }
@@ -236,6 +247,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
+  const cookieCancelAtPeriodEnd = cookieStore.get('demo_cancel_at_period_end')?.value === 'true'
+  if (cookieCancelAtPeriodEnd) {
+    cancelAtPeriodEnd = true
+  }
+
   return {
     tenantId: targetTenantId || '',
     tenantName,
@@ -251,6 +267,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     hasAutoDebit,
     cardInfo,
     termsAcceptedAt: typeof termsAcceptedAt !== 'undefined' ? termsAcceptedAt : null,
+    cancelAtPeriodEnd,
+    cancellationRequestedAt,
+    cancellationEffectiveDate: cancellationEffectiveDate || pricing.nextDueDate,
   }
 }
 
@@ -1077,4 +1096,210 @@ export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ s
     return { success: false, error: msg }
   }
 }
+
+/**
+ * Botón de Arrepentimiento / Cancelación de Suscripción SaaS (Defensa del Consumidor)
+ * La suscripción se da de baja al terminar el período vigente (sin cortes inmediatos ni nuevos cobros futuros).
+ */
+export async function requestSubscriptionRevocationAction(
+  tenantIdParam?: string,
+  reason?: string
+): Promise<{ success: boolean; error?: string; effectiveDate?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('id, description, created_at')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let meta: Record<string, unknown> = {}
+    if (tenant?.description) {
+      try {
+        meta = JSON.parse(tenant.description) as Record<string, unknown>
+      } catch {
+        meta = { raw_notes: tenant.description }
+      }
+    }
+
+    // Calcular fecha efectiva de baja (fin del período actual)
+    const pricing = calculateClubSaaSFee(2, 30000, tenant?.created_at)
+    const effectiveDate = pricing.nextDueDate
+
+    const requestedAt = new Date().toISOString()
+    meta.cancel_at_period_end = true
+    meta.cancellation_requested_at = requestedAt
+    meta.cancellation_effective_date = effectiveDate
+    meta.cancellation_reason = reason || 'Solicitud mediante Botón de Arrepentimiento'
+
+    const { error } = await serviceClient
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: requestedAt,
+      })
+      .eq('id', targetTenantId)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    // Si existe suscripción en saas_subscriptions, dejar constancia en payment_notes
+    try {
+      const { data: sub } = await serviceClient
+        .from('saas_subscriptions')
+        .select('id, payment_notes')
+        .eq('tenant_id', targetTenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (sub) {
+        await serviceClient
+          .from('saas_subscriptions')
+          .update({
+            payment_notes: `${sub.payment_notes || ''} [Baja programada por Botón de Arrepentimiento al terminar ciclo el ${effectiveDate}]`.trim(),
+            updated_at: requestedAt
+          })
+          .eq('id', sub.id)
+      }
+    } catch (subErr) {
+      console.error('Error updating saas_subscriptions notes on revocation:', subErr)
+    }
+
+    // Sincronizar cookie
+    try {
+      const cookieStore = await cookies()
+      cookieStore.set('demo_cancel_at_period_end', 'true', { path: '/' })
+    } catch {}
+
+    revalidatePath('/dashboard/plan')
+    return { success: true, effectiveDate }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al procesar el arrepentimiento'
+    return { success: false, error: msg }
+  }
+}
+
+/**
+ * Deshacer arrepentimiento / reactivar suscripción para que continúe activa después del ciclo.
+ */
+export async function undoSubscriptionRevocationAction(
+  tenantIdParam?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('id, description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let meta: Record<string, unknown> = {}
+    if (tenant?.description) {
+      try {
+        meta = JSON.parse(tenant.description) as Record<string, unknown>
+      } catch {
+        meta = { raw_notes: tenant.description }
+      }
+    }
+
+    meta.cancel_at_period_end = false
+    delete meta.cancellation_requested_at
+    delete meta.cancellation_effective_date
+    delete meta.cancellation_reason
+
+    const { error } = await serviceClient
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetTenantId)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    try {
+      const cookieStore = await cookies()
+      cookieStore.delete('demo_cancel_at_period_end')
+    } catch {}
+
+    revalidatePath('/dashboard/plan')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al reactivar suscripción'
+    return { success: false, error: msg }
+  }
+}
+
 

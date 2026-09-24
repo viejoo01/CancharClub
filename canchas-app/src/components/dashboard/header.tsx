@@ -13,6 +13,9 @@ interface HeaderProps {
   mpConnected?: boolean
   userName?: string
   tenantName?: string
+  tenantId?: string | null
+  courtsCount?: number
+  sports?: string[]
 }
 
 export function Header({
@@ -21,6 +24,9 @@ export function Header({
   mpConnected = false,
   userName = 'Administrador',
   tenantName,
+  tenantId,
+  courtsCount,
+  sports,
 }: HeaderProps) {
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
@@ -42,7 +48,12 @@ export function Header({
         </h1>
 
         {/* Mejora 19: Selector de Sede / Sucursal Multisede */}
-        <VenueSwitcher tenantName={tenantName} />
+        <VenueSwitcher 
+          tenantName={tenantName} 
+          tenantId={tenantId}
+          initialCourtsCount={courtsCount}
+          initialSports={sports}
+        />
 
         {mpConnected ? (
           <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">

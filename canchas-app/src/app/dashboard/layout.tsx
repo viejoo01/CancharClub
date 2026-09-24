@@ -158,6 +158,30 @@ export default async function DashboardLayout({
     } catch {}
   }
 
+  // Obtener canchas y deportes reales del club para sincronizar sedes/switcher
+  let initialCourtsCount = 0
+  let initialSports: string[] = []
+  if (tenantId) {
+    try {
+      const { data: courtsData } = await serviceClient
+        .from('courts')
+        .select('id, sport, is_active')
+        .eq('tenant_id', tenantId)
+      if (courtsData && courtsData.length > 0) {
+        initialCourtsCount = courtsData.length
+        const rawSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean)))
+        initialSports = rawSports.map(s => {
+          if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
+          if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Fútbol 7'
+          if (s === 'PADEL') return 'Pádel'
+          if (s === 'TENIS') return 'Tenis'
+          if (s === 'BASQUET' || s === 'BASKET') return 'Básquet'
+          return s
+        })
+      }
+    } catch {}
+  }
+
   return (
     <DashboardLayoutClient
       tenantId={tenantId}
@@ -168,6 +192,8 @@ export default async function DashboardLayout({
       mpConnected={mpConnected}
       planId={planId}
       isActive={isActive}
+      courtsCount={initialCourtsCount}
+      sports={initialSports}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       pendingScreen={<PendingActivationScreen tenantName={tenantName} planId={planId} />}
     >

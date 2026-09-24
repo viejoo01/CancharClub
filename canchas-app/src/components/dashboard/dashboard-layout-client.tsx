@@ -26,6 +26,8 @@ interface DashboardLayoutClientProps {
   mpConnected: boolean
   planId?: SaaSPlanId
   isActive: boolean
+  courtsCount?: number
+  sports?: string[]
   gracePeriodBanner?: React.ReactNode
   children: React.ReactNode
   pendingScreen?: React.ReactNode
@@ -40,6 +42,8 @@ export function DashboardLayoutClient({
   mpConnected,
   planId,
   isActive,
+  courtsCount,
+  sports,
   gracePeriodBanner,
   children,
   pendingScreen,
@@ -153,6 +157,9 @@ export function DashboardLayoutClient({
         <Header
           userName={userName}
           tenantName={tenantName}
+          tenantId={tenantId}
+          courtsCount={courtsCount}
+          sports={sports}
           mpConnected={mpConnected}
           onToggleMobileMenu={() => setMobileMenuOpen(true)}
         />

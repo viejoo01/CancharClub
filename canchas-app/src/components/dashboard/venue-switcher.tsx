@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useMemo, useSyncExternalStore } from 'react'
+import { useState, useMemo, useSyncExternalStore, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { useTenantId } from '@/hooks/use-tenant-id'
 import { 
   Building2, 
   MapPin, 
@@ -75,8 +77,92 @@ function getStoredCustomVenuesJson(): string {
 const getServerVenueId = () => DEFAULT_VENUES[0].id
 const getServerCustomVenues = () => '[]'
 
-export function VenueSwitcher({ className, tenantName }: { className?: string; tenantName?: string }) {
+export function VenueSwitcher({ 
+  className, 
+  tenantName,
+  tenantId: propTenantId,
+  initialCourtsCount,
+  initialSports,
+}: { 
+  className?: string
+  tenantName?: string
+  tenantId?: string | null
+  initialCourtsCount?: number
+  initialSports?: string[]
+}) {
   const router = useRouter()
+  const hookTenantId = useTenantId()
+  const effectiveTenantId = propTenantId || hookTenantId
+
+  const [fetchedCourts, setFetchedCourts] = useState<{ count: number; sports: string[] } | null>(null)
+
+  const effectiveCourtsCount = fetchedCourts?.count ?? (typeof initialCourtsCount === 'number' ? initialCourtsCount : DEFAULT_VENUES[0].courtsCount)
+  const effectiveSports = fetchedCourts?.sports && fetchedCourts.sports.length > 0 
+    ? fetchedCourts.sports 
+    : (initialSports && initialSports.length > 0 ? initialSports : DEFAULT_VENUES[0].sports)
+
+  const fetchCourts = useCallback(async () => {
+    try {
+      const supabase = createClient()
+      let targetTenantId = effectiveTenantId
+
+      if (!targetTenantId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('tenant_id')
+            .eq('id', user.id)
+            .maybeSingle()
+          if (profile?.tenant_id) {
+            targetTenantId = profile.tenant_id
+          }
+        }
+      }
+
+      let query = supabase.from('courts').select('id, sport, is_active')
+      if (targetTenantId) {
+        query = query.eq('tenant_id', targetTenantId)
+      }
+
+      const { data, error } = await query
+      if (data && !error) {
+        const uniqueSports = Array.from(new Set(data.map(c => c.sport).filter(Boolean)))
+        const formatted = uniqueSports.map(s => {
+          if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
+          if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Fútbol 7'
+          if (s === 'PADEL') return 'Pádel'
+          if (s === 'TENIS') return 'Tenis'
+          if (s === 'BASQUET' || s === 'BASKET') return 'Básquet'
+          return s
+        })
+        setFetchedCourts({
+          count: data.length,
+          sports: formatted.length > 0 ? formatted : ['Fútbol', 'Pádel']
+        })
+      }
+    } catch {}
+  }, [effectiveTenantId])
+
+  useEffect(() => {
+    let isCancelled = false
+    const run = async () => {
+      await fetchCourts()
+    }
+    void run()
+
+    const handleCourtsChange = () => {
+      if (!isCancelled) {
+        void fetchCourts()
+      }
+    }
+    window.addEventListener('canchar:courts-changed', handleCourtsChange)
+    return () => {
+      isCancelled = true
+      window.removeEventListener('canchar:courts-changed', handleCourtsChange)
+    }
+  }, [fetchCourts])
+
   const activeVenueId = useSyncExternalStore(
     subscribeStorage,
     getStoredVenueId,
@@ -102,9 +188,11 @@ export function VenueSwitcher({ className, tenantName }: { className?: string; t
       ...DEFAULT_VENUES[0],
       name: tenantName || DEFAULT_VENUES[0].name,
       branchName: tenantName ? `${tenantName} (Central)` : 'Sede Central',
+      courtsCount: effectiveCourtsCount,
+      sports: effectiveSports,
     }
     return customVenues.length > 0 ? [baseVenue, ...customVenues] : [baseVenue]
-  }, [customVenues, tenantName])
+  }, [customVenues, tenantName, effectiveCourtsCount, effectiveSports])
 
   const [isOpen, setIsOpen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -167,7 +255,13 @@ export function VenueSwitcher({ className, tenantName }: { className?: string; t
       {/* Botón Selector de Sede */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          const next = !isOpen
+          setIsOpen(next)
+          if (next) {
+            void fetchCourts()
+          }
+        }}
         className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 transition-all text-left group"
         aria-expanded={isOpen}
       >

@@ -204,6 +204,9 @@ export default function CanchasPage() {
             const forceRes = await deleteCourt(courtId, tenantId, { force: true })
             if (forceRes.success) {
               setCourts(prev => prev.filter(c => c.id !== courtId))
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
+              }
               toast.success(`Cancha "${courtName}" y sus turnos asociados fueron eliminados correctamente`)
               return
             } else {
@@ -216,6 +219,9 @@ export default function CanchasPage() {
         }
       } else {
         setCourts(prev => prev.filter(c => c.id !== courtId))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
+        }
         toast.success(`Cancha "${courtName}" eliminada correctamente`)
       }
     } catch {
@@ -264,6 +270,9 @@ export default function CanchasPage() {
       }
 
       setCourts(prev => [...prev, createdCourt])
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
+      }
       toast.success('¡Cancha guardada y registrada con éxito en el club!')
       setIsModalOpen(false)
       setName('')

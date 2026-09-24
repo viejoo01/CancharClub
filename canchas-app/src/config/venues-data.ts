@@ -31,8 +31,8 @@ export const DEFAULT_VENUES: VenueItem[] = [
     branchName: 'Sede Central',
     address: 'Sede del club',
     city: 'Argentina',
-    courtsCount: 0,
-    sports: [],
+    courtsCount: 2,
+    sports: ['Fútbol', 'Pádel'],
     isPrimary: true
   }
 ]

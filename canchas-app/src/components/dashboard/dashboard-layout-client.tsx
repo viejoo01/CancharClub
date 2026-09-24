@@ -194,6 +194,11 @@ export function DashboardLayoutClient({
             <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>
               {children}
             </div>
+
+            {/* Pie de página con copyright */}
+            <footer className="mt-12 pt-6 pb-4 border-t border-slate-800/60 text-center text-xs text-slate-500 select-none">
+              <p>© 2026 CancharClub. Todos los derechos reservados.</p>
+            </footer>
           </div>
         </main>
 

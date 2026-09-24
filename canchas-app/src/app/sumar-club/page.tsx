@@ -360,13 +360,16 @@ export default function SumarClubLandingPage() {
         </div>
 
         {/* Enlace inferior centrado: ← Volver al inicio */}
-        <div className="py-8 text-center">
+        <div className="py-8 text-center space-y-2">
           <Link
             href="/"
             className="text-xs sm:text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium transition-colors"
           >
             ← Volver al inicio
           </Link>
+          <p className="text-xs text-slate-500">
+            © 2026 CancharClub. Todos los derechos reservados.
+          </p>
         </div>
       </footer>
 

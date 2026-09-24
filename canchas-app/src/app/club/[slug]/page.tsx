@@ -697,6 +697,9 @@ export default function ClubPublicPage({
           <p className="text-[11px] text-slate-400">
             Confirmación automática e inmediata con comprobante digital para WhatsApp de {club.name}.
           </p>
+          <p className="text-xs text-slate-500 pt-3 border-t border-slate-800/40">
+            © 2026 CancharClub. Todos los derechos reservados.
+          </p>
         </footer>
 
         {/* Modal de Lista de Espera Automática */}

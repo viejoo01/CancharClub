@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { formatARS } from '@/lib/utils'
-import { siteConfig } from '@/config/site'
 import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
 import { ClubLoginModal } from '@/components/public/club-login-modal'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
@@ -496,9 +495,9 @@ export default function HomePage() {
         onOpenChange={setIsRegisterModalOpen}
       />
 
-      {/* Footer copyright sutil */}
-      <footer className="w-full max-w-xl text-center py-2 text-[11px] text-slate-400">
-        {siteConfig.name} • {siteConfig.tagline}
+      {/* Footer copyright */}
+      <footer className="w-full max-w-xl text-center py-6 text-xs text-slate-500">
+        <p>© 2026 CancharClub. Todos los derechos reservados.</p>
       </footer>
     </div>
   )

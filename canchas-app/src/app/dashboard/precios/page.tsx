@@ -177,6 +177,16 @@ export default function PreciosPage() {
       return
     }
 
+    if (timeFrom === timeTo) {
+      toast.error('La hora de inicio y de fin no pueden ser iguales.')
+      return
+    }
+
+    if (timeTo !== '00:00' && timeTo < timeFrom) {
+      toast.error('La hora de fin debe ser posterior a la de inicio (ej: de 18:00 a 23:00, o 00:00 para medianoche). Si el turno pasa de medianoche (ej: hasta las 02:00 am), creá dos tarifas separadas: una hasta medianoche y otra desde las 00:00.')
+      return
+    }
+
     setLoading(true)
     try {
       if (editingRuleId) {
@@ -366,7 +376,7 @@ export default function PreciosPage() {
                   <CardDescription className="flex items-center justify-between gap-1 mt-1 text-xs">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{rule.time_from} a {rule.time_to} hs</span>
+                      <span>{rule.time_from} a {rule.time_to === '24:00' || rule.time_to === '00:00' ? '00:00' : rule.time_to} hs</span>
                     </span>
                     <span className="flex items-center gap-1 text-slate-400 font-medium">
                       <Layers className="w-3 h-3 text-emerald-400" />
@@ -483,29 +493,49 @@ export default function PreciosPage() {
                 <Label className="text-xs font-semibold text-slate-200">
                   Días de la Semana aplicables *
                 </Label>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDays([1, 2, 3, 4, 5, 6, 0])}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-                  >
-                    Todos
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-                  >
-                    Lun-Vie
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDays([6, 0])}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-900 transition-colors"
-                  >
-                    Fines de Sem
-                  </button>
-                </div>
+                {(() => {
+                  const isAll = selectedDays.length === 7
+                  const isWeekdays = selectedDays.length === 5 && !selectedDays.includes(6) && !selectedDays.includes(0)
+                  const isWeekend = selectedDays.length === 2 && selectedDays.includes(6) && selectedDays.includes(0)
+
+                  return (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([1, 2, 3, 4, 5, 6, 0])}
+                        className={`text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer border ${
+                          isAll
+                            ? 'bg-emerald-600 text-white font-semibold border-emerald-500 shadow-xs'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 border-slate-700/60'
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
+                        className={`text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer border ${
+                          isWeekdays
+                            ? 'bg-emerald-600 text-white font-semibold border-emerald-500 shadow-xs'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 border-slate-700/60'
+                        }`}
+                      >
+                        Lun-Vie
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([6, 0])}
+                        className={`text-[10px] px-2.5 py-1 rounded-md transition-colors cursor-pointer border ${
+                          isWeekend
+                            ? 'bg-emerald-600 text-white font-semibold border-emerald-500 shadow-xs'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 border-slate-700/60'
+                        }`}
+                      >
+                        Fines de Sem
+                      </button>
+                    </div>
+                  )
+                })()}
               </div>
 
               <div className="grid grid-cols-7 gap-1 sm:gap-1.5 pt-1">
@@ -575,6 +605,9 @@ export default function PreciosPage() {
                   className="h-10 text-xs"
                 />
               </div>
+              <p className="text-[11px] text-slate-400 col-span-2">
+                * Para turnos nocturnos que finalizan a medianoche, seleccioná <strong>00:00</strong>.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

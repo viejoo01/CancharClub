@@ -57,12 +57,14 @@ function computeSlotPrice(
     })
     const applicableRules = courtRules.filter((r) => {
       const days = r.dayOfWeek || r.days_of_week || r.day_of_week
-      return !days || days.length === 0 || days.includes(dayOfWeek)
+      if (!days || days.length === 0) return true
+      return days.includes(dayOfWeek) || (dayOfWeek === 0 && days.includes(7)) || (dayOfWeek === 7 && days.includes(0))
     })
     const matchingRule = applicableRules
       .filter((r) => {
         const from = (r.timeFrom || r.time_from || '00:00').substring(0, 5)
-        const to = (r.timeTo || r.time_to || '23:59').substring(0, 5)
+        const toRaw = (r.timeTo || r.time_to || '23:59').substring(0, 5)
+        const to = (toRaw === '00:00' || toRaw === '24:00') ? '24:00' : toRaw
         return cleanTime >= from && cleanTime <= to
       })
       .sort((a, b) => {

@@ -189,7 +189,7 @@ export default function SumarClubLandingPage() {
                 Cargás tus canchas
               </h3>
               <p className="text-sm sm:text-base text-slate-400 leading-relaxed font-normal">
-                Subís tus horarios, precios y fotos desde un panel simple.
+                Subís tus horarios y precios desde un panel simple.
               </p>
             </div>
 
@@ -225,7 +225,7 @@ export default function SumarClubLandingPage() {
 
           {/* Subtítulo aclaratorio de Mercado Pago */}
           <p className="mt-3 text-sm sm:text-base text-slate-400 font-normal max-w-2xl mx-auto leading-relaxed">
-            15 días de prueba gratis. Mercado Pago te pide una tarjeta de débito o crédito para comenzar, pero el primer cobro es recién a los 15 días ($0 hoy).
+            15 días de prueba gratis. Mercado Pago te pide un medio de pago (tarjeta de débito o crédito), pero el primer cobro es recién a los 15 días ($0 hoy).
           </p>
 
           {/* Grilla de 4 Tarjetas de Precios Segmentadas por Predio */}

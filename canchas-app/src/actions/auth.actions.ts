@@ -218,16 +218,22 @@ export async function registerClub(formData: FormData) {
       const sport = sports[index % sports.length] || 'PADEL'
       const s = sport.toUpperCase()
       const isPadel = s.includes('PADEL')
-      let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' = 'PADEL'
+      let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' | 'BASQUET' = 'PADEL'
       if (s.includes('7')) sportEnum = 'FUTBOL7'
       else if (s.includes('FUTBOL') || s.includes('SOCCER') || s.includes('5')) sportEnum = 'FUTBOL5'
       else if (s.includes('TENIS') || s.includes('TENNIS')) sportEnum = 'TENIS'
+      else if (s.includes('BASQUET') || s.includes('BASKET')) sportEnum = 'BASQUET'
+
+      const isBasket = sportEnum === 'BASQUET'
+      const isTenis = sportEnum === 'TENIS'
+      const surfaceName = isPadel ? 'Cristal' : isBasket ? 'Parquet' : isTenis ? 'Polvo de ladrillo' : 'Sintético'
+      const surfaceEnum = isPadel ? 'CRISTAL' : isBasket ? 'PARQUET' : isTenis ? 'POLVO_LADRILLO' : 'CESPED_SINTETICO'
 
       courtsToInsert.push({
         tenant_id: tenant.id,
-        name: `Cancha ${index + 1} (${isPadel ? 'Cristal' : 'Sintético'})`,
+        name: `Cancha ${index + 1} (${surfaceName})`,
         sport: sportEnum,
-        surface: isPadel ? 'CRISTAL' : 'CESPED_SINTETICO',
+        surface: surfaceEnum,
         slot_duration_minutes: isPadel ? 90 : 60,
         has_lights: true,
         display_order: index + 1,

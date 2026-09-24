@@ -32,25 +32,31 @@ export default function PublicTournamentPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let ignore = false
+    async function fetchTournament() {
+      try {
+        const data = await getTournamentById(tournamentId)
+        if (!ignore) {
+          setTournament(data)
+          if (data?.categories && data.categories.length > 0) {
+            setSelectedCatId(data.categories[0].id)
+          }
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+
     if (tournamentId) {
-      loadTournament()
+      fetchTournament()
+    }
+
+    return () => {
+      ignore = true
     }
   }, [tournamentId])
-
-  const loadTournament = async () => {
-    setLoading(true)
-    try {
-      const data = await getTournamentById(tournamentId)
-      setTournament(data)
-      if (data?.categories && data.categories.length > 0) {
-        setSelectedCatId(data.categories[0].id)
-      }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const activeCategory = tournament?.categories.find((c) => c.id === selectedCatId)
   const teamsMap = new Map()

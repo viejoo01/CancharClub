@@ -438,10 +438,10 @@ export async function getClubPriceRules(tenantId?: string | null) {
     }
     return (data ?? []).map(r => ({
       ...r,
-      days_of_week: r.day_of_week,
+      days_of_week: (r.day_of_week || []).map((d: number) => d === 7 ? 0 : d),
       price_ars: Math.round(Number(r.price_cents) / 100),
       time_from: r.time_from ? r.time_from.substring(0, 5) : '18:00',
-      time_to: r.time_to ? r.time_to.substring(0, 5) : '23:00',
+      time_to: r.time_to ? (r.time_to.startsWith('24:00') ? '00:00' : r.time_to.substring(0, 5)) : '23:00',
     }))
   } catch (err) {
     console.warn('[getClubPriceRules] Exception:', err)
@@ -477,14 +477,38 @@ export async function createPriceRule(payload: {
   }
 
   const supabase = await createServiceClient()
-  const days = (payload.days_of_week && payload.days_of_week.length > 0)
+  const rawDays = (payload.days_of_week && payload.days_of_week.length > 0)
     ? payload.days_of_week
     : (payload.day_of_week && payload.day_of_week.length > 0)
       ? payload.day_of_week
-      : [1, 2, 3, 4, 5, 6, 0]
+      : [1, 2, 3, 4, 5, 6, 7]
+
+  // En PostgreSQL el check constraint de price_rules es ARRAY[1,2,3,4,5,6,7] (donde 7 = Domingo según ISO).
+  // En JavaScript / Frontend se usa 0 = Domingo. Normalizamos 0 -> 7 para la BD:
+  const days = Array.from(new Set(rawDays.map(d => d === 0 ? 7 : d))).sort((a, b) => a - b)
+  if (days.length === 0) {
+    return { success: false, error: 'Debes seleccionar al menos un día de la semana.' }
+  }
+
   const priceCents = Math.round(Number(payload.price_ars) * 100)
+  if (isNaN(priceCents) || priceCents < 0) {
+    return { success: false, error: 'El precio debe ser un número válido mayor o igual a 0.' }
+  }
+
   const timeFromFormatted = payload.time_from.length === 5 ? `${payload.time_from}:00` : payload.time_from
-  const timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+  let timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+
+  // Si la hora de fin es 00:00 (medianoche), normalizar a 24:00:00 para la BD (donde 24:00 > time_from)
+  if (timeToFormatted === '00:00' || timeToFormatted === '00:00:00') {
+    timeToFormatted = '24:00:00'
+  }
+
+  if (timeFromFormatted >= timeToFormatted) {
+    return {
+      success: false,
+      error: 'La hora de fin debe ser posterior a la de inicio (ej: de 18:00 a 23:00, o 00:00 para medianoche). Si el turno pasa de la medianoche (ej: hasta las 02:00 am), creá dos tarifas: una hasta medianoche y otra desde las 00:00.',
+    }
+  }
 
   // Si no se especifica court_id, asignar a todas las canchas activas del club
   let targetCourtIds: string[] = []
@@ -564,14 +588,38 @@ export async function updatePriceRule(payload: {
   }
 
   const supabase = await createServiceClient()
-  const days = (payload.days_of_week && payload.days_of_week.length > 0)
+  const rawDays = (payload.days_of_week && payload.days_of_week.length > 0)
     ? payload.days_of_week
     : (payload.day_of_week && payload.day_of_week.length > 0)
       ? payload.day_of_week
-      : [1, 2, 3, 4, 5, 6, 0]
+      : [1, 2, 3, 4, 5, 6, 7]
+
+  // En PostgreSQL el check constraint de price_rules es ARRAY[1,2,3,4,5,6,7] (donde 7 = Domingo según ISO).
+  // En JavaScript / Frontend se usa 0 = Domingo. Normalizamos 0 -> 7 para la BD:
+  const days = Array.from(new Set(rawDays.map(d => d === 0 ? 7 : d))).sort((a, b) => a - b)
+  if (days.length === 0) {
+    return { success: false, error: 'Debes seleccionar al menos un día de la semana.' }
+  }
+
   const priceCents = Math.round(Number(payload.price_ars) * 100)
+  if (isNaN(priceCents) || priceCents < 0) {
+    return { success: false, error: 'El precio debe ser un número válido mayor o igual a 0.' }
+  }
+
   const timeFromFormatted = payload.time_from.length === 5 ? `${payload.time_from}:00` : payload.time_from
-  const timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+  let timeToFormatted = payload.time_to.length === 5 ? `${payload.time_to}:00` : payload.time_to
+
+  // Si la hora de fin es 00:00 (medianoche), normalizar a 24:00:00 para la BD (donde 24:00 > time_from)
+  if (timeToFormatted === '00:00' || timeToFormatted === '00:00:00') {
+    timeToFormatted = '24:00:00'
+  }
+
+  if (timeFromFormatted >= timeToFormatted) {
+    return {
+      success: false,
+      error: 'La hora de fin debe ser posterior a la de inicio (ej: de 18:00 a 23:00, o 00:00 para medianoche). Si el turno pasa de la medianoche (ej: hasta las 02:00 am), creá dos tarifas: una hasta medianoche y otra desde las 00:00.',
+    }
+  }
 
   const updateData: Record<string, unknown> = {
     name: payload.name.trim(),
@@ -1032,9 +1080,11 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       id: r.id,
       courtId: r.court_id,
       name: r.name,
-      dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0 ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+      dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0
+        ? r.day_of_week.map((d: number) => d === 7 ? 0 : d)
+        : [0, 1, 2, 3, 4, 5, 6],
       timeFrom: (r.time_from || '00:00:00').substring(0, 5),
-      timeTo: (r.time_to || '23:59:59').substring(0, 5),
+      timeTo: (r.time_to?.startsWith('24:00') ? '00:00' : (r.time_to || '23:59:59').substring(0, 5)),
       priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
       depositPct: 50,
     }))
@@ -1268,9 +1318,11 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         id: r.id,
         courtId: r.court_id,
         name: r.name,
-        dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0 ? r.day_of_week : [0, 1, 2, 3, 4, 5, 6],
+        dayOfWeek: Array.isArray(r.day_of_week) && r.day_of_week.length > 0
+          ? r.day_of_week.map((d: number) => d === 7 ? 0 : d)
+          : [0, 1, 2, 3, 4, 5, 6],
         timeFrom: (r.time_from || '00:00:00').substring(0, 5),
-        timeTo: (r.time_to || '23:59:59').substring(0, 5),
+        timeTo: (r.time_to?.startsWith('24:00') ? '00:00' : (r.time_to || '23:59:59').substring(0, 5)),
         priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
         depositPct: 50,
       }))

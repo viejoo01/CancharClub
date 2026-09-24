@@ -501,10 +501,14 @@ export async function createManualBooking(
 
       if (priceRules && priceRules.length > 0) {
         const courtRules = priceRules.filter((r) => !r.court_id || r.court_id === payload.court_id)
-        const dayRules = courtRules.filter((r) => !r.day_of_week || r.day_of_week.length === 0 || r.day_of_week.includes(dayOfWeek))
+        const dayRules = courtRules.filter((r) => {
+          if (!r.day_of_week || r.day_of_week.length === 0) return true
+          return r.day_of_week.includes(dayOfWeek) || (dayOfWeek === 0 && r.day_of_week.includes(7)) || (dayOfWeek === 7 && r.day_of_week.includes(0))
+        })
         const matchingRule = dayRules.find((r) => {
           const from = (r.time_from || '00:00:00').substring(0, 5)
-          const to = (r.time_to || '23:59:59').substring(0, 5)
+          const toRaw = (r.time_to || '23:59:59').substring(0, 5)
+          const to = (toRaw === '00:00' || toRaw === '24:00') ? '24:00' : toRaw
           const tShort = timeStr.substring(0, 5)
           return tShort >= from && tShort <= to
         }) || dayRules[0] || courtRules[0]

@@ -41,7 +41,7 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
-  const [selectedSports, setSelectedSports] = useState<string[]>(['PADEL'])
+  const [selectedSports, setSelectedSports] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -50,7 +50,7 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
   const toggleSport = (sportId: string) => {
     setSelectedSports(prev =>
       prev.includes(sportId)
-        ? prev.length > 1 ? prev.filter(s => s !== sportId) : prev
+        ? prev.filter(s => s !== sportId)
         : [...prev, sportId]
     )
   }
@@ -61,6 +61,11 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
 
     if (!clubName.trim() || !email.trim() || !password.trim()) {
       setErrorMessage('Por favor completá todos los campos requeridos.')
+      return
+    }
+
+    if (selectedSports.length === 0) {
+      setErrorMessage('Por favor seleccioná al menos un deporte para tu complejo.')
       return
     }
 

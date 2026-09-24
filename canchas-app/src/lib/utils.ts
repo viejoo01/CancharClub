@@ -325,3 +325,25 @@ export function isSlotTimeInPast(dateIso: string, timeStr: string): boolean {
   const currentTimeStr = getArgentinaTimeStr(now)
   return dateIso < todayIso || (dateIso === todayIso && timeStr <= currentTimeStr)
 }
+
+/**
+ * Formatea fecha y hora para alertas de débito automático: 'DD/MM/AAAA HH:MM'
+ * en la zona horaria oficial de Argentina.
+ */
+export function formatAutoDebitAlertDate(dateInput?: string | number | Date | null): string {
+  const d = dateInput ? new Date(dateInput) : new Date()
+  const dateObj = isNaN(d.getTime()) ? new Date() : d
+
+  const formatter = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+
+  return formatter.format(dateObj).replace(',', '').trim()
+}
+

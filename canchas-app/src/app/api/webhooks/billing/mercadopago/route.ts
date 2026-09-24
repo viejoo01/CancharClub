@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import type { MercadoPagoWebhookNotification, MercadoPagoPayment } from '@/types/database'
+import { recordAutoDebitAlertInternal } from '@/actions/saas-billing.actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -156,13 +157,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se pudo obtener el detalle del pago' }, { status: 404 })
     }
 
-    // 3. Procesar solo si el estado es aprobado
-    if (payment.status !== 'approved') {
-      console.log(`[Billing Webhook] Pago ${paymentId} en estado '${payment.status}' — sin acción requerida`)
-      return NextResponse.json({ received: true, status: payment.status })
-    }
-
-    // 4. Identificar Tenant e Invoice mediante external_reference
+    // 3. Identificar Tenant e Invoice mediante external_reference
     // Formato generado: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
     let tenantId: string | null = null
     let invoiceId: string | null = null
@@ -186,8 +181,30 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       tenantId = t?.id || '00000000-0000-0000-0000-000000000001'
     }
+    const resolvedTenantId = tenantId || '00000000-0000-0000-0000-000000000001'
 
-    // 5. Transacción de Reactivación Inmediata en Base de Datos
+    // 4. Si el cobro no se aprobó o falló -> Registrar alerta de intento fallido con mensaje exacto requerido
+    if (payment.status !== 'approved') {
+      console.log(`[Billing Webhook] Pago ${paymentId} en estado '${payment.status}' — registrando alerta de cobro fallido para tenant ${resolvedTenantId}`)
+      await recordAutoDebitAlertInternal(supabase, {
+        tenantId: resolvedTenantId,
+        type: 'FAILED',
+        timestamp: payment.date_approved || new Date().toISOString(),
+        detail: `Mercado Pago: Estado ${payment.status} (${payment.status_detail || 'No aprobado'})`,
+      })
+      return NextResponse.json({ received: true, status: payment.status, alert: 'FAILED' })
+    }
+
+    // 5. Si el débito automático fue aprobado -> Registrar alerta de pago mensual realizado
+    console.log(`[Billing Webhook] Pago ${paymentId} APROBADO — registrando alerta de pago realizado para tenant ${resolvedTenantId}`)
+    await recordAutoDebitAlertInternal(supabase, {
+      tenantId: resolvedTenantId,
+      type: 'SUCCESS',
+      timestamp: payment.date_approved || new Date().toISOString(),
+      detail: `Mercado Pago: Pago #${payment.id} acreditado exitosamente`,
+    })
+
+    // 6. Transacción de Reactivación Inmediata en Base de Datos
     const nowIso = new Date().toISOString()
 
     // A. Actualizar Factura como PAID

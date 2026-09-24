@@ -36,6 +36,19 @@ export type TenantSubscriptionStatus =
 
 export type InvoiceStatus = 'DRAFT' | 'UNPAID' | 'PAID' | 'VOID'
 
+export type AutoDebitAlertType = 'FAILED' | 'SUCCESS'
+
+export interface AutoDebitAlert {
+  id: string
+  type: AutoDebitAlertType
+  title: string
+  formattedDate: string // DD/MM/AAAA HH:MM
+  createdAt: string
+  dismissed: boolean
+  dismissedAt?: string | null
+  detail?: string
+}
+
 export interface TenantInvoice {
   id: string
   tenant_id: string

@@ -35,6 +35,9 @@ import {
   getClubPlanDetails,
   requestSubscriptionRevocationAction,
   undoSubscriptionRevocationAction,
+  recordAutoDebitAlertAction,
+  dismissAutoDebitAlertAction,
+  clearAutoDebitAlertsAction,
   type ClubPlanDetails
 } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
@@ -80,6 +83,65 @@ export default function ClubPlanPage() {
       }
     } finally {
       setIsRefreshing(false)
+    }
+  }
+
+  const handleTestDebitFailed = async () => {
+    try {
+      const now = new Date()
+      window.dispatchEvent(new CustomEvent('trigger-auto-debit-alert', { 
+        detail: { type: 'FAILED', date: now, detail: 'Simulación de intento no completado' } 
+      }))
+      await recordAutoDebitAlertAction({
+        tenantId: tenantId || undefined,
+        type: 'FAILED',
+        timestamp: now.toISOString(),
+        detail: 'Simulación de cobro no completado',
+      })
+      void loadPlanData(false)
+    } catch {
+      toast.error('Error al generar alerta de prueba')
+    }
+  }
+
+  const handleTestDebitSuccess = async () => {
+    try {
+      const now = new Date()
+      window.dispatchEvent(new CustomEvent('trigger-auto-debit-alert', { 
+        detail: { type: 'SUCCESS', date: now, detail: 'Simulación de débito acreditado' } 
+      }))
+      await recordAutoDebitAlertAction({
+        tenantId: tenantId || undefined,
+        type: 'SUCCESS',
+        timestamp: now.toISOString(),
+        detail: 'Simulación de cobro exitoso',
+      })
+      void loadPlanData(false)
+    } catch {
+      toast.error('Error al generar alerta de prueba')
+    }
+  }
+
+  const handleDismissAlertFromList = async (alertId: string) => {
+    try {
+      try {
+        localStorage.setItem(`canchar_debit_ack_${alertId}`, 'true')
+      } catch {}
+      await dismissAutoDebitAlertAction(alertId, tenantId || undefined)
+      toast.info('Aviso entendido')
+      void loadPlanData(false)
+    } catch {
+      toast.error('Error al descartar aviso')
+    }
+  }
+
+  const handleClearAllDebitAlerts = async () => {
+    try {
+      await clearAutoDebitAlertsAction(tenantId || undefined)
+      toast.success('Historial de alertas de débito reiniciado')
+      void loadPlanData(false)
+    } catch {
+      toast.error('Error al reiniciar alertas')
     }
   }
 
@@ -430,6 +492,27 @@ export default function ClubPlanPage() {
           >
             1 día
           </Button>
+          <div className="h-4 w-px bg-slate-800 hidden sm:block mx-1" />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestDebitFailed}
+            className="h-7 text-[11px] border-rose-500/40 text-rose-300 hover:bg-rose-500/20 rounded-lg cursor-pointer flex items-center gap-1 font-semibold"
+            title="Probar alerta de Intento de pago mensual fallido (DD/MM/AAAA HH:MM) con botón Entendido"
+          >
+            <AlertCircle className="w-3 h-3 text-rose-400" />
+            <span>💳 Débito Fallido</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestDebitSuccess}
+            className="h-7 text-[11px] border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 rounded-lg cursor-pointer flex items-center gap-1 font-semibold"
+            title="Probar alerta de Pago mensual realizado (DD/MM/AAAA HH:MM) con botón Entendido"
+          >
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            <span>💳 Débito Exitoso</span>
+          </Button>
         </div>
       </div>
 
@@ -724,6 +807,80 @@ export default function ClubPlanPage() {
                 )}
               </div>
             </div>
+
+            {/* Registro y Avisos de Débito Automático (Fallidos y Exitosos) con botón Entendido */}
+            {planDetails?.autoDebitAlerts && planDetails.autoDebitAlerts.length > 0 && (
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-white flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                    Historial de Cobros Automáticos:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearAllDebitAlerts}
+                    className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                    title="Limpiar registro de pruebas"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                  {planDetails.autoDebitAlerts.map(alert => {
+                    const isFailed = alert.type === 'FAILED'
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                          isFailed
+                            ? 'bg-rose-950/30 border-rose-500/30 text-rose-200'
+                            : 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isFailed ? (
+                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-bold truncate text-[11px] text-white">
+                              {alert.title}
+                            </p>
+                            {alert.detail && (
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {alert.detail}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {!alert.dismissed ? (
+                          <Button
+                            size="sm"
+                            type="button"
+                            onClick={() => handleDismissAlertFromList(alert.id)}
+                            className={`h-6 text-[10px] px-2.5 rounded-lg cursor-pointer shrink-0 font-bold ${
+                              isFailed
+                                ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                            }`}
+                          >
+                            Entendido
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center gap-1">
+                            <Check className="w-3 h-3 text-slate-500" />
+                            Entendido
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-4 space-y-2">

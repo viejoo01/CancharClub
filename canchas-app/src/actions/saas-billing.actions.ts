@@ -14,7 +14,8 @@ import {
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { MercadoPagoConfig, Preference, PreApproval } from 'mercadopago'
-import type { TenantSubscriptionStatus, TenantInvoice } from '@/types/database'
+import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/types/database'
+import { formatAutoDebitAlertDate } from '@/lib/utils'
 
 import { getPlanByCourtsCount, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
 
@@ -53,6 +54,7 @@ export interface ClubPlanDetails {
   cancellationRequestedAt?: string | null
   cancellationEffectiveDate?: string | null
   reactivationDetails?: ReactivationFeeDetails
+  autoDebitAlerts?: AutoDebitAlert[]
 }
 
 /**
@@ -115,6 +117,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let cancelAtPeriodEnd = false
   let cancellationRequestedAt: string | null = null
   let cancellationEffectiveDate: string | null = null
+  let autoDebitAlerts: AutoDebitAlert[] = []
 
   if (targetTenantId) {
     const { data: tenant } = await serviceClient
@@ -133,6 +136,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
           cancelAtPeriodEnd = true
           cancellationRequestedAt = parsedDesc.cancellation_requested_at || null
           cancellationEffectiveDate = parsedDesc.cancellation_effective_date || null
+        }
+        if (Array.isArray(parsedDesc.auto_debit_alerts)) {
+          autoDebitAlerts = parsedDesc.auto_debit_alerts as AutoDebitAlert[]
         }
       } catch {}
     }
@@ -287,6 +293,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     cancellationRequestedAt,
     cancellationEffectiveDate: cancellationEffectiveDate || pricing.nextDueDate,
     reactivationDetails,
+    autoDebitAlerts,
   }
 }
 
@@ -1545,6 +1552,348 @@ export async function createReactivationPreferenceAction(tenantId: string, overr
       amountToPay,
       reactivation: details.reactivation,
     }
+  }
+}
+
+// ==============================================================================
+// GESTIÓN DE ALERTAS DE DÉBITO AUTOMÁTICO (COBRO EXITOSO Y FALLIDO)
+// Formatos exactos requeridos:
+// - "Intento de pago mensual fallido (DD/MM/AAAA HH:MM)"
+// - "Pago mensual realizado (DD/MM/AAAA HH:MM)"
+// Botón de cierre: "Entendido"
+// ==============================================================================
+
+/**
+ * Registra una alerta de débito automático directamente usando el cliente de base de datos provisto.
+ * Apto para invocación desde Server Actions y Webhooks.
+ */
+export async function recordAutoDebitAlertInternal(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  params: {
+    tenantId: string
+    type: 'FAILED' | 'SUCCESS'
+    timestamp?: string
+    detail?: string
+  }
+): Promise<{ success: boolean; alert?: AutoDebitAlert; error?: string }> {
+  try {
+    const targetTenantId = params.tenantId
+    if (!targetTenantId) {
+      return { success: false, error: 'Falta tenantId' }
+    }
+
+    const dateToFormat = params.timestamp ? new Date(params.timestamp) : new Date()
+    const formattedDate = formatAutoDebitAlertDate(dateToFormat)
+
+    // Formato exacto exigido por el usuario:
+    const title = params.type === 'FAILED'
+      ? `Intento de pago mensual fallido (${formattedDate})`
+      : `Pago mensual realizado (${formattedDate})`
+
+    const newAlert: AutoDebitAlert = {
+      id: `alert_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      type: params.type,
+      title,
+      formattedDate,
+      createdAt: dateToFormat.toISOString(),
+      dismissed: false,
+      dismissedAt: null,
+      detail: params.detail,
+    }
+
+    const { data: tenant } = await client
+      .from('tenants')
+      .select('id, description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let meta: Record<string, unknown> = {}
+    if (tenant?.description) {
+      try {
+        meta = JSON.parse(tenant.description) as Record<string, unknown>
+      } catch {
+        meta = { raw_notes: tenant.description }
+      }
+    }
+
+    const existingAlerts: AutoDebitAlert[] = Array.isArray(meta.auto_debit_alerts)
+      ? (meta.auto_debit_alerts as AutoDebitAlert[])
+      : []
+
+    // Agrega la nueva alerta al principio y conserva las últimas 30
+    const updatedAlerts = [newAlert, ...existingAlerts].slice(0, 30)
+    meta.auto_debit_alerts = updatedAlerts
+
+    await client
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+      })
+      .eq('id', targetTenantId)
+
+    return { success: true, alert: newAlert }
+  } catch (err: unknown) {
+    console.error('Error in recordAutoDebitAlertInternal:', err)
+    return { success: false, error: err instanceof Error ? err.message : 'Error desconocido' }
+  }
+}
+
+/**
+ * Server Action para registrar una alerta de débito automático.
+ */
+export async function recordAutoDebitAlertAction(params: {
+  tenantId?: string
+  type: 'FAILED' | 'SUCCESS'
+  timestamp?: string
+  detail?: string
+}): Promise<{ success: boolean; alert?: AutoDebitAlert; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = params.tenantId
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const res = await recordAutoDebitAlertInternal(serviceClient, {
+      ...params,
+      tenantId: targetTenantId,
+    })
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/plan')
+
+    return res
+  } catch (err: unknown) {
+    console.error('Error in recordAutoDebitAlertAction:', err)
+    return { success: false, error: err instanceof Error ? err.message : 'Error al registrar alerta' }
+  }
+}
+
+/**
+ * Obtiene las alertas de débito automático del club.
+ */
+export async function getAutoDebitAlertsAction(
+  tenantIdParam?: string,
+  includeDismissed = false
+): Promise<AutoDebitAlert[]> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) return []
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    if (!tenant?.description) return []
+
+    try {
+      const meta = JSON.parse(tenant.description)
+      if (Array.isArray(meta.auto_debit_alerts)) {
+        const alerts = meta.auto_debit_alerts as AutoDebitAlert[]
+        if (includeDismissed) return alerts
+        return alerts.filter(a => !a.dismissed)
+      }
+    } catch {}
+
+    return []
+  } catch (err) {
+    console.error('Error in getAutoDebitAlertsAction:', err)
+    return []
+  }
+}
+
+/**
+ * Cierra/descarta una alerta de débito automático al presionar "Entendido".
+ */
+export async function dismissAutoDebitAlertAction(
+  alertId: string,
+  tenantIdParam?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('id, description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    if (tenant?.description) {
+      try {
+        const meta = JSON.parse(tenant.description) as Record<string, unknown>
+        if (Array.isArray(meta.auto_debit_alerts)) {
+          meta.auto_debit_alerts = (meta.auto_debit_alerts as AutoDebitAlert[]).map(alert => {
+            if (alert.id === alertId) {
+              return {
+                ...alert,
+                dismissed: true,
+                dismissedAt: new Date().toISOString(),
+              }
+            }
+            return alert
+          })
+
+          await serviceClient
+            .from('tenants')
+            .update({
+              description: JSON.stringify(meta),
+            })
+            .eq('id', targetTenantId)
+        }
+      } catch (e) {
+        console.error('Error updating description in dismissAutoDebitAlertAction:', e)
+      }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/plan')
+
+    return { success: true }
+  } catch (err: unknown) {
+    console.error('Error in dismissAutoDebitAlertAction:', err)
+    return { success: false, error: err instanceof Error ? err.message : 'Error al cerrar alerta' }
+  }
+}
+
+/**
+ * Limpia/reinicia las alertas de débito automático para pruebas.
+ */
+export async function clearAutoDebitAlertsAction(
+  tenantIdParam?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('id, description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    if (tenant?.description) {
+      try {
+        const meta = JSON.parse(tenant.description) as Record<string, unknown>
+        meta.auto_debit_alerts = []
+        await serviceClient
+          .from('tenants')
+          .update({
+            description: JSON.stringify(meta),
+          })
+          .eq('id', targetTenantId)
+      } catch {}
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/plan')
+
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error' }
   }
 }
 

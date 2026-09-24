@@ -14,6 +14,7 @@ import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { PlanActivationModal } from './plan-activation-modal'
 import { PlanExpirationAlert } from './plan-expiration-alert'
+import { AutoDebitAlertModal } from './auto-debit-alert-modal'
 import { ChangePasswordModal } from './change-password-modal'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -194,6 +195,11 @@ export function DashboardLayoutClient({
           tenantId={tenantId}
           dueDate={dueDate}
           daysRemaining={daysRemaining}
+        />
+
+        {/* Alerta de Débito Automático (Cobro Fallido o Exitoso) con botón Entendido */}
+        <AutoDebitAlertModal
+          tenantId={tenantId}
         />
 
         {/* Modal de cambio de contraseña para dueño y encargado */}

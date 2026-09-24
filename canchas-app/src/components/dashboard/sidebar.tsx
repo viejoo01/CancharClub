@@ -21,7 +21,8 @@ import {
   Users,
   UserCheck,
   Receipt,
-  Monitor
+  Monitor,
+  KeyRound
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -310,8 +311,20 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Footer Logout */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/60">
+      {/* Footer Acciones de Usuario (Cambiar Contraseña y Cerrar Sesión) */}
+      <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-1">
+        <button
+          type="button"
+          onClick={() => {
+            onClose?.()
+            window.dispatchEvent(new CustomEvent('open-change-password-modal'))
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-amber-400 hover:bg-amber-950/20 transition-colors cursor-pointer"
+        >
+          <KeyRound className="w-4 h-4 text-amber-400/80" />
+          <span>Cambiar Contraseña</span>
+        </button>
+
         <form 
           action="/auth/logout" 
           method="post" 

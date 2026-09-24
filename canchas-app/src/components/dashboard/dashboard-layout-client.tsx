@@ -14,6 +14,7 @@ import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { PlanActivationModal } from './plan-activation-modal'
 import { PlanExpirationAlert } from './plan-expiration-alert'
+import { ChangePasswordModal } from './change-password-modal'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
@@ -55,6 +56,7 @@ export function DashboardLayoutClient({
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(!isActive)
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const pathname = usePathname()
 
   // Cerrar menú móvil automáticamente al navegar a otra ruta (patrón oficial React docs)
@@ -69,6 +71,13 @@ export function DashboardLayoutClient({
     const handleOpen = () => setShowActivationModal(true)
     window.addEventListener('open-activation-modal', handleOpen)
     return () => window.removeEventListener('open-activation-modal', handleOpen)
+  }, [])
+
+  // Escuchar evento personalizado para abrir el modal de cambio de contraseña
+  useEffect(() => {
+    const handleOpenPwd = () => setShowChangePasswordModal(true)
+    window.addEventListener('open-change-password-modal', handleOpenPwd)
+    return () => window.removeEventListener('open-change-password-modal', handleOpenPwd)
   }, [])
 
   // Prevenir scroll en el fondo cuando el drawer móvil está abierto
@@ -185,6 +194,14 @@ export function DashboardLayoutClient({
           tenantId={tenantId}
           dueDate={dueDate}
           daysRemaining={daysRemaining}
+        />
+
+        {/* Modal de cambio de contraseña para dueño y encargado */}
+        <ChangePasswordModal
+          isOpen={showChangePasswordModal}
+          onOpenChange={setShowChangePasswordModal}
+          userName={userName}
+          userRole={userRole}
         />
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">

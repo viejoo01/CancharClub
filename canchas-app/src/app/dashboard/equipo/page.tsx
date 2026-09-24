@@ -12,6 +12,7 @@ import {
   Phone,
   X,
   Loader2,
+  KeyRound,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ import {
 } from '@/actions/staff.actions'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { ResetStaffPasswordModal } from '@/components/dashboard/reset-staff-password-modal'
 
 // tenant isolation: useTenantId hook
 
@@ -34,6 +36,7 @@ export default function EquipoPage() {
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedStaffForPassword, setSelectedStaffForPassword] = useState<StaffMember | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Form state
@@ -189,13 +192,24 @@ export default function EquipoPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold"
-        >
-          <UserPlus className="w-4 h-4 mr-2" />
-          Añadir Colaborador
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="outline"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-change-password-modal'))}
+            className="border-slate-700 hover:bg-slate-800 text-slate-200 cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4 mr-2 text-amber-400" />
+            <span>Cambiar Mi Contraseña</span>
+          </Button>
+
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            <span>Añadir Colaborador</span>
+          </Button>
+        </div>
       </div>
 
       {/* Explicación de Roles */}
@@ -301,6 +315,12 @@ export default function EquipoPage() {
                                 <Mail className="w-3 h-3 text-slate-500" />
                                 {member.email}
                               </p>
+                              {member.assigned_password && (
+                                <p className="text-[11px] text-amber-400/90 font-mono flex items-center gap-1 mt-0.5" title="Contraseña asignada">
+                                  <KeyRound className="w-3 h-3 text-amber-400" />
+                                  <span>Clave: {member.assigned_password}</span>
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -340,6 +360,17 @@ export default function EquipoPage() {
 
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedStaffForPassword(member)}
+                              className="border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 h-8 px-2.5 text-xs flex items-center gap-1.5 cursor-pointer"
+                              title="Cambiar o resetear contraseña de este colaborador"
+                            >
+                              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Contraseña</span>
+                            </Button>
+
                             <Button
                               size="sm"
                               variant="outline"
@@ -507,6 +538,17 @@ export default function EquipoPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Cambiar / Resetear Contraseña de Colaborador */}
+      <ResetStaffPasswordModal
+        isOpen={Boolean(selectedStaffForPassword)}
+        onOpenChange={(open) => !open && setSelectedStaffForPassword(null)}
+        member={selectedStaffForPassword}
+        tenantId={tenantId || ''}
+        onSuccess={() => {
+          void loadStaff(false)
+        }}
+      />
     </div>
   )
 }

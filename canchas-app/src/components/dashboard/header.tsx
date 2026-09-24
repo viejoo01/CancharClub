@@ -1,7 +1,8 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -28,6 +29,25 @@ export function Header({
   courtsCount,
   sports,
 }: HeaderProps) {
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Cerrar al hacer click afuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleOpenChangePassword = () => {
+    setUserMenuOpen(false)
+    window.dispatchEvent(new CustomEvent('open-change-password-modal'))
+  }
+
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
       <div className="flex items-center gap-2.5 sm:gap-4">
@@ -47,7 +67,7 @@ export function Header({
           Gestión Operativa
         </h1>
 
-        {/* Mejora 19: Selector de Sede / Sucursal Multisede */}
+        {/* Selector de Sede / Sucursal Multisede */}
         <VenueSwitcher 
           tenantName={tenantName} 
           tenantId={tenantId}
@@ -77,7 +97,7 @@ export function Header({
           <Button
             onClick={onQuickBookClick}
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-md shadow-emerald-950/40 gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-md shadow-emerald-950/40 gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Turno</span>
@@ -88,15 +108,57 @@ export function Header({
 
         <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
 
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-200">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-          <span className="text-xs text-slate-300 font-medium hidden md:inline">
-            {userName}
-          </span>
+        {/* Menú de Usuario / Perfil con Cambiar Contraseña */}
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen((prev) => !prev)}
+            className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors cursor-pointer text-left"
+            aria-expanded={userMenuOpen}
+            aria-haspopup="true"
+          >
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-200">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <span className="text-xs text-slate-300 font-medium hidden md:inline truncate max-w-32">
+              {userName}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden md:block" />
+          </button>
+
+          {/* Dropdown flotante */}
+          {userMenuOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
+                <p className="text-xs font-bold text-white truncate">{userName}</p>
+                <p className="text-[11px] text-slate-400 truncate">{tenantName || 'CancharClub'}</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenChangePassword}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer text-left"
+              >
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <span>Cambiar Contraseña</span>
+              </button>
+
+              <div className="h-px bg-slate-800/80 my-1" />
+
+              <form action="/auth/logout" method="post">
+                <button
+                  type="submit"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer text-left"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Cerrar Sesión</span>
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </header>
   )
 }
+

@@ -344,3 +344,95 @@ export async function logout() {
   cookiesToDelete.forEach(c => cookieStore.delete(c))
   redirect('/')
 }
+
+/**
+ * Permite al usuario actual autenticado (dueño o encargado) cambiar su propia contraseña.
+ */
+export async function changeOwnPassword(payload: {
+  currentPassword?: string
+  newPassword: string
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleanNewPassword = payload.newPassword?.trim()
+    if (!cleanNewPassword || cleanNewPassword.length < 6) {
+      return { success: false, error: 'La nueva contraseña debe tener al menos 6 caracteres.' }
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Si hay usuario en la sesión Supabase
+    let targetUserId = user?.id
+    let userEmail = user?.email
+
+    // Si no vino de getUser(), intentar resolver con cookie / profiles
+    if (!targetUserId) {
+      const cookieStore = await cookies()
+      const tenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+      if (tenantId) {
+        const serviceClient = await createServiceClient()
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('id, full_name')
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (profile?.id) {
+          targetUserId = profile.id
+          const { data: uData } = await serviceClient.auth.admin.getUserById(profile.id)
+          userEmail = uData?.user?.email
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      return { success: false, error: 'No se encontró una sesión activa de usuario. Por favor volvé a ingresar.' }
+    }
+
+    // Si se especificó contraseña actual y tenemos email, validar que sea correcta
+    if (payload.currentPassword?.trim() && userEmail) {
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: payload.currentPassword.trim(),
+      })
+      if (signInErr) {
+        return { success: false, error: 'La contraseña actual ingresada es incorrecta.' }
+      }
+    }
+
+    // Actualizar la contraseña con serviceClient (evita restricciones de sesión)
+    const serviceClient = await createServiceClient()
+    const { data: userData } = await serviceClient.auth.admin.getUserById(targetUserId)
+    const currentMeta = userData?.user?.user_metadata || {}
+
+    const { error: updateErr } = await serviceClient.auth.admin.updateUserById(targetUserId, {
+      password: cleanNewPassword,
+      user_metadata: {
+        ...currentMeta,
+        assigned_password: cleanNewPassword,
+        initial_password: cleanNewPassword,
+      },
+    })
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message }
+    }
+
+    // Refrescar la sesión en Supabase con la nueva contraseña si tenemos el email
+    if (userEmail) {
+      try {
+        await supabase.auth.signInWithPassword({
+          email: userEmail,
+          password: cleanNewPassword,
+        })
+      } catch {}
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('changeOwnPassword exception:', err)
+    return { success: false, error: 'Error inesperado al cambiar la contraseña.' }
+  }
+}
+

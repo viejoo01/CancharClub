@@ -17,6 +17,7 @@ export interface StaffMember {
   role: StaffRole
   created_at: string
   last_sign_in_at?: string | null
+  assigned_password?: string | null
 }
 
 /**
@@ -56,11 +57,13 @@ export async function getClubStaff(
       profiles.map(async (p) => {
         let email = ''
         let lastSignIn: string | null = null
+        let assignedPassword: string | null = null
         try {
           const { data: userData } = await supabase.auth.admin.getUserById(p.id)
           if (userData?.user) {
             email = userData.user.email || ''
             lastSignIn = userData.user.last_sign_in_at || null
+            assignedPassword = userData.user.user_metadata?.assigned_password || userData.user.user_metadata?.initial_password || null
           }
         } catch {
           // Si no se puede resolver el auth user, continúa con email vacío
@@ -74,6 +77,7 @@ export async function getClubStaff(
           role: p.role as StaffRole,
           created_at: p.created_at,
           last_sign_in_at: lastSignIn,
+          assigned_password: assignedPassword,
         }
       })
     )
@@ -199,6 +203,68 @@ export async function updateStaffRole(
 }
 
 /**
+ * Permite al administrador del club actualizar la contraseña de un colaborador (encargado o admin).
+ */
+export async function updateStaffPassword(params: {
+  tenantId: string
+  staffProfileId: string
+  newPassword: string
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleanPwd = params.newPassword?.trim()
+    if (!cleanPwd || cleanPwd.length < 6) {
+      return { success: false, error: 'La nueva contraseña debe tener al menos 6 caracteres.' }
+    }
+
+    if (!params.tenantId || !params.staffProfileId) {
+      return { success: false, error: 'Parámetros incompletos.' }
+    }
+
+    const supabase = await createServiceClient()
+
+    // Validar que el perfil pertenezca a este club (tenant isolation)
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, full_name, tenant_id')
+      .eq('id', params.staffProfileId)
+      .eq('tenant_id', params.tenantId)
+      .maybeSingle()
+
+    if (profileErr || !profile) {
+      return { success: false, error: 'Colaborador no encontrado en este club.' }
+    }
+
+    // Obtener metadata actual del usuario en Auth
+    const { data: userData, error: getUserErr } = await supabase.auth.admin.getUserById(params.staffProfileId)
+    if (getUserErr || !userData?.user) {
+      return { success: false, error: 'No se encontró la cuenta de autenticación del usuario.' }
+    }
+
+    const currentMeta = userData.user.user_metadata || {}
+
+    // Actualizar la contraseña en Supabase Auth y su metadata
+    const { error: updateErr } = await supabase.auth.admin.updateUserById(params.staffProfileId, {
+      password: cleanPwd,
+      user_metadata: {
+        ...currentMeta,
+        assigned_password: cleanPwd,
+        initial_password: cleanPwd,
+      },
+    })
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard/equipo')
+    return { success: true }
+  } catch (err) {
+    console.error('[updateStaffPassword] Exception:', err)
+    return { success: false, error: 'Error inesperado al actualizar la contraseña.' }
+  }
+}
+
+/**
  * Elimina o revoca el acceso a un colaborador en la base de datos real.
  */
 export async function removeStaffMember(
@@ -238,3 +304,4 @@ export async function removeStaffMember(
     return { success: false, error: 'Error al eliminar colaborador' }
   }
 }
+

@@ -43,6 +43,7 @@ export interface ClubPlanDetails {
     brand?: string
     holder?: string
   } | null
+  termsAcceptedAt?: string | null
 }
 
 /**
@@ -101,13 +102,23 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || 'ACTIVE'
   let baseSlots: number | null = null
   let tenantCreatedAt: string | null = null
+  let termsAcceptedAt: string | null = null
 
   if (targetTenantId) {
     const { data: tenant } = await serviceClient
       .from('tenants')
-      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at')
+      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at, description')
       .eq('id', targetTenantId)
       .maybeSingle()
+
+    if (tenant?.description) {
+      try {
+        const parsedDesc = JSON.parse(tenant.description)
+        if (parsedDesc.terms_accepted_at) {
+          termsAcceptedAt = String(parsedDesc.terms_accepted_at)
+        }
+      } catch {}
+    }
 
     if (tenant) {
       tenantName = tenant.name || tenantName
@@ -239,6 +250,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     invoices,
     hasAutoDebit,
     cardInfo,
+    termsAcceptedAt: typeof termsAcceptedAt !== 'undefined' ? termsAcceptedAt : null,
   }
 }
 
@@ -985,5 +997,84 @@ export async function confirmAndActivateSubscriptionWithCard(
   revalidatePath('/superadmin')
 
   return { success: true }
+}
+
+/**
+ * Registra formalmente la aceptación obligatoria de los Términos y Condiciones por parte del dueño del club.
+ */
+export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ success: boolean; error?: string; acceptedAt?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    let targetTenantId = tenantIdParam
+
+    if (!targetTenantId) {
+      const cookieStore = await cookies()
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    }
+
+    if (!targetTenantId) {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await serviceClient
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.tenant_id) targetTenantId = profile.tenant_id
+      }
+    }
+
+    if (!targetTenantId) {
+      const { data: latestT } = await serviceClient
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestT?.id) targetTenantId = latestT.id
+    }
+
+    if (!targetTenantId) {
+      return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const { data: tenant } = await serviceClient
+      .from('tenants')
+      .select('id, description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let meta: Record<string, unknown> = {}
+    if (tenant?.description) {
+      try {
+        meta = JSON.parse(tenant.description) as Record<string, unknown>
+      } catch {
+        meta = { raw_notes: tenant.description }
+      }
+    }
+
+    const acceptedAt = new Date().toISOString()
+    meta.terms_accepted_at = acceptedAt
+    meta.terms_version = '2026-09-24'
+
+    const { error } = await serviceClient
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: acceptedAt,
+      })
+      .eq('id', targetTenantId)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/dashboard/plan')
+    return { success: true, acceptedAt }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al registrar los términos'
+    return { success: false, error: msg }
+  }
 }
 

@@ -14,9 +14,11 @@ import {
   X,
   ShieldCheck,
   Sparkles,
-  Info
+  Info,
+  Scale
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
+import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
@@ -294,6 +296,40 @@ export default function ClubPlanPage() {
           Actualizar Estado
         </Button>
       </div>
+
+      {/* Aviso de Aceptación Obligatoria Pendiente */}
+      {!planDetails?.termsAcceptedAt && (
+        <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <Scale className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-white">
+                  Aceptación de Términos y Condiciones
+                </h4>
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] px-2 py-0.5 font-bold">
+                  Requerido
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Para operar tu club bajo las normas oficiales de CancharClub, debés confirmar la lectura y conformidad de los términos del servicio.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              const el = document.getElementById('terminos-y-condiciones')
+              if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs h-9 px-4 rounded-xl shrink-0 cursor-pointer shadow-md"
+          >
+            Leer y Aceptar Términos
+          </Button>
+        </div>
+      )}
 
       {/* Tarjeta Principal de Cuota Mensual */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -734,6 +770,16 @@ export default function ClubPlanPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Apartado Oficial: Términos y Condiciones del Servicio */}
+      <ClubTermsCard
+        tenantId={tenantId || undefined}
+        initialAcceptedAt={planDetails?.termsAcceptedAt}
+        onAccepted={(ts) => {
+          setPlanDetails((prev) => prev ? { ...prev, termsAcceptedAt: ts } : null)
+        }}
+      />
+
       {/* MODAL OFICIAL: Carga de Datos de Tarjeta Mercado Pago Subscriptions */}
       {showSubscriptionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -921,7 +967,15 @@ export default function ClubPlanPage() {
               </div>
 
               <p className="text-[10px] text-center text-slate-400">
-                Se debitará automáticamente el día 1 de cada mes. Cancelable en cualquier momento desde este panel.
+                La suscripción se renueva cada 30 días. Sujeto a los{' '}
+                <a
+                  href="#terminos-y-condiciones"
+                  onClick={() => setShowSubscriptionModal(false)}
+                  className="text-emerald-400 underline hover:text-emerald-300"
+                >
+                  Términos y Condiciones de CancharClub
+                </a>
+                .
               </p>
             </form>
           </div>

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { 
   CheckCircle2, 
   AlertTriangle, 
-  Printer, 
   ShieldCheck, 
   Scale, 
   Lock,
@@ -12,7 +11,6 @@ import {
   Building2,
   Calendar,
   AlertCircle,
-  HelpCircle,
   Clock,
   UserCheck
 } from 'lucide-react'
@@ -80,9 +78,6 @@ export function ClubTermsCard({
     }
   }
 
-  const handlePrint = () => {
-    window.print()
-  }
 
   return (
     <Card id="terminos-y-condiciones" className="border-slate-800 bg-slate-900/90 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
@@ -138,27 +133,16 @@ export function ClubTermsCard({
             </div>
           </div>
         ) : (
-          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between flex-wrap gap-3 text-xs">
-            <div className="flex items-center gap-2.5 text-emerald-300">
-              <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
-              <div>
-                <span className="font-bold text-white text-xs block">
-                  Conformidad registrada en la base de datos
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  Fecha de registro: {formatAcceptedDate(acceptedAt!)} • Leyes de la República Argentina
-                </span>
-              </div>
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <span className="font-bold text-white text-xs block">
+                Conformidad registrada en la base de datos
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Fecha de registro: {formatAcceptedDate(acceptedAt!)} • Leyes de la República Argentina
+              </span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrint}
-              className="h-8 text-xs border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
-              Imprimir Copia Oficial
-            </Button>
           </div>
         )}
 
@@ -536,20 +520,11 @@ export function ClubTermsCard({
             </Button>
           </div>
         ) : (
-          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between flex-wrap gap-3">
-            <div className="text-xs text-slate-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>
-                Aceptación vigente registrada. Podés consultar estos términos en cualquier momento.
-              </span>
-            </div>
-            <a
-              href="mailto:cancharclub@gmail.com"
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-medium inline-flex items-center gap-1"
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span>Consultas legales o soporte</span>
-            </a>
+          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center gap-2 text-xs text-slate-400">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              Aceptación vigente registrada. Podés consultar estos términos en cualquier momento.
+            </span>
           </div>
         )}
       </CardContent>

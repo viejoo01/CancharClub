@@ -33,7 +33,7 @@ export default async function DashboardLayout({
   let tenantName = cookieTenantName || 'Mi Club Deportivo'
   let tenantSlug = cookieTenantSlug || 'mi-club'
   let userRole = cookieRole || 'TENANT_ADMIN'
-  let userName = cookieName || (cookieRole === 'TENANT_STAFF' ? 'Canchero (Mostrador)' : 'Dueño del Club')
+  let userName = cookieName || (cookieRole === 'TENANT_STAFF' ? 'Encargado (Mostrador)' : 'Dueño del Club')
   let mpConnected = true
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || headerStatus || 'ACTIVE'
   let planId: SaaSPlanId | undefined = cookiePlanId || undefined

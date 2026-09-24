@@ -136,7 +136,7 @@ export default function EquipoPage() {
         setStaff((prev) =>
           prev.map((m) => (m.id === member.id ? { ...m, role: newRole } : m))
         )
-        toast.success(`Rol de ${member.full_name} actualizado a ${newRole === 'TENANT_ADMIN' ? 'Administrador' : 'Canchero'}`)
+        toast.success(`Rol de ${member.full_name} actualizado a ${newRole === 'TENANT_ADMIN' ? 'Administrador' : 'Encargado'}`)
       } else {
         toast.error('No se pudo actualizar el rol')
       }
@@ -185,7 +185,7 @@ export default function EquipoPage() {
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Gestioná los roles y permisos del personal del predio (cancheros, encargados y administradores).
+            Gestioná los roles y permisos del personal del predio (encargados y administradores).
           </p>
         </div>
 
@@ -207,7 +207,7 @@ export default function EquipoPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <p className="font-semibold text-white text-sm">Canchero / Operador de Turno</p>
+                <p className="font-semibold text-white text-sm">Encargado</p>
                 <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/30 text-[10px]">
                   TENANT_STAFF
                 </Badge>
@@ -257,7 +257,7 @@ export default function EquipoPage() {
               <Shield className="w-10 h-10 text-slate-600 mb-2" />
               <p className="text-sm font-medium">No hay colaboradores registrados.</p>
               <p className="text-xs text-slate-500 mt-1">
-                Hacé click en &quot;Añadir Colaborador&quot; para sumar a tus cancheros o encargados.
+                Hacé click en &quot;Añadir Colaborador&quot; para sumar a tus encargados.
               </p>
             </div>
           ) : (
@@ -314,7 +314,7 @@ export default function EquipoPage() {
                           ) : (
                             <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/30">
                               <UserCheck className="w-3.5 h-3.5 mr-1" />
-                              Canchero / Operador
+                              Encargado
                             </Badge>
                           )}
                         </td>
@@ -345,9 +345,9 @@ export default function EquipoPage() {
                               variant="outline"
                               onClick={() => handleRoleToggle(member)}
                               className="border-slate-700 hover:bg-slate-800 text-slate-300 h-8 text-xs"
-                              title="Cambiar entre Administrador y Canchero"
+                              title="Cambiar entre Administrador y Encargado"
                             >
-                              Cambiar a {isAdmin ? 'Canchero' : 'Admin'}
+                              Cambiar a {isAdmin ? 'Encargado' : 'Admin'}
                             </Button>
 
                             {waInvite && (
@@ -422,7 +422,7 @@ export default function EquipoPage() {
                 <input
                   type="email"
                   required
-                  placeholder="canchero@club.com"
+                  placeholder="encargado@club.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -456,7 +456,7 @@ export default function EquipoPage() {
                         : 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800'
                     }`}
                   >
-                    <p className="text-xs font-bold text-sky-400">Canchero</p>
+                    <p className="text-xs font-bold text-sky-400">Encargado</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       Solo Calendario, Caja y Cantina
                     </p>

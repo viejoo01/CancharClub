@@ -121,7 +121,7 @@ export async function loginWithEmail(formData: FormData) {
 
   if (profile?.role === 'TENANT_STAFF') {
     cookieStore.set('demo_user_role', 'TENANT_STAFF', { path: '/', maxAge: 86400 })
-    cookieStore.set('demo_user_name', profile.full_name || 'Canchero (Mostrador)', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_name', profile.full_name || 'Encargado (Mostrador)', { path: '/', maxAge: 86400 })
   } else {
     cookieStore.set('demo_user_role', 'TENANT_ADMIN', { path: '/', maxAge: 86400 })
     cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', { path: '/', maxAge: 86400 })

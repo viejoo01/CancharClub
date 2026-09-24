@@ -490,7 +490,7 @@ export default function SuperadminPage() {
   }
 
   const handleCopyWhatsAppMessage = (user: ClubUser) => {
-    const roleTitle = user.role === 'TENANT_ADMIN' ? 'Dueño del Club (Administrador)' : 'Canchero (Turnos y Cantina)'
+    const roleTitle = user.role === 'TENANT_ADMIN' ? 'Dueño del Club (Administrador)' : 'Encargado (Turnos y Cantina)'
     const rolePermissions = user.role === 'TENANT_ADMIN'
       ? 'Control total del predio: canchas, reglas de precios, reportes de ocupación y facturación SaaS.'
       : 'Control operativo: calendario de turnos en vivo, turnos fijos de abonados, cantina/kiosco y caja diaria.'
@@ -543,7 +543,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         window.open(linkRes.url, '_blank')
       } else {
         toast.info(`Ingresando al panel de ${user.tenantName}`, {
-          description: `Modo directo: ${user.role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'}`
+          description: `Modo directo: ${user.role === 'TENANT_ADMIN' ? 'Dueño' : 'Encargado'}`
         })
         router.push('/dashboard')
         router.refresh()
@@ -561,13 +561,13 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     setClientCookie('canchar_tenant_id', t.id)
     setClientCookie('demo_tenant_id', t.id)
     setClientCookie('demo_user_role', role)
-    setClientCookie('demo_user_name', encodeURIComponent(role === 'TENANT_ADMIN' ? 'Dueño ' + t.name : 'Canchero ' + t.name))
+    setClientCookie('demo_user_name', encodeURIComponent(role === 'TENANT_ADMIN' ? 'Dueño ' + t.name : 'Encargado ' + t.name))
     setClientCookie('demo_tenant_name', encodeURIComponent(t.name))
     setClientCookie('demo_tenant_slug', encodeURIComponent(t.slug))
     setClientCookie('demo_plan_id', t.plan_id)
     setClientCookie('demo_is_active', t.is_active !== false ? 'true' : 'false')
     toast.success(`Ingresando a ${t.name}`, {
-      description: `Modo: ${role === 'TENANT_ADMIN' ? 'Dueño' : 'Canchero'} | Plan: ${SAAS_PLANS[t.plan_id]?.name || t.plan_id} (${t.is_active !== false ? 'Activo' : 'Pendiente'})`
+      description: `Modo: ${role === 'TENANT_ADMIN' ? 'Dueño' : 'Encargado'} | Plan: ${SAAS_PLANS[t.plan_id]?.name || t.plan_id} (${t.is_active !== false ? 'Activo' : 'Pendiente'})`
     })
     router.push('/dashboard')
     router.refresh()
@@ -763,8 +763,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       createdAt: new Date().toISOString().split('T')[0]
     }
 
-    const staffName = wizardStaffName.trim() || `Canchero ${createdTenant.name}`
-    const staffEmail = wizardStaffEmail.trim().toLowerCase() || `canchero@${createdTenant.slug}.com`
+    const staffName = wizardStaffName.trim() || `Encargado ${createdTenant.name}`
+    const staffEmail = wizardStaffEmail.trim().toLowerCase() || `encargado@${createdTenant.slug}.com`
     const createdStaff: ClubUser = {
       id: `u-${Date.now()}-2`,
       name: staffName,
@@ -800,7 +800,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     setWizardStaffPhone('')
     setWizardPlanId('MEDIANO_2')
 
-    toast.success(`¡Club "${createdTenant.name}", Dueño y Canchero creados!`, {
+    toast.success(`¡Club "${createdTenant.name}", Dueño y Encargado creados!`, {
       description: 'Ya podés copiar los accesos para enviar por WhatsApp.'
     })
   }
@@ -832,10 +832,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             Panel Superadministrador SaaS
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Gestión de Clubes, Dueños y Cancheros
+            Gestión de Clubes, Dueños y Encargados
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Administrá predios inquilinos, asigná accesos independientes a dueños y cancheros, y controlá la facturación mensual.
+            Administrá predios inquilinos, asigná accesos independientes a dueños y encargados, y controlá la facturación mensual.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
@@ -878,7 +878,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             </h3>
             <p className="text-xs text-slate-300">
               <span className="text-indigo-400 font-mono font-medium">Cuota Mensual = Turno Más Caro × (0.5 × Canchas + 0.5)</span>
-              {' '}— Los <strong className="text-emerald-400">Dueños</strong> gestionan canchas, precios y reportes. Los <strong className="text-amber-400">Cancheros</strong> controlan turnos, cantina/kiosco y caja diaria.
+              {' '}— Los <strong className="text-emerald-400">Dueños</strong> gestionan canchas, precios y reportes. Los <strong className="text-amber-400">Encargados</strong> controlan turnos, cantina/kiosco y caja diaria.
             </p>
           </div>
         </div>
@@ -942,7 +942,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <span className="text-xs text-slate-400">dueños</span>
               <span className="text-slate-600">/</span>
               <span className="text-2xl font-bold text-amber-400">{staffCount}</span>
-              <span className="text-xs text-slate-400">cancheros</span>
+              <span className="text-xs text-slate-400">encargados</span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
               {activeUserCount} usuarios activos en total
@@ -982,7 +982,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             }`}
           >
             <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Usuarios & Accesos (Dueños y Cancheros)</span>
+            <span className="hidden sm:inline">Usuarios & Accesos (Dueños y Encargados)</span>
             <span className="sm:hidden">Usuarios</span>
             <Badge className="ml-1 bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
               {clubUsers.length}
@@ -1548,7 +1548,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-white">Rol: Canchero / Mostrador</h4>
+                  <h4 className="text-sm font-bold text-white">Rol: Encargado / Mostrador</h4>
                   <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0 border border-amber-500/30">
                     TENANT_STAFF
                   </Badge>
@@ -1593,7 +1593,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   >
                     <option value="ALL">Todos los roles</option>
                     <option value="TENANT_ADMIN">Solo Dueños (Admin)</option>
-                    <option value="TENANT_STAFF">Solo Cancheros (Operativo)</option>
+                    <option value="TENANT_STAFF">Solo Encargados (Operativo)</option>
                   </select>
 
                   <select
@@ -1685,7 +1685,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           ) : (
                             <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0">
                               <Coffee className="w-3 h-3 mr-1" />
-                              Canchero (Operativo)
+                              Encargado (Operativo)
                             </Badge>
                           )}
                         </div>
@@ -1835,7 +1835,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                                     </span>
                                   ) : (
-                                    <span title="Canchero (Turnos y Cantina)">
+                                    <span title="Encargado (Turnos y Cantina)">
                                       <Coffee className="w-3.5 h-3.5 text-amber-400" />
                                     </span>
                                   )}
@@ -1881,7 +1881,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             ) : (
                               <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] px-2 py-0.5">
                                 <Coffee className="w-3 h-3 mr-1" />
-                                Canchero
+                                Encargado
                               </Badge>
                             )}
                           </td>
@@ -2339,7 +2339,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               Crear Usuario para Club
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
-              Generá las credenciales para el Dueño (administración total) o para el Canchero (control de turnos, cantina y caja).
+              Generá las credenciales para el Dueño (administración total) o para el Encargado (control de turnos, cantina y caja).
             </DialogDescription>
           </DialogHeader>
 
@@ -2399,7 +2399,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-bold text-xs flex items-center gap-1.5 text-amber-400">
                       <Coffee className="w-4 h-4" />
-                      Canchero / Mostrador
+                      Encargado / Mostrador
                     </span>
                     {newUserRole === 'TENANT_STAFF' && (
                       <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
@@ -2566,7 +2566,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <option value="TENANT_ADMIN">Dueño del Club (Admin)</option>
-                    <option value="TENANT_STAFF">Canchero (Turnos y Cantina)</option>
+                    <option value="TENANT_STAFF">Encargado (Turnos y Cantina)</option>
                   </select>
                 </div>
               </div>
@@ -2640,10 +2640,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
           <DialogHeader>
             <DialogTitle className="text-xl font-extrabold text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-yellow-400" />
-              Alta Rápida de Club Completo (Club + Dueño + Canchero)
+              Alta Rápida de Club Completo (Club + Dueño + Encargado)
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
-              En un solo paso, creá el club nuevo y asignale inmediatamente el usuario al Dueño y al Canchero con sus claves para WhatsApp.
+              En un solo paso, creá el club nuevo y asignale inmediatamente el usuario al Dueño y al Encargado con sus claves para WhatsApp.
             </DialogDescription>
           </DialogHeader>
 
@@ -2800,7 +2800,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <div className="flex items-center justify-between text-amber-400 font-bold text-xs uppercase tracking-wider">
                 <span className="flex items-center gap-2">
                   <Coffee className="w-4 h-4" />
-                  3. Credenciales del Canchero (Mostrador)
+                  3. Credenciales del Encargado (Mostrador)
                 </span>
                 <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">TENANT_STAFF</Badge>
               </div>
@@ -2809,7 +2809,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Label className="text-xs text-slate-300">Nombre Completo</Label>
                   <Input 
                     required
-                    placeholder="Ej. Lucas Canchero"
+                    placeholder="Ej. Lucas Encargado"
                     value={wizardStaffName}
                     onChange={(e) => setWizardStaffName(e.target.value)}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
@@ -2872,7 +2872,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-extrabold rounded-xl text-xs flex-1 sm:flex-initial"
               >
                 <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                Crear Club + Dueño + Canchero en 1 Click
+                Crear Club + Dueño + Encargado en 1 Click
               </Button>
             </DialogFooter>
           </form>
@@ -2921,7 +2921,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
                     <Coffee className="w-4 h-4" />
-                    Canchero: {wizardResult.staff.name}
+                    Encargado: {wizardResult.staff.name}
                   </div>
                   <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">Turnos y Cantina</Badge>
                 </div>
@@ -2934,7 +2934,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   className="w-full h-8 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg"
                 >
                   <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                  Copiar Mensaje de WhatsApp (Canchero)
+                  Copiar Mensaje de WhatsApp (Encargado)
                 </Button>
               </div>
 

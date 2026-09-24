@@ -203,7 +203,7 @@ export function Sidebar({
             {isStaff ? (
               <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Canchero (Turnos y Caja)
+                Encargado (Turnos y Caja)
               </span>
             ) : isSuperadmin ? (
               <span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">
@@ -240,7 +240,7 @@ export function Sidebar({
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
         <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          {isStaff ? 'Operaciones de Canchero' : 'Operaciones'}
+          {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
         </div>
 
         {filteredNavItems.map((item) => {

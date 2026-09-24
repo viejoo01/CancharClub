@@ -253,6 +253,8 @@ export async function registerClub(formData: FormData) {
 
   // 6. Configurar cookies de sesión
   const cookieStore = await cookies()
+  cookieStore.set('canchar_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_user_role', 'TENANT_ADMIN', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })

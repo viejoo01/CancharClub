@@ -34,6 +34,13 @@ import { useTenantId } from '@/hooks/use-tenant-id'
 export default function ClubPlanPage() {
   const tenantId = useTenantId()
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
+  const [hasAutoDebit, setHasAutoDebit] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true'
+    }
+    return false
+  })
 
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -42,6 +49,9 @@ export default function ClubPlanPage() {
     try {
       const details = await getClubPlanDetails(tenantId || undefined)
       setPlanDetails(details)
+      if (details?.hasAutoDebit) {
+        setHasAutoDebit(true)
+      }
       if (showToast) {
         toast.success('Estado e historial contable actualizados desde la base de datos')
       }
@@ -63,6 +73,9 @@ export default function ClubPlanPage() {
         const details = await getClubPlanDetails(tenantId || undefined)
         if (isMounted) {
           setPlanDetails(details)
+          if (details?.hasAutoDebit) {
+            setHasAutoDebit(true)
+          }
         }
       } catch (err) {
         console.error('Error fetching club plan details:', err)
@@ -86,15 +99,8 @@ export default function ClubPlanPage() {
     }
   }, [tenantId])
 
-  const [hasAutoDebit, setHasAutoDebit] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      return params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true'
-    }
-    return false
-  })
-
-  const isPaid = (planDetails?.isPaid ?? false) || hasAutoDebit
+  const isAutoDebitActive = hasAutoDebit || Boolean(planDetails?.hasAutoDebit)
+  const isPaid = (planDetails?.isPaid ?? false) || isAutoDebitActive
 
   const clubName = planDetails?.tenantName || 'Cargando club...'
   const courtsCount = planDetails?.courtsCount || 2
@@ -413,9 +419,12 @@ export default function ClubPlanPage() {
             <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
               <div className="flex items-center justify-between text-slate-300">
                 <span className="text-slate-400">Estado de medio de pago:</span>
-                {hasAutoDebit ? (
+                {isAutoDebitActive ? (
                   <span className="font-bold text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Tarjeta Vinculada
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 
+                    {planDetails?.cardInfo?.last4 
+                      ? `${planDetails.cardInfo.brand || 'Tarjeta'} •••• ${planDetails.cardInfo.last4}` 
+                      : 'Tarjeta Vinculada'}
                   </span>
                 ) : (
                   <span className="font-bold text-amber-400 flex items-center gap-1">
@@ -435,7 +444,7 @@ export default function ClubPlanPage() {
           </div>
 
           <div className="pt-4 space-y-2">
-            {!hasAutoDebit ? (
+            {!isAutoDebitActive ? (
               <Button
                 onClick={handleSetupAutoDebit}
                 disabled={subscribing}
@@ -506,7 +515,7 @@ export default function ClubPlanPage() {
           </div>
 
           <div className="shrink-0 w-full md:w-auto">
-            {hasAutoDebit ? (
+            {isAutoDebitActive ? (
               <div className="flex flex-col gap-1.5 items-end">
                 <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />

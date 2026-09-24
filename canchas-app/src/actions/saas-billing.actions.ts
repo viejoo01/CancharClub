@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Facturación y Suscripciones SaaS
 // ==============================================================================
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { calculateClubSaaSFee, type ClubSaaSPricing } from '@/lib/saas-pricing'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
@@ -37,6 +37,12 @@ export interface ClubPlanDetails {
   subscriptionStatus: TenantSubscriptionStatus
   nextDueDate: string
   invoices: TenantInvoice[]
+  hasAutoDebit: boolean
+  cardInfo?: {
+    last4?: string
+    brand?: string
+    holder?: string
+  } | null
 }
 
 /**
@@ -44,13 +50,15 @@ export interface ClubPlanDetails {
  * Garantiza que siempre muestre el nombre del club registrado y el plan asignado por el Superadmin.
  */
 export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPlanDetails> {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
+  const cookieStore = await cookies()
   let targetTenantId = tenantIdParam
 
   if (!targetTenantId) {
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: profile } = await supabase
+      const { data: profile } = await serviceClient
         .from('profiles')
         .select('tenant_id')
         .eq('id', user.id)
@@ -59,11 +67,24 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  const cookieStore = await cookies()
   const cookieTenantName = cookieStore.get('demo_tenant_name')?.value
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
   const cookieStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
   const cookiePlanId = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
+  const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+
+  if (!targetTenantId && cookieTenantId && !cookieTenantId.startsWith('demo-')) {
+    targetTenantId = cookieTenantId
+  }
+
+  if (!targetTenantId && cookieTenantSlug && cookieTenantSlug !== 'mi-club') {
+    const { data: t } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .eq('slug', cookieTenantSlug)
+      .maybeSingle()
+    if (t?.id) targetTenantId = t.id
+  }
 
   let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
   let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'
@@ -72,7 +93,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let tenantCreatedAt: string | null = null
 
   if (targetTenantId) {
-    const { data: tenant } = await supabase
+    const { data: tenant } = await serviceClient
       .from('tenants')
       .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at')
       .eq('id', targetTenantId)
@@ -96,7 +117,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   } else if (cookiePlanId) {
     courtsCount = cookiePlanId === 'CHICO_1' ? 1 : cookiePlanId === 'MEDIANO_2' ? 2 : cookiePlanId === 'CONSOLIDADO_3_4' ? 3 : 5
   } else if (targetTenantId) {
-    const { data: courts } = await supabase
+    const { data: courts } = await serviceClient
       .from('courts')
       .select('id')
       .eq('tenant_id', targetTenantId)
@@ -109,7 +130,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   // 2. Obtener el valor de turno más alto para la tarifa proporcional
   let highestPriceArs = 30000
   if (targetTenantId) {
-    const { data: priceRules } = await supabase
+    const { data: priceRules } = await serviceClient
       .from('price_rules')
       .select('price_cents')
       .eq('tenant_id', targetTenantId)
@@ -129,7 +150,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   // 3. Obtener facturas reales emitidas desde la base de datos
   let invoices: TenantInvoice[] = []
   if (targetTenantId) {
-    const { data: dbInvoices } = await supabase
+    const { data: dbInvoices } = await serviceClient
       .from('tenant_invoices')
       .select('*')
       .eq('tenant_id', targetTenantId)
@@ -139,6 +160,46 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
 
     if (dbInvoices) {
       invoices = dbInvoices as TenantInvoice[]
+    }
+  }
+
+  // 4. Verificar si tiene débito automático activo o tarjeta guardada
+  let hasAutoDebit = false
+  let cardInfo: { last4?: string; brand?: string; holder?: string } | null = null
+
+  if (targetTenantId) {
+    const { data: sub } = await serviceClient
+      .from('saas_subscriptions')
+      .select('*')
+      .eq('tenant_id', targetTenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (sub && (sub.status === 'active' || sub.status === 'trialing')) {
+      hasAutoDebit = true
+      if (sub.payment_notes && sub.payment_notes.includes('Tarjeta')) {
+        const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+        const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+        cardInfo = {
+          brand: brandMatch ? brandMatch[1] : 'Tarjeta',
+          last4: last4Match ? last4Match[1] : undefined,
+        }
+      }
+    }
+  }
+
+  const cookieHasCard = cookieStore.get('demo_has_card')?.value === 'true'
+  const cookieCardLast4 = cookieStore.get('demo_card_last4')?.value
+  const cookieCardBrand = cookieStore.get('demo_card_brand')?.value
+
+  if (cookieHasCard || subscriptionStatus === 'ACTIVE') {
+    hasAutoDebit = true
+    if (!cardInfo && cookieCardLast4) {
+      cardInfo = {
+        last4: cookieCardLast4,
+        brand: cookieCardBrand || 'Tarjeta',
+      }
     }
   }
 
@@ -154,6 +215,8 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     subscriptionStatus,
     nextDueDate: pricing.nextDueDate,
     invoices,
+    hasAutoDebit,
+    cardInfo,
   }
 }
 
@@ -161,17 +224,17 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
  * Obtiene el resumen de facturación SaaS de un club específico.
  */
 export async function getClubBillingSummary(tenantId: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
 
   // 0. Obtener tenant para verificar plan fijado por Superadmin
-  const { data: tenant } = await supabase
+  const { data: tenant } = await serviceClient
     .from('tenants')
     .select('id, name, slug, base_slots_plan, subscription_status, created_at')
     .eq('id', tenantId)
     .maybeSingle()
 
   // 1. Obtener canchas activas
-  const { data: courts } = await supabase
+  const { data: courts } = await serviceClient
     .from('courts')
     .select('id, name, is_active')
     .eq('tenant_id', tenantId)
@@ -186,7 +249,7 @@ export async function getClubBillingSummary(tenantId: string) {
   }
 
   // 2. Obtener la regla de precio con el valor más alto
-  const { data: priceRules } = await supabase
+  const { data: priceRules } = await serviceClient
     .from('price_rules')
     .select('price_cents')
     .eq('tenant_id', tenantId)
@@ -204,7 +267,7 @@ export async function getClubBillingSummary(tenantId: string) {
   const now = new Date()
   const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  const { data: subscription } = await supabase
+  const { data: subscription } = await serviceClient
     .from('saas_subscriptions')
     .select('*')
     .eq('tenant_id', tenantId)
@@ -755,18 +818,50 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
  * y activa inmediatamente el club para que pueda comenzar a operar sus 15 días gratis.
  */
 export async function confirmAndActivateSubscriptionWithCard(
-  tenantId: string, 
+  tenantIdParam?: string, 
   cardData?: { 
     cardHolder?: string
     cardLast4?: string
     cardBrand?: string 
   }
 ) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
+  const cookieStore = await cookies()
 
-  // 1. Activar el club en la base de datos
+  // 1. Resolver el tenantId real
+  let tenantId = tenantIdParam
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001' || tenantId.startsWith('demo-')) {
+    const cId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    if (cId && !cId.startsWith('demo-')) {
+      tenantId = cId
+    } else {
+      const slug = cookieStore.get('demo_tenant_slug')?.value
+      if (slug && slug !== 'mi-club') {
+        const { data: t } = await serviceClient.from('tenants').select('id').eq('slug', slug).maybeSingle()
+        if (t?.id) tenantId = t.id
+      }
+    }
+  }
+
+  // Si aún no tenemos tenantId, buscar por el usuario autenticado
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001') {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await serviceClient
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profile?.tenant_id) {
+        tenantId = profile.tenant_id
+      }
+    }
+  }
+
+  // 2. Activar el club en la base de datos con serviceClient
   if (tenantId && !tenantId.startsWith('demo-')) {
-    await supabase
+    const { error: tenantErr } = await serviceClient
       .from('tenants')
       .update({
         is_active: true,
@@ -775,32 +870,63 @@ export async function confirmAndActivateSubscriptionWithCard(
       })
       .eq('id', tenantId)
 
-    // Registrar o actualizar registro en saas_subscriptions
-    const summary = await getClubBillingSummary(tenantId)
-    const now = new Date()
-    const periodStart = now.toISOString().split('T')[0]
-    const periodEnd = summary.nextDueDate
+    if (tenantErr) {
+      console.error('Error updating tenant in confirmAndActivateSubscriptionWithCard:', tenantErr)
+    }
 
-    await supabase
-      .from('saas_subscriptions')
-      .upsert({
-        tenant_id: tenantId,
-        plan: 'STANDARD',
-        status: 'active',
-        billing_period_start: periodStart,
-        billing_period_end: periodEnd,
-        reference_slot_price_cents: summary.pricing.highestSlotPriceArs * 100,
-        plan_multiplier: summary.pricing.multiplier,
-        minimum_fee_cents: 0,
-        paid_at: null, // Prueba gratuita activa ($0 cobrado hoy)
-        payment_notes: `Tarjeta ${cardData?.cardBrand || 'Crédito/Débito'} terminada en ${cardData?.cardLast4 || 'XXXX'} vinculada. 15 días de prueba bonificados.`,
-      }, { onConflict: 'tenant_id,billing_period_start' })
+    // Registrar o actualizar registro en saas_subscriptions
+    try {
+      const summary = await getClubBillingSummary(tenantId)
+      const now = new Date()
+      const periodStart = now.toISOString().split('T')[0]
+      const periodEnd = summary.nextDueDate || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]
+      const refPriceCents = Math.round((summary.pricing?.highestSlotPriceArs || 30000) * 100)
+      const multiplier = summary.pricing?.multiplier || 1.5
+
+      const notes = cardData
+        ? `Tarjeta ${cardData.cardBrand || 'Crédito/Débito'} terminada en ${cardData.cardLast4 || 'XXXX'} vinculada. Titular: ${cardData.cardHolder || 'Titular'}. 15 días de prueba bonificados ($0 hoy).`
+        : 'Tarjeta de Débito/Crédito vinculada en el alta del club. 15 días de prueba bonificados ($0 hoy).'
+
+      const { error: subErr } = await serviceClient
+        .from('saas_subscriptions')
+        .upsert({
+          tenant_id: tenantId,
+          plan: 'STANDARD',
+          status: 'active',
+          billing_period_start: periodStart,
+          billing_period_end: periodEnd,
+          reference_slot_price_cents: refPriceCents,
+          plan_multiplier: multiplier,
+          minimum_fee_cents: 0,
+          paid_at: null, // Prueba gratuita activa ($0 cobrado hoy)
+          payment_notes: notes,
+        }, { onConflict: 'tenant_id,billing_period_start' })
+
+      if (subErr) {
+        console.error('Error upserting saas_subscriptions in confirmAndActivateSubscriptionWithCard:', subErr)
+      }
+    } catch (e) {
+      console.error('Notice on saas_subscriptions upsert:', e)
+    }
   }
 
-  // 2. Actualizar cookies de sesión para reflejar estado activo inmediatamente
-  const cookieStore = await cookies()
+  // 3. Actualizar cookies de sesión para reflejar estado activo inmediatamente
+  if (tenantId) {
+    cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  }
   cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
   cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  if (cardData?.cardLast4) {
+    cookieStore.set('demo_card_last4', cardData.cardLast4, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  }
+  if (cardData?.cardBrand) {
+    cookieStore.set('demo_card_brand', cardData.cardBrand, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  }
+  if (cardData?.cardHolder) {
+    cookieStore.set('demo_card_holder', encodeURIComponent(cardData.cardHolder), { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  }
   cookieStore.delete('new_club_pending_activation')
 
   revalidatePath('/dashboard')

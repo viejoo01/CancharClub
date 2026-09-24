@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2 } from 'lucide-react'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,8 +16,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
-import { createCourt, updateCourt, deleteCourt, getClubSchedule } from '@/actions/club.actions'
+import { createCourt, updateCourt, deleteCourt, getClubSchedule, getClubHighlightInfo, type ClubHighlightInfo } from '@/actions/club.actions'
 import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
+import { ClubHighlightModal } from '@/components/dashboard/club-highlight-modal'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
@@ -62,6 +63,12 @@ export default function CanchasPage() {
   const [clubSlug, setClubSlug] = useState('club')
   const [schedule, setSchedule] = useState<ClubScheduleConfig>(DEFAULT_CLUB_SCHEDULE)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [highlightInfo, setHighlightInfo] = useState<ClubHighlightInfo>({
+    highlightText: '',
+    highlightBadge: '🔥 Promoción Especial',
+    isHighlightActive: false,
+  })
+  const [isHighlightModalOpen, setIsHighlightModalOpen] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
   const [name, setName] = useState('')
@@ -109,6 +116,11 @@ export default function CanchasPage() {
     try {
       const sched = await getClubSchedule(tenantId)
       if (sched) setSchedule(sched)
+    } catch {}
+
+    try {
+      const hInfo = await getClubHighlightInfo(tenantId)
+      if (hInfo) setHighlightInfo(hInfo)
     } catch {}
 
     if (isInitial) setCourtsLoading(false)
@@ -295,7 +307,18 @@ export default function CanchasPage() {
             Configurá las canchas disponibles, deportes, duración flexible de turnos y códigos QR de cantina.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => setIsHighlightModalOpen(true)}
+            className="border-amber-500/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
+            title="Configurar información destacada y promociones para los jugadores"
+          >
+            <Megaphone className="w-4 h-4 text-amber-400" />
+            <span className="hidden md:inline">Anuncio Jugadores:</span>
+            <span>{highlightInfo.isHighlightActive && highlightInfo.highlightText ? 'Activo' : 'Configurar'}</span>
+          </Button>
+
           <Button
             variant="outline"
             onClick={() => setIsScheduleModalOpen(true)}
@@ -342,6 +365,48 @@ export default function CanchasPage() {
         >
           Editar Horario
         </Button>
+      </div>
+
+      {/* Banner de Información Destacada para Jugadores */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-amber-500/30">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+            <Megaphone className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-white">Anuncio Destacado para Jugadores:</span>
+              {highlightInfo.isHighlightActive && highlightInfo.highlightText ? (
+                <>
+                  <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-2 py-0.5">
+                    {highlightInfo.highlightBadge || '🔥 Promoción Especial'}
+                  </Badge>
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Visible en reservas
+                  </span>
+                </>
+              ) : (
+                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
+                  Desactivado / Sin anuncio
+                </Badge>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
+              {highlightInfo.highlightText || 'Llamá la atención de los jugadores con ofertas, torneos, novedades o beneficios en tu página pública.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsHighlightModalOpen(true)}
+            className="text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
+          >
+            {highlightInfo.highlightText ? 'Editar Anuncio' : 'Crear Anuncio'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -571,6 +636,20 @@ export default function CanchasPage() {
           initialSchedule={schedule}
           onSuccess={(newSchedule) => {
             setSchedule(newSchedule)
+          }}
+        />
+      )}
+
+      {/* Modal de Información Destacada para Jugadores */}
+      {isHighlightModalOpen && (
+        <ClubHighlightModal
+          isOpen={isHighlightModalOpen}
+          onClose={() => setIsHighlightModalOpen(false)}
+          tenantId={tenantId || ''}
+          clubSlug={clubSlug}
+          initialInfo={highlightInfo}
+          onSuccess={(newInfo) => {
+            setHighlightInfo(newInfo)
           }}
         />
       )}

@@ -346,6 +346,32 @@ export default function ClubPublicPage({
               <Clock className="w-3 h-3 text-slate-400" /> {club.openHours}
             </span>
           </div>
+
+          {/* Banner de Información Destacada / Promoción del Club para los Jugadores */}
+          {club.highlightText && (
+            <div className="mt-4 relative overflow-hidden rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/95 to-emerald-950/40 p-3.5 shadow-lg shadow-amber-950/20">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0 mt-0.5">
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5">
+                      {club.highlightBadge || '🔥 Promoción Especial'}
+                    </Badge>
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Anuncio del Club
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed font-medium whitespace-pre-line">
+                    {club.highlightText}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ────────────────────────────────────────────────────────── */}

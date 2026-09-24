@@ -1025,6 +1025,131 @@ export async function updateClubSchedule(
   }
 }
 
+// ─── ANUNCIO / INFORMACIÓN DESTACADA DEL CLUB PARA JUGADORES ──────────────────
+
+export interface ClubHighlightInfo {
+  highlightText: string
+  highlightBadge: string
+  isHighlightActive: boolean
+}
+
+export async function getClubHighlightInfo(
+  tenantId?: string | null
+): Promise<ClubHighlightInfo> {
+  const defaultInfo: ClubHighlightInfo = {
+    highlightText: '',
+    highlightBadge: '🔥 Promoción Especial',
+    isHighlightActive: false,
+  }
+
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return defaultInfo
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (error || !tenant || !tenant.description) {
+      return defaultInfo
+    }
+
+    try {
+      const parsed = JSON.parse(tenant.description)
+      return {
+        highlightText: typeof parsed.highlight_text === 'string' ? parsed.highlight_text : '',
+        highlightBadge: typeof parsed.highlight_badge === 'string' ? parsed.highlight_badge : '🔥 Promoción Especial',
+        isHighlightActive: Boolean(parsed.highlight_active && parsed.highlight_text),
+      }
+    } catch {
+      return defaultInfo
+    }
+  } catch (err) {
+    console.error('[getClubHighlightInfo] Exception:', err)
+    return defaultInfo
+  }
+}
+
+export async function updateClubHighlightInfo(
+  tenantId: string | null | undefined,
+  payload: {
+    highlightText: string
+    highlightBadge?: string
+    isHighlightActive?: boolean
+  }
+): Promise<{ success: boolean; data?: ClubHighlightInfo; error?: string }> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const supabase = await createServiceClient()
+
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('description, slug')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    const trimmedText = (payload.highlightText || '').trim()
+    const trimmedBadge = (payload.highlightBadge || '🔥 Promoción Especial').trim()
+    const isActive = payload.isHighlightActive !== false && Boolean(trimmedText)
+
+    meta.highlight_text = trimmedText
+    meta.highlight_badge = trimmedBadge
+    meta.highlight_active = isActive
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', effectiveTenantId)
+
+    if (updateErr) {
+      console.error('[updateClubHighlightInfo] Error updating tenants:', updateErr.message)
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+    if (tenant.slug) {
+      revalidatePath(`/club/${tenant.slug}`)
+    }
+
+    return {
+      success: true,
+      data: {
+        highlightText: trimmedText,
+        highlightBadge: trimmedBadge,
+        isHighlightActive: isActive,
+      },
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al guardar información destacada'
+    console.error('[updateClubHighlightInfo] Exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
 
 export async function getClubPublicData(slug: string): Promise<ClubData> {
@@ -1129,6 +1254,10 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     const hasMp = Boolean(tenant.mp_access_token)
 
     let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
+    let highlightText: string | undefined = undefined
+    let highlightBadge: string | undefined = undefined
+    let isHighlightActive: boolean | undefined = undefined
+
     if (tenant.description) {
       try {
         const parsed = JSON.parse(tenant.description)
@@ -1137,6 +1266,11 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
             closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
           }
+        }
+        if (parsed.highlight_text && parsed.highlight_active !== false) {
+          highlightText = parsed.highlight_text
+          highlightBadge = parsed.highlight_badge || '🔥 Promoción Especial'
+          isHighlightActive = true
         }
       } catch {}
     }
@@ -1175,6 +1309,9 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       mpConnected: hasMp,
       subscriptionStatus: tenant.subscription_status || undefined,
       isActive: tenant.is_active !== false,
+      highlightText,
+      highlightBadge,
+      isHighlightActive,
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)
@@ -1360,6 +1497,10 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         : (courtsMapped[0]?.pricePerHour || 20000)
 
       let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
+      let highlightText: string | undefined = undefined
+      let highlightBadge: string | undefined = undefined
+      let isHighlightActive: boolean | undefined = undefined
+
       if (t.description) {
         try {
           const parsed = JSON.parse(t.description)
@@ -1368,6 +1509,11 @@ export async function getPublicClubs(): Promise<ClubData[]> {
               opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
               closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
             }
+          }
+          if (parsed.highlight_text && parsed.highlight_active !== false) {
+            highlightText = parsed.highlight_text
+            highlightBadge = parsed.highlight_badge || '🔥 Promoción Especial'
+            isHighlightActive = true
           }
         } catch {}
       }
@@ -1404,6 +1550,9 @@ export async function getPublicClubs(): Promise<ClubData[]> {
           : undefined,
         paymentMethods: t.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
         mpConnected: Boolean(t.mp_access_token),
+        highlightText,
+        highlightBadge,
+        isHighlightActive,
       })
     }
 

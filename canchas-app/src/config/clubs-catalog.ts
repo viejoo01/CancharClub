@@ -81,6 +81,9 @@ export interface ClubData {
   schedule?: ClubScheduleConfig
   subscriptionStatus?: string
   isActive?: boolean
+  highlightText?: string
+  highlightBadge?: string
+  isHighlightActive?: boolean
 }
 
 export const CLUBS_DATABASE: ClubData[] = []

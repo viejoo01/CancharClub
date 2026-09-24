@@ -427,7 +427,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
     }
 
     // Obtener emails y contraseñas guardadas en metadata desde auth.users (requiere service role)
-    const { data: authList } = await supabase.auth.admin.listUsers()
+    const { data: authList } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
     const emailMap: Record<string, string> = {}
     const phoneMap: Record<string, string> = {}
     const passwordMap: Record<string, string> = {}
@@ -502,6 +502,7 @@ export async function updateUserPasswordBySuperadmin(
     const currentMeta = userData.user.user_metadata || {}
     const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
       password: newPassword,
+      email_confirm: true,
       user_metadata: {
         ...currentMeta,
         assigned_password: newPassword,
@@ -547,6 +548,31 @@ export async function createUserBySuperadmin(payload: {
     })
 
     if (authError || !authData?.user) {
+      if (authError?.message?.toLowerCase().includes('already') || authError?.status === 422) {
+        const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
+        const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === payload.email.trim().toLowerCase())
+        if (existingUser) {
+          await supabase.auth.admin.updateUserById(existingUser.id, {
+            password: payload.password,
+            email_confirm: true,
+            user_metadata: {
+              full_name: payload.name,
+              phone: payload.phone,
+              initial_password: payload.password,
+              assigned_password: payload.password,
+            },
+          })
+          await supabase.from('profiles').upsert({
+            id: existingUser.id,
+            tenant_id: payload.tenantId,
+            full_name: payload.name,
+            role: payload.role,
+            phone: payload.phone,
+          })
+          revalidatePath('/superadmin')
+          return { success: true, userId: existingUser.id }
+        }
+      }
       return { success: false, error: authError?.message || 'Error al crear usuario en autenticación' }
     }
 

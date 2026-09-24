@@ -6,8 +6,10 @@ import { cookies } from 'next/headers'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
 export async function loginWithEmail(formData: FormData) {
-  const email = (formData.get('email') as string)?.trim()
-  const password = formData.get('password') as string
+  const rawEmail = (formData.get('email') as string)?.trim()
+  const email = rawEmail?.toLowerCase()
+  const rawPassword = formData.get('password') as string
+  const password = rawPassword?.trim()
 
   if (!email || !password) {
     return { success: false, error: 'Completá email y contraseña' }
@@ -23,8 +25,8 @@ export async function loginWithEmail(formData: FormData) {
   if (error) {
     try {
       const serviceClient = await createServiceClient()
-      const { data: usersData } = await serviceClient.auth.admin.listUsers()
-      const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
+      const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
+      const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email)
 
       if (existingUser) {
         let shouldUpdate = false
@@ -37,8 +39,8 @@ export async function loginWithEmail(formData: FormData) {
 
         // Si la clave ingresada coincide con la asignada en metadatos, reparar hash desincronizado
         const metaPwd = (existingUser.user_metadata?.assigned_password || existingUser.user_metadata?.initial_password) as string | undefined
-        if (metaPwd && metaPwd.trim() === password.trim()) {
-          updatePayload.password = password.trim()
+        if (metaPwd && (metaPwd.trim() === password || metaPwd === rawPassword)) {
+          updatePayload.password = password
           updatePayload.email_confirm = true
           shouldUpdate = true
         }
@@ -199,7 +201,7 @@ export async function registerClub(formData: FormData) {
 
   if (userError) {
     if (userError.message.toLowerCase().includes('already') || userError.status === 422) {
-      const { data: existingUsers } = await serviceClient.auth.admin.listUsers()
+      const { data: existingUsers } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
       const existing = existingUsers?.users?.find(u => u.email?.toLowerCase() === email)
       if (existing) {
         userId = existing.id
@@ -433,6 +435,7 @@ export async function changeOwnPassword(payload: {
 
     const { error: updateErr } = await serviceClient.auth.admin.updateUserById(targetUserId, {
       password: cleanNewPassword,
+      email_confirm: true,
       user_metadata: {
         ...currentMeta,
         assigned_password: cleanNewPassword,

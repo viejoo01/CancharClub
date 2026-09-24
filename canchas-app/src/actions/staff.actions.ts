@@ -110,7 +110,7 @@ export async function inviteStaffMember(params: {
     const cleanPhone = params.phone?.trim() || null
 
     // 1. Buscar si ya existe una cuenta de usuario con este correo
-    const { data: usersData } = await supabase.auth.admin.listUsers()
+    const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
     const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === cleanEmail)
     let userId = existingUser?.id
 
@@ -125,6 +125,7 @@ export async function inviteStaffMember(params: {
           full_name: cleanName,
           phone: cleanPhone,
           assigned_password: tempPassword,
+          initial_password: tempPassword,
         },
       })
 
@@ -133,6 +134,17 @@ export async function inviteStaffMember(params: {
         return { success: false, error: createErr?.message || 'Error al generar la cuenta del colaborador' }
       }
       userId = newUser.user.id
+    } else {
+      // Si ya existía, confirmar su email para evitar bloqueos
+      await supabase.auth.admin.updateUserById(existingUser.id, {
+        email_confirm: true,
+        user_metadata: {
+          ...(existingUser.user_metadata || {}),
+          full_name: cleanName,
+          phone: cleanPhone || existingUser.user_metadata?.phone,
+        }
+      })
+      userId = existingUser.id
     }
 
     if (!userId) {
@@ -242,9 +254,10 @@ export async function updateStaffPassword(params: {
 
     const currentMeta = userData.user.user_metadata || {}
 
-    // Actualizar la contraseña en Supabase Auth y su metadata
+    // Actualizar la contraseña en Supabase Auth y su metadata (asegurando confirmación de email)
     const { error: updateErr } = await supabase.auth.admin.updateUserById(params.staffProfileId, {
       password: cleanPwd,
+      email_confirm: true,
       user_metadata: {
         ...currentMeta,
         assigned_password: cleanPwd,

@@ -86,6 +86,16 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     if (t?.id) targetTenantId = t.id
   }
 
+  if (!targetTenantId) {
+    const { data: latestT } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (latestT?.id) targetTenantId = latestT.id
+  }
+
   let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
   let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || 'ACTIVE'
@@ -176,14 +186,20 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       .limit(1)
       .maybeSingle()
 
-    if (sub && (sub.status === 'active' || sub.status === 'trialing')) {
+    if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
       hasAutoDebit = true
-      if (sub.payment_notes && sub.payment_notes.includes('Tarjeta')) {
+      if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
         const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
         const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+        const holderMatch = sub.payment_notes.match(/Titular:\s*([^.]+)/i)
+        let parsedBrand = brandMatch ? brandMatch[1] : undefined
+        if (parsedBrand && (parsedBrand.toLowerCase() === 'de' || parsedBrand.toLowerCase() === 'del')) {
+          parsedBrand = 'Débito/Crédito'
+        }
         cardInfo = {
-          brand: brandMatch ? brandMatch[1] : 'Tarjeta',
+          brand: parsedBrand || 'Tarjeta',
           last4: last4Match ? last4Match[1] : undefined,
+          holder: holderMatch ? holderMatch[1].trim() : undefined,
         }
       }
     }
@@ -192,14 +208,20 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const cookieHasCard = cookieStore.get('demo_has_card')?.value === 'true'
   const cookieCardLast4 = cookieStore.get('demo_card_last4')?.value
   const cookieCardBrand = cookieStore.get('demo_card_brand')?.value
+  const cookieCardHolder = cookieStore.get('demo_card_holder')?.value ? decodeURIComponent(cookieStore.get('demo_card_holder')!.value) : undefined
 
-  if (cookieHasCard || subscriptionStatus === 'ACTIVE') {
+  if (cookieHasCard || subscriptionStatus === 'ACTIVE' || hasAutoDebit) {
     hasAutoDebit = true
-    if (!cardInfo && cookieCardLast4) {
+    if (!cardInfo) {
       cardInfo = {
         last4: cookieCardLast4,
-        brand: cookieCardBrand || 'Tarjeta',
+        brand: cookieCardBrand || 'Tarjeta de Débito/Crédito',
+        holder: cookieCardHolder,
       }
+    } else {
+      if (!cardInfo.last4 && cookieCardLast4) cardInfo.last4 = cookieCardLast4
+      if ((!cardInfo.brand || cardInfo.brand === 'Tarjeta') && cookieCardBrand) cardInfo.brand = cookieCardBrand
+      if (!cardInfo.holder && cookieCardHolder) cardInfo.holder = cookieCardHolder
     }
   }
 
@@ -302,10 +324,10 @@ export async function getAllClubsBillingOverview(): Promise<{
   upToDateCount: number
   pendingCount: number
 }> {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
 
   // Obtener todos los tenants
-  const { data: tenants } = await supabase
+  const { data: tenants } = await serviceClient
     .from('tenants')
     .select(`
       id,
@@ -374,14 +396,14 @@ export async function getAllClubsBillingOverview(): Promise<{
  * Registra el pago mensual de la suscripción de un club (vía Superadmin o manual).
  */
 export async function recordClubSubscriptionPayment(tenantId: string, notes?: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
 
   const summary = await getClubBillingSummary(tenantId)
   const now = new Date()
   const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
   const periodEnd = summary.nextDueDate
 
-  const { error } = await supabase
+  const { error } = await serviceClient
     .from('saas_subscriptions')
     .upsert({
       tenant_id: tenantId,
@@ -400,7 +422,7 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
   const currentMonth = now.getMonth() + 1
   const currentYear = now.getFullYear()
 
-  const { data: existingInv } = await supabase
+  const { data: existingInv } = await serviceClient
     .from('tenant_invoices')
     .select('id')
     .eq('tenant_id', tenantId)
@@ -417,7 +439,7 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
   }
 
   if (existingInv) {
-    await supabase
+    await serviceClient
       .from('tenant_invoices')
       .update({
         status: 'PAID',
@@ -427,7 +449,7 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
       })
       .eq('id', existingInv.id)
   } else {
-    await supabase
+    await serviceClient
       .from('tenant_invoices')
       .insert({
         tenant_id: tenantId,
@@ -443,10 +465,11 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
       })
   }
 
-  // 3. También marcar estado del tenant como ACTIVE y balance en cero
-  await supabase
+  // 3. También marcar estado del tenant como ACTIVE, is_active: true y balance en cero
+  await serviceClient
     .from('tenants')
     .update({ 
+      is_active: true,
       subscription_status: 'ACTIVE',
       current_balance: 0 
     })
@@ -454,6 +477,8 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
 
   const cookieStore = await cookies()
   cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.delete('new_club_pending_activation')
 
   revalidatePath('/superadmin')
   revalidatePath('/dashboard/plan')
@@ -472,16 +497,17 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
  * Obtiene los detalles de deuda y estado Dunning del tenant actual o especificado.
  */
 export async function getTenantDunningDetails(tenantIdParam?: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
   const cookieStore = await cookies()
   const demoStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
 
   let targetTenantId = tenantIdParam
 
   if (!targetTenantId) {
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: profile } = await supabase
+      const { data: profile } = await serviceClient
         .from('profiles')
         .select('tenant_id')
         .eq('id', user.id)
@@ -494,13 +520,13 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
   const defaultTenantId = targetTenantId || '00000000-0000-0000-0000-000000000001'
 
   // Consultar tenant y última factura pendiente
-  const { data: tenant } = await supabase
+  const { data: tenant } = await serviceClient
     .from('tenants')
     .select('id, name, slug, phone_whatsapp, subscription_status, base_slots_plan, minimum_floor_ars, current_balance')
     .eq('id', defaultTenantId)
     .maybeSingle()
 
-  const { data: invoice } = await supabase
+  const { data: invoice } = await serviceClient
     .from('tenant_invoices')
     .select('*')
     .eq('tenant_id', defaultTenantId)
@@ -545,7 +571,7 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
  * Genera una preferencia de Mercado Pago Checkout Pro para saldar la factura SaaS del tenant.
  */
 export async function createTenantInvoicePreference(tenantId: string, invoiceId?: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
   const dunning = await getTenantDunningDetails(tenantId)
   const invoice = dunning.invoice
   const amountToPay = invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs
@@ -557,7 +583,7 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
     const mockPreferenceId = `mock_pref_saas_${Date.now()}`
     if (invoiceId && invoiceId !== invoice.id) {
-      await supabase
+      await serviceClient
         .from('tenant_invoices')
         .update({ mp_preference_id: mockPreferenceId })
         .eq('id', invoiceId)
@@ -605,7 +631,7 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
     })
 
     if (invoice.id && !invoice.id.startsWith('demo-inv-')) {
-      await supabase
+      await serviceClient
         .from('tenant_invoices')
         .update({ mp_preference_id: preference.id })
         .eq('id', invoice.id)
@@ -631,11 +657,11 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
  * Registra el pago aprobado de una factura de tenant y reactiva inmediatamente el acceso a ACTIVE.
  */
 export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
 
   // 1. Marcar factura como PAID si existe en BD
   if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
-    await supabase
+    await serviceClient
       .from('tenant_invoices')
       .update({
         status: 'PAID',
@@ -653,7 +679,7 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
       }
     }
 
-    await supabase
+    await serviceClient
       .from('tenant_invoices')
       .insert({
         tenant_id: tenantId,
@@ -670,9 +696,10 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
   }
 
   // 2. Levantar suspensión y pasar a ACTIVE
-  await supabase
+  await serviceClient
     .from('tenants')
     .update({
+      is_active: true,
       subscription_status: 'ACTIVE',
       current_balance: 0,
     })
@@ -681,6 +708,8 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
   // 3. Sincronizar cookie de sesión activa
   const cookieStore = await cookies()
   cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.delete('new_club_pending_activation')
 
   revalidatePath('/dashboard')
   revalidatePath('/billing/suspended')
@@ -694,15 +723,23 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
  * Permite cambiar el estado de suscripción de un tenant (para testing del dunning o gestión superadmin).
  */
 export async function updateTenantSubscriptionStatus(tenantId: string, newStatus: TenantSubscriptionStatus) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
+  const isActive = newStatus !== 'LOCKED'
 
-  await supabase
+  await serviceClient
     .from('tenants')
-    .update({ subscription_status: newStatus })
+    .update({ 
+      subscription_status: newStatus,
+      is_active: isActive
+    })
     .eq('id', tenantId)
 
   const cookieStore = await cookies()
   cookieStore.set('demo_subscription_status', newStatus, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  cookieStore.set('demo_is_active', isActive ? 'true' : 'false', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  if (isActive) {
+    cookieStore.delete('new_club_pending_activation')
+  }
 
   revalidatePath('/dashboard')
   revalidatePath('/billing/suspended')
@@ -736,10 +773,10 @@ function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: stri
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
 
 export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
-  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
 
   // 1. Obtener datos del club
-  const { data: tenant } = await supabase
+  const { data: tenant } = await serviceClient
     .from('tenants')
     .select('name, slug, email, created_at')
     .eq('id', tenantId)
@@ -856,6 +893,19 @@ export async function confirmAndActivateSubscriptionWithCard(
       if (profile?.tenant_id) {
         tenantId = profile.tenant_id
       }
+    }
+  }
+
+  // Si aún no se tiene tenantId, tomar el club más reciente
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001') {
+    const { data: latestTenant } = await serviceClient
+      .from('tenants')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (latestTenant?.id) {
+      tenantId = latestTenant.id
     }
   }
 

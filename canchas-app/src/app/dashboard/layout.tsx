@@ -37,6 +37,9 @@ export default async function DashboardLayout({
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || headerStatus || 'ACTIVE'
   let planId: SaaSPlanId | undefined = cookiePlanId || undefined
 
+  const cookieIsActive = cookieStore.get('demo_is_active')?.value
+  let isActive = cookieIsActive === 'false' ? false : true
+
   const serviceClient = await createServiceClient()
 
   // Validar si el cookieTenantId existe efectivamente en la base de datos
@@ -50,47 +53,54 @@ export default async function DashboardLayout({
       tenantId = checkT.id
       tenantName = checkT.name || tenantName
       tenantSlug = checkT.slug || tenantSlug
+      mpConnected = Boolean(checkT.mp_access_token)
+      if (typeof checkT.is_active === 'boolean') {
+        isActive = checkT.is_active
+      }
+      if (checkT.subscription_status) {
+        subscriptionStatus = checkT.subscription_status
+      }
+      if (checkT.base_slots_plan && !cookiePlanId) {
+        planId = checkT.base_slots_plan === 1 ? 'CHICO_1' : checkT.base_slots_plan === 2 ? 'MEDIANO_2' : checkT.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+      }
     }
   }
 
-  const cookieIsActive = cookieStore.get('demo_is_active')?.value
-  let isActive = cookieIsActive === 'false' ? false : true
-
   if (user) {
-    const { data: profile } = await supabase
+    const { data: profile } = await serviceClient
       .from('profiles')
-      .select('role, full_name, tenant_id, tenants(name, slug, mp_access_token, subscription_status, is_active, base_slots_plan)')
+      .select('role, full_name, tenant_id')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (profile) {
       if (profile.tenant_id) {
         tenantId = profile.tenant_id
       }
-      userRole = profile.role
-      userName = profile.full_name || user.email?.split('@')[0] || 'Admin'
-      const t = profile.tenants as unknown as {
-        name?: string
-        slug?: string
-        mp_access_token?: string
-        subscription_status?: TenantSubscriptionStatus
-        is_active?: boolean
-        base_slots_plan?: number
-      } | null
-      if (t) {
-        tenantName = t.name || tenantName
-        tenantSlug = t.slug || tenantSlug
-        mpConnected = Boolean(t.mp_access_token)
-        if (typeof t.is_active === 'boolean') {
-          isActive = t.is_active
-        } else if (cookieIsActive !== undefined) {
-          isActive = cookieIsActive === 'true'
-        }
-        if (t.base_slots_plan && !cookiePlanId) {
-          planId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
-        }
-        if (t.subscription_status && !cookieStatus) {
-          subscriptionStatus = t.subscription_status
+      userRole = profile.role || userRole
+      userName = profile.full_name || user.email?.split('@')[0] || userName
+      
+      const targetTId = profile.tenant_id || tenantId
+      if (targetTId) {
+        const { data: t } = await serviceClient
+          .from('tenants')
+          .select('name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+          .eq('id', targetTId)
+          .maybeSingle()
+
+        if (t) {
+          tenantName = t.name || tenantName
+          tenantSlug = t.slug || tenantSlug
+          mpConnected = Boolean(t.mp_access_token)
+          if (typeof t.is_active === 'boolean') {
+            isActive = t.is_active
+          }
+          if (t.subscription_status) {
+            subscriptionStatus = t.subscription_status
+          }
+          if (t.base_slots_plan && !cookiePlanId) {
+            planId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+          }
         }
       }
     }
@@ -101,13 +111,20 @@ export default async function DashboardLayout({
     try {
       const { data: tData } = await serviceClient
         .from('tenants')
-        .select('id, name, slug')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
         .eq('slug', tenantSlug)
         .maybeSingle()
       if (tData?.id) {
         tenantId = tData.id
         tenantName = tData.name || tenantName
         tenantSlug = tData.slug || tenantSlug
+        mpConnected = Boolean(tData.mp_access_token)
+        if (typeof tData.is_active === 'boolean') {
+          isActive = tData.is_active
+        }
+        if (tData.subscription_status) {
+          subscriptionStatus = tData.subscription_status
+        }
       }
     } catch {}
   }
@@ -118,7 +135,7 @@ export default async function DashboardLayout({
       const { data: defaultTenant } = await serviceClient
         .from('tenants')
         .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (defaultTenant) {
@@ -129,8 +146,23 @@ export default async function DashboardLayout({
         if (typeof defaultTenant.is_active === 'boolean') {
           isActive = defaultTenant.is_active
         }
+        if (defaultTenant.subscription_status) {
+          subscriptionStatus = defaultTenant.subscription_status
+        }
       }
     } catch {}
+  }
+
+  // Sincronizar cookies si la base de datos tiene datos más actualizados
+  if (isActive && cookieIsActive === 'false') {
+    cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
+  }
+  if (subscriptionStatus && cookieStatus !== subscriptionStatus) {
+    cookieStore.set('demo_subscription_status', subscriptionStatus, { path: '/', maxAge: 86400 })
+  }
+  if (tenantId && (!cookieTenantId || cookieTenantId !== tenantId)) {
+    cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 86400 })
   }
 
   return (

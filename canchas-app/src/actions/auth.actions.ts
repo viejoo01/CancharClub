@@ -41,11 +41,12 @@ export async function loginWithEmail(formData: FormData) {
   }
 
   // Comprobar rol de usuario y tenant
-  const { data: profile } = await supabase
+  const serviceClient = await createServiceClient()
+  const { data: profile } = await serviceClient
     .from('profiles')
-    .select('role, full_name, tenant_id, tenants(name, slug, subscription_status, is_active)')
+    .select('role, full_name, tenant_id')
     .eq('id', data.user.id)
-    .single()
+    .maybeSingle()
 
   const isSuperadmin = 
     profile?.role === 'SUPERADMIN' ||
@@ -61,15 +62,61 @@ export async function loginWithEmail(formData: FormData) {
     redirect('/superadmin')
   }
 
-  const t = profile?.tenants as unknown as { name?: string; slug?: string; subscription_status?: string; is_active?: boolean; base_slots_plan?: number } | null
+  let t = null
+  let hasCard = false
+  let cardLast4: string | undefined
+  let cardBrand: string | undefined
 
+  if (profile?.tenant_id) {
+    const { data: tenantData } = await serviceClient
+      .from('tenants')
+      .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods')
+      .eq('id', profile.tenant_id)
+      .maybeSingle()
+    t = tenantData
+
+    const { data: sub } = await serviceClient
+      .from('saas_subscriptions')
+      .select('*')
+      .eq('tenant_id', profile.tenant_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
+      hasCard = true
+      if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
+        const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+        const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+        cardBrand = brandMatch && !brandMatch[1].toLowerCase().startsWith('de') ? brandMatch[1] : 'Tarjeta'
+        cardLast4 = last4Match ? last4Match[1] : undefined
+      }
+    }
+  }
+
+  if (profile?.tenant_id) {
+    cookieStore.set('canchar_tenant_id', profile.tenant_id, { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_tenant_id', profile.tenant_id, { path: '/', maxAge: 86400 })
+  }
   if (t?.name) cookieStore.set('demo_tenant_name', t.name, { path: '/', maxAge: 86400 })
   if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, { path: '/', maxAge: 86400 })
   if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', t?.is_active === true ? 'true' : 'false', { path: '/', maxAge: 86400 })
+
+  const isActuallyActive = t?.is_active === true
+  cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', { path: '/', maxAge: 86400 })
+  if (isActuallyActive) {
+    cookieStore.delete('new_club_pending_activation')
+  }
+
   if (t?.base_slots_plan) {
     const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
     cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
+  }
+
+  if (hasCard || isActuallyActive) {
+    cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 86400 })
+    if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, { path: '/', maxAge: 86400 })
+    if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, { path: '/', maxAge: 86400 })
   }
 
   if (profile?.role === 'TENANT_STAFF') {
@@ -263,6 +310,11 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
   cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })
+  // Asegurar que no queden datos de tarjeta residuales de otra sesión en este navegador
+  cookieStore.delete('demo_has_card')
+  cookieStore.delete('demo_card_last4')
+  cookieStore.delete('demo_card_brand')
+  cookieStore.delete('demo_card_holder')
 
   redirect('/dashboard')
 }
@@ -271,13 +323,24 @@ export async function logout() {
   const supabase = await createClient()
   await supabase.auth.signOut()
   const cookieStore = await cookies()
-  cookieStore.delete('demo_user_role')
-  cookieStore.delete('demo_user_name')
-  cookieStore.delete('demo_subscription_status')
-  cookieStore.delete('demo_plan_id')
-  cookieStore.delete('demo_tenant_name')
-  cookieStore.delete('demo_tenant_slug')
-  cookieStore.delete('canchar_active_venue_id')
-  cookieStore.delete('canchar_active_venue_name')
+  const cookiesToDelete = [
+    'demo_user_role',
+    'demo_user_name',
+    'demo_subscription_status',
+    'demo_plan_id',
+    'demo_tenant_name',
+    'demo_tenant_slug',
+    'demo_tenant_id',
+    'canchar_tenant_id',
+    'demo_is_active',
+    'demo_has_card',
+    'demo_card_last4',
+    'demo_card_brand',
+    'demo_card_holder',
+    'new_club_pending_activation',
+    'canchar_active_venue_id',
+    'canchar_active_venue_name',
+  ]
+  cookiesToDelete.forEach(c => cookieStore.delete(c))
   redirect('/')
 }

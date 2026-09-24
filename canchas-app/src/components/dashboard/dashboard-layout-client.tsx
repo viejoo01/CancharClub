@@ -55,6 +55,13 @@ export function DashboardLayoutClient({
     setMobileMenuOpen(false)
   }
 
+  // Escuchar evento personalizado para abrir el modal de activación desde cualquier componente
+  useEffect(() => {
+    const handleOpen = () => setShowActivationModal(true)
+    window.addEventListener('open-activation-modal', handleOpen)
+    return () => window.removeEventListener('open-activation-modal', handleOpen)
+  }, [])
+
   // Prevenir scroll en el fondo cuando el drawer móvil está abierto
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -154,7 +161,7 @@ export function DashboardLayoutClient({
 
         {/* Modal obligatorio de vinculación de tarjeta para activar plan */}
         <PlanActivationModal
-          isOpen={showActivationModal}
+          isOpen={!isActive && showActivationModal}
           onOpenChange={setShowActivationModal}
           tenantName={tenantName}
           tenantId={tenantId}

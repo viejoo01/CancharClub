@@ -99,7 +99,7 @@ export default function ClubPlanPage() {
     }
   }, [tenantId])
 
-  const isAutoDebitActive = hasAutoDebit || Boolean(planDetails?.hasAutoDebit)
+  const isAutoDebitActive = hasAutoDebit || Boolean(planDetails?.hasAutoDebit) || (planDetails?.subscriptionStatus === 'ACTIVE')
   const isPaid = (planDetails?.isPaid ?? false) || isAutoDebitActive
 
   const clubName = planDetails?.tenantName || 'Cargando club...'
@@ -166,11 +166,22 @@ export default function ClubPlanPage() {
     setSavingCard(true)
     try {
       const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const cardLast4 = cardNumber.replace(/\D/g, '').slice(-4)
+      const cleanNum = cardNumber.replace(/\D/g, '')
+      const detectedBrand = cleanNum.startsWith('4')
+        ? 'VISA'
+        : cleanNum.startsWith('5')
+        ? 'MASTERCARD'
+        : cleanNum.startsWith('3')
+        ? 'AMEX'
+        : cleanNum.startsWith('6')
+        ? 'CABAL'
+        : 'TARJETA'
+      const cardLast4 = cleanNum.slice(-4)
+
       await confirmAndActivateSubscriptionWithCard(activeTenant, {
         cardHolder: cardHolder.toUpperCase(),
         cardLast4,
-        cardBrand: 'TARJETA',
+        cardBrand: detectedBrand,
       })
       setHasAutoDebit(true)
       setShowSubscriptionModal(false)
@@ -424,7 +435,7 @@ export default function ClubPlanPage() {
                     <CheckCircle2 className="w-3.5 h-3.5" /> 
                     {planDetails?.cardInfo?.last4 
                       ? `${planDetails.cardInfo.brand || 'Tarjeta'} •••• ${planDetails.cardInfo.last4}` 
-                      : 'Tarjeta Vinculada'}
+                      : 'Tarjeta Vinculada (Débito Automático)'}
                   </span>
                 ) : (
                   <span className="font-bold text-amber-400 flex items-center gap-1">

@@ -216,6 +216,7 @@ export async function POST(request: NextRequest) {
     const { error: tenantError } = await supabase
       .from('tenants')
       .update({
+        is_active: true,
         subscription_status: 'ACTIVE',
         current_balance: 0,
       })
@@ -228,16 +229,22 @@ export async function POST(request: NextRequest) {
     }
 
     // C. Registrar en historial de suscripciones
+    const periodStart = nowIso.split('T')[0]
+    const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
     await supabase
       .from('saas_subscriptions')
-      .insert({
+      .upsert({
         tenant_id: tenantId,
         plan: 'STANDARD',
         status: 'active',
-        paid_at: nowIso,
+        billing_period_start: periodStart,
+        billing_period_end: periodEnd,
         reference_slot_price_cents: Math.round((payment.transaction_amount || 45000) * 100),
+        plan_multiplier: 1.5,
+        minimum_fee_cents: 0,
+        paid_at: nowIso,
         payment_notes: `Webhook MP Pago #${payment.id} - ${payment.payment_method_id} - ${payment.status_detail}`,
-      })
+      }, { onConflict: 'tenant_id,billing_period_start' })
 
     const duration = Date.now() - startTime
     console.log(`[Billing Webhook] Procesado con éxito en ${duration}ms para Tenant: ${tenantId}`)

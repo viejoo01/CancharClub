@@ -19,6 +19,7 @@ export function GracePeriodBanner({
   dueDate = '2026-09-30',
 }: GracePeriodBannerProps) {
   const [status] = useState<TenantSubscriptionStatus>(() => {
+    if (initialStatus) return initialStatus
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split('; ')
       const statusCookie = cookies.find(c => c.startsWith('demo_subscription_status='))
@@ -26,7 +27,7 @@ export function GracePeriodBanner({
         return statusCookie.split('=')[1] as TenantSubscriptionStatus
       }
     }
-    return initialStatus
+    return 'ACTIVE'
   })
   const [isDismissed, setIsDismissed] = useState(false)
 

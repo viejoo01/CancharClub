@@ -85,7 +85,7 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
     const { data: singleTenant } = await serviceClient
       .from('tenants')
       .select('id, name, slug')
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
@@ -187,7 +187,7 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
     const { data: defaultTenant } = await serviceClient
       .from('tenants')
       .select('id')
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
     if (defaultTenant?.id) {

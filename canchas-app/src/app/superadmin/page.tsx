@@ -527,6 +527,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       setClientCookie('demo_tenant_name', encodeURIComponent(user.tenantName))
       setClientCookie('demo_tenant_slug', encodeURIComponent(user.tenantSlug))
       if (assignedTenant) {
+        setClientCookie('canchar_tenant_id', assignedTenant.id)
+        setClientCookie('demo_tenant_id', assignedTenant.id)
         setClientCookie('demo_plan_id', assignedTenant.plan_id)
         setClientCookie('demo_is_active', assignedTenant.is_active !== false ? 'true' : 'false')
       }
@@ -556,6 +558,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }
 
   const handleSimulateClub = (t: typeof tenants[0], role: 'TENANT_ADMIN' | 'TENANT_STAFF' = 'TENANT_ADMIN') => {
+    setClientCookie('canchar_tenant_id', t.id)
+    setClientCookie('demo_tenant_id', t.id)
     setClientCookie('demo_user_role', role)
     setClientCookie('demo_user_name', encodeURIComponent(role === 'TENANT_ADMIN' ? 'Dueño ' + t.name : 'Canchero ' + t.name))
     setClientCookie('demo_tenant_name', encodeURIComponent(t.name))

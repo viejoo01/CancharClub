@@ -4,6 +4,15 @@ import React, { createContext, useContext, useEffect } from 'react'
 
 let globalCachedTenantId: string | null = null
 
+export function clearGlobalCachedTenantId() {
+  globalCachedTenantId = null
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem('canchar_cached_tenant_id')
+    } catch {}
+  }
+}
+
 export function getGlobalCachedTenantId(): string | null {
   if (globalCachedTenantId) return globalCachedTenantId
 
@@ -16,8 +25,13 @@ export function getGlobalCachedTenantId(): string | null {
       }
       const local = localStorage.getItem('canchar_cached_tenant_id')
       if (local) {
-        globalCachedTenantId = local
-        return local
+        const hasSession = document.cookie.includes('demo_user_role') || document.cookie.includes('sb-')
+        if (hasSession) {
+          globalCachedTenantId = local
+          return local
+        } else {
+          localStorage.removeItem('canchar_cached_tenant_id')
+        }
       }
     } catch {}
   }
@@ -25,19 +39,21 @@ export function getGlobalCachedTenantId(): string | null {
 }
 
 export function setGlobalCachedTenantId(val: string | null) {
-  if (val) {
-    globalCachedTenantId = val
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem('canchar_cached_tenant_id', val)
-      } catch {}
-    }
-    if (typeof document !== 'undefined') {
-      try {
-        document.cookie = `canchar_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
-        document.cookie = `demo_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
-      } catch {}
-    }
+  if (!val) {
+    clearGlobalCachedTenantId()
+    return
+  }
+  globalCachedTenantId = val
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem('canchar_cached_tenant_id', val)
+    } catch {}
+  }
+  if (typeof document !== 'undefined') {
+    try {
+      document.cookie = `canchar_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
+      document.cookie = `demo_tenant_id=${val}; path=/; max-age=2592000; SameSite=Lax`
+    } catch {}
   }
 }
 

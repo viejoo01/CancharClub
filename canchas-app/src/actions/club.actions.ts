@@ -1050,6 +1050,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         bank_account_holder,
         bank_name,
         payment_methods,
+        mp_access_token,
+        subscription_status,
         description
       `)
       .eq('slug', normalizedSlug)
@@ -1125,7 +1127,10 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       : (courtsMapped[0]?.pricePerHour || 20000)
 
     const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
-    const hasMp = rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO')
+    const hasMp = Boolean(tenant.mp_access_token) ||
+      rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO' || m === 'CARD') ||
+      tenant.subscription_status === 'ACTIVE' ||
+      tenant.subscription_status === 'TRIAL'
 
     let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
     if (tenant.description) {
@@ -1288,6 +1293,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         bank_account_holder,
         bank_name,
         mp_access_token,
+        payment_methods,
+        subscription_status,
         description
       `)
       .eq('is_active', true)
@@ -1397,8 +1404,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
               cbu: t.bank_cbu || '',
             }
           : undefined,
-        paymentMethods: t.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
-        mpConnected: Boolean(t.mp_access_token),
+        paymentMethods: (t.mp_access_token || (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('CARD')))) ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
+        mpConnected: Boolean(t.mp_access_token || (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('CARD'))) || t.subscription_status === 'ACTIVE'),
       })
     }
 

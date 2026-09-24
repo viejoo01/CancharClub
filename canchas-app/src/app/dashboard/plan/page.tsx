@@ -778,7 +778,6 @@ export default function ClubPlanPage() {
                 <span className="text-base font-extrabold text-emerald-400 font-mono">
                   {formatARS(pricing.monthlyFeeArs)}/mes
                 </span>
-                <span className="text-[10px] text-slate-400 block">Cobro automático del 1 al 7</span>
               </div>
             </div>
 

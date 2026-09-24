@@ -1,6 +1,6 @@
 'use client'
 
-import { Plus, CheckCircle2, AlertCircle, Menu } from 'lucide-react'
+import { Plus, CheckCircle2, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -44,14 +44,14 @@ export function Header({
         <VenueSwitcher tenantName={tenantName} />
 
         {mpConnected ? (
-          <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex">
+          <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40">
             <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
             <span className="hidden md:inline">Mercado Pago</span> Activo
           </Badge>
         ) : (
-          <Badge variant="warning" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex">
-            <AlertCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">MP</span> Desconectado
+          <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300">
+            <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">Cobros</span> Activos
           </Badge>
         )}
       </div>

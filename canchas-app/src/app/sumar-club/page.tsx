@@ -315,7 +315,7 @@ export default function SumarClubLandingPage() {
 
           {/* Aclaración al pie de las tarjetas */}
           <p className="mt-8 text-xs sm:text-sm text-slate-400 dark:text-slate-500 font-normal">
-            Abono mensual del 1 al 7 de cada mes. Ajustado automáticamente al valor del turno de tu complejo.
+            Abono mensual transparente. Ajustado automáticamente al valor del turno de tu complejo.
           </p>
         </div>
       </section>

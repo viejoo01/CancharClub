@@ -43,18 +43,25 @@ export default async function DashboardLayout({
 
   const serviceClient = await createServiceClient()
 
+  function checkMpConnected(t: { mp_access_token?: string | null; payment_methods?: string[] | null; subscription_status?: string | null }): boolean {
+    if (t.mp_access_token) return true
+    if (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('CARD'))) return true
+    if (t.subscription_status === 'ACTIVE' || t.subscription_status === 'TRIAL') return true
+    return false
+  }
+
   // Validar si el cookieTenantId existe efectivamente en la base de datos
   if (cookieTenantId) {
     const { data: checkT } = await serviceClient
       .from('tenants')
-      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
       .eq('id', cookieTenantId)
       .maybeSingle()
     if (checkT) {
       tenantId = checkT.id
       tenantName = checkT.name || tenantName
       tenantSlug = checkT.slug || tenantSlug
-      mpConnected = Boolean(checkT.mp_access_token)
+      mpConnected = checkMpConnected(checkT)
       if (typeof checkT.is_active === 'boolean') {
         isActive = checkT.is_active
       }
@@ -85,14 +92,14 @@ export default async function DashboardLayout({
       if (targetTId) {
         const { data: t } = await serviceClient
           .from('tenants')
-          .select('name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+          .select('name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
           .eq('id', targetTId)
           .maybeSingle()
 
         if (t) {
           tenantName = t.name || tenantName
           tenantSlug = t.slug || tenantSlug
-          mpConnected = Boolean(t.mp_access_token)
+          mpConnected = checkMpConnected(t)
           if (typeof t.is_active === 'boolean') {
             isActive = t.is_active
           }
@@ -112,14 +119,14 @@ export default async function DashboardLayout({
     try {
       const { data: tData } = await serviceClient
         .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
         .eq('slug', tenantSlug)
         .maybeSingle()
       if (tData?.id) {
         tenantId = tData.id
         tenantName = tData.name || tenantName
         tenantSlug = tData.slug || tenantSlug
-        mpConnected = Boolean(tData.mp_access_token)
+        mpConnected = checkMpConnected(tData)
         if (typeof tData.is_active === 'boolean') {
           isActive = tData.is_active
         }
@@ -135,7 +142,7 @@ export default async function DashboardLayout({
     try {
       const { data: defaultTenant } = await serviceClient
         .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -143,7 +150,7 @@ export default async function DashboardLayout({
         tenantId = defaultTenant.id
         tenantName = defaultTenant.name || tenantName
         tenantSlug = defaultTenant.slug || tenantSlug
-        mpConnected = Boolean(defaultTenant.mp_access_token)
+        mpConnected = checkMpConnected(defaultTenant)
         if (typeof defaultTenant.is_active === 'boolean') {
           isActive = defaultTenant.is_active
         }

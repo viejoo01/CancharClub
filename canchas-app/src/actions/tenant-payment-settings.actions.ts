@@ -42,7 +42,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
     if (effectiveTenantId) {
       const { data, error } = await supabase
         .from('tenants')
-        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
+        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id, subscription_status')
         .eq('id', effectiveTenantId)
         .maybeSingle()
 
@@ -55,7 +55,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
     if (!tenant) {
       const { data: defaultClub } = await supabase
         .from('tenants')
-        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
+        .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id, subscription_status')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -84,8 +84,15 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
     const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
     const paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[] = []
     if (rawMethods.includes('TRANSFER')) paymentMethods.push('TRANSFER')
-    if (rawMethods.includes('MERCADOPAGO') || rawMethods.includes('MERCADO_PAGO')) paymentMethods.push('MERCADOPAGO')
+    if (rawMethods.includes('MERCADOPAGO') || rawMethods.includes('MERCADO_PAGO') || rawMethods.includes('CARD')) paymentMethods.push('MERCADOPAGO')
     if (paymentMethods.length === 0) paymentMethods.push('TRANSFER')
+
+    const hasMp = Boolean(tenant.mp_access_token) ||
+      rawMethods.includes('MERCADOPAGO') ||
+      rawMethods.includes('MERCADO_PAGO') ||
+      rawMethods.includes('CARD') ||
+      tenant.subscription_status === 'ACTIVE' ||
+      tenant.subscription_status === 'TRIAL'
 
     return {
       tenantId: tenant.id,
@@ -97,7 +104,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       cuit: tenant.bank_cuit || '',
       whatsappPhone: tenant.phone_whatsapp || '',
       paymentMethods,
-      mpConnected: Boolean(tenant.mp_access_token),
+      mpConnected: hasMp,
       mpCollectorId: tenant.mp_collector_id,
       mpPublicKey: tenant.mp_public_key,
     }

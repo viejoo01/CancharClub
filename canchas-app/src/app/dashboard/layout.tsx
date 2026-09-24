@@ -154,16 +154,6 @@ export default async function DashboardLayout({
     } catch {}
   }
 
-  // Sincronizar cookies asegurando que la base de datos sea la única verdad
-  cookieStore.set('demo_is_active', isActive ? 'true' : 'false', { path: '/', maxAge: 86400 })
-  if (subscriptionStatus) {
-    cookieStore.set('demo_subscription_status', subscriptionStatus, { path: '/', maxAge: 86400 })
-  }
-  if (tenantId) {
-    cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 86400 })
-    cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 86400 })
-  }
-
   return (
     <DashboardLayoutClient
       tenantId={tenantId}

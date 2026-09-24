@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone } from 'lucide-react'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone, Share2 } from 'lucide-react'
+import { InstagramIcon, FacebookIcon, TikTokIcon } from '@/components/icons/social-icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,9 +17,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
-import { createCourt, updateCourt, deleteCourt, getClubSchedule, getClubHighlightInfo, type ClubHighlightInfo } from '@/actions/club.actions'
+import { createCourt, updateCourt, deleteCourt, getClubSchedule, getClubHighlightInfo, type ClubHighlightInfo, getClubSocialLinks } from '@/actions/club.actions'
+import { extractSocialHandle, type ClubSocialLinks } from '@/config/clubs-catalog'
 import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
 import { ClubHighlightModal } from '@/components/dashboard/club-highlight-modal'
+import { ClubSocialLinksModal } from '@/components/dashboard/club-social-links-modal'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
@@ -69,6 +72,12 @@ export default function CanchasPage() {
     isHighlightActive: false,
   })
   const [isHighlightModalOpen, setIsHighlightModalOpen] = useState(false)
+  const [socialLinks, setSocialLinks] = useState<ClubSocialLinks>({
+    instagram: '',
+    facebook: '',
+    tiktok: '',
+  })
+  const [isSocialLinksModalOpen, setIsSocialLinksModalOpen] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
   const [name, setName] = useState('')
@@ -121,6 +130,11 @@ export default function CanchasPage() {
     try {
       const hInfo = await getClubHighlightInfo(tenantId)
       if (hInfo) setHighlightInfo(hInfo)
+    } catch {}
+
+    try {
+      const sLinks = await getClubSocialLinks(tenantId)
+      if (sLinks) setSocialLinks(sLinks)
     } catch {}
 
     if (isInitial) setCourtsLoading(false)
@@ -310,6 +324,17 @@ export default function CanchasPage() {
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <Button
             variant="outline"
+            onClick={() => setIsSocialLinksModalOpen(true)}
+            className="border-pink-500/40 bg-pink-950/20 text-pink-300 hover:bg-pink-900/40 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
+            title="Configurar links de Instagram, Facebook y TikTok para que los jugadores puedan ver"
+          >
+            <Share2 className="w-4 h-4 text-pink-400" />
+            <span className="hidden md:inline">Redes Sociales:</span>
+            <span>{socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? 'Conectado' : 'Conectar'}</span>
+          </Button>
+
+          <Button
+            variant="outline"
             onClick={() => setIsHighlightModalOpen(true)}
             className="border-amber-500/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 hover:text-white font-medium gap-1.5 h-10 px-3 cursor-pointer text-xs"
             title="Configurar información destacada y promociones para los jugadores"
@@ -405,6 +430,65 @@ export default function CanchasPage() {
             className="text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
           >
             {highlightInfo.highlightText ? 'Editar Anuncio' : 'Crear Anuncio'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Banner de Redes Sociales del Club para Jugadores */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-pink-500/30">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-pink-500/10 text-pink-400 border border-pink-500/20 shrink-0">
+            <Share2 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-white">Redes Sociales del Club (Jugadores):</span>
+              {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {socialLinks.instagram && (
+                    <Badge className="bg-pink-500/20 text-pink-300 border border-pink-500/30 text-[10px] px-2 py-0.5 gap-1">
+                      <InstagramIcon className="w-3 h-3 text-pink-400" />
+                      <span>{extractSocialHandle('instagram', socialLinks.instagram) || 'Instagram'}</span>
+                    </Badge>
+                  )}
+                  {socialLinks.facebook && (
+                    <Badge className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] px-2 py-0.5 gap-1">
+                      <FacebookIcon className="w-3 h-3 text-blue-400" />
+                      <span>{extractSocialHandle('facebook', socialLinks.facebook) || 'Facebook'}</span>
+                    </Badge>
+                  )}
+                  {socialLinks.tiktok && (
+                    <Badge className="bg-slate-800 text-slate-200 border border-slate-700 text-[10px] px-2 py-0.5 gap-1">
+                      <TikTokIcon className="w-3 h-3 text-cyan-400" />
+                      <span>{extractSocialHandle('tiktok', socialLinks.tiktok) || 'TikTok'}</span>
+                    </Badge>
+                  )}
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 ml-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Visible en reservas
+                  </span>
+                </div>
+              ) : (
+                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
+                  Sin redes vinculadas
+                </Badge>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
+              {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok
+                ? 'Los jugadores pueden hacer clic directamente en tus perfiles de redes sociales en tu página de reservas.'
+                : 'Sumá los links de Instagram, Facebook y TikTok de tu club para que los jugadores puedan ver tus fotos, torneos y novedades.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsSocialLinksModalOpen(true)}
+            className="text-xs text-pink-400 hover:text-pink-300 hover:bg-pink-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
+          >
+            {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? 'Editar Redes' : 'Conectar Redes'}
           </Button>
         </div>
       </div>
@@ -650,6 +734,20 @@ export default function CanchasPage() {
           initialInfo={highlightInfo}
           onSuccess={(newInfo) => {
             setHighlightInfo(newInfo)
+          }}
+        />
+      )}
+
+      {/* Modal de Redes Sociales para Jugadores */}
+      {isSocialLinksModalOpen && (
+        <ClubSocialLinksModal
+          isOpen={isSocialLinksModalOpen}
+          onClose={() => setIsSocialLinksModalOpen(false)}
+          tenantId={tenantId || ''}
+          clubSlug={clubSlug}
+          initialLinks={socialLinks}
+          onSuccess={(newLinks) => {
+            setSocialLinks(newLinks)
           }}
         />
       )}

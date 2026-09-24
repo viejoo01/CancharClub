@@ -8,7 +8,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
-import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory } from '@/config/clubs-catalog'
+import { getClubBySlug, type ClubData, type CourtDefinition, type SportCategory, type PriceRuleDefinition, normalizeToSportCategory, type ClubSocialLinks, normalizeSocialUrl } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 import { getArgentinaTimeStr, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
@@ -1150,6 +1150,141 @@ export async function updateClubHighlightInfo(
   }
 }
 
+// ─── REDES SOCIALES DEL CLUB (INSTAGRAM, FACEBOOK, TIKTOK) ────────────────────
+
+export async function getClubSocialLinks(
+  tenantId?: string | null
+): Promise<ClubSocialLinks> {
+  const defaultLinks: ClubSocialLinks = {
+    instagram: '',
+    facebook: '',
+    tiktok: '',
+  }
+
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return defaultLinks
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('description, instagram_handle')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (error || !tenant) {
+      return defaultLinks
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    const socialLinks = (meta.social_links as Record<string, string> | undefined) || {}
+
+    return {
+      instagram: typeof socialLinks.instagram === 'string' && socialLinks.instagram.trim()
+        ? socialLinks.instagram.trim()
+        : (tenant.instagram_handle || ''),
+      facebook: typeof socialLinks.facebook === 'string' ? socialLinks.facebook.trim() : '',
+      tiktok: typeof socialLinks.tiktok === 'string' ? socialLinks.tiktok.trim() : '',
+    }
+  } catch (err) {
+    console.error('[getClubSocialLinks] Exception:', err)
+    return defaultLinks
+  }
+}
+
+export async function updateClubSocialLinks(
+  tenantId: string | null | undefined,
+  links: ClubSocialLinks
+): Promise<{ success: boolean; data?: ClubSocialLinks; error?: string }> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const supabase = await createServiceClient()
+
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('description, slug')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    const rawInstagram = (links.instagram || '').trim()
+    const rawFacebook = (links.facebook || '').trim()
+    const rawTiktok = (links.tiktok || '').trim()
+
+    const normalizedLinks: ClubSocialLinks = {
+      instagram: rawInstagram ? normalizeSocialUrl('instagram', rawInstagram) : '',
+      facebook: rawFacebook ? normalizeSocialUrl('facebook', rawFacebook) : '',
+      tiktok: rawTiktok ? normalizeSocialUrl('tiktok', rawTiktok) : '',
+    }
+
+    meta.social_links = {
+      instagram: normalizedLinks.instagram || '',
+      facebook: normalizedLinks.facebook || '',
+      tiktok: normalizedLinks.tiktok || '',
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      description: JSON.stringify(meta),
+      updated_at: new Date().toISOString(),
+    }
+
+    if (normalizedLinks.instagram) {
+      updatePayload.instagram_handle = normalizedLinks.instagram
+    } else {
+      updatePayload.instagram_handle = null
+    }
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update(updatePayload)
+      .eq('id', effectiveTenantId)
+
+    if (updateErr) {
+      console.error('[updateClubSocialLinks] Error updating tenants:', updateErr.message)
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+    if (tenant.slug) {
+      revalidatePath(`/club/${tenant.slug}`)
+    }
+
+    return {
+      success: true,
+      data: normalizedLinks,
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al guardar redes sociales'
+    console.error('[updateClubSocialLinks] Exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
 
 export async function getClubPublicData(slug: string): Promise<ClubData> {
@@ -1177,7 +1312,8 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         payment_methods,
         mp_access_token,
         subscription_status,
-        description
+        description,
+        instagram_handle
       `)
       .eq('slug', normalizedSlug)
       .maybeSingle()
@@ -1257,6 +1393,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     let highlightText: string | undefined = undefined
     let highlightBadge: string | undefined = undefined
     let isHighlightActive: boolean | undefined = undefined
+    let socialLinks: ClubSocialLinks | undefined = undefined
 
     if (tenant.description) {
       try {
@@ -1272,7 +1409,20 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
           highlightBadge = parsed.highlight_badge || '🔥 Promoción Especial'
           isHighlightActive = true
         }
+        if (parsed.social_links) {
+          socialLinks = {
+            instagram: parsed.social_links.instagram || undefined,
+            facebook: parsed.social_links.facebook || undefined,
+            tiktok: parsed.social_links.tiktok || undefined,
+          }
+        }
       } catch {}
+    }
+
+    if (!socialLinks && tenant.instagram_handle) {
+      socialLinks = {
+        instagram: tenant.instagram_handle,
+      }
     }
 
     return {
@@ -1312,6 +1462,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       highlightText,
       highlightBadge,
       isHighlightActive,
+      socialLinks,
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)
@@ -1430,7 +1581,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         mp_access_token,
         payment_methods,
         subscription_status,
-        description
+        description,
+        instagram_handle
       `)
       .eq('is_active', true)
 
@@ -1500,6 +1652,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
       let highlightText: string | undefined = undefined
       let highlightBadge: string | undefined = undefined
       let isHighlightActive: boolean | undefined = undefined
+      let socialLinks: ClubSocialLinks | undefined = undefined
 
       if (t.description) {
         try {
@@ -1515,7 +1668,20 @@ export async function getPublicClubs(): Promise<ClubData[]> {
             highlightBadge = parsed.highlight_badge || '🔥 Promoción Especial'
             isHighlightActive = true
           }
+          if (parsed.social_links) {
+            socialLinks = {
+              instagram: parsed.social_links.instagram || undefined,
+              facebook: parsed.social_links.facebook || undefined,
+              tiktok: parsed.social_links.tiktok || undefined,
+            }
+          }
         } catch {}
+      }
+
+      if (!socialLinks && t.instagram_handle) {
+        socialLinks = {
+          instagram: t.instagram_handle,
+        }
       }
 
       clubsList.push({
@@ -1553,6 +1719,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         highlightText,
         highlightBadge,
         isHighlightActive,
+        socialLinks,
       })
     }
 

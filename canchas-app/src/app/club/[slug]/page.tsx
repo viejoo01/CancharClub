@@ -32,8 +32,15 @@ import {
   type SportCategory,
   type GeneratedSlot,
   type ClubData,
-  normalizeToSportCategory
+  normalizeToSportCategory,
+  normalizeSocialUrl,
+  extractSocialHandle,
 } from '@/config/clubs-catalog'
+import {
+  InstagramIcon,
+  FacebookIcon,
+  TikTokIcon,
+} from '@/components/icons/social-icons'
 import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo } from '@/actions/club.actions'
 
 // Generador dinámico de los próximos 14 días para el carousel táctil móvil
@@ -346,6 +353,57 @@ export default function ClubPublicPage({
               <Clock className="w-3 h-3 text-slate-400" /> {club.openHours}
             </span>
           </div>
+
+          {/* Redes Sociales Oficiales del Club para Jugadores */}
+          {Boolean(
+            club.socialLinks &&
+            (club.socialLinks.instagram || club.socialLinks.facebook || club.socialLinks.tiktok)
+          ) && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/80 overflow-x-auto no-scrollbar">
+              <span className="text-[11px] font-bold text-slate-400 shrink-0">
+                Redes del club:
+              </span>
+
+              {club.socialLinks?.instagram && (
+                <a
+                  href={normalizeSocialUrl('instagram', club.socialLinks.instagram)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 hover:text-pink-200 border border-pink-500/30 transition-all text-xs font-semibold shrink-0 group shadow-xs cursor-pointer"
+                  title="Visitar Instagram del club"
+                >
+                  <InstagramIcon className="w-3.5 h-3.5 text-pink-400 group-hover:scale-110 transition-transform" />
+                  <span>{extractSocialHandle('instagram', club.socialLinks.instagram) || 'Instagram'}</span>
+                </a>
+              )}
+
+              {club.socialLinks?.facebook && (
+                <a
+                  href={normalizeSocialUrl('facebook', club.socialLinks.facebook)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 hover:text-blue-200 border border-blue-500/30 transition-all text-xs font-semibold shrink-0 group shadow-xs cursor-pointer"
+                  title="Visitar Facebook del club"
+                >
+                  <FacebookIcon className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+                  <span>{extractSocialHandle('facebook', club.socialLinks.facebook) || 'Facebook'}</span>
+                </a>
+              )}
+
+              {club.socialLinks?.tiktok && (
+                <a
+                  href={normalizeSocialUrl('tiktok', club.socialLinks.tiktok)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 transition-all text-xs font-semibold shrink-0 group shadow-xs cursor-pointer"
+                  title="Visitar TikTok del club"
+                >
+                  <TikTokIcon className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                  <span>{extractSocialHandle('tiktok', club.socialLinks.tiktok) || 'TikTok'}</span>
+                </a>
+              )}
+            </div>
+          )}
 
           {/* Banner de Información Destacada / Promoción del Club para los Jugadores */}
           {club.highlightText && (
@@ -723,7 +781,52 @@ export default function ClubPublicPage({
         </section>
 
         {/* Footer Seguridad y Confianza */}
-        <footer className="px-4 pt-8 text-center text-xs text-slate-400 space-y-2">
+        <footer className="px-4 pt-8 text-center text-xs text-slate-400 space-y-3">
+          {Boolean(
+            club.socialLinks &&
+            (club.socialLinks.instagram || club.socialLinks.facebook || club.socialLinks.tiktok)
+          ) && (
+            <div className="flex items-center justify-center gap-2 pb-1">
+              <span className="text-[11px] text-slate-400 mr-1 font-medium">Seguinos:</span>
+              {club.socialLinks?.instagram && (
+                <a
+                  href={normalizeSocialUrl('instagram', club.socialLinks.instagram)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-pink-400 hover:text-pink-300 hover:border-pink-500/40 transition-colors"
+                  aria-label="Instagram del club"
+                  title="Instagram"
+                >
+                  <InstagramIcon className="w-4 h-4" />
+                </a>
+              )}
+              {club.socialLinks?.facebook && (
+                <a
+                  href={normalizeSocialUrl('facebook', club.socialLinks.facebook)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-blue-400 hover:text-blue-300 hover:border-blue-500/40 transition-colors"
+                  aria-label="Facebook del club"
+                  title="Facebook"
+                >
+                  <FacebookIcon className="w-4 h-4" />
+                </a>
+              )}
+              {club.socialLinks?.tiktok && (
+                <a
+                  href={normalizeSocialUrl('tiktok', club.socialLinks.tiktok)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+                  aria-label="TikTok del club"
+                  title="TikTok"
+                >
+                  <TikTokIcon className="w-4 h-4" />
+                </a>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-center gap-1.5 text-emerald-400/90 font-medium">
             <ShieldCheck className="w-4 h-4" />
             <span>Pago seguro protegido mediante Mercado Pago</span>

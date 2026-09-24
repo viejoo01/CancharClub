@@ -22,7 +22,8 @@ import {
   UserCheck,
   Receipt,
   Monitor,
-  KeyRound
+  KeyRound,
+  Share2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -311,8 +312,20 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Footer Acciones de Usuario (Cambiar Contraseña y Cerrar Sesión) */}
+      {/* Footer Acciones de Usuario (Redes Sociales, Cambiar Contraseña y Cerrar Sesión) */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-1">
+        <button
+          type="button"
+          onClick={() => {
+            onClose?.()
+            window.dispatchEvent(new CustomEvent('open-social-links-modal'))
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/20 transition-colors cursor-pointer"
+        >
+          <Share2 className="w-4 h-4 text-emerald-400/80" />
+          <span>Redes Sociales</span>
+        </button>
+
         <button
           type="button"
           onClick={() => {

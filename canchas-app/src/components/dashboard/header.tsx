@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -46,6 +46,11 @@ export function Header({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  const handleOpenSocialLinks = () => {
+    setUserMenuOpen(false)
+    window.dispatchEvent(new CustomEvent('open-social-links-modal'))
+  }
 
   const handleOpenChangePassword = () => {
     setUserMenuOpen(false)
@@ -153,6 +158,15 @@ export function Header({
                 <p className="text-xs font-bold text-white truncate">{userName}</p>
                 <p className="text-[11px] text-slate-400 truncate">{tenantName || 'CancharClub'}</p>
               </div>
+
+              <button
+                type="button"
+                onClick={handleOpenSocialLinks}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer text-left"
+              >
+                <Share2 className="w-4 h-4 text-emerald-400" />
+                <span>Redes Sociales</span>
+              </button>
 
               <button
                 type="button"

@@ -54,6 +54,71 @@ export interface ClubBankDetails {
   cuit?: string
 }
 
+export interface ClubSocialLinks {
+  instagram?: string
+  facebook?: string
+  tiktok?: string
+}
+
+/**
+ * Normaliza cualquier entrada de red social (handle, @handle, url corta o completa) a una URL válida
+ */
+export function normalizeSocialUrl(platform: 'instagram' | 'facebook' | 'tiktok', input?: string | null): string {
+  if (!input) return ''
+  let val = input.trim()
+  if (!val) return ''
+
+  // Si ya tiene protocolo http o https
+  if (/^https?:\/\//i.test(val)) {
+    return val
+  }
+
+  // Si comienza con www.
+  if (/^www\./i.test(val)) {
+    return `https://${val}`
+  }
+
+  // Si comienza con dominio directo
+  if (/^(instagram\.com|facebook\.com|tiktok\.com|fb\.com)/i.test(val)) {
+    return `https://${val}`
+  }
+
+  // Quitar arroba si fue provista
+  val = val.replace(/^@+/, '')
+
+  switch (platform) {
+    case 'instagram':
+      return `https://instagram.com/${val}`
+    case 'facebook':
+      return `https://facebook.com/${val}`
+    case 'tiktok':
+      return `https://tiktok.com/@${val}`
+  }
+}
+
+/**
+ * Extrae un nombre de usuario o handle legible para mostrar en badges o píldoras
+ */
+export function extractSocialHandle(platform: 'instagram' | 'facebook' | 'tiktok', urlOrHandle?: string | null): string {
+  if (!urlOrHandle) return ''
+  const trimmed = urlOrHandle.trim()
+  if (!trimmed) return ''
+
+  try {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const parsed = new URL(trimmed)
+      const path = parsed.pathname.replace(/^\/+|\/+$/g, '')
+      if (platform === 'tiktok') {
+        return path ? (path.startsWith('@') ? path : `@${path}`) : ''
+      }
+      return path ? `@${path}` : ''
+    }
+  } catch {}
+
+  const clean = trimmed.replace(/^@+/, '')
+  return clean ? `@${clean}` : ''
+}
+
 export interface ClubData {
   id: string
   name: string
@@ -84,6 +149,7 @@ export interface ClubData {
   highlightText?: string
   highlightBadge?: string
   isHighlightActive?: boolean
+  socialLinks?: ClubSocialLinks
 }
 
 export const CLUBS_DATABASE: ClubData[] = []

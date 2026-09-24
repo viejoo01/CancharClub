@@ -16,6 +16,7 @@ import { PlanActivationModal } from './plan-activation-modal'
 import { PlanExpirationAlert } from './plan-expiration-alert'
 import { AutoDebitAlertModal } from './auto-debit-alert-modal'
 import { ChangePasswordModal } from './change-password-modal'
+import { ClubSocialLinksModal } from './club-social-links-modal'
 import { PausedClubScreen, type PausedSubState } from './paused-club-screen'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -66,6 +67,7 @@ export function DashboardLayoutClient({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(!isActive)
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
+  const [showSocialLinksModal, setShowSocialLinksModal] = useState(false)
   const pathname = usePathname()
 
   // Manejo de estado de club pausado con soporte para query params y simulación
@@ -114,6 +116,13 @@ export function DashboardLayoutClient({
     const handleOpenPwd = () => setShowChangePasswordModal(true)
     window.addEventListener('open-change-password-modal', handleOpenPwd)
     return () => window.removeEventListener('open-change-password-modal', handleOpenPwd)
+  }, [])
+
+  // Escuchar evento personalizado para abrir el modal de redes sociales
+  useEffect(() => {
+    const handleOpenSocial = () => setShowSocialLinksModal(true)
+    window.addEventListener('open-social-links-modal', handleOpenSocial)
+    return () => window.removeEventListener('open-social-links-modal', handleOpenSocial)
   }, [])
 
   // Prevenir scroll en el fondo cuando el drawer móvil está abierto
@@ -228,6 +237,16 @@ export function DashboardLayoutClient({
           userName={userName}
           userRole={userRole}
         />
+
+        {/* Modal de configuración de redes sociales del club */}
+        {tenantId && (
+          <ClubSocialLinksModal
+            isOpen={showSocialLinksModal}
+            onClose={() => setShowSocialLinksModal(false)}
+            tenantId={tenantId}
+            clubSlug={tenantSlug}
+          />
+        )}
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
           {isClubPaused ? (

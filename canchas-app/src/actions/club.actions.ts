@@ -1126,11 +1126,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       ? Math.min(...priceRulesMapped.map((r) => r.priceArs))
       : (courtsMapped[0]?.pricePerHour || 20000)
 
-    const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
-    const hasMp = Boolean(tenant.mp_access_token) ||
-      rawMethods.some((m: string) => m === 'MERCADO_PAGO' || m === 'MERCADOPAGO' || m === 'CARD') ||
-      tenant.subscription_status === 'ACTIVE' ||
-      tenant.subscription_status === 'TRIAL'
+    const hasMp = Boolean(tenant.mp_access_token)
 
     let schedule: ClubScheduleConfig = DEFAULT_CLUB_SCHEDULE
     if (tenant.description) {
@@ -1404,8 +1400,8 @@ export async function getPublicClubs(): Promise<ClubData[]> {
               cbu: t.bank_cbu || '',
             }
           : undefined,
-        paymentMethods: (t.mp_access_token || (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('CARD')))) ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
-        mpConnected: Boolean(t.mp_access_token || (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('CARD'))) || t.subscription_status === 'ACTIVE'),
+        paymentMethods: t.mp_access_token ? ['TRANSFER', 'MERCADOPAGO'] : ['TRANSFER'],
+        mpConnected: Boolean(t.mp_access_token),
       })
     }
 

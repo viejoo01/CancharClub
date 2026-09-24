@@ -81,18 +81,11 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       }
     }
 
-    const rawMethods = Array.isArray(tenant.payment_methods) ? tenant.payment_methods : ['TRANSFER']
-    const paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[] = []
-    if (rawMethods.includes('TRANSFER')) paymentMethods.push('TRANSFER')
-    if (rawMethods.includes('MERCADOPAGO') || rawMethods.includes('MERCADO_PAGO') || rawMethods.includes('CARD')) paymentMethods.push('MERCADOPAGO')
-    if (paymentMethods.length === 0) paymentMethods.push('TRANSFER')
-
-    const hasMp = Boolean(tenant.mp_access_token) ||
-      rawMethods.includes('MERCADOPAGO') ||
-      rawMethods.includes('MERCADO_PAGO') ||
-      rawMethods.includes('CARD') ||
-      tenant.subscription_status === 'ACTIVE' ||
-      tenant.subscription_status === 'TRIAL'
+    const mpConnected = Boolean(tenant.mp_access_token)
+    const paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[] = ['TRANSFER']
+    if (mpConnected) {
+      paymentMethods.push('MERCADOPAGO')
+    }
 
     return {
       tenantId: tenant.id,
@@ -104,7 +97,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       cuit: tenant.bank_cuit || '',
       whatsappPhone: tenant.phone_whatsapp || '',
       paymentMethods,
-      mpConnected: hasMp,
+      mpConnected,
       mpCollectorId: tenant.mp_collector_id,
       mpPublicKey: tenant.mp_public_key,
     }

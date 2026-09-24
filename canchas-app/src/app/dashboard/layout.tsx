@@ -43,11 +43,8 @@ export default async function DashboardLayout({
 
   const serviceClient = await createServiceClient()
 
-  function checkMpConnected(t: { mp_access_token?: string | null; payment_methods?: string[] | null; subscription_status?: string | null }): boolean {
-    if (t.mp_access_token) return true
-    if (Array.isArray(t.payment_methods) && (t.payment_methods.includes('MERCADO_PAGO') || t.payment_methods.includes('MERCADOPAGO') || t.payment_methods.includes('CARD'))) return true
-    if (t.subscription_status === 'ACTIVE' || t.subscription_status === 'TRIAL') return true
-    return false
+  function checkMpConnected(t: { mp_access_token?: string | null }): boolean {
+    return Boolean(t.mp_access_token)
   }
 
   // Validar si el cookieTenantId existe efectivamente en la base de datos

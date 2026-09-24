@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
@@ -89,7 +89,9 @@ export default function SuperadminPage() {
   const [tenants, setTenants] = useState<SuperadminTenantItem[]>([])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'>('ALL')
+  const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' | 'PRUEBA'>('ALL')
+  const [tenantSearchTerm, setTenantSearchTerm] = useState('')
+  const [tenantStatusFilter, setTenantStatusFilter] = useState<'ALL' | 'ACTIVE' | 'TRIAL' | 'PENDING'>('ALL')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newClubName, setNewClubName] = useState('')
   const [newCity, setNewCity] = useState('San Miguel de Tucumán')
@@ -341,14 +343,32 @@ export default function SuperadminPage() {
   const upToDateCount = tenants.filter(t => t.subscription_status === 'AL_DIA').length
   const pendingCount = tenants.filter(t => t.subscription_status === 'PENDIENTE').length
   const pausedCount = tenants.filter(t => t.subscription_status === 'PAUSADO').length
+  const trialCount = tenants.filter(t => Boolean(t.is_trial)).length
 
   const filteredTenants = tenantsWithPricing.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.slug.toLowerCase().includes(searchTerm.toLowerCase())
+    const term = searchTerm.toLowerCase().trim()
+    const matchesSearch = !term ||
+      t.name.toLowerCase().includes(term) ||
+      t.slug.toLowerCase().includes(term) ||
+      (t.city && t.city.toLowerCase().includes(term))
     if (!matchesSearch) return false
     if (subscriptionFilter === 'AL_DIA') return t.subscription_status === 'AL_DIA'
     if (subscriptionFilter === 'PENDIENTE') return t.subscription_status === 'PENDIENTE'
     if (subscriptionFilter === 'PAUSADO') return t.subscription_status === 'PAUSADO'
+    if (subscriptionFilter === 'PRUEBA') return Boolean(t.is_trial)
+    return true
+  })
+
+  const directoryTenants = tenantsWithPricing.filter(t => {
+    const term = tenantSearchTerm.toLowerCase().trim()
+    const matchesSearch = !term ||
+      t.name.toLowerCase().includes(term) ||
+      t.slug.toLowerCase().includes(term) ||
+      (t.city && t.city.toLowerCase().includes(term))
+    if (!matchesSearch) return false
+    if (tenantStatusFilter === 'ACTIVE') return t.is_active && !t.is_trial
+    if (tenantStatusFilter === 'TRIAL') return Boolean(t.is_trial)
+    if (tenantStatusFilter === 'PENDING') return !t.is_active
     return true
   })
 
@@ -897,213 +917,310 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   const staffCount = clubUsers.filter(u => u.role === 'TENANT_STAFF').length
   const activeUserCount = clubUsers.filter(u => u.status === 'ACTIVE').length
 
+  const trialExpirationPreview = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + trialDaysToSet)
+    return d.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    })
+  }, [trialDaysToSet])
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wider uppercase mb-1">
-            <ShieldCheck className="w-4 h-4" />
-            Panel Superadministrador SaaS
+    <div className="space-y-6 max-w-7xl mx-auto px-1 sm:px-2">
+      {/* Header Superior y Barra de Acciones */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 rounded-3xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl shadow-xl shadow-black/20">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 text-[11px] font-semibold tracking-wider uppercase">
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Superadmin Central</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-slate-400 font-normal normal-case">Sistema CancharClub SaaS</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Gestión de Clubes, Dueños y Encargados
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Gestión de Clubes, Dueños y Cobranzas
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Administrá predios inquilinos, asigná accesos independientes a dueños y encargados, y controlá la facturación mensual.
+          <p className="text-xs sm:text-sm text-slate-400 max-w-2xl leading-relaxed">
+            Supervisá predios inquilinos, asigná accesos a dueños y encargados, y controlá períodos de prueba y facturación SaaS.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+
+        {/* Acciones Rápidas */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <Button
+            onClick={() => void loadData(true)}
+            disabled={isRefreshing}
+            variant="outline"
+            className="h-10 px-3 text-xs border-slate-800 bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl cursor-pointer transition-colors"
+            title="Sincronizar base de datos en tiempo real"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", isRefreshing && "animate-spin text-indigo-400")} />
+            <span className="hidden sm:inline">Sincronizar</span>
+          </Button>
+
+          <Button 
+            onClick={() => setIsModalOpen(true)}
+            variant="outline"
+            className="h-10 px-3.5 text-xs border-slate-700/80 hover:border-indigo-500/60 bg-slate-950/90 text-slate-200 hover:text-white rounded-xl font-medium cursor-pointer transition-colors shadow-xs"
+          >
+            <Plus className="w-4 h-4 mr-1 text-indigo-400 shrink-0" />
+            <span>Nuevo Club</span>
+          </Button>
+
+          <Button 
+            onClick={() => setIsCreateUserModalOpen(true)}
+            className="h-10 px-3.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-950/40 cursor-pointer transition-all"
+          >
+            <UserPlus className="w-4 h-4 mr-1.5 shrink-0" />
+            <span>Crear Usuario</span>
+          </Button>
+
           <Button
             onClick={() => setIsQuickWizardModalOpen(true)}
-            className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-900/30 rounded-xl text-xs font-bold px-3.5 py-2 cursor-pointer"
+            className="h-10 px-4 text-xs font-bold bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-950/40 rounded-xl cursor-pointer border border-purple-400/25 transition-all"
           >
             <Sparkles className="w-4 h-4 mr-1.5 text-yellow-300 shrink-0" />
             <span>⚡ Alta Rápida Completa</span>
           </Button>
-          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
-            <Button 
-              onClick={() => setIsCreateUserModalOpen(true)}
-              className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 rounded-xl text-xs font-semibold px-3 py-2 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4 mr-1.5 shrink-0" />
-              <span>Crear Usuario</span>
-            </Button>
-            <Button 
-              onClick={() => setIsModalOpen(true)}
-              variant="outline"
-              className="w-full sm:w-auto min-h-10 sm:min-h-9 justify-center border-slate-800 hover:border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white rounded-xl text-xs px-3 py-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 mr-1.5 text-indigo-400 shrink-0" />
-              <span>Nuevo Club</span>
-            </Button>
+        </div>
+      </div>
+
+      {/* Ribbon HUD: Reglas de Negocio, Fórmula SaaS y Roles */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="p-3.5 rounded-2xl bg-linear-to-br from-indigo-950/40 via-slate-900/60 to-slate-950/80 border border-indigo-500/20 backdrop-blur-md flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+            <Calculator className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[11px] font-semibold uppercase text-indigo-300 tracking-wider block">Fórmula de Cuota SaaS</span>
+            <span className="text-xs font-mono font-bold text-white truncate block">
+              Turno Más Caro × (0.5 × Canchas + 0.5)
+            </span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-linear-to-br from-emerald-950/30 via-slate-900/60 to-slate-950/80 border border-emerald-500/20 backdrop-blur-md flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+            <Users className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 text-xs">
+            <span className="text-[11px] font-semibold uppercase text-emerald-300 tracking-wider block">Separación de Roles</span>
+            <span className="text-slate-300 truncate block">
+              <strong className="text-emerald-400">Dueños:</strong> Admin & Finanzas • <strong className="text-amber-400">Encargados:</strong> Turnos & Caja
+            </span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-linear-to-br from-purple-950/40 via-slate-900/60 to-slate-950/80 border border-purple-500/20 backdrop-blur-md flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
+            <Gift className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 text-xs">
+            <span className="text-[11px] font-semibold uppercase text-purple-300 tracking-wider block">Período de Prueba</span>
+            <span className="text-slate-300 truncate block">
+              <strong className="text-purple-300">15 días gratis bonificados</strong> para cada club nuevo que se registre
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Regla de Negocio Destacada */}
-      <div className="p-4 rounded-2xl bg-linear-to-r from-indigo-950/60 via-slate-900/60 to-purple-950/40 border border-indigo-800/40 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-            <Calculator className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-white">
-              Fórmula de Facturación SaaS y Roles de la Plataforma
-            </h3>
-            <p className="text-xs text-slate-300">
-              <span className="text-indigo-400 font-mono font-medium">Cuota Mensual = Turno Más Caro × (0.5 × Canchas + 0.5)</span>
-              {' '}— Los <strong className="text-emerald-400">Dueños</strong> gestionan canchas, precios y reportes. Los <strong className="text-amber-400">Encargados</strong> controlan turnos, cantina/kiosco y caja diaria.
-            </p>
-          </div>
-        </div>
-        <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs px-3 py-1">
-          Panel de Control B2B
-        </Badge>
-      </div>
-
-      {/* Métricas Globales */}
+      {/* Métricas Globales (KPIs) con micro-glow y tarjetas premium */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        {/* Card 1: MRR */}
+        <div className="p-4 rounded-2xl bg-linear-to-br from-indigo-950/30 via-slate-900/70 to-slate-950 border border-indigo-500/30 shadow-lg shadow-black/20 hover:border-indigo-500/50 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase text-indigo-300 tracking-wider">
               MRR SaaS Proyectado
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+            </span>
+            <div className="p-2 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
               <DollarSign className="w-4 h-4" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white tracking-tight">
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-white tracking-tight font-mono">
               {formatARS(totalMRR)}
             </div>
-            <p className="text-xs text-indigo-400 font-medium mt-1">
-              {upToDateCount} al día • {pendingCount} pendientes{pausedCount > 0 ? ` • ${pausedCount} en pausa` : ''}
-            </p>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400 mt-1.5">
+              <span className="text-emerald-400 font-semibold">{upToDateCount} al día</span>
+              <span>•</span>
+              <span className="text-amber-400 font-semibold">{pendingCount} pendientes</span>
+              {trialCount > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-purple-400 font-semibold">{trialCount} en prueba</span>
+                </>
+              )}
+              {pausedCount > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-rose-400 font-semibold">{pausedCount} en pausa</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
 
-        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        {/* Card 2: Clubes */}
+        <div className="p-4 rounded-2xl bg-linear-to-br from-sky-950/30 via-slate-900/70 to-slate-950 border border-sky-500/30 shadow-lg shadow-black/20 hover:border-sky-500/50 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase text-sky-300 tracking-wider">
               Clubes Registrados
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+            </span>
+            <div className="p-2 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/20">
               <Building2 className="w-4 h-4" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white tracking-tight">
-              {tenants.length}
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-white tracking-tight">
+              {tenants.length} <span className="text-sm font-normal text-slate-400">clubes</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              {totalCourts} canchas activas en total
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              <strong className="text-sky-300 font-semibold">{totalCourts}</strong> canchas operativas en total
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        {/* Card 3: Usuarios */}
+        <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-950/30 via-slate-900/70 to-slate-950 border border-emerald-500/30 shadow-lg shadow-black/20 hover:border-emerald-500/50 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase text-emerald-300 tracking-wider">
               Usuarios Asignados
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+            </span>
+            <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
               <Users className="w-4 h-4" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-emerald-400">{ownerCount}</span>
-              <span className="text-xs text-slate-400">dueños</span>
-              <span className="text-slate-600">/</span>
-              <span className="text-2xl font-bold text-amber-400">{staffCount}</span>
-              <span className="text-xs text-slate-400">encargados</span>
+          </div>
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 text-2xl font-black text-white tracking-tight">
+              <span className="text-emerald-400">{ownerCount}</span>
+              <span className="text-xs font-medium text-slate-400">dueños</span>
+              <span className="text-slate-600 text-lg">/</span>
+              <span className="text-amber-400">{staffCount}</span>
+              <span className="text-xs font-medium text-slate-400">encargados</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              {activeUserCount} usuarios activos en total
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              <strong className="text-emerald-300 font-semibold">{activeUserCount}</strong> cuentas activas con acceso
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        {/* Card 4: Turnos */}
+        <div className="p-4 rounded-2xl bg-linear-to-br from-purple-950/30 via-slate-900/70 to-slate-950 border border-purple-500/30 shadow-lg shadow-black/20 hover:border-purple-500/50 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase text-purple-300 tracking-wider">
               Turnos en Plataforma
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+            </span>
+            <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/20">
               <Calendar className="w-4 h-4" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white tracking-tight">
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-white tracking-tight">
               {tenants.reduce((acc, t) => acc + t.total_bookings, 0)}
             </div>
-            <p className="text-xs text-purple-400 font-medium mt-1">
+            <p className="text-[11px] text-purple-300 font-medium mt-1.5">
               Reservas procesadas este mes
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      {/* Tabs Switcher con scroll horizontal fluido y sin barra molesta */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1 -mx-3 px-3 sm:mx-0 sm:px-0 max-w-full">
+      {/* Tabs Navigation Control: Moderno Segmented Pills */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <div className="p-1 rounded-2xl bg-slate-950/90 border border-slate-800/80 backdrop-blur-xl shadow-inner inline-flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
           <button
             onClick={() => setActiveTab('USERS')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0",
               activeTab === 'USERS'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
+                ? "bg-linear-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-600/30 ring-1 ring-white/10"
+                : "text-slate-400 hover:text-white hover:bg-slate-900/60"
+            )}
           >
-            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Usuarios & Accesos (Dueños y Encargados)</span>
-            <span className="sm:hidden">Usuarios</span>
-            <Badge className="ml-1 bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
+            <Users className="w-4 h-4" />
+            <span>Usuarios & Accesos</span>
+            <Badge className={cn(
+              "text-[10px] px-1.5 py-0 border",
+              activeTab === 'USERS' 
+                ? "bg-white/20 text-white border-white/20" 
+                : "bg-slate-800 text-slate-300 border-slate-700"
+            )}>
               {clubUsers.length}
             </Badge>
           </button>
-          <button
-            onClick={() => setActiveTab('BILLING')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'BILLING'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Facturación y Cobros Mensuales SaaS</span>
-            <span className="sm:hidden">Facturación</span>
-          </button>
+
           <button
             onClick={() => setActiveTab('TENANTS')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0",
               activeTab === 'TENANTS'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
+                ? "bg-linear-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-600/30 ring-1 ring-white/10"
+                : "text-slate-400 hover:text-white hover:bg-slate-900/60"
+            )}
           >
-            <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Directorio de Clubes y Portales</span>
-            <span className="sm:hidden">Clubes ({tenants.length})</span>
-            <Badge className="ml-1 bg-slate-800 text-slate-300 text-[10px] px-1.5 py-0 border border-slate-700 hidden sm:inline-flex">
+            <Building2 className="w-4 h-4" />
+            <span>Directorio de Clubes</span>
+            <Badge className={cn(
+              "text-[10px] px-1.5 py-0 border",
+              activeTab === 'TENANTS' 
+                ? "bg-white/20 text-white border-white/20" 
+                : "bg-slate-800 text-slate-300 border-slate-700"
+            )}>
               {tenants.length}
+            </Badge>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('BILLING')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0",
+              activeTab === 'BILLING'
+                ? "bg-linear-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-600/30 ring-1 ring-white/10"
+                : "text-slate-400 hover:text-white hover:bg-slate-900/60"
+            )}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>Facturación SaaS</span>
+            <Badge className={cn(
+              "text-[10px] px-1.5 py-0 border",
+              activeTab === 'BILLING' 
+                ? "bg-emerald-500/30 text-emerald-200 border-emerald-400/40" 
+                : "bg-slate-800 text-slate-300 border-slate-700"
+            )}>
+              {pendingCount > 0 ? `${pendingCount} pendientes` : 'Al día'}
             </Badge>
           </button>
         </div>
 
-        {activeTab === 'USERS' && (
-          <div className="flex items-center gap-2 self-end sm:self-auto">
+        {/* Acceso rápido contextual a la derecha del tab bar */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          {activeTab === 'USERS' && (
             <Button
               size="sm"
               onClick={() => setIsCreateUserModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs cursor-pointer h-9 px-3"
             >
               <UserPlus className="w-3.5 h-3.5 mr-1" />
-              Crear Usuario
+              Nuevo Usuario
             </Button>
-          </div>
-        )}
+          )}
+          {activeTab === 'TENANTS' && (
+            <Button
+              size="sm"
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl shadow-xs cursor-pointer h-9 px-3"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Nuevo Club
+            </Button>
+          )}
+          {activeTab === 'BILLING' && (
+            <div className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">
+              Total MRR: {formatARS(totalMRR)}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Pestaña: FACTURACIÓN Y COBROS SAAS */}
@@ -1192,6 +1309,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 )}
               >
                 ⏸️ En Pausa ({pausedCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionFilter('PRUEBA')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  subscriptionFilter === 'PRUEBA'
+                    ? "bg-purple-600 text-white"
+                    : "bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/30"
+                )}
+              >
+                🎁 En Prueba ({trialCount})
               </button>
             </div>
           </CardHeader>
@@ -1510,20 +1639,98 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       {/* Pestaña: DIRECTORIO DE CLUBES */}
       {activeTab === 'TENANTS' && (
         <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
-          <CardHeader className="border-b border-slate-800/80 p-5">
-            <CardTitle className="text-base font-bold text-white">
-              Directorio de Clubes y Subdominios
-            </CardTitle>
+          <CardHeader className="border-b border-slate-800/80 p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base font-bold text-white">
+                  Directorio de Clubes y Subdominios
+                </CardTitle>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Visualizá y gestioná el estado operativo, accesos, planes y links públicos de cada club.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  onClick={() => setIsModalOpen(true)}
+                  className="h-9 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Nuevo Club
+                </Button>
+                <div className="relative flex-1 sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Input 
+                    placeholder="Buscar club, slug o ciudad..."
+                    value={tenantSearchTerm}
+                    onChange={(e) => setTenantSearchTerm(e.target.value)}
+                    className="pl-9 h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Filtros por estado operativo */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+              <button
+                type="button"
+                onClick={() => setTenantStatusFilter('ALL')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  tenantStatusFilter === 'ALL'
+                    ? "bg-slate-700 text-white"
+                    : "bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800"
+                )}
+              >
+                Todos ({tenants.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTenantStatusFilter('ACTIVE')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  tenantStatusFilter === 'ACTIVE'
+                    ? "bg-emerald-600 text-white"
+                    : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40 border border-emerald-500/20"
+                )}
+              >
+                ✅ Habilitados ({tenants.filter(t => t.is_active && !t.is_trial).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTenantStatusFilter('TRIAL')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  tenantStatusFilter === 'TRIAL'
+                    ? "bg-purple-600 text-white"
+                    : "bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/30"
+                )}
+              >
+                🎁 En Prueba ({trialCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTenantStatusFilter('PENDING')}
+                className={cn(
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  tenantStatusFilter === 'PENDING'
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-950/30 text-amber-400 hover:bg-amber-900/40 border border-amber-500/20"
+                )}
+              >
+                ⏳ Pendientes ({tenants.filter(t => !t.is_active).length})
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {/* VISTA MÓVIL: Tarjetas de Clubes (<md) */}
             <div className="md:hidden divide-y divide-slate-800/80 p-3 space-y-3">
-              {filteredTenants.length === 0 ? (
+              {directoryTenants.length === 0 ? (
                 <div className="p-6 text-center text-slate-400">
                   <p className="font-semibold text-slate-300">No se encontraron clubes.</p>
                 </div>
               ) : (
-                filteredTenants.map((t) => (
+                directoryTenants.map((t) => (
                   <div key={t.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -1669,8 +1876,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {filteredTenants.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
+                  {directoryTenants.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        <p className="font-semibold text-slate-300">No se encontraron clubes con los filtros seleccionados.</p>
+                        <p className="text-xs text-slate-500 mt-1">Probá cambiando el término de búsqueda o el filtro de estado.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    directoryTenants.map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
                       <td className="p-4 pl-6 font-semibold text-white">
                         {t.name}
                       </td>
@@ -1786,7 +2001,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>
@@ -1799,37 +2014,73 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         <div className="space-y-6">
           {/* Banner explicativo de roles */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-800/40 backdrop-blur-md flex items-start gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-white">Rol: Dueño del Club</h4>
-                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0 border border-emerald-500/30">
-                    TENANT_ADMIN
-                  </Badge>
+            <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-950/40 via-slate-900/60 to-slate-950/80 border border-emerald-500/25 backdrop-blur-md flex flex-col justify-between gap-3 shadow-lg shadow-emerald-950/20">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 shrink-0 shadow-xs">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Acceso y administración total del club: configuración de canchas, reglas de tarifas/precios, reportes de ocupación y facturación de la cuota SaaS mensual.
-                </p>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white tracking-tight">Dueño del Club</h4>
+                      <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 border border-emerald-500/30 font-mono">
+                        TENANT_ADMIN
+                      </Badge>
+                    </div>
+                    <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                      {ownerCount} asignados
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed pt-0.5">
+                    Acceso y administración total del club: configuración de canchas, reglas de tarifas, precios de slots, reportes de ocupación y cobros de la cuota SaaS mensual.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
+                  ✓ Configuración General
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
+                  ✓ Planes y Cuota SaaS
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
+                  ✓ Reportes y Facturación
+                </span>
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-800/40 backdrop-blur-md flex items-start gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-                <Coffee className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-white">Rol: Encargado / Mostrador</h4>
-                  <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0 border border-amber-500/30">
-                    TENANT_STAFF
-                  </Badge>
+            <div className="p-4 rounded-2xl bg-linear-to-br from-amber-950/40 via-slate-900/60 to-slate-950/80 border border-amber-500/25 backdrop-blur-md flex flex-col justify-between gap-3 shadow-lg shadow-amber-950/20">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/25 shrink-0 shadow-xs">
+                  <Coffee className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Operativa diaria en cancha: Calendario de turnos en vivo, turnos fijos de abonados, cantina & kiosco, y apertura/cierre de caja diaria. No accede a finanzas SaaS ni precios.
-                </p>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white tracking-tight">Encargado / Mostrador</h4>
+                      <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 border border-amber-500/30 font-mono">
+                        TENANT_STAFF
+                      </Badge>
+                    </div>
+                    <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                      {staffCount} asignados
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed pt-0.5">
+                    Operativa diaria en cancha: Calendario de turnos en vivo, turnos fijos de abonados, cantina & kiosco, y apertura/cierre de caja diaria. No accede a finanzas SaaS ni precios.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
+                  ✓ Calendario de Turnos
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
+                  ✓ Kiosco / Cantina
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
+                  ✓ Caja Diaria
+                </span>
               </div>
             </div>
           </div>
@@ -1850,7 +2101,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
                 {/* Filtros */}
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                  <div className="relative min-w-50 flex-1 sm:flex-initial">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <Input 
                       placeholder="Buscar por nombre, email o club..."
@@ -2159,7 +2410,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               </Badge>
                             )}
                           </td>
-                          <td className="p-4 max-w-[220px]">
+                          <td className="p-4 max-w-55">
                             {user.role === 'TENANT_ADMIN' ? (
                               <div className="text-[11px] text-slate-300 leading-tight">
                                 <strong className="text-emerald-400">Total:</strong> Canchas, Precios, Reportes, Ocupación y Facturación SaaS.
@@ -3359,11 +3610,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-purple-300 font-medium">Fecha de vencimiento:</span>
                   <span className="font-mono font-bold text-emerald-400">
-                    {new Date(Date.now() + trialDaysToSet * 24 * 60 * 60 * 1000).toLocaleDateString('es-AR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric'
-                    })}
+                    {trialExpirationPreview}
                   </span>
                 </div>
               </div>

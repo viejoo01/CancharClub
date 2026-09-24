@@ -75,7 +75,7 @@ export function Sidebar({
       requiredFeature: 'turnos_fijos',
     },
     {
-      title: 'Cantina & Kiosco',
+      title: 'Cantina',
       href: '/dashboard/cantina',
       icon: Coffee,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
@@ -96,7 +96,7 @@ export function Sidebar({
       staffVisible: true,
     },
     {
-      title: 'Equipo & Staff',
+      title: 'Equipo',
       href: '/dashboard/equipo',
       icon: UserCheck,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
@@ -147,7 +147,7 @@ export function Sidebar({
       requiredFeature: 'reportes_ocupacion',
     },
     {
-      title: 'Mi Plan SaaS',
+      title: 'Mi plan',
       href: '/dashboard/plan',
       icon: CreditCard,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],

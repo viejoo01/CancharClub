@@ -19,25 +19,50 @@ export async function loginWithEmail(formData: FormData) {
     password,
   })
 
-  // Si el email no está confirmado, auto-confirmar con serviceClient y reintentar
-  if (error && error.message.toLowerCase().includes('email not confirmed')) {
+  // Si hay error en el inicio de sesión, verificar auto-confirmación o auto-sincronización de credenciales
+  if (error) {
     try {
       const serviceClient = await createServiceClient()
       const { data: usersData } = await serviceClient.auth.admin.listUsers()
       const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
+
       if (existingUser) {
-        await serviceClient.auth.admin.updateUserById(existingUser.id, { email_confirm: true })
-        const retry = await supabase.auth.signInWithPassword({ email, password })
-        data = retry.data
-        error = retry.error
+        let shouldUpdate = false
+        const updatePayload: { email_confirm?: boolean; password?: string } = {}
+
+        if (!existingUser.email_confirmed_at) {
+          updatePayload.email_confirm = true
+          shouldUpdate = true
+        }
+
+        // Si la clave ingresada coincide con la asignada en metadatos, reparar hash desincronizado
+        const metaPwd = (existingUser.user_metadata?.assigned_password || existingUser.user_metadata?.initial_password) as string | undefined
+        if (metaPwd && metaPwd.trim() === password.trim()) {
+          updatePayload.password = password.trim()
+          updatePayload.email_confirm = true
+          shouldUpdate = true
+        }
+
+        if (shouldUpdate) {
+          await serviceClient.auth.admin.updateUserById(existingUser.id, updatePayload)
+          const retry = await supabase.auth.signInWithPassword({ email, password })
+          if (retry.data?.user) {
+            data = retry.data
+            error = null
+          }
+        }
       }
     } catch (adminErr) {
-      console.error('Error auto-confirming email:', adminErr)
+      console.error('Error auto-syncing credentials:', adminErr)
     }
   }
 
   if (error || !data?.user) {
-    return { success: false, error: error?.message || 'Credenciales incorrectas' }
+    let friendlyError = error?.message || 'Credenciales incorrectas'
+    if (friendlyError.toLowerCase().includes('invalid login credentials')) {
+      friendlyError = 'Email o contraseña incorrectos. Verificá que no haya errores de tipeo.'
+    }
+    return { success: false, error: friendlyError }
   }
 
   // Comprobar rol de usuario y tenant

@@ -56,7 +56,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       const { data: defaultClub } = await supabase
         .from('tenants')
         .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id')
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
@@ -144,7 +144,7 @@ export async function saveTenantBankSettings(
       const { data: defaultClub } = await supabase
         .from('tenants')
         .select('id')
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (defaultClub?.id) {
@@ -204,7 +204,7 @@ export async function saveTenantBankSettings(
       const { data: defaultClub } = await supabase
         .from('tenants')
         .select('id')
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 

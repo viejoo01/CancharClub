@@ -83,19 +83,22 @@ export default function ClubPlanPage() {
     }
     void fetchInitial()
 
-    // Sondeo periódico cada 30s para mantener información fresca
+    // Sondeo periódico continuo cada 5s para consultar la base de datos en tiempo real
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       void fetchInitial()
-    }, 30000)
+    }, 5000)
 
-    // Revalidar inmediatamente cuando el usuario vuelve a la pestaña
-    const handleFocus = () => void fetchInitial()
-    window.addEventListener('focus', handleFocus)
+    // Revalidar inmediatamente cuando el usuario vuelve o cambia de pestaña
+    const handleSync = () => void fetchInitial()
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
 
     return () => { 
       isMounted = false 
       clearInterval(interval)
-      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
     }
   }, [tenantId])
 

@@ -47,7 +47,7 @@ export default function PreciosPage() {
   const [availableCourts, setAvailableCourts] = useState<ClubCourtSimple[]>([])
   const [loadingRules, setLoadingRules] = useState(true)
 
-  const reloadRules = async (tId: string) => {
+  const reloadRules = async (tId: string, showToastOnError = false) => {
     try {
       const data = await getClubPriceRules(tId)
       interface RawRuleResult {
@@ -81,7 +81,7 @@ export default function PreciosPage() {
       })
       setRules(mapped)
     } catch {
-      toast.error('Error al cargar tarifas')
+      if (showToastOnError) toast.error('Error al cargar tarifas')
     }
   }
 
@@ -90,9 +90,9 @@ export default function PreciosPage() {
 
     let isMounted = true
 
-    async function init() {
-      setLoadingRules(true)
-      await reloadRules(tenantId!)
+    async function init(isInitial = false) {
+      if (isInitial) setLoadingRules(true)
+      await reloadRules(tenantId!, isInitial)
 
       // Cargar canchas disponibles para asignación
       const supabase = createClient()
@@ -106,15 +106,28 @@ export default function PreciosPage() {
       if (isMounted && data) {
         setAvailableCourts(data)
       }
-      if (isMounted) {
+      if (isMounted && isInitial) {
         setLoadingRules(false)
       }
     }
 
-    init()
+    void init(true)
+
+    // Sondeo continuo cada 5 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void init(false)
+    }, 5000)
+
+    const handleSync = () => void init(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
 
     return () => {
       isMounted = false
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
     }
   }, [tenantId])
 

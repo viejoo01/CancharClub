@@ -46,29 +46,48 @@ export default function JugadoresPage() {
   const [history, setHistory] = useState<PlayerHistoryItem[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  const loadData = useCallback(async (isInitial = false) => {
+    if (!tenantId) return
+    if (isInitial) setLoading(true)
     try {
-      const res = await getPlayersReputation(tenantId!, searchQuery)
+      const res = await getPlayersReputation(tenantId, searchQuery)
       if (res.success) {
         setPlayers(res.players)
         setStats(res.stats)
-      } else {
+      } else if (isInitial) {
         toast.error('Error al cargar datos de jugadores')
       }
     } catch {
-      toast.error('Error inesperado')
+      if (isInitial) toast.error('Error inesperado')
     } finally {
-      setLoading(false)
+      if (isInitial) setLoading(false)
     }
-  }, [searchQuery])
+  }, [tenantId, searchQuery])
 
   useEffect(() => {
+    if (!tenantId) return
+
     const timer = setTimeout(() => {
-      loadData()
+      void loadData(true)
     }, 300)
-    return () => clearTimeout(timer)
-  }, [loadData])
+
+    // Sondeo continuo cada 6 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void loadData(false)
+    }, 6000)
+
+    const handleSync = () => void loadData(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
+    return () => {
+      clearTimeout(timer)
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
+    }
+  }, [tenantId, loadData])
 
   const openHistory = async (player: PlayerSummary) => {
     setSelectedPlayer(player)

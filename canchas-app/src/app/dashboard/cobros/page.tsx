@@ -58,8 +58,8 @@ export default function CobrosConfigPage() {
 
   useEffect(() => {
     let isMounted = true
-    async function loadSettings() {
-      setLoading(true)
+    async function loadSettings(isInitial = false) {
+      if (isInitial) setLoading(true)
       try {
         const settings = await getTenantPaymentSettings(tenantId || undefined)
         if (settings && isMounted) {
@@ -76,30 +76,30 @@ export default function CobrosConfigPage() {
             if (raw) draft = JSON.parse(raw)
           } catch {}
 
-          if (hasDbData) {
-            setBankName(settings.bankName || '')
-            setAccountHolder(settings.accountHolder || '')
-            setCbu(settings.cbu || '')
-            setAlias(settings.alias || '')
-            setCuit(settings.cuit || '')
-            setWhatsappPhone(settings.whatsappPhone || '')
-            setHasUnsavedChanges(false)
-          } else if (draft && (draft.accountHolder || draft.alias || draft.bankName || draft.cbu)) {
-            setBankName(draft.bankName || '')
-            setAccountHolder(draft.accountHolder || '')
-            setCbu(draft.cbu || '')
-            setAlias(draft.alias || '')
-            setCuit(draft.cuit || '')
-            setWhatsappPhone(draft.whatsappPhone || '')
-            setHasUnsavedChanges(true)
-          } else {
-            setBankName(settings.bankName || '')
-            setAccountHolder(settings.accountHolder || '')
-            setCbu(settings.cbu || '')
-            setAlias(settings.alias || '')
-            setCuit(settings.cuit || '')
-            setWhatsappPhone(settings.whatsappPhone || '')
-            setHasUnsavedChanges(false)
+          if (!hasUnsavedChanges) {
+            if (hasDbData) {
+              setBankName(settings.bankName || '')
+              setAccountHolder(settings.accountHolder || '')
+              setCbu(settings.cbu || '')
+              setAlias(settings.alias || '')
+              setCuit(settings.cuit || '')
+              setWhatsappPhone(settings.whatsappPhone || '')
+            } else if (draft && (draft.accountHolder || draft.alias || draft.bankName || draft.cbu)) {
+              setBankName(draft.bankName || '')
+              setAccountHolder(draft.accountHolder || '')
+              setCbu(draft.cbu || '')
+              setAlias(draft.alias || '')
+              setCuit(draft.cuit || '')
+              setWhatsappPhone(draft.whatsappPhone || '')
+              setHasUnsavedChanges(true)
+            } else {
+              setBankName(settings.bankName || '')
+              setAccountHolder(settings.accountHolder || '')
+              setCbu(settings.cbu || '')
+              setAlias(settings.alias || '')
+              setCuit(settings.cuit || '')
+              setWhatsappPhone(settings.whatsappPhone || '')
+            }
           }
 
           setMpConnected(settings.mpConnected)
@@ -110,16 +110,31 @@ export default function CobrosConfigPage() {
       } catch (err) {
         console.error('Error cargando configuración de cobros:', err)
       } finally {
-        if (isMounted) {
+        if (isMounted && isInitial) {
           setLoading(false)
         }
       }
     }
-    loadSettings()
+
+    void loadSettings(true)
+
+    // Sondeo continuo cada 6 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void loadSettings(false)
+    }, 6000)
+
+    const handleSync = () => void loadSettings(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
     return () => {
       isMounted = false
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
     }
-  }, [tenantId])
+  }, [tenantId, hasUnsavedChanges])
 
   const handleFieldChange = (fieldKey: string, setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value

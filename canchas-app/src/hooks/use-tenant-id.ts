@@ -19,22 +19,24 @@ export function useTenantId(): string | null {
   const [fallbackTenantId, setFallbackTenantId] = useState<string | null>(() => getGlobalCachedTenantId())
 
   useEffect(() => {
-    if (contextTenantId || fallbackTenantId) return
-
+    let isMounted = true
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
+      if (!user || !isMounted) return
       const { data: profile } = await supabase
         .from('profiles')
         .select('tenant_id')
         .eq('id', user.id)
-        .single()
-      if (profile?.tenant_id) {
+        .maybeSingle()
+      if (profile?.tenant_id && isMounted) {
         setGlobalCachedTenantId(profile.tenant_id)
         setFallbackTenantId(profile.tenant_id)
       }
     })
-  }, [contextTenantId, fallbackTenantId])
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   return contextTenantId || fallbackTenantId
 }
@@ -44,20 +46,23 @@ export function useUserRole(): { role: string; isOwner: boolean } {
   const [asyncRole, setAsyncRole] = useState<string | null>(null)
 
   useEffect(() => {
-    if (contextRole) return
+    let isMounted = true
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
+      if (!user || !isMounted) return
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
-      if (profile?.role) {
+        .maybeSingle()
+      if (profile?.role && isMounted) {
         setAsyncRole(profile.role)
       }
     })
-  }, [contextRole])
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const cookieRole = typeof document !== 'undefined'
     ? (() => {

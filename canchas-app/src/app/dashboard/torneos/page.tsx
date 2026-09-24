@@ -73,41 +73,65 @@ export default function TorneosDashboardPage() {
   const [scoreB, setScoreB] = useState('')
   const [winnerId, setWinnerId] = useState('')
 
-  const loadTournamentDetails = useCallback(async (id: string) => {
+  const loadTournamentDetails = useCallback(async (id: string, showToastOnError = false) => {
     try {
       const details = await getTournamentById(id)
       setSelectedTournament(details)
       if (details?.categories && details.categories.length > 0) {
-        setSelectedCategoryId(details.categories[0].id)
+        setSelectedCategoryId((prev) => prev || details.categories[0].id)
       }
     } catch {
-      toast.error('Error al cargar detalle del torneo')
+      if (showToastOnError) toast.error('Error al cargar detalle del torneo')
     }
   }, [])
 
-  const loadTournaments = useCallback(async () => {
-    setLoading(true)
+  const loadTournaments = useCallback(async (isInitial = false) => {
+    if (!tenantId) return
     try {
-      const list = await getTournaments(tenantId!)
+      const list = await getTournaments(tenantId)
       setTournaments(list)
       if (list.length > 0) {
-        await loadTournamentDetails(list[0].id)
+        setSelectedTournament((prev) => {
+          const currentId = prev?.id && list.some((t) => t.id === prev.id) ? prev.id : list[0].id
+          loadTournamentDetails(currentId, isInitial)
+          return prev
+        })
       } else {
         setSelectedTournament(null)
       }
     } catch {
-      toast.error('Error al cargar torneos')
+      if (isInitial) toast.error('Error al cargar torneos')
     } finally {
-      setLoading(false)
+      if (isInitial) setLoading(false)
     }
-  }, [loadTournamentDetails])
+  }, [tenantId, loadTournamentDetails])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadTournaments()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [loadTournaments])
+    if (!tenantId) return
+
+    const run = async () => {
+      try {
+        await loadTournaments(true)
+      } catch {}
+    }
+    void run()
+
+    // Sondeo continuo cada 6 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void loadTournaments(false)
+    }, 6000)
+
+    const handleSync = () => void loadTournaments(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
+    }
+  }, [tenantId, loadTournaments])
 
   const handleCreateTournament = async (e: React.FormEvent) => {
     e.preventDefault()

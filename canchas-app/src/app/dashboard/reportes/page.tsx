@@ -58,37 +58,45 @@ export default function ReportesPage() {
       })
   }, [tenantId])
 
-  const loadReport = useCallback(async () => {
-    setLoading(true)
+  const loadReport = useCallback(async (isInitial = false) => {
+    if (!tenantId) return
+    if (isInitial) setLoading(true)
     try {
-      const res = await getOccupancyReport(tenantId!)
+      const res = await getOccupancyReport(tenantId)
       setData(res)
     } catch {
-      toast.error('Error al cargar reporte de ocupación')
+      if (isInitial) toast.error('Error al cargar reporte de ocupación')
     } finally {
-      setLoading(false)
+      if (isInitial) setLoading(false)
     }
-  }, [])
+  }, [tenantId])
 
   useEffect(() => {
-    let isMounted = true
-    getOccupancyReport(tenantId!)
-      .then((res) => {
-        if (isMounted) {
-          setData(res)
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          toast.error('Error al cargar reporte de ocupación')
-          setLoading(false)
-        }
-      })
-    return () => {
-      isMounted = false
+    if (!tenantId) return
+
+    const run = async () => {
+      try {
+        await loadReport(true)
+      } catch {}
     }
-  }, [])
+    void run()
+
+    // Sondeo continuo cada 6 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void loadReport(false)
+    }, 6000)
+
+    const handleSync = () => void loadReport(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
+    }
+  }, [tenantId, loadReport])
 
   const handleExportCsv = () => {
     if (!data) return
@@ -195,7 +203,7 @@ export default function ReportesPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={loadReport}
+            onClick={() => void loadReport(true)}
             disabled={loading}
             className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs h-10"
           >

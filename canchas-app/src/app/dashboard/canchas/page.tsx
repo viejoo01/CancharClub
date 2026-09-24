@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -71,59 +71,88 @@ export default function CanchasPage() {
   const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
   const [loading, setLoading] = useState(false)
 
-  // Cargar canchas reales y horario del club desde Supabase
-  useEffect(() => {
+  const loadCourtsData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
     const supabase = createClient()
-    supabase
-      .from('courts')
-      .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
-      .eq('tenant_id', tenantId)
-      .order('display_order', { ascending: true })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Error fetching courts:', error.message)
-        } else if (data) {
-          interface CourtDbRow {
-            id: string
-            name: string
-            sport: SportType
-            slot_duration_minutes: number | null
-            surface: CourtSurface | null
-            has_lights: boolean | null
-            is_indoor: boolean | null
-            is_active: boolean | null
-          }
-          const mapped: Court[] = (data as unknown as CourtDbRow[]).map(c => ({
-            id: c.id,
-            name: c.name,
-            sport: c.sport,
-            slot_duration: c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
-            surface: c.surface || 'CESPED_SINTETICO',
-            has_lighting: !!c.has_lights,
-            is_indoor: !!c.is_indoor,
-            is_active: c.is_active ?? true,
-          }))
-          setCourts(mapped)
+    try {
+      const { data, error } = await supabase
+        .from('courts')
+        .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
+        .eq('tenant_id', tenantId)
+        .order('display_order', { ascending: true })
+
+      if (data && !error) {
+        interface CourtDbRow {
+          id: string
+          name: string
+          sport: SportType
+          slot_duration_minutes: number | null
+          surface: CourtSurface | null
+          has_lights: boolean | null
+          is_indoor: boolean | null
+          is_active: boolean | null
         }
-        setCourtsLoading(false)
-      })
-    // Also get club slug
+        const mapped: Court[] = (data as unknown as CourtDbRow[]).map(c => ({
+          id: c.id,
+          name: c.name,
+          sport: c.sport,
+          slot_duration: c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
+          surface: c.surface || 'CESPED_SINTETICO',
+          has_lighting: !!c.has_lights,
+          is_indoor: !!c.is_indoor,
+          is_active: c.is_active ?? true,
+        }))
+        setCourts(mapped)
+      }
+    } catch {}
+
+    try {
+      const sched = await getClubSchedule(tenantId)
+      if (sched) setSchedule(sched)
+    } catch {}
+
+    if (isInitial) setCourtsLoading(false)
+  }, [tenantId])
+
+  // Cargar canchas reales y mantener consultas continuas a la base de datos
+  useEffect(() => {
+    if (!tenantId) return
+
+    const fetchCourts = async () => {
+      try {
+        await loadCourtsData(false)
+      } catch {}
+    }
+    void fetchCourts()
+
+    // Sondeo continuo cada 5 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void fetchCourts()
+    }, 5000)
+
+    const handleSync = () => void fetchCourts()
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
+    // Obtener slug del club desde la BD
+    const supabase = createClient()
     supabase
       .from('profiles')
       .select('tenants(slug)')
       .eq('tenant_id', tenantId)
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
         const slug = (data?.tenants as { slug?: string } | null)?.slug
         if (slug) setClubSlug(slug)
       })
 
-    // Cargar horario de apertura y cierre del club
-    getClubSchedule(tenantId).then((sched) => {
-      if (sched) setSchedule(sched)
-    })
-  }, [tenantId])
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
+    }
+  }, [tenantId, loadCourtsData])
 
   const handleToggleActive = async (courtId: string, current: boolean) => {
     const nextState = !current

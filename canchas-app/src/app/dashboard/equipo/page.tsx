@@ -42,28 +42,48 @@ export default function EquipoPage() {
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState<StaffRole>('TENANT_STAFF')
 
-  const loadStaff = useCallback(async () => {
-    setLoading(true)
+  const loadStaff = useCallback(async (isInitial = false) => {
+    if (!tenantId) return
     try {
-      const res = await getClubStaff(tenantId!)
+      const res = await getClubStaff(tenantId)
       if (res.success) {
         setStaff(res.staff)
-      } else {
+      } else if (isInitial) {
         toast.error('Error al cargar equipo')
       }
     } catch {
-      toast.error('Error inesperado')
+      if (isInitial) toast.error('Error inesperado')
     } finally {
-      setLoading(false)
+      if (isInitial) setLoading(false)
     }
-  }, [])
+  }, [tenantId])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadStaff()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [loadStaff])
+    if (!tenantId) return
+
+    const run = async () => {
+      try {
+        await loadStaff(true)
+      } catch {}
+    }
+    void run()
+
+    // Sondeo continuo cada 6 segundos a la base de datos
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void loadStaff(false)
+    }, 6000)
+
+    const handleSync = () => void loadStaff(false)
+    window.addEventListener('focus', handleSync)
+    document.addEventListener('visibilitychange', handleSync)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', handleSync)
+    }
+  }, [tenantId, loadStaff])
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -8,6 +8,7 @@ import type { TenantSubscriptionStatus } from '@/types/database'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function DashboardLayout({
   children,
@@ -153,14 +154,12 @@ export default async function DashboardLayout({
     } catch {}
   }
 
-  // Sincronizar cookies si la base de datos tiene datos más actualizados
-  if (isActive && cookieIsActive === 'false') {
-    cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
-  }
-  if (subscriptionStatus && cookieStatus !== subscriptionStatus) {
+  // Sincronizar cookies asegurando que la base de datos sea la única verdad
+  cookieStore.set('demo_is_active', isActive ? 'true' : 'false', { path: '/', maxAge: 86400 })
+  if (subscriptionStatus) {
     cookieStore.set('demo_subscription_status', subscriptionStatus, { path: '/', maxAge: 86400 })
   }
-  if (tenantId && (!cookieTenantId || cookieTenantId !== tenantId)) {
+  if (tenantId) {
     cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 86400 })
     cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 86400 })
   }

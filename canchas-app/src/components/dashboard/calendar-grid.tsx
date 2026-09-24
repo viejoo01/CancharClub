@@ -276,12 +276,27 @@ export function CalendarGrid({
     }
   }, [tenantId])
 
-  // Cargar turnos al cambiar de fecha
+  // Cargar turnos al cambiar de fecha y mantener consultas continuas a la base de datos cada 5 segundos
   useEffect(() => {
-    if (selectedDate) {
+    if (!selectedDate || !tenantId) return
+
+    fetchBookingsForDate(selectedDate)
+
+    const syncBookings = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
       fetchBookingsForDate(selectedDate)
     }
-  }, [selectedDate, fetchBookingsForDate])
+
+    const interval = setInterval(syncBookings, 5000)
+    window.addEventListener('focus', syncBookings)
+    document.addEventListener('visibilitychange', syncBookings)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', syncBookings)
+      document.removeEventListener('visibilitychange', syncBookings)
+    }
+  }, [selectedDate, tenantId, fetchBookingsForDate])
 
   const activeBookings = useMemo(() => {
     const base: CalendarBooking[] = loadedBookings || []

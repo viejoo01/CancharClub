@@ -19,6 +19,9 @@ export interface SuperadminTenantItem {
   plan_id: SaaSPlanId
   is_active: boolean
   created_at?: string | null
+  trial_ends_at?: string | null
+  is_trial?: boolean
+  trial_days_remaining?: number
 }
 
 /**
@@ -39,6 +42,8 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         base_slots_plan,
         mp_access_token,
         created_at,
+        trial_ends_at,
+        description,
         courts (id, is_active),
         price_rules (price_cents)
       `)
@@ -108,6 +113,19 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         subStatus = 'PENDIENTE'
       }
 
+      let trialEndsAt: string | null = (t as unknown as { trial_ends_at?: string | null }).trial_ends_at || null
+      if (!trialEndsAt && (t as unknown as { description?: string | null }).description) {
+        try {
+          const meta = JSON.parse((t as unknown as { description: string }).description)
+          if (meta.trial_ends_at) trialEndsAt = meta.trial_ends_at
+        } catch {}
+      }
+
+      const now = Date.now()
+      const trialDate = trialEndsAt ? new Date(trialEndsAt).getTime() : null
+      const isTrial = Boolean(trialDate && trialDate > now)
+      const trialDaysRemaining = isTrial && trialDate ? Math.max(0, Math.ceil((trialDate - now) / (1000 * 60 * 60 * 24))) : 0
+
       return {
         id: t.id,
         name: t.name,
@@ -123,6 +141,9 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         plan_id: defaultPlan,
         is_active: isActuallyActive,
         created_at: t.created_at || null,
+        trial_ends_at: trialEndsAt,
+        is_trial: isTrial,
+        trial_days_remaining: trialDaysRemaining,
       }
     })
 
@@ -267,6 +288,128 @@ export async function deactivateTenantAccess(tenantId: string) {
   } catch (err) {
     console.error('deactivateTenantAccess exception:', err)
     return { success: false, error: 'Error al desactivar el club' }
+  }
+}
+
+/**
+ * Activa el período de prueba de 15 días a un club desde el panel Superadmin.
+ * Habilita el acceso total (is_active: true), asigna trial_ends_at a 15 días corridos,
+ * y pone su estado de suscripción en orden.
+ */
+export async function activateTenantTrialPeriodAction(
+  tenantId: string,
+  days: number = 15
+): Promise<{ success: boolean; trialEndsAt?: string; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const trialEndsAtDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+    const trialEndsAtIso = trialEndsAtDate.toISOString()
+
+    // 1. Obtener tenant actual para leer description
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('id, name, slug, description')
+      .eq('id', tenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+    meta.trial_ends_at = trialEndsAtIso
+    meta.trial_activated_at = new Date().toISOString()
+    meta.trial_days = days
+
+    // 2. Intentar actualizar tenants con trial_ends_at y description
+    const updateData: Record<string, unknown> = {
+      is_active: true,
+      subscription_status: 'ACTIVE',
+      trial_ends_at: trialEndsAtIso,
+      description: JSON.stringify(meta),
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update(updateData)
+      .eq('id', tenantId)
+
+    if (updateErr) {
+      // Fallback si la columna trial_ends_at no existe en Postgres
+      console.warn('[activateTenantTrialPeriodAction] Reintentando sin columna trial_ends_at:', updateErr.message)
+      const fallbackData = {
+        is_active: true,
+        subscription_status: 'ACTIVE',
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
+      }
+      const { error: fallbackErr } = await supabase
+        .from('tenants')
+        .update(fallbackData)
+        .eq('id', tenantId)
+
+      if (fallbackErr) {
+        return { success: false, error: fallbackErr.message }
+      }
+    }
+
+    // 3. Crear o actualizar suscripción saas con estado 'trialing'
+    try {
+      const { data: existingSub } = await supabase
+        .from('saas_subscriptions')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingSub) {
+        await supabase
+          .from('saas_subscriptions')
+          .update({
+            status: 'trialing',
+            current_period_end: trialEndsAtIso,
+            payment_notes: `Período de prueba de ${days} días activado desde Superadmin (${new Date().toLocaleDateString('es-AR')})`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingSub.id)
+      } else {
+        await supabase
+          .from('saas_subscriptions')
+          .insert({
+            tenant_id: tenantId,
+            status: 'trialing',
+            current_period_start: new Date().toISOString(),
+            current_period_end: trialEndsAtIso,
+            plan_id: 'MEDIANO_2',
+            amount: 0,
+            payment_notes: `Período de prueba de ${days} días activado desde Superadmin (${new Date().toLocaleDateString('es-AR')})`,
+          })
+      }
+    } catch (subErr) {
+      console.warn('[activateTenantTrialPeriodAction] saas_subscriptions error secundario:', subErr)
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
+    if (tenant.slug) {
+      revalidatePath(`/club/${tenant.slug}`)
+    }
+
+    return { success: true, trialEndsAt: trialEndsAtIso }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al activar período de prueba'
+    console.error('activateTenantTrialPeriodAction exception:', err)
+    return { success: false, error: msg }
   }
 }
 

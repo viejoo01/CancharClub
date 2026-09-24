@@ -47,14 +47,19 @@ export function calculateSaaSMultiplier(courtsCount: number): number {
  * - Si el club es nuevo (período de prueba de 15 días), vence al cumplirse los 15 días de prueba.
  * - En los meses sucesivos, vence en el mismo día del mes en que finalizó la prueba.
  */
-export function computeNextDueDate(createdAt?: string | Date | null): string {
+export function computeNextDueDate(
+  createdAt?: string | Date | null,
+  trialEndsAt?: string | Date | null
+): string {
   const now = new Date()
   const regDate = createdAt ? new Date(createdAt) : now
 
-  // Período de prueba bonificado de 15 días desde la creación
-  const trialEnd = new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000)
+  // Período de prueba bonificado: si se especifica trialEndsAt se respeta, sino 15 días desde la creación
+  const trialEnd = trialEndsAt 
+    ? new Date(trialEndsAt) 
+    : new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000)
 
-  // Si aún está dentro de los 15 días de prueba gratis, el próximo vencimiento es exactamente el fin del trial
+  // Si aún está dentro de los días de prueba gratis, el próximo vencimiento es exactamente el fin del trial
   if (now < trialEnd) {
     const dd = String(trialEnd.getDate()).padStart(2, '0')
     const mm = String(trialEnd.getMonth() + 1).padStart(2, '0')
@@ -99,14 +104,15 @@ export function computeNextDueDate(createdAt?: string | Date | null): string {
 export function calculateClubSaaSFee(
   courtsCount: number,
   highestSlotPriceArs: number,
-  createdAt?: string | Date | null
+  createdAt?: string | Date | null,
+  trialEndsAt?: string | Date | null
 ): ClubSaaSPricing {
   const safeCourts = Math.max(1, courtsCount)
   const safePrice = Math.max(0, highestSlotPriceArs)
   const multiplier = calculateSaaSMultiplier(safeCourts)
   const monthlyFeeArs = Math.round(safePrice * multiplier)
   const plan = getPlanByCourtsCount(safeCourts)
-  const nextDueDate = computeNextDueDate(createdAt)
+  const nextDueDate = computeNextDueDate(createdAt, trialEndsAt)
 
   return {
     courtsCount: safeCourts,

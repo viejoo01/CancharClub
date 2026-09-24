@@ -29,7 +29,8 @@ import {
   EyeOff,
   Smartphone,
   CreditCard,
-  RefreshCw
+  RefreshCw,
+  Gift
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -59,6 +60,7 @@ import {
   createUserBySuperadmin,
   generateUserImpersonationUrl,
   updateTenantSubscriptionStatusAction,
+  activateTenantTrialPeriodAction,
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
@@ -119,6 +121,11 @@ export default function SuperadminPage() {
     plan_id: SaaSPlanId
   } | null>(null)
   const [isActivating, setIsActivating] = useState(false)
+
+  // Estado para modal de activación de período de prueba (15 días)
+  const [activatingTrialTenant, setActivatingTrialTenant] = useState<SuperadminTenantItem | null>(null)
+  const [isActivatingTrial, setIsActivatingTrial] = useState(false)
+  const [trialDaysToSet, setTrialDaysToSet] = useState(15)
 
   // Listado de usuarios administradores y cancheros por club (se carga desde Supabase)
   const [clubUsers, setClubUsers] = useState<ClubUser[]>([])
@@ -250,6 +257,41 @@ export default function SuperadminPage() {
     }
   }
 
+  const handleConfirmTrialActivation = async () => {
+    if (!activatingTrialTenant) return
+    setIsActivatingTrial(true)
+    try {
+      const res = await activateTenantTrialPeriodAction(activatingTrialTenant.id, trialDaysToSet)
+      if (res.success) {
+        const trialEnds = res.trialEndsAt || new Date(Date.now() + trialDaysToSet * 86400000).toISOString()
+        setTenants(prev => prev.map(t => {
+          if (t.id === activatingTrialTenant.id) {
+            return {
+              ...t,
+              is_active: true,
+              status: 'ACTIVE',
+              subscription_status: 'AL_DIA',
+              is_trial: true,
+              trial_ends_at: trialEnds,
+              trial_days_remaining: trialDaysToSet,
+            }
+          }
+          return t
+        }))
+        toast.success(`¡Periodo de prueba (${trialDaysToSet} días) activado para "${activatingTrialTenant.name}"!`, {
+          description: `El club tiene acceso total habilitado hasta el ${new Date(trialEnds).toLocaleDateString('es-AR')}.`
+        })
+        setActivatingTrialTenant(null)
+      } else {
+        toast.error('Error al activar periodo de prueba: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error de conexión al activar periodo de prueba')
+    } finally {
+      setIsActivatingTrial(false)
+    }
+  }
+
   const handleToggleDeactivate = async (tenantId: string, clubName: string) => {
     const res = await deactivateTenantAccess(tenantId)
     if (!res.success) {
@@ -283,7 +325,7 @@ export default function SuperadminPage() {
 
   // Cálculos SaaS basados en la fórmula y plan asignado
   const tenantsWithPricing = tenants.map(t => {
-    const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price, t.created_at)
+    const pricing = calculateClubSaaSFee(t.active_courts, t.highest_slot_price, t.created_at, t.trial_ends_at)
     return { 
       ...t, 
       pricing: {
@@ -1341,7 +1383,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         {t.pricing.nextDueDate}
                       </td>
                       <td className="p-4 text-center">
-                        {t.subscription_status === 'PAUSADO' ? (
+                        {t.is_trial ? (
+                          <div>
+                            <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
+                              🎁 En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : '15d'})
+                            </Badge>
+                            <div className="text-[10px] text-purple-400 font-mono mt-0.5">
+                              Gratis hasta vencimiento
+                            </div>
+                          </div>
+                        ) : t.subscription_status === 'PAUSADO' ? (
                           <div>
                             <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
                               ⏸️ En Pausa
@@ -1362,6 +1413,25 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setTrialDaysToSet(15)
+                              setActivatingTrialTenant(t)
+                            }}
+                            className={cn(
+                              "h-8 text-xs px-2.5 cursor-pointer flex items-center gap-1",
+                              t.is_trial
+                                ? "border-purple-500/60 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
+                                : "border-purple-500/40 bg-purple-950/20 text-purple-300 hover:bg-purple-900/40 hover:text-white"
+                            )}
+                            title={t.is_trial ? "Extender o renovar período de prueba (15 días)" : "Activar 15 días de prueba gratis"}
+                          >
+                            <Gift className="w-3.5 h-3.5 text-purple-400" />
+                            <span>{t.is_trial ? 'Extender 15d' : '15d Prueba'}</span>
+                          </Button>
+
                           <Button
                             size="sm"
                             variant="outline"
@@ -1460,7 +1530,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <span className="font-bold text-sm text-white block">{t.name}</span>
                         <span className="text-[11px] text-slate-400 block mt-0.5">{t.city}</span>
                       </div>
-                      <div className="shrink-0">
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {t.is_trial && (
+                          <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
+                            🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                          </Badge>
+                        )}
                         {t.is_active !== false ? (
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
                             ✅ Habilitado
@@ -1499,6 +1574,25 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <span className="font-mono text-indigo-400">/club/{t.slug}</span>
                       </div>
                     </div>
+
+                    {/* Botón para activar o extender período de prueba (15 días) */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTrialDaysToSet(15)
+                        setActivatingTrialTenant(t)
+                      }}
+                      className={cn(
+                        "w-full h-8 text-xs font-bold rounded-xl gap-1.5 cursor-pointer",
+                        t.is_trial
+                          ? "border-purple-500/60 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
+                          : "border-purple-500/40 bg-purple-950/20 text-purple-300 hover:bg-purple-900/40 hover:text-white"
+                      )}
+                    >
+                      <Gift className="w-3.5 h-3.5 text-purple-400" />
+                      <span>{t.is_trial ? `Extender Prueba (${t.trial_days_remaining ?? 0}d)` : '🎁 Activar 15 Días de Prueba'}</span>
+                    </Button>
 
                     {/* Botón destacado para activar si está pendiente */}
                     {!t.is_active && (
@@ -1589,15 +1683,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         </Badge>
                       </td>
                       <td className="p-4 text-center">
-                        {t.is_active ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                            ✅ Habilitado
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
-                            ⏳ Pendiente
-                          </Badge>
-                        )}
+                        <div className="flex flex-col items-center gap-1">
+                          {t.is_trial && (
+                            <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
+                              🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                            </Badge>
+                          )}
+                          {t.is_active ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                              ✅ Habilitado
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
+                              ⏳ Pendiente
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 font-mono text-indigo-400">
                         /club/{t.slug}
@@ -1615,6 +1716,25 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setTrialDaysToSet(15)
+                              setActivatingTrialTenant(t)
+                            }}
+                            className={cn(
+                              "h-7 text-xs font-bold px-2.5 rounded-lg cursor-pointer flex items-center gap-1 transition-all",
+                              t.is_trial
+                                ? "border-purple-500/60 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
+                                : "border-purple-500/40 bg-purple-950/15 text-purple-300 hover:bg-purple-900/40 hover:text-white"
+                            )}
+                            title={t.is_trial ? "Extender o renovar el período de prueba de 15 días" : "Activar período de prueba de 15 días gratis para este club"}
+                          >
+                            <Gift className="w-3 h-3 text-purple-400" />
+                            <span>{t.is_trial ? 'Extender 15d' : '15 Días Prueba'}</span>
+                          </Button>
+
                           {!t.is_active ? (
                             <Button
                               size="sm"
@@ -3199,6 +3319,101 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     <>
                       <Check className="w-4 h-4" />
                       <span>Confirmar y Dar Acceso Total</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: ACTIVAR PERÍODO DE PRUEBA DE 15 DÍAS */}
+      <Dialog open={Boolean(activatingTrialTenant)} onOpenChange={(open) => !open && setActivatingTrialTenant(null)}>
+        <DialogContent className="sm:max-w-md bg-slate-900 border border-slate-800 text-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-purple-400">
+              <Gift className="w-5 h-5 text-purple-400" />
+              {activatingTrialTenant?.is_trial ? 'Extender Período de Prueba' : 'Activar Período de Prueba Gratis'}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-sm">
+              Habilitá el acceso completo y gratuito a <strong className="text-white">{activatingTrialTenant?.name}</strong> para que puedan probar la plataforma.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activatingTrialTenant && (
+            <div className="space-y-4 pt-2">
+              <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/40 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-purple-300 font-medium">Club seleccionado:</span>
+                  <span className="font-bold text-white text-sm">{activatingTrialTenant.name}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-purple-300 font-medium">Duración de la prueba:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="bg-purple-500/20 text-purple-200 border border-purple-500/40 px-2 py-0.5 rounded-md font-bold">
+                      {trialDaysToSet} días corridos
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-purple-300 font-medium">Fecha de vencimiento:</span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    {new Date(Date.now() + trialDaysToSet * 24 * 60 * 60 * 1000).toLocaleDateString('es-AR', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric'
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2 text-slate-300">
+                <p className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  ¿Qué incluye el período de prueba de 15 días?
+                </p>
+                <ul className="space-y-1.5 text-slate-400 pl-1">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Acceso total al panel de administración del club y canchas.</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Portal público de reservas online habilitado (/club/{activatingTrialTenant.slug}).</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Control de caja, turnos fijos y gestión de clientes.</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Exención total de facturación SaaS durante los 15 días.</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActivatingTrialTenant(null)}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isActivatingTrial}
+                  onClick={handleConfirmTrialActivation}
+                  className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-900/40 cursor-pointer flex items-center gap-1.5"
+                >
+                  {isActivatingTrial ? (
+                    <span>Activando prueba...</span>
+                  ) : (
+                    <>
+                      <Gift className="w-4 h-4" />
+                      <span>{activatingTrialTenant.is_trial ? 'Extender 15 Días' : 'Confirmar y Activar 15 Días'}</span>
                     </>
                   )}
                 </Button>

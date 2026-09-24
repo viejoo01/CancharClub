@@ -131,6 +131,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       } catch {}
     }
 
+    const cookieTermsAccepted = cookieStore.get('demo_terms_accepted_at')?.value
+    if (!termsAcceptedAt && cookieTermsAccepted) {
+      termsAcceptedAt = cookieTermsAccepted
+    }
+
     if (tenant) {
       tenantName = tenant.name || tenantName
       tenantSlug = tenant.slug || tenantSlug
@@ -1024,12 +1029,8 @@ export async function confirmAndActivateSubscriptionWithCard(
 export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ success: boolean; error?: string; acceptedAt?: string }> {
   try {
     const serviceClient = await createServiceClient()
+    const cookieStore = await cookies()
     let targetTenantId = tenantIdParam
-
-    if (!targetTenantId) {
-      const cookieStore = await cookies()
-      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    }
 
     if (!targetTenantId) {
       const supabase = await createClient()
@@ -1042,6 +1043,10 @@ export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ s
           .maybeSingle()
         if (profile?.tenant_id) targetTenantId = profile.tenant_id
       }
+    }
+
+    if (!targetTenantId) {
+      targetTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     }
 
     if (!targetTenantId) {
@@ -1089,7 +1094,15 @@ export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ s
       return { success: false, error: error.message }
     }
 
+    // Persistir cookie para acceso inmediato y compatibilidad en todo el panel
+    cookieStore.set('demo_terms_accepted_at', acceptedAt, {
+      maxAge: 60 * 60 * 24 * 365,
+      path: '/',
+      sameSite: 'lax',
+    })
+
     revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
     return { success: true, acceptedAt }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error inesperado al registrar los términos'

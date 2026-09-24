@@ -319,6 +319,11 @@ export default function ClubPlanPage() {
     }
   }
 
+  const isTermsAccepted = Boolean(
+    planDetails?.termsAcceptedAt ||
+    (typeof window !== 'undefined' ? localStorage.getItem('canchar_terms_accepted_at') : null)
+  )
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
@@ -432,7 +437,7 @@ export default function ClubPlanPage() {
       )}
 
       {/* Aviso de Aceptación Obligatoria Pendiente */}
-      {!planDetails?.termsAcceptedAt && (
+      {!isTermsAccepted && (
         <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
@@ -1005,7 +1010,21 @@ export default function ClubPlanPage() {
         tenantId={tenantId || undefined}
         initialAcceptedAt={planDetails?.termsAcceptedAt}
         onAccepted={(ts) => {
-          setPlanDetails((prev) => prev ? { ...prev, termsAcceptedAt: ts } : null)
+          setPlanDetails((prev) => prev ? { ...prev, termsAcceptedAt: ts } : {
+            tenantId: tenantId || '',
+            tenantName: clubName,
+            tenantSlug: '',
+            courtsCount,
+            highestSlotPriceArs: highestSlotPrice,
+            pricing,
+            activePlan,
+            isPaid,
+            subscriptionStatus: 'ACTIVE',
+            nextDueDate: '',
+            invoices: [],
+            hasAutoDebit,
+            termsAcceptedAt: ts,
+          })
         }}
       />
 

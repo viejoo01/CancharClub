@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   CheckCircle2, 
   AlertTriangle, 
@@ -31,11 +31,27 @@ export function ClubTermsCard({
   initialAcceptedAt,
   onAccepted,
 }: ClubTermsCardProps) {
-  const [acceptedAt, setAcceptedAt] = useState<string | null>(initialAcceptedAt || null)
+  const [locallyAcceptedAt, setLocallyAcceptedAt] = useState<string | null>(null)
   const [agreedCheckbox, setAgreedCheckbox] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const isAccepted = Boolean(acceptedAt)
+  // Sincronizar en localStorage cuando se reciba de la base de datos
+  useEffect(() => {
+    if (initialAcceptedAt && typeof window !== 'undefined') {
+      localStorage.setItem('canchar_terms_accepted_at', initialAcceptedAt)
+    }
+  }, [initialAcceptedAt])
+
+  // Fuente de verdad reactiva:
+  // 1. Si acaba de aceptar en esta misma vista
+  // 2. Si viene de la base de datos (initialAcceptedAt)
+  // 3. Si está guardado en localStorage del navegador
+  const effectiveAcceptedAt =
+    locallyAcceptedAt ||
+    initialAcceptedAt ||
+    (typeof window !== 'undefined' ? localStorage.getItem('canchar_terms_accepted_at') : null)
+
+  const isAccepted = Boolean(effectiveAcceptedAt)
 
   const handleAcceptTerms = async () => {
     if (!agreedCheckbox) {
@@ -47,7 +63,10 @@ export function ClubTermsCard({
     try {
       const res = await acceptClubTermsAction(tenantId)
       if (res.success && res.acceptedAt) {
-        setAcceptedAt(res.acceptedAt)
+        setLocallyAcceptedAt(res.acceptedAt)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('canchar_terms_accepted_at', res.acceptedAt)
+        }
         onAccepted?.(res.acceptedAt)
         toast.success('¡Términos y Condiciones aceptados exitosamente!', {
           description: 'Tu conformidad quedó registrada en la base de datos de CancharClub.',
@@ -106,7 +125,7 @@ export function ClubTermsCard({
             {isAccepted ? (
               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs px-3 py-1 font-bold flex items-center gap-1.5 shadow-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Aceptado el {formatAcceptedDate(acceptedAt!)}</span>
+                <span>Aceptado el {formatAcceptedDate(effectiveAcceptedAt!)}</span>
               </Badge>
             ) : (
               <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold flex items-center gap-1.5 animate-pulse">
@@ -140,7 +159,7 @@ export function ClubTermsCard({
                 Conformidad registrada en la base de datos
               </span>
               <span className="text-[11px] text-slate-400">
-                Fecha de registro: {formatAcceptedDate(acceptedAt!)} • Leyes de la República Argentina
+                Fecha de registro: {formatAcceptedDate(effectiveAcceptedAt!)} • Leyes de la República Argentina
               </span>
             </div>
           </div>

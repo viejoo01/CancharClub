@@ -82,7 +82,7 @@ export interface Tenant {
   base_slots_plan?: number
   minimum_floor_ars?: number
   current_balance?: number
-  trial_ends_at: string | null
+  trial_ends_at?: string | null
   suspended_at: string | null
   suspension_reason: string | null
   advance_booking_days: number

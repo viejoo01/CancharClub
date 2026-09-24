@@ -678,7 +678,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
   // 1. Obtener datos del club
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('name, slug, email, trial_ends_at, created_at')
+    .select('name, slug, email, created_at')
     .eq('id', tenantId)
     .maybeSingle()
 
@@ -712,7 +712,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
     // Regla de Cobro: 15 días de prueba gratuita.
     // El primer cobro se ejecuta al cumplirse los 15 días de prueba.
     // Al registrar la tarjeta hoy en Mercado Pago se cobra $0.
-    const firstBillingDate = calculateFirstBillingDate(tenant?.trial_ends_at, tenant?.created_at)
+    const firstBillingDate = calculateFirstBillingDate(null, tenant?.created_at)
     const startDate = firstBillingDate.toISOString()
 
     const result = await preApprovalClient.create({

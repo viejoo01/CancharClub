@@ -172,7 +172,6 @@ export async function registerClub(formData: FormData) {
     GRANDE_5_PLUS: 6,
   }
   const baseSlots = baseSlotsMap[planId] || 2
-  const trialEndsAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: tenant, error: tenantError } = await serviceClient
     .from('tenants')
@@ -186,9 +185,8 @@ export async function registerClub(formData: FormData) {
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
       is_active: false, // Inicia desactivado esperando confirmación de activación
-      subscription_status: 'PENDING_PAYMENT', // Estado de activación pendiente
+      subscription_status: 'PAYMENT_PENDING', // Estado de activación pendiente
       base_slots_plan: baseSlots,
-      trial_ends_at: trialEndsAt,
       payment_methods: ['CARD', 'MERCADO_PAGO'],
     })
     .select()
@@ -259,7 +257,7 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'PENDING_PAYMENT', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'PAYMENT_PENDING', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
   cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })

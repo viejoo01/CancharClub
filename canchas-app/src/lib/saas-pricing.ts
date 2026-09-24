@@ -121,3 +121,36 @@ export function calculateClubSaaSFee(
     planName: plan.name,
   }
 }
+
+/**
+ * Calcula la cantidad de días restantes hasta la fecha de vencimiento dada (en formato DD/MM/AAAA o ISO).
+ * Devuelve un número entero de días (ej: 3, 2, 1, 0).
+ */
+export function calculateDaysUntilDueDate(dueDateStr?: string | null): number {
+  if (!dueDateStr) return 999
+
+  const now = new Date()
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+
+  // Formato DD/MM/AAAA
+  if (dueDateStr.includes('/')) {
+    const parts = dueDateStr.split('/')
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10)
+      const month = parseInt(parts[1], 10) - 1
+      const year = parseInt(parts[2], 10)
+      const targetMidnight = new Date(year, month, day).getTime()
+      return Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24))
+    }
+  }
+
+  // Formato ISO YYYY-MM-DD
+  const parsed = new Date(dueDateStr)
+  if (!isNaN(parsed.getTime())) {
+    const targetMidnight = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime()
+    return Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24))
+  }
+
+  return 999
+}
+

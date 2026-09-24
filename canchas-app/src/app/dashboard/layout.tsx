@@ -6,6 +6,7 @@ import { PendingActivationScreen } from '@/components/dashboard/pending-activati
 import { TenantProvider } from '@/hooks/use-tenant-id'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import type { SaaSPlanId } from '@/config/saas-plans'
+import { calculateClubSaaSFee, calculateDaysUntilDueDate } from '@/lib/saas-pricing'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -37,6 +38,8 @@ export default async function DashboardLayout({
   let mpConnected = true
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || headerStatus || 'ACTIVE'
   let planId: SaaSPlanId | undefined = cookiePlanId || undefined
+  let tenantCreatedAt: string | null = null
+  let cancellationEffectiveDate: string | null = null
 
   const cookieIsActive = cookieStore.get('demo_is_active')?.value
   let isActive = cookieIsActive === 'false' ? false : true
@@ -47,11 +50,23 @@ export default async function DashboardLayout({
     return Boolean(t.mp_access_token)
   }
 
+  function parseTenantMeta(t: { created_at?: string | null; description?: string | null }) {
+    if (t.created_at) tenantCreatedAt = t.created_at
+    if (t.description) {
+      try {
+        const meta = JSON.parse(t.description)
+        if (meta.cancellation_effective_date) {
+          cancellationEffectiveDate = String(meta.cancellation_effective_date)
+        }
+      } catch {}
+    }
+  }
+
   // Validar si el cookieTenantId existe efectivamente en la base de datos
   if (cookieTenantId) {
     const { data: checkT } = await serviceClient
       .from('tenants')
-      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
+      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
       .eq('id', cookieTenantId)
       .maybeSingle()
     if (checkT) {
@@ -59,6 +74,7 @@ export default async function DashboardLayout({
       tenantName = checkT.name || tenantName
       tenantSlug = checkT.slug || tenantSlug
       mpConnected = checkMpConnected(checkT)
+      parseTenantMeta(checkT)
       if (typeof checkT.is_active === 'boolean') {
         isActive = checkT.is_active
       }
@@ -89,7 +105,7 @@ export default async function DashboardLayout({
       if (targetTId) {
         const { data: t } = await serviceClient
           .from('tenants')
-          .select('name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
+          .select('name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
           .eq('id', targetTId)
           .maybeSingle()
 
@@ -97,6 +113,7 @@ export default async function DashboardLayout({
           tenantName = t.name || tenantName
           tenantSlug = t.slug || tenantSlug
           mpConnected = checkMpConnected(t)
+          parseTenantMeta(t)
           if (typeof t.is_active === 'boolean') {
             isActive = t.is_active
           }
@@ -116,7 +133,7 @@ export default async function DashboardLayout({
     try {
       const { data: tData } = await serviceClient
         .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
         .eq('slug', tenantSlug)
         .maybeSingle()
       if (tData?.id) {
@@ -124,6 +141,7 @@ export default async function DashboardLayout({
         tenantName = tData.name || tenantName
         tenantSlug = tData.slug || tenantSlug
         mpConnected = checkMpConnected(tData)
+        parseTenantMeta(tData)
         if (typeof tData.is_active === 'boolean') {
           isActive = tData.is_active
         }
@@ -139,7 +157,7 @@ export default async function DashboardLayout({
     try {
       const { data: defaultTenant } = await serviceClient
         .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -148,6 +166,7 @@ export default async function DashboardLayout({
         tenantName = defaultTenant.name || tenantName
         tenantSlug = defaultTenant.slug || tenantSlug
         mpConnected = checkMpConnected(defaultTenant)
+        parseTenantMeta(defaultTenant)
         if (typeof defaultTenant.is_active === 'boolean') {
           isActive = defaultTenant.is_active
         }
@@ -182,6 +201,11 @@ export default async function DashboardLayout({
     } catch {}
   }
 
+  // Cálculo del vencimiento oficial y días restantes para alertas progresivas
+  const pricing = calculateClubSaaSFee(initialCourtsCount || 2, 30000, tenantCreatedAt)
+  const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
+  const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
+
   return (
     <DashboardLayoutClient
       tenantId={tenantId}
@@ -194,6 +218,8 @@ export default async function DashboardLayout({
       isActive={isActive}
       courtsCount={initialCourtsCount}
       sports={initialSports}
+      dueDate={effectiveDueDate}
+      daysRemaining={daysRemaining}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       pendingScreen={<PendingActivationScreen tenantName={tenantName} planId={planId} />}
     >
@@ -203,3 +229,4 @@ export default async function DashboardLayout({
     </DashboardLayoutClient>
   )
 }
+

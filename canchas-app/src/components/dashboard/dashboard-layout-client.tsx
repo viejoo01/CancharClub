@@ -13,6 +13,7 @@ import {
 import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { PlanActivationModal } from './plan-activation-modal'
+import { PlanExpirationAlert } from './plan-expiration-alert'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
@@ -31,6 +32,8 @@ interface DashboardLayoutClientProps {
   gracePeriodBanner?: React.ReactNode
   children: React.ReactNode
   pendingScreen?: React.ReactNode
+  dueDate?: string
+  daysRemaining?: number
 }
 
 export function DashboardLayoutClient({
@@ -47,6 +50,8 @@ export function DashboardLayoutClient({
   gracePeriodBanner,
   children,
   pendingScreen,
+  dueDate,
+  daysRemaining,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(!isActive)
@@ -173,6 +178,13 @@ export function DashboardLayoutClient({
           tenantName={tenantName}
           tenantId={tenantId}
           planId={planId}
+        />
+
+        {/* Alerta Progresiva Emergente de Vencimiento de Plan (3, 2, 1 días) con botón Entendido */}
+        <PlanExpirationAlert
+          tenantId={tenantId}
+          dueDate={dueDate}
+          daysRemaining={daysRemaining}
         />
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">

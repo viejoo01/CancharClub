@@ -18,7 +18,8 @@ import {
   Scale,
   AlertTriangle,
   Undo2,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
@@ -345,6 +346,47 @@ export default function ClubPlanPage() {
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
           Actualizar Estado
         </Button>
+      </div>
+
+      {/* Simulador interactivo de Alertas Progresivas Emergentes */}
+      <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-slate-300">
+          <Clock className="w-4 h-4 text-amber-400" />
+          <span className="font-semibold text-white">Alertas Progresivas de Vencimiento:</span>
+          <span className="text-slate-400 hidden sm:inline">Probar alertas emergentes en pantalla</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 3, dueDate: cancellationDate } }))
+            }}
+            className="h-7 text-[11px] border-amber-500/30 text-amber-300 hover:bg-amber-500/10 rounded-lg cursor-pointer"
+          >
+            3 días
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 2, dueDate: cancellationDate } }))
+            }}
+            className="h-7 text-[11px] border-orange-500/30 text-orange-300 hover:bg-orange-500/10 rounded-lg cursor-pointer"
+          >
+            2 días
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 1, dueDate: cancellationDate } }))
+            }}
+            className="h-7 text-[11px] border-rose-500/30 text-rose-300 hover:bg-rose-500/10 rounded-lg cursor-pointer"
+          >
+            1 día
+          </Button>
+        </div>
       </div>
 
       {/* Banner de Baja Programada por Arrepentimiento */}

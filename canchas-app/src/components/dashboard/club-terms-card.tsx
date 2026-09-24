@@ -449,10 +449,8 @@ export function ClubTermsCard({
             </h4>
             <p className="text-slate-300 text-[11px]">La plataforma permite que las reservas se efectúen mediante:</p>
             <ul className="space-y-1 text-[11px] text-slate-300 pl-2">
-              <li>● Transferencia bancaria</li>
-              <li>● Efectivo</li>
+              <li>● Transferencias bancarias</li>
               <li>● Billeteras virtuales</li>
-              <li>● Otros métodos</li>
             </ul>
           </div>
 

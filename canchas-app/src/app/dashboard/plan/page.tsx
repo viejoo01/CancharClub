@@ -629,6 +629,18 @@ export default function ClubPlanPage() {
                 <span className="text-slate-400">Próximo vencimiento:</span>
                 <span className="font-semibold text-white">{pricing.nextDueDate}</span>
               </div>
+              <div className="flex items-center justify-between text-slate-300 pt-1.5 border-t border-slate-800/80">
+                <span className="text-slate-400">Términos y Condiciones:</span>
+                {isTermsAccepted ? (
+                  <span className="font-bold text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Estado: Aceptado
+                  </span>
+                ) : (
+                  <span className="font-bold text-amber-400 flex items-center gap-1 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Estado: Pendiente
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1001,6 +1013,64 @@ export default function ClubPlanPage() {
                 <span>Botón de Arrepentimiento</span>
               </Button>
             )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Apartado: Estado de Términos y Condiciones */}
+      <Card className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-indigo-950/30 border-slate-800 rounded-3xl p-5 sm:p-6 backdrop-blur-md shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isTermsAccepted ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-amber-500/20 border border-amber-500/30 text-amber-400 animate-pulse'}`}>
+              <Scale className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-white tracking-tight">
+                  Apartado Legal: Términos y Condiciones
+                </h3>
+                <Badge variant="outline" className="text-[10px] uppercase font-bold border-indigo-500/40 text-indigo-300 bg-indigo-500/10">
+                  CancharClub SaaS
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isTermsAccepted 
+                  ? 'Contrato de adhesión operativo registrado formalmente en la base de datos.'
+                  : 'Lectura y aceptación obligatoria para la administración oficial de tu complejo deportivo.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+            <div className={`px-4 py-2 rounded-xl border flex items-center gap-2 text-xs font-bold shadow-sm ${
+              isTermsAccepted 
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' 
+                : 'bg-amber-500/15 border-amber-500/40 text-amber-300 animate-pulse'
+            }`}>
+              {isTermsAccepted ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Estado: Aceptado</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <span>Estado: Pendiente</span>
+                </>
+              )}
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const el = document.getElementById('terminos-y-condiciones')
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="text-xs h-9 border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl cursor-pointer"
+            >
+              Ver Contrato
+            </Button>
           </div>
         </div>
       </Card>

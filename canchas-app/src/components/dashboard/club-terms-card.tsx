@@ -121,16 +121,21 @@ export function ClubTermsCard({
             </div>
           </div>
 
-          <div>
+          <div className="flex flex-col sm:items-end gap-1">
             {isAccepted ? (
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs px-3 py-1 font-bold flex items-center gap-1.5 shadow-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Aceptado el {formatAcceptedDate(effectiveAcceptedAt!)}</span>
-              </Badge>
+              <>
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 shadow-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Estado: Aceptado</span>
+                </Badge>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Registrado el {formatAcceptedDate(effectiveAcceptedAt!)}
+                </span>
+              </>
             ) : (
-              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold flex items-center gap-1.5 animate-pulse">
+              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 animate-pulse">
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <span>Aceptación Obligatoria Pendiente</span>
+                <span>Estado: Pendiente</span>
               </Badge>
             )}
           </div>
@@ -140,28 +145,39 @@ export function ClubTermsCard({
       <CardContent className="p-6 space-y-6">
         {/* Banner de Estado */}
         {!isAccepted ? (
-          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-200">
-            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <strong className="font-bold text-amber-300 block text-sm">
-                Lectura y aceptación obligatoria para operar tu complejo
-              </strong>
-              <p className="text-slate-300 leading-relaxed text-[11px]">
-                Para mantener la publicación y operativa de tus canchas en CancharClub, debés leer detenidamente este documento y confirmar tu aceptación al pie del mismo.
-              </p>
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <strong className="font-bold text-amber-300 block text-sm">
+                  Lectura y aceptación obligatoria para operar tu complejo
+                </strong>
+                <p className="text-slate-300 leading-relaxed text-[11px]">
+                  Para mantener la publicación y operativa de tus canchas en CancharClub, debés leer detenidamente este documento y confirmar tu aceptación al pie del mismo.
+                </p>
+              </div>
             </div>
+            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start sm:self-auto">
+              Estado: Pendiente
+            </Badge>
           </div>
         ) : (
-          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
-            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
-            <div>
-              <span className="font-bold text-white text-xs block">
-                Conformidad registrada en la base de datos
-              </span>
-              <span className="text-[11px] text-slate-400">
-                Fecha de registro: {formatAcceptedDate(effectiveAcceptedAt!)} • Leyes de la República Argentina
-              </span>
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between flex-wrap gap-3 text-xs text-emerald-300">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white text-xs block">
+                  Conformidad registrada en la base de datos
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Fecha de registro: {formatAcceptedDate(effectiveAcceptedAt!)} • Leyes de la República Argentina
+                </span>
+              </div>
             </div>
+            <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs px-3 py-1 font-bold flex items-center gap-1.5 shadow-sm">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Estado: Aceptado</span>
+            </Badge>
           </div>
         )}
 

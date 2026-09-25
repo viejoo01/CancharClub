@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS, cleanNoteForDisplay, paymentMethodLabel } from '@/lib/utils'
 import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 
 function methodLabel(method: string): string {
   return paymentMethodLabel(method)
@@ -57,6 +57,7 @@ function formatTime(iso: string): string {
 
 export default function CajaPage() {
   const tenantId = useTenantId()
+  const { isOwner } = useUserRole()
   const today = new Date().toISOString().split('T')[0]
   const [selectedDate, setSelectedDate] = useState(today)
   const [report, setReport] = useState<DailyCashReport | null>(null)
@@ -165,13 +166,15 @@ export default function CajaPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 no-print">
-          <Button asChild variant="outline" size="sm" className="gap-1.5 border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60 text-xs h-10">
-            <Link href="/dashboard/cobros">
-              <Landmark className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Configurar Cuentas de Cobro</span>
-              <span className="sm:hidden">Cuentas</span>
-            </Link>
-          </Button>
+          {isOwner && (
+            <Button asChild variant="outline" size="sm" className="gap-1.5 border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60 text-xs h-10">
+              <Link href="/dashboard/cobros">
+                <Landmark className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Configurar Cuentas de Cobro</span>
+                <span className="sm:hidden">Cuentas</span>
+              </Link>
+            </Button>
+          )}
           <Button onClick={handleExportCSV} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
             <Download className="w-3.5 h-3.5 text-emerald-400" />
             <span>Exportar CSV</span>

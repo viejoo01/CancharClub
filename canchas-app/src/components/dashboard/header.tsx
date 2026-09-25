@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { VenueSwitcher } from './venue-switcher'
+import { useUserRole } from '@/hooks/use-tenant-id'
 
 interface HeaderProps {
   onQuickBookClick?: () => void
@@ -29,6 +30,7 @@ export function Header({
   courtsCount,
   sports,
 }: HeaderProps) {
+  const { isOwner } = useUserRole()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -81,19 +83,33 @@ export function Header({
         />
 
         {mpConnected ? (
-          <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
-            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 transition-colors cursor-pointer">
+          isOwner ? (
+            <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
+              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 transition-colors cursor-pointer">
+                <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
+              </Badge>
+            </Link>
+          ) : (
+            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-default" title="Mercado Pago activo para cobro online de señas">
               <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
               <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
             </Badge>
-          </Link>
+          )
         ) : (
-          <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-600 transition-colors cursor-pointer">
+          isOwner ? (
+            <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
+              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-600 transition-colors cursor-pointer">
+                <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+                <span className="hidden md:inline">Señas:</span> Transferencia / Alias
+              </Badge>
+            </Link>
+          ) : (
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 cursor-default" title="Señas por transferencia directa">
               <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
               <span className="hidden md:inline">Señas:</span> Transferencia / Alias
             </Badge>
-          </Link>
+          )
         )}
       </div>
 

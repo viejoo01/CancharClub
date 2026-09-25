@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import NextLink from 'next/link'
 import { 
   Building2, 
   CreditCard, 
@@ -9,7 +10,8 @@ import {
   Loader2, 
   CheckCircle2, 
   Link as LinkIcon, 
-  Unlink 
+  Unlink,
+  ShieldAlert
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,11 +25,12 @@ import {
   saveTenantMpCredentials, 
   disconnectTenantMpAccount 
 } from '@/actions/tenant-payment-settings.actions'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
 
 export default function CobrosConfigPage() {
   const tenantId = useTenantId()
+  const { role, isOwner } = useUserRole()
   const [loading, setLoading] = useState(true)
   const [savingBank, setSavingBank] = useState(false)
   const [savingMp, setSavingMp] = useState(false)
@@ -257,6 +260,31 @@ export default function CobrosConfigPage() {
     } finally {
       setDisconnectingMp(false)
     }
+  }
+
+  if (role === 'TENANT_STAFF' || !isOwner) {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4">
+        <Card className="border-red-500/30 bg-red-950/20 text-center p-6 shadow-xl">
+          <CardHeader className="flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
+              <ShieldAlert className="w-8 h-8 text-red-400" />
+            </div>
+            <CardTitle className="text-xl font-bold text-white">Acceso Restringido</CardTitle>
+            <CardDescription className="text-slate-300 max-w-md mt-2 text-sm leading-relaxed">
+              La configuración de cuentas bancarias y credenciales de cobro está reservada exclusivamente para los administradores y dueños del club.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pt-2">
+            <Button asChild variant="outline" className="border-slate-700 bg-slate-800 text-slate-200 hover:text-white">
+              <NextLink href="/dashboard">
+                Volver al Panel Principal
+              </NextLink>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (loading) {

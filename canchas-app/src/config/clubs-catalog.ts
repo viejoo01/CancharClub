@@ -86,21 +86,86 @@ export interface ClubServicesAndLocationData {
 }
 
 /**
- * Genera la URL para incrustar el mapa interactivo de Google Maps (iframe)
+ * Extrae la URL limpia de Google Maps Embed si el usuario pegó la etiqueta iframe completa o una URL directa de embed
  */
-export function getGoogleMapsEmbedUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string }): string {
-  if (location.google_maps_url) {
-    const raw = location.google_maps_url.trim()
-    if (raw.includes('google.com/maps/embed') || raw.includes('output=embed')) {
-      return raw
-    }
+export function extractGoogleMapsEmbedUrl(raw?: string | null): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  // Si pegaron la etiqueta <iframe> de Google Maps (Compartir -> Insertar un mapa)
+  const iframeMatch = trimmed.match(/src=["'](https:\/\/(?:www\.)?google\.com\/maps\/embed[^"']+)["']/i)
+  if (iframeMatch && iframeMatch[1]) {
+    return iframeMatch[1]
   }
 
-  const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
-  const query = queryParts.join(', ')
-  if (!query) return ''
+  // Si pegaron directamente la URL de embed
+  if (/^https:\/\/(?:www\.)?google\.com\/maps\/embed/i.test(trimmed)) {
+    return trimmed
+  }
 
-  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`
+  return null
+}
+
+/**
+ * Extrae coordenadas de una URL de Google Maps (@lat,lon o ?q=lat,lon o ll=lat,lon)
+ */
+export function extractCoordsFromGoogleMapsUrl(raw?: string | null): { lat: number; lon: number } | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+
+  const atMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+  if (atMatch) {
+    const lat = parseFloat(atMatch[1])
+    const lon = parseFloat(atMatch[2])
+    if (!isNaN(lat) && !isNaN(lon)) return { lat, lon }
+  }
+
+  const qMatch = trimmed.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/)
+  if (qMatch) {
+    const lat = parseFloat(qMatch[1])
+    const lon = parseFloat(qMatch[2])
+    if (!isNaN(lat) && !isNaN(lon)) return { lat, lon }
+  }
+
+  return null
+}
+
+/**
+ * Genera una URL de incrustación de OpenStreetMap para coordenadas dadas (nunca bloqueada por iframes)
+ */
+export function buildOsmEmbedUrl(lat: number, lon: number, delta = 0.006): string {
+  const minLon = (lon - delta).toFixed(6)
+  const minLat = (lat - delta / 1.5).toFixed(6)
+  const maxLon = (lon + delta).toFixed(6)
+  const maxLat = (lat + delta / 1.5).toFixed(6)
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${minLon}%2C${minLat}%2C${maxLon}%2C${maxLat}&layer=mapnik&marker=${lat}%2C${lon}`
+}
+
+/**
+ * Genera la URL para incrustar el mapa interactivo de forma segura y sin bloqueos de iframe.
+ * Prioriza el embed oficial de Google Maps si fue provisto; de lo contrario utiliza OpenStreetMap.
+ */
+export function getGoogleMapsEmbedUrl(location: {
+  address?: string
+  city?: string
+  province?: string
+  google_maps_url?: string
+  coords?: { lat: number; lon: number } | null
+}): string {
+  // 1. Si hay un embed oficial de Google Maps (Compartir > Insertar un mapa), usarlo directamente
+  const officialEmbed = extractGoogleMapsEmbedUrl(location.google_maps_url)
+  if (officialEmbed) {
+    return officialEmbed
+  }
+
+  // 2. Si se suministraron coordenadas o se pueden extraer del enlace de Google Maps
+  const coords = location.coords || extractCoordsFromGoogleMapsUrl(location.google_maps_url)
+  if (coords) {
+    return buildOsmEmbedUrl(coords.lat, coords.lon)
+  }
+
+  return ''
 }
 
 /**
@@ -109,6 +174,11 @@ export function getGoogleMapsEmbedUrl(location: { address?: string; city?: strin
 export function getGoogleMapsDirectUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string }): string {
   if (location.google_maps_url && location.google_maps_url.trim()) {
     const raw = location.google_maps_url.trim()
+    // Si era un iframe, extraer la URL o recurrir a la búsqueda
+    const cleanEmbed = extractGoogleMapsEmbedUrl(raw)
+    if (cleanEmbed) {
+      return cleanEmbed
+    }
     if (/^https?:\/\//i.test(raw)) return raw
     return `https://${raw}`
   }
@@ -123,7 +193,12 @@ export function getGoogleMapsDirectUrl(location: { address?: string; city?: stri
 /**
  * Genera el enlace de navegación para abrir en Waze
  */
-export function getWazeDirectUrl(location: { address?: string; city?: string; province?: string }): string {
+export function getWazeDirectUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string; coords?: { lat: number; lon: number } | null }): string {
+  const coords = location.coords || extractCoordsFromGoogleMapsUrl(location.google_maps_url)
+  if (coords) {
+    return `https://waze.com/ul?ll=${coords.lat},${coords.lon}&navigate=yes`
+  }
+
   const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
   const query = queryParts.join(', ')
   if (!query) return 'https://waze.com'

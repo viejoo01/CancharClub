@@ -34,11 +34,14 @@ import {
 import {
   getClubServicesAndLocation,
   updateClubServicesAndLocation,
+  geocodeClubAddress,
 } from '@/actions/club.actions'
 import {
   getGoogleMapsEmbedUrl,
   getGoogleMapsDirectUrl,
   getWazeDirectUrl,
+  extractGoogleMapsEmbedUrl,
+  extractCoordsFromGoogleMapsUrl,
   type ClubServicesConfig,
   type ClubLocationConfig,
   type ClubServicesAndLocationData,
@@ -58,7 +61,6 @@ export function ClubServicesLocationModal({
   isOpen,
   onClose,
   tenantId,
-  clubSlug,
   initialData,
   onSuccess,
 }: ClubServicesLocationModalProps) {
@@ -86,6 +88,7 @@ export function ClubServicesLocationModal({
 
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
+  const [geocodedCoords, setGeocodedCoords] = useState<{ lat: number; lon: number } | null>(null)
 
   // Cargar datos actuales si no se pasaron como prop
   useEffect(() => {
@@ -123,6 +126,36 @@ export function ClubServicesLocationModal({
     }
   }, [isOpen, tenantId, initialData])
 
+  // Geocodificar automáticamente si no hay embed oficial ni coordenadas en la URL
+  useEffect(() => {
+    if (!isOpen) return
+    if (extractGoogleMapsEmbedUrl(googleMapsUrl) || extractCoordsFromGoogleMapsUrl(googleMapsUrl)) {
+      return
+    }
+
+    const queryParts = [address.trim(), city.trim(), (province || 'Argentina').trim()].filter(Boolean)
+    const query = queryParts.join(', ')
+
+    let isMounted = true
+    const timer = setTimeout(() => {
+      if (!query || query.length < 4) {
+        if (isMounted) setGeocodedCoords(null)
+        return
+      }
+
+      geocodeClubAddress(query).then((coords) => {
+        if (isMounted) {
+          setGeocodedCoords(coords)
+        }
+      })
+    }, 500)
+
+    return () => {
+      isMounted = false
+      clearTimeout(timer)
+    }
+  }, [isOpen, address, city, province, googleMapsUrl])
+
   // Contar cantidad de servicios activos
   const activeServicesCount = [
     parking,
@@ -142,7 +175,10 @@ export function ClubServicesLocationModal({
     city,
     province,
     google_maps_url: googleMapsUrl,
+    coords: geocodedCoords,
   })
+
+  const isOfficialGoogleEmbed = Boolean(extractGoogleMapsEmbedUrl(googleMapsUrl))
 
   const directMapsUrl = getGoogleMapsDirectUrl({
     address,
@@ -155,6 +191,8 @@ export function ClubServicesLocationModal({
     address,
     city,
     province,
+    google_maps_url: googleMapsUrl,
+    coords: geocodedCoords,
   })
 
   const handleSave = async () => {
@@ -425,7 +463,7 @@ export function ClubServicesLocationModal({
               </div>
 
               {/* Vista previa de insignias para jugadores */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-900/80 to-slate-950 border border-slate-800 space-y-2">
+              <div className="p-3.5 rounded-2xl bg-linear-to-b from-slate-900/80 to-slate-950 border border-slate-800 space-y-2">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-teal-400" />
                   Vista previa de cómo lo verán los jugadores:
@@ -538,25 +576,43 @@ export function ClubServicesLocationModal({
                   </div>
                   <Input
                     id="google-maps-url"
-                    placeholder="Ej: https://maps.app.goo.gl/... o https://google.com/maps/place/..."
+                    placeholder="Pegá aquí el iframe de Google Maps o enlace de tu club"
                     value={googleMapsUrl}
-                    onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      const cleanEmbed = extractGoogleMapsEmbedUrl(val)
+                      setGoogleMapsUrl(cleanEmbed || val)
+                    }}
                     className="bg-slate-900/90 border-slate-800 text-xs text-white placeholder:text-slate-600 h-9 font-mono"
                   />
-                  <p className="text-[11px] text-slate-500">
-                    Si tu club tiene ficha en Google Maps, pegá el enlace compartido acá. Si lo dejás vacío, el mapa se orientará automáticamente por tu dirección y ciudad.
-                  </p>
+                  <div className="text-[11px] text-slate-400 space-y-1">
+                    <p>
+                      💡 <strong>Para mapa embebido oficial de Google Maps:</strong> Buscá tu club en Google Maps, tocá <strong>Compartir</strong> &gt; pestaña <strong>Insertar un mapa</strong> y pegá el código acá.
+                    </p>
+                    <p className="text-slate-500">
+                      Si pegás un enlace compartido normal (maps.app.goo.gl), se utilizará para abrir directamente en Google Maps y Waze.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Previsualización del Mapa de Google Maps */}
-              <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950 border border-slate-800 space-y-3">
+              {/* Previsualización del Mapa */}
+              <div className="p-4 rounded-2xl bg-linear-to-b from-slate-900/90 to-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-bold text-white">
-                      Vista previa del Mapa de Google Maps:
+                      Vista previa del Mapa:
                     </span>
+                    {isOfficialGoogleEmbed ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                        Google Maps Oficial
+                      </Badge>
+                    ) : embedUrl ? (
+                      <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/30 text-[10px]">
+                        Mapa GPS Activo
+                      </Badge>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     {directMapsUrl && (
@@ -587,16 +643,28 @@ export function ClubServicesLocationModal({
                 {embedUrl ? (
                   <div className="relative w-full h-56 rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
                     <iframe
-                      title="Previsualización Google Maps"
+                      title="Previsualización Mapa"
                       src={embedUrl}
                       className="w-full h-full border-0"
                       loading="lazy"
                       referrerPolicy="no-referrer-when-downgrade"
                     />
+                    <div className="absolute bottom-2 right-2 pointer-events-none">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] text-slate-300 font-mono shadow-md backdrop-blur-xs">
+                        <MapPin className="w-2.5 h-2.5 text-emerald-400" />
+                        {isOfficialGoogleEmbed ? 'Google Maps' : 'Mapa GPS'}
+                      </span>
+                    </div>
                   </div>
                 ) : (
-                  <div className="py-8 text-center bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-slate-500 text-xs">
-                    Ingresá la calle, ciudad o link de Google Maps arriba para generar la vista previa interactiva.
+                  <div className="py-8 text-center bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-slate-400 text-xs flex flex-col items-center justify-center gap-2 p-4">
+                    <MapPin className="w-6 h-6 text-slate-500 animate-pulse" />
+                    <p className="font-medium text-slate-300">
+                      Completá la calle y ciudad arriba para generar la vista previa interactiva.
+                    </p>
+                    <p className="text-[11px] text-slate-500 max-w-sm">
+                      O pegá el código de inserción de Google Maps (Compartir &gt; Insertar un mapa).
+                    </p>
                   </div>
                 )}
 

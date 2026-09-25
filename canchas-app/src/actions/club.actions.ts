@@ -1508,6 +1508,41 @@ export async function updateClubServicesAndLocation(
   }
 }
 
+/**
+ * Geocodifica una dirección o club a coordenadas (lat, lon) usando OpenStreetMap Nominatim.
+ * Totalmente libre de API keys y cacheado por 24 horas en Next.js.
+ */
+export async function geocodeClubAddress(
+  query: string
+): Promise<{ lat: number; lon: number } | null> {
+  const clean = query.trim()
+  if (!clean || clean.length < 3) return null
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(clean)}&limit=1`
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'CancharClub/1.0 (contacto@cancharclub.com.ar)',
+        'Accept-Language': 'es,es-AR;q=0.9',
+      },
+      next: { revalidate: 86400 },
+    })
+
+    if (!res.ok) return null
+    const data = await res.json()
+    if (Array.isArray(data) && data.length > 0 && data[0]?.lat && data[0]?.lon) {
+      const lat = parseFloat(data[0].lat)
+      const lon = parseFloat(data[0].lon)
+      if (!isNaN(lat) && !isNaN(lon)) {
+        return { lat, lon }
+      }
+    }
+  } catch (err) {
+    console.warn('[geocodeClubAddress] Fallback error:', err)
+  }
+  return null
+}
+
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────
 
 export async function getClubPublicData(slug: string): Promise<ClubData> {

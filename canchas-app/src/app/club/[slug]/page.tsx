@@ -47,13 +47,15 @@ import {
   getGoogleMapsEmbedUrl,
   getGoogleMapsDirectUrl,
   getWazeDirectUrl,
+  extractGoogleMapsEmbedUrl,
+  extractCoordsFromGoogleMapsUrl,
 } from '@/config/clubs-catalog'
 import {
   InstagramIcon,
   FacebookIcon,
   TikTokIcon,
 } from '@/components/icons/social-icons'
-import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo } from '@/actions/club.actions'
+import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo, geocodeClubAddress } from '@/actions/club.actions'
 
 // Generador dinámico de los próximos 14 días para el carousel táctil móvil
 function getNextDays(count = 14) {
@@ -209,6 +211,36 @@ export default function ClubPublicPage({
   } | null>(null)
   const [isWaitlistOpen, setIsWaitlistOpen] = useState(false)
   const [isReservasModalOpen, setIsReservasModalOpen] = useState(false)
+  const [geocodedCoords, setGeocodedCoords] = useState<{ lat: number; lon: number } | null>(null)
+
+  // Geocodificar automáticamente si no hay embed oficial de Google Maps
+  useEffect(() => {
+    if (extractGoogleMapsEmbedUrl(club.googleMapsUrl) || extractCoordsFromGoogleMapsUrl(club.googleMapsUrl)) {
+      return
+    }
+
+    const queryParts = [club.exactAddress || club.address, club.city, club.province || 'Argentina'].filter(Boolean)
+    const query = queryParts.join(', ')
+
+    let isMounted = true
+    const timer = setTimeout(() => {
+      if (!query || query.length < 4) {
+        if (isMounted) setGeocodedCoords(null)
+        return
+      }
+
+      geocodeClubAddress(query).then((coords) => {
+        if (isMounted && coords) {
+          setGeocodedCoords(coords)
+        }
+      })
+    }, 400)
+
+    return () => {
+      isMounted = false
+      clearTimeout(timer)
+    }
+  }, [club.exactAddress, club.address, club.city, club.province, club.googleMapsUrl])
 
   const isPublicPaused = 
     subscriptionStatus === 'PARTIALLY_SUSPENDED' || 
@@ -409,8 +441,9 @@ export default function ClubPublicPage({
       city: club.city,
       province: club.province || 'Argentina',
       google_maps_url: club.googleMapsUrl,
+      coords: geocodedCoords,
     })
-  }, [club])
+  }, [club, geocodedCoords])
 
   const mapsDirectUrl = useMemo(() => {
     return getGoogleMapsDirectUrl({
@@ -426,8 +459,10 @@ export default function ClubPublicPage({
       address: club.exactAddress || club.address,
       city: club.city,
       province: club.province || 'Argentina',
+      google_maps_url: club.googleMapsUrl,
+      coords: geocodedCoords,
     })
-  }, [club])
+  }, [club, geocodedCoords])
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center">
@@ -1099,25 +1134,49 @@ export default function ClubPublicPage({
               </div>
             </div>
 
-            {/* Mapa Interactivo Google Maps */}
-            <div className="relative w-full h-64 sm:h-72 rounded-xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-inner">
-              <iframe
-                title={`Mapa de ubicación de ${club.name}`}
-                src={mapsEmbedUrl}
-                width="100%"
-                height="100%"
-                style={{ border: 0, filter: 'contrast(1.05)' }}
-                allowFullScreen={false}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                className="w-full h-full"
-              />
-              <div className="absolute bottom-2 right-2 pointer-events-none">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] text-slate-400 font-mono shadow-md backdrop-blur-xs">
-                  <MapPin className="w-2.5 h-2.5 text-emerald-400" /> Google Maps
-                </span>
+            {/* Mapa Interactivo */}
+            {mapsEmbedUrl ? (
+              <div className="relative w-full h-64 sm:h-72 rounded-xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-inner">
+                <iframe
+                  title={`Mapa de ubicación de ${club.name}`}
+                  src={mapsEmbedUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0, filter: 'contrast(1.05)' }}
+                  allowFullScreen={false}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  className="w-full h-full"
+                />
+                <div className="absolute bottom-2 right-2 pointer-events-none">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] text-slate-300 font-mono shadow-md backdrop-blur-xs">
+                    <MapPin className="w-2.5 h-2.5 text-emerald-400" />
+                    {mapsEmbedUrl.includes('google.com') ? 'Google Maps' : 'Mapa GPS'}
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-950/40 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
+                  <MapPin className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">{club.exactAddress || club.address}</h4>
+                  <p className="text-xs text-slate-400">{club.city}{club.province ? `, ${club.province}` : ''}</p>
+                </div>
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <a
+                    href={mapsDirectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition-colors"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Abrir en Google Maps</span>
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

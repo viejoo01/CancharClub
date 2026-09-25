@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 export interface MpMarketplaceStatus {
   isConnected: boolean
@@ -16,6 +17,11 @@ export interface MpMarketplaceStatus {
 
 /** Generar URL de autorización OAuth de Mercado Pago para vincular la cuenta del club */
 export async function getMpOAuthConnectUrl(tenantId: string): Promise<string> {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    throw new Error(auth.error || 'No autorizado')
+  }
+
   const clientId = process.env.MP_CLIENT_ID || process.env.NEXT_PUBLIC_MP_CLIENT_ID || '1234567890'
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
   const redirectUri = `${appUrl}/api/auth/mercadopago/callback`
@@ -34,6 +40,14 @@ export async function getMpOAuthConnectUrl(tenantId: string): Promise<string> {
 /** Obtener estado de conexión de Mercado Pago Marketplace para el club */
 export async function getTenantMpMarketplaceStatus(tenantId: string): Promise<MpMarketplaceStatus> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return {
+        isConnected: false,
+        feePct: 0,
+      }
+    }
+
     const supabase = await createServiceClient()
     const { data: tenant, error } = await supabase
       .from('tenants')
@@ -66,6 +80,11 @@ export async function getTenantMpMarketplaceStatus(tenantId: string): Promise<Mp
 /** Desconectar la cuenta de Mercado Pago del club */
 export async function disconnectTenantMpMarketplace(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertTenantAdmin(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
+    }
+
     const supabase = await createServiceClient()
     const { error } = await supabase
       .from('tenants')
@@ -93,6 +112,11 @@ export async function disconnectTenantMpMarketplace(tenantId: string): Promise<{
  */
 export async function simulateMpConnectionForDemo(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertTenantAdmin(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
+    }
+
     const supabase = await createServiceClient()
     const demoCollectorId = `MP_COLLECTOR_${Math.floor(100000 + Math.random() * 900000)}`
     const demoToken = `TEST-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`

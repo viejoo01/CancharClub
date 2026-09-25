@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { assertTenantMember } from '@/lib/auth-security'
 
 export type LightCommand = 'on' | 'off' | 'toggle'
 
@@ -36,6 +37,11 @@ export async function toggleCourtLight(
   relayType: 'SHELLY' | 'SONOFF' | 'TASMOTA' = 'SHELLY',
   relayChannel: number = 0
 ): Promise<LightToggleResult> {
+  const auth = await assertTenantMember()
+  if (!auth.authorized) {
+    return { success: false, courtId, isOn: false, error: auth.error || 'Sin permisos para controlar luces' }
+  }
+
   const isOn = command === 'on' ? true : command === 'off' ? false : null
 
   // Si no hay IP configurada, modo simulado
@@ -126,6 +132,11 @@ export async function toggleAllLights(
   command: 'on' | 'off'
 ): Promise<{ success: boolean; results: LightToggleResult[] }> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, results: [] }
+    }
+
     const supabase = await createServiceClient()
     const { data: courts } = await supabase
       .from('courts')

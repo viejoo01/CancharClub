@@ -5,7 +5,7 @@
 // ==============================================================================
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
 import { cleanNoteForDisplay } from '@/lib/utils'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -80,8 +80,17 @@ export async function getDailyCashReport(
   tenantId: string,
   date: string // 'YYYY-MM-DD'
 ): Promise<DailyCashReport> {
-  const supabase = await createServiceClient()
   const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
+  if (!effectiveTenantId) {
+    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, entries: [] }
+  }
+
+  const authCheck = await assertTenantMember(effectiveTenantId)
+  if (!authCheck.authorized) {
+    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, entries: [] }
+  }
+
+  const supabase = await createServiceClient()
 
   // Límites del día en huso horario de Argentina (UTC-3)
   const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
@@ -235,13 +244,37 @@ const SLOTS_MAP: {
  */
 export async function getOccupancyReport(tenantId: string): Promise<OccupancyReportData> {
   try {
+    const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
+    if (!effectiveTenantId) {
+      return {
+        weeklyAverageOccupancy: 0,
+        peakSlot: 'Sin datos',
+        deadHoursCount: 0,
+        projectedRevenueRecoveryArs: 0,
+        heatmap: [],
+        recommendations: [],
+      }
+    }
+
+    const authCheck = await assertTenantMember(effectiveTenantId)
+    if (!authCheck.authorized) {
+      return {
+        weeklyAverageOccupancy: 0,
+        peakSlot: 'Sin datos',
+        deadHoursCount: 0,
+        projectedRevenueRecoveryArs: 0,
+        heatmap: [],
+        recommendations: [],
+      }
+    }
+
     const supabase = await createServiceClient()
 
     // Canchas activas → para calcular capacidad teórica
     const { data: courts } = await supabase
       .from('courts')
       .select('id')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .eq('is_active', true)
 
     const courtsCount = courts?.length || 2
@@ -251,7 +284,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     const { data: bookings } = await supabase
       .from('bookings')
       .select('booked_at, price_total_cents')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .not('status', 'in', '("cancelled")')
 
     const totalRealBookings = bookings?.length ?? 0
@@ -327,7 +360,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     const { data: priceRules } = await supabase
       .from('price_rules')
       .select('price_cents')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .eq('is_active', true)
       .order('price_cents', { ascending: false })
       .limit(1)

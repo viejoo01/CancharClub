@@ -2,7 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { resolveEffectiveTenantId, assertTenantAdmin } from '@/lib/auth-security'
 
 export interface DynamicPricingConfig {
   enable_last_minute: boolean
@@ -53,13 +53,11 @@ export async function saveDynamicPricingSettings(
     }
 
     // Protección antifraude: Solo el dueño del club puede configurar tarifas dinámicas
-    const { getCurrentUserProfile } = await import('@/lib/auth-security')
-    const currentUser = await getCurrentUserProfile()
-    const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-    if (currentUser && !isOwner) {
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
       return {
         success: false,
-        error: 'Solo el dueño del club tiene permisos para configurar tarifas dinámicas.',
+        error: auth.error || 'Solo el dueño del club tiene permisos para configurar tarifas dinámicas.',
       }
     }
 

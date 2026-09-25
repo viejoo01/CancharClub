@@ -241,13 +241,6 @@ export function ResetStaffPasswordModal({
               </button>
             </div>
 
-            {member.assigned_password && (
-              <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-                <span>Clave actual registrada:</span>
-                <span className="font-mono text-slate-200 font-semibold">{member.assigned_password}</span>
-              </div>
-            )}
-
             <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800">
               <Button
                 type="button"

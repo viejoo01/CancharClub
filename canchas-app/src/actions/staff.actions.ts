@@ -57,13 +57,11 @@ export async function getClubStaff(
       profiles.map(async (p) => {
         let email = ''
         let lastSignIn: string | null = null
-        let assignedPassword: string | null = null
         try {
           const { data: userData } = await supabase.auth.admin.getUserById(p.id)
           if (userData?.user) {
             email = userData.user.email || ''
             lastSignIn = userData.user.last_sign_in_at || null
-            assignedPassword = userData.user.user_metadata?.assigned_password || userData.user.user_metadata?.initial_password || null
           }
         } catch {
           // Si no se puede resolver el auth user, continúa con email vacío
@@ -77,7 +75,7 @@ export async function getClubStaff(
           role: p.role as StaffRole,
           created_at: p.created_at,
           last_sign_in_at: lastSignIn,
-          assigned_password: assignedPassword,
+          // assigned_password NO se incluye en la respuesta al frontend por seguridad
         }
       })
     )
@@ -124,8 +122,6 @@ export async function inviteStaffMember(params: {
         user_metadata: {
           full_name: cleanName,
           phone: cleanPhone,
-          assigned_password: tempPassword,
-          initial_password: tempPassword,
         },
       })
 
@@ -192,14 +188,20 @@ export async function inviteStaffMember(params: {
  */
 export async function updateStaffRole(
   profileId: string,
-  newRole: StaffRole
+  newRole: StaffRole,
+  tenantId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!tenantId) {
+      return { success: false, error: 'tenant_id requerido para cambiar el rol.' }
+    }
     const supabase = await createServiceClient()
+    // Scope estricto al tenant del caller — evita IDOR
     const { error } = await supabase
       .from('profiles')
       .update({ role: newRole })
       .eq('id', profileId)
+      .eq('tenant_id', tenantId)
 
     if (error) {
       console.error('[updateStaffRole] Error al actualizar rol:', error.message)
@@ -252,17 +254,15 @@ export async function updateStaffPassword(params: {
       return { success: false, error: 'No se encontró la cuenta de autenticación del usuario.' }
     }
 
-    const currentMeta = userData.user.user_metadata || {}
+    const cleanMeta = { ...(userData.user.user_metadata || {}) }
+    delete cleanMeta.assigned_password
+    delete cleanMeta.initial_password
 
-    // Actualizar la contraseña en Supabase Auth y su metadata (asegurando confirmación de email)
+    // Actualizar la contraseña en Supabase Auth (asegurando confirmación de email)
     const { error: updateErr } = await supabase.auth.admin.updateUserById(params.staffProfileId, {
       password: cleanPwd,
       email_confirm: true,
-      user_metadata: {
-        ...currentMeta,
-        assigned_password: cleanPwd,
-        initial_password: cleanPwd,
-      },
+      user_metadata: cleanMeta,
     })
 
     if (updateErr) {
@@ -281,10 +281,27 @@ export async function updateStaffPassword(params: {
  * Elimina o revoca el acceso a un colaborador en la base de datos real.
  */
 export async function removeStaffMember(
-  profileId: string
+  profileId: string,
+  tenantId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!tenantId) {
+      return { success: false, error: 'tenant_id requerido para eliminar un colaborador.' }
+    }
+
     const supabase = await createServiceClient()
+
+    // Verificar que el perfil pertenezca al club del caller (anti-IDOR)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', profileId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!profile) {
+      return { success: false, error: 'Colaborador no encontrado en este club.' }
+    }
 
     // 1. Desvincular referencias en bookings si las hubiere para evitar violaciones de clave foránea
     try {

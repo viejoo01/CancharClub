@@ -77,9 +77,7 @@ export async function loginWithEmail(formData: FormData) {
 
   const isSuperadmin = 
     profile?.role === 'SUPERADMIN' ||
-    Boolean(process.env.SUPERADMIN_USER_ID && data.user.id === process.env.SUPERADMIN_USER_ID) ||
-    data.user.email === 'santi.alonsoleal@gmail.com' ||
-    data.user.email === 'superadmin@cancharclub.com.ar'
+    Boolean(process.env.SUPERADMIN_USER_ID && data.user.id === process.env.SUPERADMIN_USER_ID)
 
   const cookieStore = await cookies()
 
@@ -121,37 +119,40 @@ export async function loginWithEmail(formData: FormData) {
     }
   }
 
+  const isProd = process.env.NODE_ENV === 'production'
+  const cookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const }
+
   if (profile?.tenant_id) {
-    cookieStore.set('canchar_tenant_id', profile.tenant_id, { path: '/', maxAge: 86400 })
-    cookieStore.set('demo_tenant_id', profile.tenant_id, { path: '/', maxAge: 86400 })
+    cookieStore.set('canchar_tenant_id', profile.tenant_id, cookieOpts)
+    cookieStore.set('demo_tenant_id', profile.tenant_id, cookieOpts)
   }
-  if (t?.name) cookieStore.set('demo_tenant_name', t.name, { path: '/', maxAge: 86400 })
-  if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, { path: '/', maxAge: 86400 })
-  if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, { path: '/', maxAge: 86400 })
+  if (t?.name) cookieStore.set('demo_tenant_name', t.name, cookieOpts)
+  if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, cookieOpts)
+  if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, cookieOpts)
 
   const isActuallyActive = t?.is_active === true
-  cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', cookieOpts)
   if (isActuallyActive) {
     cookieStore.delete('new_club_pending_activation')
   }
 
   if (t?.base_slots_plan) {
     const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
-    cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_plan_id', planId, cookieOpts)
   }
 
   if (hasCard || isActuallyActive) {
-    cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 86400 })
-    if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, { path: '/', maxAge: 86400 })
-    if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_has_card', 'true', cookieOpts)
+    if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, cookieOpts)
+    if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, cookieOpts)
   }
 
   if (profile?.role === 'TENANT_STAFF') {
-    cookieStore.set('demo_user_role', 'TENANT_STAFF', { path: '/', maxAge: 86400 })
-    cookieStore.set('demo_user_name', profile.full_name || 'Encargado (Mostrador)', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_role', 'TENANT_STAFF', cookieOpts)
+    cookieStore.set('demo_user_name', profile.full_name || 'Encargado (Mostrador)', cookieOpts)
   } else {
-    cookieStore.set('demo_user_role', 'TENANT_ADMIN', { path: '/', maxAge: 86400 })
-    cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', { path: '/', maxAge: 86400 })
+    cookieStore.set('demo_user_role', 'TENANT_ADMIN', cookieOpts)
+    cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', cookieOpts)
   }
 
   redirect('/dashboard')
@@ -194,8 +195,6 @@ export async function registerClub(formData: FormData) {
     user_metadata: {
       full_name: clubName,
       phone,
-      initial_password: password,
-      assigned_password: password,
     },
   })
 
@@ -205,14 +204,16 @@ export async function registerClub(formData: FormData) {
       const existing = existingUsers?.users?.find(u => u.email?.toLowerCase() === email)
       if (existing) {
         userId = existing.id
+        const cleanMeta = { ...(existing.user_metadata || {}) }
+        delete cleanMeta.assigned_password
+        delete cleanMeta.initial_password
         await serviceClient.auth.admin.updateUserById(userId, {
           password,
           email_confirm: true,
           user_metadata: { 
+            ...cleanMeta,
             full_name: clubName, 
             phone,
-            initial_password: password,
-            assigned_password: password,
           },
         })
       } else {
@@ -381,38 +382,19 @@ export async function changeOwnPassword(payload: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const cleanNewPassword = payload.newPassword?.trim()
-    if (!cleanNewPassword || cleanNewPassword.length < 6) {
-      return { success: false, error: 'La nueva contraseña debe tener al menos 6 caracteres.' }
+    if (!cleanNewPassword || cleanNewPassword.length < 8) {
+      return { success: false, error: 'La nueva contraseña debe tener al menos 8 caracteres.' }
     }
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     // Si hay usuario en la sesión Supabase
-    let targetUserId = user?.id
-    let userEmail = user?.email
+    const targetUserId = user?.id
+    const userEmail = user?.email
 
-    // Si no vino de getUser(), intentar resolver con cookie / profiles
-    if (!targetUserId) {
-      const cookieStore = await cookies()
-      const tenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-      if (tenantId) {
-        const serviceClient = await createServiceClient()
-        const { data: profile } = await serviceClient
-          .from('profiles')
-          .select('id, full_name')
-          .eq('tenant_id', tenantId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (profile?.id) {
-          targetUserId = profile.id
-          const { data: uData } = await serviceClient.auth.admin.getUserById(profile.id)
-          userEmail = uData?.user?.email
-        }
-      }
-    }
-
+    // Si no hay usuario en sesión Supabase, rechazar la operación.
+    // No se permite cambiar contraseña sin sesión activa verificada.
     if (!targetUserId) {
       return { success: false, error: 'No se encontró una sesión activa de usuario. Por favor volvé a ingresar.' }
     }
@@ -431,16 +413,14 @@ export async function changeOwnPassword(payload: {
     // Actualizar la contraseña con serviceClient (evita restricciones de sesión)
     const serviceClient = await createServiceClient()
     const { data: userData } = await serviceClient.auth.admin.getUserById(targetUserId)
-    const currentMeta = userData?.user?.user_metadata || {}
+    const cleanMeta = { ...(userData?.user?.user_metadata || {}) }
+    delete cleanMeta.assigned_password
+    delete cleanMeta.initial_password
 
     const { error: updateErr } = await serviceClient.auth.admin.updateUserById(targetUserId, {
       password: cleanNewPassword,
       email_confirm: true,
-      user_metadata: {
-        ...currentMeta,
-        assigned_password: cleanNewPassword,
-        initial_password: cleanNewPassword,
-      },
+      user_metadata: cleanMeta,
     })
 
     if (updateErr) {

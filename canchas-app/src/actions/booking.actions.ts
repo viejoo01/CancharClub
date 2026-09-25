@@ -416,6 +416,19 @@ export async function confirmTransferPaymentAction(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id')
+      .eq('id', bookingId)
+      .single()
+
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
+
+    const authCheck = await assertTenantMember(booking.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para confirmar transferencias en este club' }
+    }
+
     const ref = referenceNumber ? ` - Ref Transferencia #${referenceNumber}` : ''
     await supabase
       .from('bookings')
@@ -695,11 +708,9 @@ export async function cancelBooking(params: {
 
     if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
 
-    if (params.cancelled_by === 'CLUB') {
-      const authCheck = await assertTenantMember(booking.tenant_id)
-      if (!authCheck.authorized) {
-        return { success: false, error: authCheck.error || 'Sin permisos para cancelar turnos en este club' }
-      }
+    const authCheck = await assertTenantMember(booking.tenant_id)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Sin permisos para cancelar turnos en este club' }
     }
 
     const cancellationNote = `Turno cancelado por ${params.cancelled_by === 'CLUB' ? 'el club' : 'el usuario'}: ${params.reason || 'Sin motivo especificado'}`

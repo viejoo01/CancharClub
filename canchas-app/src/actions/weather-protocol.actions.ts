@@ -8,6 +8,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { formatARS, formatTime, buildWhatsAppLink } from '@/lib/utils'
 import { notifyRainCancellation } from '@/lib/whatsapp'
+import { assertTenantMember } from '@/lib/auth-security'
 import type { CustomerCredit } from '@/types/database'
 
 export interface RainCancellationResult {
@@ -40,6 +41,17 @@ export async function executeRainCancellation(params: {
   reason?: string
 }): Promise<RainCancellationResult> {
   try {
+    const authCheck = await assertTenantMember(params.tenantId)
+    if (!authCheck.authorized) {
+      return {
+        success: false,
+        cancelledBookingsCount: 0,
+        totalCreditedArs: 0,
+        notifications: [],
+        error: authCheck.error || 'No tienes permisos para ejecutar el protocolo climático en este club',
+      }
+    }
+
     const supabase = await createServiceClient()
     const { data: tenant } = await supabase
       .from('tenants')

@@ -196,13 +196,16 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       booking = data
     } else {
-      const { data } = await supabase
-        .from('bookings')
-        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
-        .ilike('staff_notes', `%${bookingIdCandidate}%`)
-        .limit(1)
-        .maybeSingle()
-      booking = data
+      const sanitizedCandidate = bookingIdCandidate.replace(/[^a-zA-Z0-9_-]/g, '').trim()
+      if (sanitizedCandidate.length >= 4) {
+        const { data } = await supabase
+          .from('bookings')
+          .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
+          .ilike('staff_notes', `%${sanitizedCandidate}%`)
+          .limit(1)
+          .maybeSingle()
+        booking = data
+      }
     }
   }
 
@@ -287,9 +290,5 @@ export async function POST(request: NextRequest) {
 
 // GET: Endpoint de verificación (MP puede hacer GET para validar el endpoint)
 export async function GET() {
-  return NextResponse.json({
-    service: 'Canchar - Mercado Pago Webhook',
-    status: 'active',
-    timestamp: new Date().toISOString(),
-  })
+  return NextResponse.json({ ok: true })
 }

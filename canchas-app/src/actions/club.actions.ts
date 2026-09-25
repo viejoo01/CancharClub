@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { resolveEffectiveTenantId, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { 
   getClubBySlug, 
@@ -91,6 +91,11 @@ export async function createCourt(payload: {
     return { success: false, error: 'No se pudo determinar el club' }
   }
 
+  const auth = await assertTenantAdmin(effectiveTenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Requiere permisos de Administrador del Club.' }
+  }
+
   const supabase = await createServiceClient()
   const durationMinutes = payload.slot_duration_minutes || (payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90)
   const hasLights = payload.has_lights !== undefined ? payload.has_lights : (payload.has_lighting !== undefined ? payload.has_lighting : true)
@@ -134,6 +139,11 @@ export async function updateCourt(courtId: string, payload: Partial<{
   is_indoor: boolean
   is_active: boolean
 }>) {
+  const auth = await assertTenantMember()
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Sin permisos para editar canchas.' }
+  }
+
   const supabase = await createServiceClient()
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()
@@ -177,6 +187,11 @@ export async function deleteCourt(
   tenantId: string,
   options?: { force?: boolean }
 ): Promise<{ success: boolean; hasActiveBookings?: boolean; activeCount?: number; error?: string }> {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Requiere permisos de Administrador del Club.' }
+  }
+
   const supabase = await createServiceClient()
 
   try {
@@ -478,13 +493,11 @@ export async function createPriceRule(payload: {
   }
 
   // Protección antifraude: Solo el dueño del club puede crear nuevas tarifas de canchas
-  const { getCurrentUserProfile } = await import('@/lib/auth-security')
-  const currentUser = await getCurrentUserProfile()
-  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-  if (currentUser && !isOwner) {
+  const auth = await assertTenantAdmin(effectiveTenantId)
+  if (!auth.authorized) {
     return {
       success: false,
-      error: 'Solo el dueño del club tiene permisos para crear tarifas de canchas.',
+      error: auth.error || 'Solo el dueño del club tiene permisos para crear tarifas de canchas.',
     }
   }
 
@@ -589,13 +602,11 @@ export async function updatePriceRule(payload: {
   }
 
   // Protección antifraude: Solo el dueño del club puede modificar tarifas de canchas existentes
-  const { getCurrentUserProfile } = await import('@/lib/auth-security')
-  const currentUser = await getCurrentUserProfile()
-  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-  if (currentUser && !isOwner) {
+  const auth = await assertTenantAdmin(effectiveTenantId)
+  if (!auth.authorized) {
     return {
       success: false,
-      error: 'Solo el dueño del club tiene permisos para modificar tarifas de canchas.',
+      error: auth.error || 'Solo el dueño del club tiene permisos para modificar tarifas de canchas.',
     }
   }
 
@@ -667,13 +678,11 @@ export async function deletePriceRule(ruleId: string, tenantId?: string | null) 
   }
 
   // Protección antifraude: Solo el dueño del club puede eliminar tarifas de canchas
-  const { getCurrentUserProfile } = await import('@/lib/auth-security')
-  const currentUser = await getCurrentUserProfile()
-  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-  if (currentUser && !isOwner) {
+  const auth = await assertTenantAdmin(effectiveTenantId)
+  if (!auth.authorized) {
     return {
       success: false,
-      error: 'Solo el dueño del club tiene permisos para eliminar tarifas de canchas.',
+      error: auth.error || 'Solo el dueño del club tiene permisos para eliminar tarifas de canchas.',
     }
   }
 
@@ -884,13 +893,11 @@ export async function applyBulkInflationPriceAdjustment(
   roundingStep: number = 500
 ) {
   // Protección antifraude: Solo el dueño del club puede aplicar ajustes masivos de precios
-  const { getCurrentUserProfile } = await import('@/lib/auth-security')
-  const currentUser = await getCurrentUserProfile()
-  const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-  if (currentUser && !isOwner) {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
     return {
       success: false,
-      error: 'Solo el dueño del club tiene permisos para aplicar ajustes de precios por inflación.',
+      error: auth.error || 'Solo el dueño del club tiene permisos para aplicar ajustes de precios por inflación.',
     }
   }
 
@@ -978,6 +985,11 @@ export async function updateClubSchedule(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const auth = await assertTenantAdmin(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos de administrador sobre este club' }
     }
 
     const supabase = await createServiceClient()
@@ -1097,6 +1109,11 @@ export async function updateClubHighlightInfo(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const auth = await assertTenantAdmin(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos de administrador sobre este club' }
     }
 
     const supabase = await createServiceClient()
@@ -1220,6 +1237,11 @@ export async function updateClubSocialLinks(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const auth = await assertTenantAdmin(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos de administrador sobre este club' }
     }
 
     const supabase = await createServiceClient()
@@ -1385,6 +1407,11 @@ export async function updateClubServicesAndLocation(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
       return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const auth = await assertTenantAdmin(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos de administrador sobre este club' }
     }
 
     const supabase = await createServiceClient()

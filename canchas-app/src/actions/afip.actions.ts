@@ -3,7 +3,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { emitElectronicInvoice, type AfipConfig, type EmitInvoiceParams, type EmitInvoiceResult } from '@/lib/afip'
 import { revalidatePath } from 'next/cache'
-import { resolveEffectiveTenantId } from '@/lib/auth-security'
+import { resolveEffectiveTenantId, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 export interface IssuedInvoice {
   id: string
@@ -27,22 +27,25 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
 
   if (targetTenantId) {
     try {
-      const supabase = await createServiceClient()
-      const { data } = await supabase
-        .from('tenants')
-        .select('name, bank_cuit, address')
-        .eq('id', targetTenantId)
-        .maybeSingle()
-      if (data) {
-        return {
-          cuit: data.bank_cuit || '',
-          puntoVenta: 1,
-          razonSocial: data.name || 'Mi Club Deportivo',
-          condicionIva: 'MONOTRIBUTO',
-          domicilioComercial: data.address || '',
-          inicioActividades: new Date().toISOString().split('T')[0],
-          ingresosBrutos: '',
-          environment: 'TESTING'
+      const auth = await assertTenantMember(targetTenantId)
+      if (auth.authorized) {
+        const supabase = await createServiceClient()
+        const { data } = await supabase
+          .from('tenants')
+          .select('name, bank_cuit, address')
+          .eq('id', targetTenantId)
+          .maybeSingle()
+        if (data) {
+          return {
+            cuit: data.bank_cuit || '',
+            puntoVenta: 1,
+            razonSocial: data.name || 'Mi Club Deportivo',
+            condicionIva: 'MONOTRIBUTO',
+            domicilioComercial: data.address || '',
+            inicioActividades: new Date().toISOString().split('T')[0],
+            ingresosBrutos: '',
+            environment: 'TESTING'
+          }
         }
       }
     } catch {
@@ -72,6 +75,11 @@ export async function saveAfipConfig(
       return { success: false, error: 'No se pudo identificar el club' }
     }
 
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No tienes permisos para modificar la facturación de este club' }
+    }
+
     const supabase = await createServiceClient()
     const { error } = await supabase.from('tenants').update({ 
       bank_cuit: config.cuit || null,
@@ -96,6 +104,13 @@ export async function getIssuedInvoices(): Promise<IssuedInvoice[]> {
 
 export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<EmitInvoiceResult> {
   try {
+    if (params.tenantId) {
+      const auth = await assertTenantMember(params.tenantId)
+      if (!auth.authorized) {
+        return { success: false, error: auth.error || 'Sin permisos para emitir facturas en este club' }
+      }
+    }
+
     const config = await getAfipConfig(params.tenantId)
     const result = await emitElectronicInvoice(config, params)
 

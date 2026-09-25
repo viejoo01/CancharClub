@@ -134,7 +134,7 @@ export default function EquipoPage() {
 
     const newRole: StaffRole = member.role === 'TENANT_ADMIN' ? 'TENANT_STAFF' : 'TENANT_ADMIN'
     try {
-      const res = await updateStaffRole(member.id, newRole)
+      const res = await updateStaffRole(member.id, newRole, tenantId || '')
       if (res.success) {
         setStaff((prev) =>
           prev.map((m) => (m.id === member.id ? { ...m, role: newRole } : m))
@@ -162,7 +162,7 @@ export default function EquipoPage() {
     }
 
     try {
-      const res = await removeStaffMember(member.id)
+      const res = await removeStaffMember(member.id, tenantId || '')
       if (res.success) {
         setStaff((prev) => prev.filter((m) => m.id !== member.id))
         toast.success(`Acceso de ${member.full_name} revocado`)
@@ -315,12 +315,7 @@ export default function EquipoPage() {
                                 <Mail className="w-3 h-3 text-slate-500" />
                                 {member.email}
                               </p>
-                              {member.assigned_password && (
-                                <p className="text-[11px] text-amber-400/90 font-mono flex items-center gap-1 mt-0.5" title="Contraseña asignada">
-                                  <KeyRound className="w-3 h-3 text-amber-400" />
-                                  <span>Clave: {member.assigned_password}</span>
-                                </p>
-                              )}
+
                             </div>
                           </div>
                         </td>

@@ -182,19 +182,8 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
     }
   } catch {}
 
-  // 6. Fallback final infalible: tomar el único o primer club activo de PostgreSQL
-  try {
-    const { data: defaultTenant } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (defaultTenant?.id) {
-      return defaultTenant.id
-    }
-  } catch {}
-
+  // 6. No hay fallback final — si no se pudo resolver el tenant con credenciales reales,
+  //    retornar null para evitar IDOR hacia datos de un tenant arbitrario.
   return null
 }
 
@@ -225,22 +214,14 @@ export async function assertTenantAdmin(targetTenantId?: string | null): Promise
     return { authorized: true, user: profile }
   }
 
-  // Permitir Dueño del Club
-  if (profile.role !== 'TENANT_ADMIN' && profile.role !== 'CUSTOMER') {
+  // Solo TENANT_ADMIN puede acceder a acciones de administrador de club
+  if (profile.role !== 'TENANT_ADMIN') {
     return { authorized: false, error: 'Requiere permisos de Dueño del Club (TENANT_ADMIN).' }
   }
 
-  // Si se especificó un tenant objetivo, verificar que exista en la BD
-  if (targetTenantId && profile.tenantId && profile.tenantId !== targetTenantId) {
-    const serviceClient = await createServiceClient()
-    const { data: targetTenant } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .eq('id', targetTenantId)
-      .maybeSingle()
-    if (!targetTenant) {
-      return { authorized: false, error: 'Acceso denegado: este club no existe.' }
-    }
+  // Si se especificó un tenant objetivo, verificar que el usuario PERTENEZCA a ese tenant
+  if (targetTenantId && profile.tenantId !== targetTenantId) {
+    return { authorized: false, error: 'Acceso denegado: no tenés permisos sobre este club.' }
   }
 
   return { authorized: true, user: profile }
@@ -264,16 +245,27 @@ export async function assertTenantMember(targetTenantId?: string | null): Promis
     return { authorized: false, error: 'Sin permisos de operador de club.' }
   }
 
-  if (targetTenantId && profile.tenantId && profile.tenantId !== targetTenantId) {
-    const serviceClient = await createServiceClient()
-    const { data: targetTenant } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .eq('id', targetTenantId)
-      .maybeSingle()
-    if (!targetTenant) {
-      return { authorized: false, error: 'Acceso denegado: este club no existe.' }
-    }
+  // Verificar que el usuario PERTENEZCA al tenant objetivo (anti-IDOR)
+  if (targetTenantId && profile.tenantId !== targetTenantId) {
+    return { authorized: false, error: 'Acceso denegado: no pertenecés a este club.' }
+  }
+
+  return { authorized: true, user: profile }
+}
+
+/**
+ * Valida que el usuario tenga rol SUPERADMIN de la plataforma.
+ * Debe usarse al inicio de TODA función en superadmin.actions.ts.
+ */
+export async function assertSuperadmin(): Promise<AuthSecurityResult> {
+  const profile = await getCurrentUserProfile()
+
+  if (!profile) {
+    return { authorized: false, error: 'Acceso denegado. Sesión no iniciada.' }
+  }
+
+  if (profile.role !== 'SUPERADMIN') {
+    return { authorized: false, error: 'Acceso denegado. Se requieren permisos de Superadmin.' }
   }
 
   return { authorized: true, user: profile }

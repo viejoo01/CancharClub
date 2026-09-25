@@ -3,6 +3,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { SaaSPlanId } from '@/config/saas-plans'
+import { assertSuperadmin } from '@/lib/auth-security'
 
 export interface SuperadminTenantItem {
   id: string
@@ -29,6 +30,9 @@ export interface SuperadminTenantItem {
  */
 export async function getSuperadminTenants(): Promise<{ success: boolean; data: SuperadminTenantItem[] }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, data: [] }
+
     const supabase = await createServiceClient()
     const { data: tenants, error } = await supabase
       .from('tenants')
@@ -162,6 +166,9 @@ export async function updateTenantSubscriptionStatusAction(
   status: 'AL_DIA' | 'PENDIENTE' | 'PAUSADO'
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const dbStatus = status === 'PAUSADO' 
       ? 'PARTIALLY_SUSPENDED' 
@@ -203,6 +210,9 @@ export async function updateTenantSubscriptionStatusAction(
  */
 export async function updateTenantPlan(tenantId: string, planId: SaaSPlanId) {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
 
@@ -231,6 +241,9 @@ export async function updateTenantPlan(tenantId: string, planId: SaaSPlanId) {
  */
 export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId) {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const updateData: Record<string, unknown> = {
       is_active: true,
@@ -267,6 +280,9 @@ export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId
  */
 export async function deactivateTenantAccess(tenantId: string) {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const { error } = await supabase
       .from('tenants')
@@ -300,6 +316,9 @@ export async function activateTenantTrialPeriodAction(
   days: number = 15
 ): Promise<{ success: boolean; trialEndsAt?: string; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const trialEndsAtDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
     const trialEndsAtIso = trialEndsAtDate.toISOString()
@@ -415,6 +434,9 @@ export interface SuperadminUserItem {
 
 export async function getSuperadminUsers(): Promise<{ success: boolean; data: SuperadminUserItem[] }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, data: [] }
+
     const supabase = await createServiceClient()
     const { data: profiles, error } = await supabase
       .from('profiles')
@@ -493,21 +515,23 @@ export async function updateUserPasswordBySuperadmin(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const { data: userData, error: getUserErr } = await supabase.auth.admin.getUserById(userId)
     if (getUserErr || !userData?.user) {
       return { success: false, error: 'Usuario no encontrado' }
     }
 
-    const currentMeta = userData.user.user_metadata || {}
+    const cleanMeta = { ...(userData.user.user_metadata || {}) }
+    delete cleanMeta.assigned_password
+    delete cleanMeta.initial_password
+
     const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
       password: newPassword,
       email_confirm: true,
-      user_metadata: {
-        ...currentMeta,
-        assigned_password: newPassword,
-        initial_password: newPassword,
-      },
+      user_metadata: cleanMeta,
     })
 
     if (updateErr) {
@@ -534,6 +558,9 @@ export async function createUserBySuperadmin(payload: {
   password: string
 }): Promise<{ success: boolean; error?: string; userId?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: payload.email,
@@ -542,8 +569,6 @@ export async function createUserBySuperadmin(payload: {
       user_metadata: {
         full_name: payload.name,
         phone: payload.phone,
-        initial_password: payload.password,
-        assigned_password: payload.password,
       },
     })
 
@@ -552,14 +577,16 @@ export async function createUserBySuperadmin(payload: {
         const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
         const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === payload.email.trim().toLowerCase())
         if (existingUser) {
+          const cleanMeta = { ...(existingUser.user_metadata || {}) }
+          delete cleanMeta.assigned_password
+          delete cleanMeta.initial_password
           await supabase.auth.admin.updateUserById(existingUser.id, {
             password: payload.password,
             email_confirm: true,
             user_metadata: {
+              ...cleanMeta,
               full_name: payload.name,
               phone: payload.phone,
-              initial_password: payload.password,
-              assigned_password: payload.password,
             },
           })
           await supabase.from('profiles').upsert({
@@ -607,6 +634,9 @@ export async function generateUserImpersonationUrl(
   appOrigin?: string
 ): Promise<{ success: boolean; url?: string; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
     const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(userId)
     if (userErr || !userData?.user?.email) {
@@ -639,6 +669,9 @@ export async function generateUserImpersonationUrl(
  */
 export async function deleteProfileById(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
 
     // 1. Eliminar el perfil de la tabla profiles (cascada en FK maneja el resto)
@@ -675,6 +708,9 @@ export async function deleteProfileById(userId: string): Promise<{ success: bool
  */
 export async function deleteTenantById(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
     const supabase = await createServiceClient()
 
     // 1. Eliminar dependencias en orden relacional estricto

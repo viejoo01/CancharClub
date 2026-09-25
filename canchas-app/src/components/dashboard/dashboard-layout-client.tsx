@@ -263,10 +263,6 @@ export function DashboardLayoutClient({
                 setOverridePaused(false)
                 toast.success('¡Club reactivado con éxito!')
               }}
-              onToggleSimulatedActive={() => {
-                setOverridePaused(false)
-                toast.success('Pausa desactivada en modo de prueba')
-              }}
             />
           ) : (
             /* ─── CONTENIDO NORMAL DEL DASHBOARD ─── */

@@ -9,6 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { parseArgentinaDate } from '@/lib/utils'
 import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
+import { assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 /** Obtener todos los turnos fijos del club */
 export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot[]> {
@@ -63,13 +64,11 @@ export async function createRecurringSlot(payload: {
 }): Promise<{ success: boolean; slot?: RecurringSlot; error?: string }> {
   try {
     // Protección antifraude: Solo el dueño del club puede fijar precios y crear turnos fijos recurrentes
-    const { getCurrentUserProfile } = await import('@/lib/auth-security')
-    const currentUser = await getCurrentUserProfile()
-    const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
-    if (currentUser && !isOwner) {
+    const auth = await assertTenantAdmin(payload.tenant_id)
+    if (!auth.authorized) {
       return {
         success: false,
-        error: 'Solo el dueño del club tiene permisos para crear turnos fijos (abonados) y fijar tarifas mensuales.',
+        error: auth.error || 'Solo el dueño del club tiene permisos para crear turnos fijos (abonados).',
       }
     }
 
@@ -141,6 +140,10 @@ export async function updateRecurringSlotStatus(
   newStatus: 'ACTIVE' | 'PAUSED' | 'CANCELLED'
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertTenantMember()
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para modificar turnos fijos.' }
+    }
     const supabase = await createClient()
     const { error } = await supabase
       .from('recurring_slots')
@@ -312,8 +315,12 @@ export async function generateMonthlyBookingsForSlot(
  */
 export async function checkAndReleaseOverdueRecurringSlots(
   tenantId: string
-): Promise<{ success: boolean; releasedCount: number; details: string[] }> {
+): Promise<{ success: boolean; releasedCount: number; details: string[]; error?: string }> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, releasedCount: 0, details: [], error: auth.error }
+    }
     const supabase = await createServiceClient()
     const today = new Date()
     const currentDayOfMonth = today.getDate()

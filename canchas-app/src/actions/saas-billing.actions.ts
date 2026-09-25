@@ -18,6 +18,7 @@ import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/
 import { formatAutoDebitAlertDate } from '@/lib/utils'
 
 import { getPlanByCourtsCount, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
+import { assertSuperadmin, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 export interface ClubBillingOverviewItem {
   tenantId: string
@@ -96,16 +97,6 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       .eq('slug', cookieTenantSlug)
       .maybeSingle()
     if (t?.id) targetTenantId = t.id
-  }
-
-  if (!targetTenantId) {
-    const { data: latestT } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (latestT?.id) targetTenantId = latestT.id
   }
 
   let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
@@ -379,6 +370,17 @@ export async function getAllClubsBillingOverview(): Promise<{
   upToDateCount: number
   pendingCount: number
 }> {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return {
+      clubs: [],
+      totalMRR: 0,
+      clubsCount: 0,
+      upToDateCount: 0,
+      pendingCount: 0,
+    }
+  }
+
   const serviceClient = await createServiceClient()
 
   // Obtener todos los tenants
@@ -451,6 +453,11 @@ export async function getAllClubsBillingOverview(): Promise<{
  * Registra el pago mensual de la suscripción de un club (vía Superadmin o manual).
  */
 export async function recordClubSubscriptionPayment(tenantId: string, notes?: string) {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return { success: false, error: superCheck.error || 'No autorizado' }
+  }
+
   const serviceClient = await createServiceClient()
 
   const summary = await getClubBillingSummary(tenantId)
@@ -715,6 +722,11 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
  * Registra el pago aprobado de una factura de tenant y reactiva inmediatamente el acceso a ACTIVE.
  */
 export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: string) {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return { success: false, error: superCheck.error || 'No autorizado' }
+  }
+
   const serviceClient = await createServiceClient()
 
   // 1. Marcar factura como PAID si existe en BD
@@ -781,6 +793,11 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
  * Permite cambiar el estado de suscripción de un tenant (para testing del dunning o gestión superadmin).
  */
 export async function updateTenantSubscriptionStatus(tenantId: string, newStatus: TenantSubscriptionStatus) {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return { success: false, error: superCheck.error || 'No autorizado' }
+  }
+
   const serviceClient = await createServiceClient()
   const isActive = newStatus !== 'LOCKED'
 
@@ -831,6 +848,15 @@ function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: stri
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
 
 export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return {
+      success: false,
+      initPoint: null,
+      error: auth.error || 'No autorizado',
+    }
+  }
+
   const serviceClient = await createServiceClient()
 
   // 1. Obtener datos del club
@@ -954,17 +980,13 @@ export async function confirmAndActivateSubscriptionWithCard(
     }
   }
 
-  // Si aún no se tiene tenantId, tomar el club más reciente
   if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001') {
-    const { data: latestTenant } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (latestTenant?.id) {
-      tenantId = latestTenant.id
-    }
+    return { success: false, error: 'No se pudo identificar el club' }
+  }
+
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
   }
 
   // 2. Activar el club en la base de datos con serviceClient
@@ -1072,17 +1094,12 @@ export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ s
     }
 
     if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
+      return { success: false, error: 'No se pudo identificar el club' }
     }
 
-    if (!targetTenantId) {
-      return { success: false, error: 'No se pudo identificar el club' }
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const { data: tenant } = await serviceClient
@@ -1163,17 +1180,12 @@ export async function requestSubscriptionRevocationAction(
     }
 
     if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
+      return { success: false, error: 'No se pudo identificar el club' }
     }
 
-    if (!targetTenantId) {
-      return { success: false, error: 'No se pudo identificar el club' }
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const { data: tenant } = await serviceClient
@@ -1279,17 +1291,12 @@ export async function undoSubscriptionRevocationAction(
     }
 
     if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
+      return { success: false, error: 'No se pudo identificar el club' }
     }
 
-    if (!targetTenantId) {
-      return { success: false, error: 'No se pudo identificar el club' }
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const { data: tenant } = await serviceClient
@@ -1410,6 +1417,11 @@ export async function recordReactivationPaymentAction(params: {
   paymentMethod: 'MERCADO_PAGO' | 'TRANSFERENCIA' | 'SIMULADO'
   notes?: string
 }) {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return { success: false, error: superCheck.error || 'No autorizado' }
+  }
+
   const serviceClient = await createServiceClient()
   const { tenantId, totalPaid, daysOverdue, surchargeAmount, paymentMethod, notes } = params
 
@@ -1488,6 +1500,11 @@ export async function recordReactivationPaymentAction(params: {
  * Genera la preferencia de Mercado Pago específica para la reactivación con el 3% diario incluido.
  */
 export async function createReactivationPreferenceAction(tenantId: string, overrideDays?: number) {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
+  }
+
   const details = await getClubReactivationDetails(tenantId, overrideDays)
   const amountToPay = details.reactivation.totalAmount
 
@@ -1671,17 +1688,12 @@ export async function recordAutoDebitAlertAction(params: {
     }
 
     if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
+      return { success: false, error: 'No se pudo identificar el club' }
     }
 
-    if (!targetTenantId) {
-      return { success: false, error: 'No se pudo identificar el club' }
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const res = await recordAutoDebitAlertInternal(serviceClient, {
@@ -1728,17 +1740,10 @@ export async function getAutoDebitAlertsAction(
       }
     }
 
-    if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
-    }
-
     if (!targetTenantId) return []
+
+    const auth = await assertTenantMember(targetTenantId)
+    if (!auth.authorized) return []
 
     const { data: tenant } = await serviceClient
       .from('tenants')
@@ -1794,17 +1799,12 @@ export async function dismissAutoDebitAlertAction(
     }
 
     if (!targetTenantId) {
-      const { data: latestT } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestT?.id) targetTenantId = latestT.id
+      return { success: false, error: 'No se pudo identificar el club' }
     }
 
-    if (!targetTenantId) {
-      return { success: false, error: 'No se pudo identificar el club' }
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const { data: tenant } = await serviceClient
@@ -1867,6 +1867,11 @@ export async function clearAutoDebitAlertsAction(
 
     if (!targetTenantId) {
       return { success: false, error: 'No se pudo identificar el club' }
+    }
+
+    const auth = await assertTenantAdmin(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
     }
 
     const { data: tenant } = await serviceClient

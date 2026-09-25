@@ -8,6 +8,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { buildWhatsAppLink, isSlotTimeInPast } from '@/lib/utils'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
+import { assertTenantMember } from '@/lib/auth-security'
 import type { WaitlistEntry } from '@/types/database'
 
 export interface WaitlistNotificationResult {
@@ -101,6 +102,11 @@ export async function getTenantWaitlists(
   date?: string
 ): Promise<WaitlistEntry[]> {
   try {
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return []
+    }
+
     const supabase = await createClient()
     let query = supabase
       .from('waitlists')

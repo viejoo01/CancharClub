@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { assertTenantMember } from '@/lib/auth-security'
 import type { CantinaProduct } from '@/config/cantina-data'
 
 export type { CantinaProduct }
@@ -179,6 +180,11 @@ export async function updateOrderStatus(
   status: OrderStatus
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertTenantMember()
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos' }
+    }
+
     const supabase = await createServiceClient()
 
     const { error } = await supabase
@@ -372,6 +378,11 @@ export async function saveCantinaProducts(
   products: CantinaProduct[]
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, products, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
     const supabase = await createServiceClient()
     
     // Verificar si ya existe el registro del catálogo
@@ -441,6 +452,11 @@ export async function saveSingleProduct(
   product: CantinaProduct
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, products: [], error: auth.error || 'Sin permisos sobre este club' }
+    }
+
     const { getCurrentUserProfile } = await import('@/lib/auth-security')
     const currentUser = await getCurrentUserProfile()
     const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
@@ -473,6 +489,11 @@ export async function deleteProduct(
   productId: string
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, products: [], error: auth.error || 'Sin permisos sobre este club' }
+    }
+
     const currentProducts = await getCantinaProducts(tenantId)
     const updated = currentProducts.filter(p => p.id !== productId)
     return await saveCantinaProducts(tenantId, updated)

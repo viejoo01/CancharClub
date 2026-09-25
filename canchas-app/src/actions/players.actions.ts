@@ -5,6 +5,7 @@
 // ==============================================================================
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { assertTenantMember } from '@/lib/auth-security'
 
 export type ReputationTier = 'EXEMPLARY' | 'RELIABLE' | 'MODERATE' | 'HIGH_RISK'
 
@@ -55,6 +56,16 @@ export async function getPlayersReputation(
   searchQuery?: string
 ): Promise<PlayersReportResult> {
   try {
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return {
+        success: false,
+        players: [],
+        stats: { totalPlayers: 0, exemplaryCount: 0, highRiskCount: 0, avgAttendanceRate: 0, totalRevenueTracked: 0 },
+        error: authCheck.error || 'No autorizado',
+      }
+    }
+
     const supabase = await createServiceClient()
 
     // 1. Obtener todas las reservas del tenant
@@ -228,6 +239,11 @@ export async function getPlayerHistory(
   phone: string
 ): Promise<{ success: boolean; history: PlayerHistoryItem[]; error?: string }> {
   try {
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, history: [], error: authCheck.error || 'No autorizado' }
+    }
+
     const supabase = await createServiceClient()
     const { data: bookings, error } = await supabase
       .from('bookings')

@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { assertTenantMember } from '@/lib/auth-security'
 import type { 
   Tournament, 
   TournamentCategory, 
@@ -104,6 +105,11 @@ export async function createTournament(payload: {
   categories: { name: string; max_teams: number }[]
 }): Promise<{ success: boolean; tournament_id?: string; error?: string }> {
   try {
+    const auth = await assertTenantMember(payload.tenant_id)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
     const supabase = await createServiceClient()
 
     const { data: tournament, error: tError } = await supabase
@@ -182,6 +188,11 @@ export async function generatePlayoffBracket(
   categoryId: string
 ): Promise<{ success: boolean; matchesCount?: number; error?: string }> {
   try {
+    const auth = await assertTenantMember()
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para armar cuadros de torneo' }
+    }
+
     const supabase = await createServiceClient()
 
     // 1. Obtener equipos inscriptos
@@ -319,6 +330,11 @@ export async function updateMatchScore(payload: {
   status: 'PLAYING' | 'FINISHED'
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const auth = await assertTenantMember()
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para cargar resultados' }
+    }
+
     const supabase = await createServiceClient()
 
     // 1. Obtener datos actuales del partido
@@ -415,6 +431,11 @@ export async function generateGroupStageAndPlayoffs(
   categoryId: string
 ): Promise<{ success: boolean; matchesCount?: number; error?: string }> {
   try {
+    const auth = await assertTenantMember()
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para generar fixture' }
+    }
+
     const supabase = await createServiceClient()
 
     // 1. Obtener equipos inscriptos

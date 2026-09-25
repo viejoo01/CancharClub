@@ -176,9 +176,6 @@ export function Sidebar({
     // Filtrar por rol
     if (!item.roles.includes(userRole)) return false
 
-    // CLUB PENDIENTE: solo ve el Calendario de Turnos
-    if (!isActive && !isSuperadmin) return item.exact === true && item.href === '/dashboard'
-
     // TENANT_STAFF: solo ve ítems marcados como staffVisible
     if (isStaff) return item.staffVisible === true
 

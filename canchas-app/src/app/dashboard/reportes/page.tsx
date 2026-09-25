@@ -22,6 +22,7 @@ import { getOccupancyReport, type OccupancyReportData, type PricingRecommendatio
 import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 import { createClient } from '@/lib/supabase/client'
 
 // tenant isolation: useTenantId hook
@@ -159,7 +160,8 @@ export default function ReportesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <PlanFeatureGuard feature="reportes_ocupacion" featureTitle="Reportes de Ocupación">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -432,6 +434,7 @@ export default function ReportesPage() {
         </>
       )}
     </div>
+    </PlanFeatureGuard>
   )
 }
 

@@ -60,6 +60,7 @@ import {
 } from '@/actions/cantina.actions'
 import type { CantinaProduct } from '@/config/cantina-data'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
 
 export type Product = CantinaProduct
@@ -705,7 +706,8 @@ export default function CantinaPage() {
   const pendingOrdersCount = courtOrders.filter(o => o.status === 'PENDING').length
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <PlanFeatureGuard feature="cantina_kiosco" featureTitle="Módulo de Cantina y Kiosco">
+      <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header con botón para generar QR de Mesas */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -1865,6 +1867,7 @@ export default function CantinaPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PlanFeatureGuard>
   )
 }

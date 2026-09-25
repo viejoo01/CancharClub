@@ -232,6 +232,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   })()
 
   const handleCopyAlias = () => {
+    if (!clubBank?.alias) return
     navigator.clipboard.writeText(clubBank.alias)
     setCopiedAlias(true)
     toast.success(`Alias copiado: ${clubBank.alias}`)
@@ -239,6 +240,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   }
 
   const handleCopyCbu = () => {
+    if (!clubBank?.cbu) return
     navigator.clipboard.writeText(clubBank.cbu)
     setCopiedCbu(true)
     toast.success(`CBU copiado: ${clubBank.cbu}`)
@@ -307,7 +309,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       if (payableDeposit === 0) {
         toast.success('¡Turno confirmado 100% con tu Saldo a Favor!')
         router.push(
-          `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=0&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=WALLET&alias=${encodeURIComponent(clubBank.alias)}`
+          `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=0&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=WALLET&alias=${encodeURIComponent(clubBank?.alias || '')}`
         )
         return
       }
@@ -352,7 +354,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       // Flujo de Transferencia Bancaria Directa al Club:
       toast.success('¡Turno reservado y cerrado en el sistema!')
       router.push(
-        `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=${payableDeposit}&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=TRANSFER&alias=${encodeURIComponent(clubBank.alias)}`
+        `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=${payableDeposit}&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=TRANSFER&alias=${encodeURIComponent(clubBank?.alias || '')}`
       )
     } catch {
       toast.error('Error inesperado al procesar la reserva')
@@ -642,72 +644,84 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
           {/* Tarjeta de Datos Bancarios del Club para Transferencia */}
           {paymentMethod === 'TRANSFER' && (
-            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Cuenta oficial del club:</span>
-                  <span className="text-xs font-bold text-white">{club.name}</span>
-                </div>
-                <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400">
-                  {clubBank.bankName}
-                </Badge>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                {/* Titular */}
-                <div className="flex items-center justify-between text-slate-300">
-                  <span className="text-slate-400 text-[11px]">Titular:</span>
-                  <span className="font-semibold text-white">{clubBank.accountHolder}</span>
-                </div>
-
-                {/* Alias con Botón Copiar */}
-                <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800/80">
+            clubBank ? (
+              <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <div>
-                    <span className="text-[10px] text-slate-400 block">Alias para transferir:</span>
-                    <span className="font-mono font-black text-sm text-emerald-400 tracking-wide">
-                      {clubBank.alias}
-                    </span>
+                    <span className="text-[10px] text-slate-400 block font-medium">Cuenta oficial del club:</span>
+                    <span className="text-xs font-bold text-white">{club.name}</span>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleCopyAlias}
-                    className="h-8 px-2.5 text-xs rounded-lg border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/50 hover:text-emerald-200 gap-1"
-                  >
-                    {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedAlias ? 'Copiado' : 'Copiar Alias'}</span>
-                  </Button>
+                  <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400">
+                    {clubBank.bankName}
+                  </Badge>
                 </div>
 
-                {/* CBU con Botón Copiar */}
-                <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800/80">
-                  <div className="overflow-hidden mr-2">
-                    <span className="text-[10px] text-slate-400 block">CBU / CVU:</span>
-                    <span className="font-mono text-xs text-slate-300 truncate block">
-                      {clubBank.cbu}
-                    </span>
+                <div className="space-y-2 text-xs">
+                  {/* Titular */}
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span className="text-slate-400 text-[11px]">Titular:</span>
+                    <span className="font-semibold text-white">{clubBank.accountHolder}</span>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleCopyCbu}
-                    className="h-8 px-2 text-xs rounded-lg border-slate-700 text-slate-300 hover:bg-slate-800 gap-1 shrink-0"
-                  >
-                    {copiedCbu ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedCbu ? 'Copiado' : 'Copiar'}</span>
-                  </Button>
+
+                  {/* Alias con Botón Copiar */}
+                  <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800/80">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Alias para transferir:</span>
+                      <span className="font-mono font-black text-sm text-emerald-400 tracking-wide">
+                        {clubBank.alias}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyAlias}
+                      className="h-8 px-2.5 text-xs rounded-lg border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/50 hover:text-emerald-200 gap-1"
+                    >
+                      {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedAlias ? 'Copiado' : 'Copiar Alias'}</span>
+                    </Button>
+                  </div>
+
+                  {/* CBU con Botón Copiar */}
+                  <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800/80">
+                    <div className="overflow-hidden mr-2">
+                      <span className="text-[10px] text-slate-400 block">CBU / CVU:</span>
+                      <span className="font-mono text-xs text-slate-300 truncate block">
+                        {clubBank.cbu}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyCbu}
+                      className="h-8 px-2 text-xs rounded-lg border-slate-700 text-slate-300 hover:bg-slate-800 gap-1 shrink-0"
+                    >
+                      {copiedCbu ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedCbu ? 'Copiado' : 'Copiar'}</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-[11px] text-emerald-300/90 flex items-start gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>
+                    Hacé la transferencia de <strong>{formatARS(payableDeposit)}</strong> desde tu app bancaria. Al presionar el botón de abajo, tu turno se bloquea y podrás enviar el comprobante por WhatsApp al club.
+                  </span>
                 </div>
               </div>
-
-              <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-[11px] text-emerald-300/90 flex items-start gap-2">
-                <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>
-                  Hacé la transferencia de <strong>{formatARS(payableDeposit)}</strong> desde tu app bancaria. Al presionar el botón de abajo, tu turno se bloquea y podrás enviar el comprobante por WhatsApp al club.
-                </span>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Smartphone className="w-4 h-4 shrink-0" />
+                  <span className="text-xs font-bold text-white">Coordinación de Seña y Pago con el Club</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Este club coordina el pago de la seña por WhatsApp o en efectivo/débito al presentarte en recepción. Al confirmar tu turno, tu horario quedará reservado automáticamente y te pondremos en contacto directo con el club.
+                </p>
               </div>
-            </div>
+            )
           )}
 
           {/* Información de Garantía */}

@@ -7,12 +7,34 @@ import { createClient } from '@/lib/supabase/client'
 import {
   useTenantContext,
   useUserRoleContext,
+  useTenantPlanContext,
   getGlobalCachedTenantId,
   setGlobalCachedTenantId,
   TenantProvider,
 } from '@/providers/tenant-provider'
+import {
+  SAAS_PLANS,
+  isFeatureAllowedForPlan,
+  type SaaSPlanId,
+  type SaaSFeatureKey,
+  type SaaSPlanDefinition
+} from '@/config/saas-plans'
 
 export { TenantProvider }
+
+export function useTenantPlan(): {
+  planId: SaaSPlanId
+  plan: SaaSPlanDefinition
+  isFeatureAllowed: (feature: SaaSFeatureKey) => boolean
+} {
+  const planId = useTenantPlanContext() || 'MEDIANO_2'
+  const plan = SAAS_PLANS[planId] || SAAS_PLANS.MEDIANO_2
+  return {
+    planId,
+    plan,
+    isFeatureAllowed: (feature: SaaSFeatureKey) => isFeatureAllowedForPlan(planId, feature),
+  }
+}
 
 export function useTenantId(): string | null {
   const contextTenantId = useTenantContext()

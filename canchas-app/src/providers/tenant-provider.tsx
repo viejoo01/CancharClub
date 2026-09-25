@@ -57,16 +57,21 @@ export function setGlobalCachedTenantId(val: string | null) {
   }
 }
 
+import type { SaaSPlanId } from '@/config/saas-plans'
+
 export const TenantContext = createContext<string | null>(null)
 export const UserRoleContext = createContext<string>('TENANT_ADMIN')
+export const TenantPlanContext = createContext<SaaSPlanId>('MEDIANO_2')
 
 export function TenantProvider({
   value,
   role = 'TENANT_ADMIN',
+  planId = 'MEDIANO_2',
   children,
 }: {
   value: string | null
   role?: string | null
+  planId?: SaaSPlanId
   children: React.ReactNode
 }) {
   if (value && globalCachedTenantId !== value) {
@@ -82,7 +87,9 @@ export function TenantProvider({
   return (
     <TenantContext.Provider value={value}>
       <UserRoleContext.Provider value={role || 'TENANT_ADMIN'}>
-        {children}
+        <TenantPlanContext.Provider value={planId || 'MEDIANO_2'}>
+          {children}
+        </TenantPlanContext.Provider>
       </UserRoleContext.Provider>
     </TenantContext.Provider>
   )
@@ -94,4 +101,8 @@ export function useTenantContext(): string | null {
 
 export function useUserRoleContext(): string {
   return useContext(UserRoleContext)
+}
+
+export function useTenantPlanContext(): SaaSPlanId {
+  return useContext(TenantPlanContext)
 }

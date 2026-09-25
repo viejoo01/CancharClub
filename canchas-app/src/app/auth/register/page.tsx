@@ -12,18 +12,34 @@ import { toast } from 'sonner'
 
 export default function RegisterPage() {
   const [clubName, setClubName] = useState('')
-  const [email, setEmail] = useState('')
+  const [emailUserPart, setEmailUserPart] = useState('')
+  const [hasManuallyEditedEmail, setHasManuallyEditedEmail] = useState(false)
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const handleClubNameChange = (val: string) => {
+    setClubName(val)
+    if (!hasManuallyEditedEmail) {
+      const suggested = val
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9._-]/g, '')
+      setEmailUserPart(suggested)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
+    const cleanPart = emailUserPart.trim()
+    const finalEmail = cleanPart.includes('@') ? cleanPart : `${cleanPart}@club.com`
+
     const formData = new FormData()
     formData.append('clubName', clubName)
-    formData.append('email', email)
+    formData.append('email', finalEmail)
     formData.append('phone', phone)
     formData.append('password', password)
     formData.append('planId', 'MEDIANO_2')
@@ -72,7 +88,7 @@ export default function RegisterPage() {
                     id="clubName"
                     placeholder="Ej. Pádel Norte Tucumán"
                     value={clubName}
-                    onChange={(e) => setClubName(e.target.value)}
+                    onChange={(e) => handleClubNameChange(e.target.value)}
                     className="pl-9"
                     required
                   />
@@ -80,19 +96,34 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email Administrativo *</Label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="email">Email Administrativo (@club.com) *</Label>
+                  <span className="text-[10px] text-emerald-400 font-semibold font-mono">
+                    Único por club
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
                   <Input
                     id="email"
-                    type="email"
-                    placeholder="contacto@padelnorte.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-9"
+                    type="text"
+                    placeholder="padelnorte"
+                    value={emailUserPart}
+                    onChange={(e) => {
+                      const val = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '')
+                      setEmailUserPart(val)
+                      setHasManuallyEditedEmail(true)
+                    }}
+                    className="pl-9 pr-24 font-mono"
                     required
                   />
+                  <div className="absolute right-2 px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold text-xs select-none border border-emerald-500/20 font-mono">
+                    @club.com
+                  </div>
                 </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Tu correo de acceso será: <strong className="text-emerald-400 font-mono">{emailUserPart ? `${emailUserPart}@club.com` : 'tuclub@club.com'}</strong>
+                </p>
               </div>
 
               <div className="space-y-1.5">

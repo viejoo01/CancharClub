@@ -72,9 +72,10 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS (DASHBOARD) ──────────────────────────
-  // En producción, el acceso al dashboard requiere una sesión real autenticada en Supabase.
+  // El acceso al dashboard requiere una sesión real autenticada en Supabase o sesión Superadmin.
   if (pathname.startsWith('/dashboard')) {
-    if (!user) {
+    const saSession = request.cookies.get('sa_session')?.value
+    if (!user && !saSession) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       url.searchParams.set('redirectTo', pathname)

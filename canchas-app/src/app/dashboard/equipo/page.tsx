@@ -28,6 +28,7 @@ import {
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { ResetStaffPasswordModal } from '@/components/dashboard/reset-staff-password-modal'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
 // tenant isolation: useTenantId hook
 
@@ -175,7 +176,8 @@ export default function EquipoPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+    <PlanFeatureGuard feature="multiusuario" featureTitle="Gestión de Equipo y Multiusuario">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -544,7 +546,8 @@ export default function EquipoPage() {
           void loadStaff(false)
         }}
       />
-    </div>
+      </div>
+    </PlanFeatureGuard>
   )
 }
 

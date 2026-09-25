@@ -5,10 +5,47 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createHmac } from 'crypto'
 import type { SaaSPlanId } from '@/config/saas-plans'
+import { formatClubEmail } from '@/lib/utils'
+
+const STALE_AUTH_COOKIES = [
+  'canchar_tenant_id',
+  'demo_tenant_id',
+  'demo_tenant_name',
+  'demo_tenant_slug',
+  'demo_user_role',
+  'demo_user_name',
+  'demo_subscription_status',
+  'demo_plan_id',
+  'demo_is_active',
+  'demo_has_card',
+  'demo_card_last4',
+  'demo_card_brand',
+  'demo_card_holder',
+  'new_club_pending_activation',
+  'canchar_active_venue_id',
+  'canchar_active_venue_name',
+  'sa_session',
+]
+
+export async function clearAuthCookies() {
+  try {
+    const cookieStore = await cookies()
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+    STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
+    return { success: true }
+  } catch (err) {
+    console.error('Error clearing auth cookies:', err)
+    return { success: false }
+  }
+}
 
 export async function loginWithEmail(formData: FormData) {
   const rawEmail = (formData.get('email') as string)?.trim()
-  const email = rawEmail?.toLowerCase()
+  let email = rawEmail?.toLowerCase()
+  if (email && !email.includes('@')) {
+    email = `${email}@club.com`
+  }
   const rawPassword = formData.get('password') as string
   const password = rawPassword?.trim()
 
@@ -16,7 +53,13 @@ export async function loginWithEmail(formData: FormData) {
     return { success: false, error: 'Completá email y contraseña' }
   }
 
+  const cookieStore = await cookies()
   const supabase = await createClient()
+
+  // 1. ANTES DE NADA: Limpiar cualquier sesión residual previa para evitar contaminación entre clubes
+  await supabase.auth.signOut()
+  STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
+
   let { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -60,7 +103,10 @@ export async function loginWithEmail(formData: FormData) {
     }
   }
 
+  // Si no se pudo autenticar, PURGAR Y RETORNAR ERROR INMEDIATO. NUNCA DEJAR PASAR NI REDIRIGIR.
   if (error || !data?.user) {
+    await supabase.auth.signOut()
+    STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
     let friendlyError = error?.message || 'Credenciales incorrectas'
     if (friendlyError.toLowerCase().includes('invalid login credentials')) {
       friendlyError = 'Email o contraseña incorrectos. Verificá que no haya errores de tipeo.'
@@ -79,8 +125,6 @@ export async function loginWithEmail(formData: FormData) {
   const isSuperadmin = 
     profile?.role === 'SUPERADMIN' ||
     Boolean(process.env.SUPERADMIN_USER_ID && data.user.id === process.env.SUPERADMIN_USER_ID)
-
-  const cookieStore = await cookies()
 
   if (isSuperadmin) {
     cookieStore.set('demo_user_role', 'SUPERADMIN', { path: '/', maxAge: 86400 })
@@ -104,54 +148,67 @@ export async function loginWithEmail(formData: FormData) {
     redirect('/superadmin')
   }
 
-  let t = null
+  // SEGURIDAD CRÍTICA MULTI-TENANT:
+  // Si no es superadmin, el usuario DEBE tener un tenant_id legítimo en su perfil
+  if (!profile?.tenant_id) {
+    await supabase.auth.signOut()
+    STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
+    return {
+      success: false,
+      error: 'Esta cuenta no tiene ningún club asignado. Contactá a soporte.',
+    }
+  }
+
+  // Buscar estrictamente el club asignado en la base de datos
+  const { data: t } = await serviceClient
+    .from('tenants')
+    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods')
+    .eq('id', profile.tenant_id)
+    .maybeSingle()
+
+  if (!t) {
+    await supabase.auth.signOut()
+    STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
+    return {
+      success: false,
+      error: 'El club asignado a esta cuenta no existe o fue dado de baja.',
+    }
+  }
+
   let hasCard = false
   let cardLast4: string | undefined
   let cardBrand: string | undefined
 
-  if (profile?.tenant_id) {
-    const { data: tenantData } = await serviceClient
-      .from('tenants')
-      .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods')
-      .eq('id', profile.tenant_id)
-      .maybeSingle()
-    t = tenantData
+  const { data: sub } = await serviceClient
+    .from('saas_subscriptions')
+    .select('*')
+    .eq('tenant_id', profile.tenant_id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-    const { data: sub } = await serviceClient
-      .from('saas_subscriptions')
-      .select('*')
-      .eq('tenant_id', profile.tenant_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
-      hasCard = true
-      if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
-        const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
-        const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
-        cardBrand = brandMatch && !brandMatch[1].toLowerCase().startsWith('de') ? brandMatch[1] : 'Tarjeta'
-        cardLast4 = last4Match ? last4Match[1] : undefined
-      }
+  if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
+    hasCard = true
+    if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
+      const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+      const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+      cardBrand = brandMatch && !brandMatch[1].toLowerCase().startsWith('de') ? brandMatch[1] : 'Tarjeta'
+      cardLast4 = last4Match ? last4Match[1] : undefined
     }
   }
 
   const isProd = process.env.NODE_ENV === 'production'
   const cookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const }
 
-  if (profile?.tenant_id) {
-    cookieStore.set('canchar_tenant_id', profile.tenant_id, cookieOpts)
-    cookieStore.set('demo_tenant_id', profile.tenant_id, cookieOpts)
-  }
+  cookieStore.set('canchar_tenant_id', profile.tenant_id, cookieOpts)
+  cookieStore.set('demo_tenant_id', profile.tenant_id, cookieOpts)
   if (t?.name) cookieStore.set('demo_tenant_name', t.name, cookieOpts)
   if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, cookieOpts)
   if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, cookieOpts)
 
   const isActuallyActive = t?.is_active === true
   cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', cookieOpts)
-  if (isActuallyActive) {
-    cookieStore.delete('new_club_pending_activation')
-  }
+  cookieStore.delete('new_club_pending_activation')
 
   if (t?.base_slots_plan) {
     const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
@@ -177,15 +234,51 @@ export async function loginWithEmail(formData: FormData) {
 
 export async function registerClub(formData: FormData) {
   const clubName = (formData.get('clubName') as string)?.trim()
-  const email = (formData.get('email') as string)?.trim().toLowerCase()
+  const rawEmail = (formData.get('email') as string)?.trim()
   const password = formData.get('password') as string
   const phone = (formData.get('phone') as string)?.trim() || '+5493816839320'
   const city = (formData.get('city') as string)?.trim() || 'San Miguel de Tucumán'
   const sportsRaw = formData.get('sports') as string
   const planId = ((formData.get('planId') as string) || 'MEDIANO_2') as SaaSPlanId
 
-  if (!clubName || !email || !password) {
+  if (!clubName || !password) {
     return { success: false, error: 'Completá todos los campos requeridos' }
+  }
+
+  // REGLA: El email del club es siempre por defecto: <nombre_elegido>@club.com
+  const email = formatClubEmail(rawEmail, clubName)
+
+  const serviceClient = await createServiceClient()
+
+  // 1. REGLA DE SEGURIDAD CRÍTICA: No pueden dos clubes distintos tener el mismo mail
+  const { data: existingTenant } = await serviceClient
+    .from('tenants')
+    .select('id, name, email')
+    .ilike('email', email)
+    .maybeSingle()
+
+  if (existingTenant) {
+    return {
+      success: false,
+      error: `El email "${email}" ya está registrado por otro club ("${existingTenant.name}"). Por favor elegí otro nombre para tu club.`,
+    }
+  }
+
+  // 2. Comprobar también en Supabase Auth si el usuario ya está asociado a otro club
+  const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  const existingAuthUser = usersData?.users?.find(u => u.email?.toLowerCase() === email)
+  if (existingAuthUser) {
+    const { data: profile } = await serviceClient
+      .from('profiles')
+      .select('tenant_id')
+      .eq('id', existingAuthUser.id)
+      .maybeSingle()
+    if (profile?.tenant_id) {
+      return {
+        success: false,
+        error: `El correo "${email}" ya se encuentra registrado por otro club. Por favor elegí otro nombre.`,
+      }
+    }
   }
 
   let sports: string[] = ['PADEL']
@@ -200,47 +293,36 @@ export async function registerClub(formData: FormData) {
     }
   }
 
-  const serviceClient = await createServiceClient()
-
-  // 1. Crear o actualizar usuario en Supabase Auth con confirmación automática
+  // 3. Crear o actualizar usuario en Supabase Auth con confirmación automática
   let userId: string | null = null
 
-  const { data: userData, error: userError } = await serviceClient.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: clubName,
-      phone,
-    },
-  })
+  if (existingAuthUser) {
+    // Si existía sin tenant, reutilizarlo
+    userId = existingAuthUser.id
+    await serviceClient.auth.admin.updateUserById(userId, {
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: clubName,
+        phone,
+      },
+    })
+  } else {
+    const { data: userData, error: userError } = await serviceClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: clubName,
+        phone,
+      },
+    })
 
-  if (userError) {
-    if (userError.message.toLowerCase().includes('already') || userError.status === 422) {
-      const { data: existingUsers } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
-      const existing = existingUsers?.users?.find(u => u.email?.toLowerCase() === email)
-      if (existing) {
-        userId = existing.id
-        const cleanMeta = { ...(existing.user_metadata || {}) }
-        delete cleanMeta.assigned_password
-        delete cleanMeta.initial_password
-        await serviceClient.auth.admin.updateUserById(userId, {
-          password,
-          email_confirm: true,
-          user_metadata: { 
-            ...cleanMeta,
-            full_name: clubName, 
-            phone,
-          },
-        })
-      } else {
-        return { success: false, error: userError.message }
-      }
-    } else {
+    if (userError) {
       return { success: false, error: userError.message }
+    } else if (userData?.user) {
+      userId = userData.user.id
     }
-  } else if (userData?.user) {
-    userId = userData.user.id
   }
 
   if (!userId) {
@@ -276,8 +358,8 @@ export async function registerClub(formData: FormData) {
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: false, // Inicia desactivado esperando confirmación de activación
-      subscription_status: 'PAYMENT_PENDING', // Estado de activación pendiente
+      is_active: true, // Club recién agregado queda activo y operativo de inmediato
+      subscription_status: 'ACTIVE', // Suscripción activa
       base_slots_plan: baseSlots,
       payment_methods: ['CARD', 'MERCADO_PAGO'],
     })
@@ -351,15 +433,11 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'PAYMENT_PENDING', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
-  cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })
-  // Asegurar que no queden datos de tarjeta residuales de otra sesión en este navegador
-  cookieStore.delete('demo_has_card')
-  cookieStore.delete('demo_card_last4')
-  cookieStore.delete('demo_card_brand')
-  cookieStore.delete('demo_card_holder')
+  cookieStore.delete('new_club_pending_activation')
+  cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 86400 })
 
   redirect('/dashboard')
 }

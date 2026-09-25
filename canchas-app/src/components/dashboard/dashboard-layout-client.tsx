@@ -17,7 +17,7 @@ import { PlanExpirationAlert } from './plan-expiration-alert'
 import { AutoDebitAlertModal } from './auto-debit-alert-modal'
 import { ChangePasswordModal } from './change-password-modal'
 import { ClubSocialLinksModal } from './club-social-links-modal'
-import { PausedClubScreen, type PausedSubState } from './paused-club-screen'
+import { PausedClubScreen } from './paused-club-screen'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { SaaSPlanId } from '@/config/saas-plans'
@@ -32,16 +32,15 @@ interface DashboardLayoutClientProps {
   mpConnected: boolean
   planId?: SaaSPlanId
   isActive: boolean
+  hasCard?: boolean
   courtsCount?: number
   sports?: string[]
   gracePeriodBanner?: React.ReactNode
   children: React.ReactNode
-  pendingScreen?: React.ReactNode
   dueDate?: string
   daysRemaining?: number
   subscriptionStatus?: TenantSubscriptionStatus
   monthlyFeeArs?: number
-  isNewClub?: boolean
 }
 
 export function DashboardLayoutClient({
@@ -57,45 +56,33 @@ export function DashboardLayoutClient({
   sports,
   gracePeriodBanner,
   children,
-  pendingScreen,
   dueDate,
   daysRemaining,
   subscriptionStatus,
   monthlyFeeArs,
-  isNewClub = false,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [showActivationModal, setShowActivationModal] = useState(!isActive)
+  const [showActivationModal, setShowActivationModal] = useState(false)
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const [showSocialLinksModal, setShowSocialLinksModal] = useState(false)
   const pathname = usePathname()
 
-  // Manejo de estado de club pausado con soporte para query params y simulación
-  const [overridePaused, setOverridePaused] = useState<boolean | null>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      const p = params.get('paused')
-      if (p === 'true') return true
-      if (p === 'false') return false
-    }
-    return null
-  })
+  // Manejo de estado de club pausado (SÓLO por mora en pago atrasado)
+  const [overridePaused, setOverridePaused] = useState<boolean | null>(null)
 
-  const [initialSubStateOverride] = useState<PausedSubState | undefined>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      return (params.get('substate') as PausedSubState | null) || undefined
+  // Limpiar cualquier residuo de ?paused= en la URL para evitar bloqueos accidentales
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('paused=')) {
+      window.history.replaceState({}, '', window.location.pathname)
     }
-    return undefined
-  })
+  }, [])
 
-  // Un club se encuentra en estado de "Pausa" ya sea por ser nuevo club o por no haber realizado el pago mensual:
+  // Un club se encuentra en estado de "Pausa" EXCLUSIVAMENTE por pago atrasado (mora en su suscripción):
   // - subscriptionStatus === 'PAUSED'
   // - subscriptionStatus === 'LOCKED'
-  // - !isActive (nuevo club o desactivado)
   const isClubPaused = overridePaused !== null
     ? overridePaused
-    : (subscriptionStatus === 'PAUSED' || subscriptionStatus === 'LOCKED' || !isActive)
+    : (subscriptionStatus === 'PAUSED' || subscriptionStatus === 'LOCKED')
 
   // Cerrar menú móvil automáticamente al navegar a otra ruta (patrón oficial React docs)
   const [currentPath, setCurrentPath] = useState(pathname)
@@ -154,12 +141,14 @@ export function DashboardLayoutClient({
       exact: false,
     },
     ...(isStaff ? [] : [
-      {
-        title: 'Cantina',
-        href: '/dashboard/cantina',
-        icon: Coffee,
-        exact: false,
-      },
+      ...(planId === 'CHICO_1' ? [] : [
+        {
+          title: 'Cantina',
+          href: '/dashboard/cantina',
+          icon: Coffee,
+          exact: false,
+        },
+      ]),
       {
         title: 'Canchas',
         href: '/dashboard/canchas',
@@ -250,15 +239,13 @@ export function DashboardLayoutClient({
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
           {isClubPaused ? (
-            /* ─── INTERFAZ DE CLUB PAUSADO (BLOQUEO TOTAL DE MENÚS) ─── */
+            /* ─── INTERFAZ DE CLUB PAUSADO (SÓLO POR PAGO ATRASADO) ─── */
             <PausedClubScreen
               tenantId={tenantId}
               tenantName={tenantName}
               subscriptionStatus={subscriptionStatus}
               baseMonthlyFeeArs={monthlyFeeArs || 45000}
               dueDate={dueDate}
-              isNewClub={isNewClub}
-              initialSubState={initialSubStateOverride}
               onReactivateSuccess={() => {
                 setOverridePaused(false)
                 toast.success('¡Club reactivado con éxito!')
@@ -269,9 +256,9 @@ export function DashboardLayoutClient({
             <>
               {isActive && gracePeriodBanner}
 
-              {/* Modal obligatorio de vinculación de tarjeta para activar plan */}
+              {/* Modal de vinculación de tarjeta para activar plan */}
               <PlanActivationModal
-                isOpen={!isActive && showActivationModal}
+                isOpen={showActivationModal}
                 onOpenChange={setShowActivationModal}
                 tenantName={tenantName}
                 tenantId={tenantId}
@@ -290,22 +277,8 @@ export function DashboardLayoutClient({
                 tenantId={tenantId}
               />
 
-              {!isActive && pendingScreen}
-
               <div className="relative w-full">
-                {!isActive && (
-                  <div
-                    onClick={() => {
-                      setShowActivationModal(true)
-                      toast.error('Tarjeta requerida para operar', {
-                        description: 'Para habilitar turnos, reservas y cobros, vinculá tu tarjeta de débito o crédito (15 días gratis, $0 hoy).',
-                      })
-                    }}
-                    className="absolute inset-0 z-30 bg-black/5 cursor-not-allowed select-none rounded-xl"
-                    title="Para usar las funciones de CancharClub, vinculá tu tarjeta de débito o crédito."
-                  />
-                )}
-                <div className={cn("w-full transition-all", !isActive && "pointer-events-none select-none opacity-85")}>
+                <div className="w-full">
                   {children}
                 </div>
 

@@ -405,15 +405,12 @@ export function generateClubSlots(
 }
 
 /**
- * Obtiene los datos bancarios del club para transferencias de seña directas
+ * Obtiene los datos bancarios del club para transferencias de seña directas.
+ * Retorna undefined si el club aún no ha configurado sus datos bancarios.
  */
-export function getClubBankDetails(club: ClubData): ClubBankDetails {
-  if (club.bankDetails) return club.bankDetails
-  const cleanSlug = club.slug.replace(/[^a-z0-9]/g, '')
-  return {
-    bankName: 'Mercado Pago / Transferencia Directa',
-    accountHolder: club.name,
-    alias: `${cleanSlug}.mp`,
-    cbu: '0000003100098765432100',
+export function getClubBankDetails(club: ClubData): ClubBankDetails | undefined {
+  if (club.bankDetails && (club.bankDetails.alias || club.bankDetails.cbu)) {
+    return club.bankDetails
   }
+  return undefined
 }

@@ -20,6 +20,7 @@ export type SaaSFeatureKey =
   | 'sin_limite_canchas'
   | 'torneos_expres'
   | 'tickets_termicos'
+  | 'facturacion_afip'
   | 'asistencia_whatsapp_vip'
 
 export interface SaaSPlanDefinition {
@@ -164,6 +165,7 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
       'sin_limite_canchas',
       'torneos_expres',
       'tickets_termicos',
+      'facturacion_afip',
       'asistencia_whatsapp_vip',
     ],
   },

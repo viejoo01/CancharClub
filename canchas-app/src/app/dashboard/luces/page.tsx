@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import type { CourtLightConfig } from '@/types/database'
 import { toggleCourtLight } from '@/actions/lights.actions'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LucesPage() {
@@ -109,7 +110,8 @@ export default function LucesPage() {
   const activeLightsCount = courts.filter(c => c.is_on).length
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <PlanFeatureGuard feature="control_luces" featureTitle="Control Inteligente de Iluminación">
+      <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -278,6 +280,7 @@ export default function LucesPage() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </PlanFeatureGuard>
   )
 }

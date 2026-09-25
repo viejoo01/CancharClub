@@ -37,6 +37,7 @@ import {
 } from '@/actions/tournament.actions'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 import type { Tournament, TournamentTeam, TournamentMatch } from '@/types/database'
 
 // tenant isolation: useTenantId hook
@@ -299,7 +300,8 @@ export default function TorneosDashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <PlanFeatureGuard feature="torneos_expres" featureTitle="Torneos y Cuadros Exprés">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -1090,6 +1092,7 @@ export default function TorneosDashboardPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </PlanFeatureGuard>
   )
 }
 

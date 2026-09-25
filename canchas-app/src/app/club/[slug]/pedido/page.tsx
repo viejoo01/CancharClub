@@ -121,6 +121,7 @@ export default function CourtOrderPage({
   const itemsCount = cart.reduce((acc, item) => acc + item.quantity, 0)
 
   const handleCopyAlias = () => {
+    if (!bankDetails?.alias) return
     navigator.clipboard.writeText(bankDetails.alias)
     setCopiedAlias(true)
     toast.success('Alias copiado al portapapeles')
@@ -268,15 +269,21 @@ export default function CourtOrderPage({
                 <p className="text-slate-400">
                   Mostrá tu comprobante de transferencia al retirar en la barra.
                 </p>
-                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Alias del Club:</span>
-                    <span className="font-mono text-emerald-400 font-bold">{bankDetails.alias}</span>
+                {bankDetails ? (
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Alias del Club:</span>
+                      <span className="font-mono text-emerald-400 font-bold">{bankDetails.alias}</span>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={handleCopyAlias} className="h-7 text-xs text-slate-300">
+                      {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </Button>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={handleCopyAlias} className="h-7 text-xs text-slate-300">
-                    {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </Button>
-                </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400">
+                    Solicitá el alias oficial al encargado en la barra al momento de retirar.
+                  </p>
+                )}
               </div>
             ) : (
               <p className="text-[11px] text-amber-300 pt-1 border-t border-slate-800/80">
@@ -492,21 +499,28 @@ export default function CourtOrderPage({
 
             {/* Ficha de Transferencia si está seleccionado */}
             {paymentMethod === 'TRANSFER' && (
-              <div className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 text-[11px] space-y-1 text-slate-300">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-purple-300 font-bold">Datos para transferir:</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyAlias}
-                    className="text-[10px] font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1"
-                  >
-                    {copiedAlias ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedAlias ? 'Copiado' : 'Copiar Alias'}</span>
-                  </button>
+              bankDetails ? (
+                <div className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 text-[11px] space-y-1 text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-purple-300 font-bold">Datos para transferir:</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyAlias}
+                      className="text-[10px] font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1"
+                    >
+                      {copiedAlias ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedAlias ? 'Copiado' : 'Copiar Alias'}</span>
+                    </button>
+                  </div>
+                  <div className="font-mono text-purple-200 font-bold text-xs">{bankDetails.alias}</div>
+                  <div className="text-[10px] text-slate-400">Titular: {bankDetails.accountHolder}</div>
                 </div>
-                <div className="font-mono text-purple-200 font-bold text-xs">{bankDetails.alias}</div>
-                <div className="text-[10px] text-slate-400">Titular: {bankDetails.accountHolder}</div>
-              </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                  <span className="text-[10px] text-slate-400 block font-medium">Pago por transferencia:</span>
+                  <span>Podés solicitar el alias al encargado directamente en la barra al momento de retirar tu pedido.</span>
+                </div>
+              )
             )}
 
             <Input

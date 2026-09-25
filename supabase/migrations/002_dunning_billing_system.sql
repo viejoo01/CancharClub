@@ -73,6 +73,8 @@ COMMENT ON TABLE public.tenant_invoices IS 'Facturas y liquidaciones mensuales e
 CREATE INDEX IF NOT EXISTS idx_invoices_tenant_status ON public.tenant_invoices(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON public.tenant_invoices(due_date);
 
+ALTER TABLE public.tenant_invoices ENABLE ROW LEVEL SECURITY;
+
 -- -----------------------------------------------------------------------------
 -- 4. PROCEDIMIENTO ALMACENADO PARA EVALUACIÓN AUTOMÁTICA DE DUNNING (CRON)
 -- -----------------------------------------------------------------------------

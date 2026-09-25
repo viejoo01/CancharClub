@@ -120,52 +120,8 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
       }
     }
 
-    // Fallback: verificar cookies de sesión y tenant del dashboard
-    const tenantIdCookie = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    const slugCookie = cookieStore.get('demo_tenant_slug')?.value
-    const roleCookie = (cookieStore.get('demo_user_role')?.value as UserRole) || 'TENANT_ADMIN'
-    const nameCookie = cookieStore.get('demo_user_name')?.value || 'Dueño del Club'
-
-    if (tenantIdCookie || slugCookie) {
-      const serviceClient = await createServiceClient()
-      let tenantQuery = serviceClient.from('tenants').select('id, name, slug')
-      if (tenantIdCookie) {
-        tenantQuery = tenantQuery.eq('id', tenantIdCookie)
-      } else if (slugCookie) {
-        tenantQuery = tenantQuery.eq('slug', slugCookie)
-      }
-      const { data: tenant } = await tenantQuery.maybeSingle()
-
-      if (tenant) {
-        return {
-          id: user?.id || `usr-${tenant.id.slice(0, 8)}`,
-          email: user?.email || 'admin@club.com',
-          fullName: nameCookie,
-          role: roleCookie,
-          tenantId: tenant.id,
-        }
-      }
-    }
-
-    // Fallback de resguardo si no hay cookies explícitas pero el club existe en BD
-    const serviceClient = await createServiceClient()
-    const { data: singleTenant } = await serviceClient
-      .from('tenants')
-      .select('id, name, slug')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (singleTenant) {
-      return {
-        id: user?.id || `usr-${singleTenant.id.slice(0, 8)}`,
-        email: user?.email || 'admin@club.com',
-        fullName: nameCookie,
-        role: roleCookie,
-        tenantId: singleTenant.id,
-      }
-    }
-
+    // SEGURIDAD ESTRICTA: Si no hay usuario autenticado en Supabase con perfil asignado,
+    // NO se permite acceso ni se recurre a fallbacks de otros clubes en la BD.
     return null
   } catch (err) {
     console.error('[auth-security] Error fetching user profile:', err)
@@ -174,83 +130,42 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
 }
 
 /**
- * Resuelve el ID del club (tenantId) de forma infalible en el servidor:
- * 1. Si viene un tenantId explícito válido, lo usa.
- * 2. Si hay un usuario en sesión o cookies, usa su tenantId.
- * 3. Si hay cookies canchar_tenant_id o demo_tenant_slug, las usa.
- * 4. Si todo lo anterior falta, toma el primer club activo de la base de datos (PostgreSQL).
+ * Resuelve el ID del club (tenantId) de forma estricta y segura:
+ * 1. Si el usuario es SUPERADMIN, puede acceder a un tenant explícito o a su propio tenant.
+ * 2. Si el usuario es administrador o staff de un club, ÚNICAMENTE puede acceder a profile.tenantId.
+ * 3. Jamás se hace fallback al primer club de la base de datos para evitar fugas de información.
  */
 export async function resolveEffectiveTenantId(explicitTenantId?: string | null): Promise<string | null> {
-  const serviceClient = await createServiceClient()
-
-  // 1. Si viene un tenantId explícito, verificar que exista en la tabla tenants de PostgreSQL
-  if (explicitTenantId && explicitTenantId.trim() && explicitTenantId !== 'null' && explicitTenantId !== 'undefined') {
-    const cleanId = explicitTenantId.trim()
-    const { data: existing } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .eq('id', cleanId)
-      .maybeSingle()
-    if (existing?.id) {
-      return existing.id
-    }
-  }
-
-  // 2. Si hay usuario autenticado o perfil, verificar su tenantId en DB
   const profile = await getCurrentUserProfile()
-  if (profile?.tenantId) {
-    const { data: existing } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .eq('id', profile.tenantId)
-      .maybeSingle()
-    if (existing?.id) {
-      return existing.id
-    }
+
+  if (!profile) {
+    return null
   }
 
-  // 3. Revisar cookies de sesión y verificar que existan en DB
-  try {
-    const cookieStore = await cookies()
-    const cookieTid = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    if (cookieTid && cookieTid.trim() && cookieTid !== 'null' && cookieTid !== 'undefined') {
+  // Superadmin global tiene acceso al tenant solicitado
+  if (profile.role === 'SUPERADMIN') {
+    if (explicitTenantId && explicitTenantId.trim()) {
+      const serviceClient = await createServiceClient()
       const { data: existing } = await serviceClient
         .from('tenants')
         .select('id')
-        .eq('id', cookieTid.trim())
+        .eq('id', explicitTenantId.trim())
         .maybeSingle()
-      if (existing?.id) {
-        return existing.id
-      }
+      if (existing?.id) return existing.id
     }
+    return profile.tenantId || null
+  }
 
-    // 4. Buscar por slug de cookie (ej: elite-1244)
-    const slugCookie = cookieStore.get('demo_tenant_slug')?.value
-    if (slugCookie) {
-      const decodedSlug = decodeURIComponent(slugCookie).trim().toLowerCase()
-      const { data: t } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .eq('slug', decodedSlug)
-        .maybeSingle()
-      if (t?.id) return t.id
+  // Dueño o encargado de un club: Su club es EXCLUSIVAMENTE el que tiene asignado en su perfil
+  if (profile.tenantId) {
+    if (explicitTenantId && explicitTenantId.trim() && explicitTenantId.trim() !== profile.tenantId) {
+      // Intento de acceder al ID de otro club: DENEGADO POR SEGURIDAD
+      console.warn(`[auth-security] Acceso bloqueado: usuario ${profile.id} intentó acceder al club ajeno ${explicitTenantId}`)
+      return null
     }
+    return profile.tenantId
+  }
 
-    // 5. Buscar por nombre de tenant en cookie (ej: Elite)
-    const nameCookie = cookieStore.get('demo_tenant_name')?.value
-    if (nameCookie) {
-      const decodedName = decodeURIComponent(nameCookie).trim()
-      const { data: tByName } = await serviceClient
-        .from('tenants')
-        .select('id')
-        .ilike('name', decodedName)
-        .maybeSingle()
-      if (tByName?.id) return tByName.id
-    }
-  } catch {}
-
-  // 6. No hay fallback final — si no se pudo resolver el tenant con credenciales reales,
-  //    retornar null para evitar IDOR hacia datos de un tenant arbitrario.
   return null
 }
 

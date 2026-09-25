@@ -248,6 +248,35 @@ export function generateExternalReference(): string {
   return crypto.randomUUID()
 }
 
+// ─── Formateo de Email Oficial de Clubes (@club.com) ─────────────────────────
+
+/**
+ * Normaliza y formatea el correo electrónico de un club para que siempre sea
+ * "nombre_que_el_dueño_quiera@club.com".
+ * - Elimina espacios y mayúsculas.
+ * - Convierte tildes y caracteres especiales a formato válido de correo (ej. "pádel" -> "padel").
+ * - Si el usuario ingresa solo el nombre ("shari"), se añade "@club.com".
+ * - Si ingresa con "@algo", se toma la parte del usuario y se le fija "@club.com".
+ */
+export function formatClubEmail(rawInput?: string | null, fallbackName?: string): string {
+  let input = (rawInput || fallbackName || 'club').trim().toLowerCase()
+
+  // Si viene con un dominio, extraer la parte del usuario antes del @
+  if (input.includes('@')) {
+    input = input.split('@')[0].trim()
+  }
+
+  // Normalizar tildes y caracteres especiales
+  const sanitized = input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Quitar tildes
+    .replace(/[^a-z0-9._-]/g, '')     // Solo caracteres válidos de usuario
+    .replace(/^[._-]+|[._-]+$/g, '')  // Sin puntos o guiones al inicio o final
+
+  const finalUser = sanitized || 'club'
+  return `${finalUser}@club.com`
+}
+
 // ─── Verificación de horario de atención ─────────────────────────────────────
 
 export function isWithinBusinessHours(

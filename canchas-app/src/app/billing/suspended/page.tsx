@@ -95,7 +95,6 @@ function BillingSuspendedContent() {
         subscriptionStatus={dunningData?.status}
         baseMonthlyFeeArs={pricing?.monthlyFeeArs || 45000}
         dueDate={pricing?.nextDueDate}
-        initialSubState="PAGO_ATRASADO"
         onReactivateSuccess={() => {
           router.push('/dashboard')
         }}

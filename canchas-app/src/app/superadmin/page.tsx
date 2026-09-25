@@ -2776,7 +2776,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                 >
                   <option value="true">✅ Habilitado / Activo (Acceso completo según su plan)</option>
-                  <option value="false">⏳ Pendiente de Activación (Panel bloqueado con pantalla a WhatsApp)</option>
+                  <option value="false">❌ Desactivado</option>
                 </select>
               </div>
 

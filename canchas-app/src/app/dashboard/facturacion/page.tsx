@@ -39,6 +39,7 @@ import {
 import { toast } from 'sonner'
 import type { AfipConfig, TipoComprobante } from '@/lib/afip'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
 export default function FacturacionPage() {
   const tenantId = useTenantId()
@@ -145,7 +146,8 @@ export default function FacturacionPage() {
   const totalFacturadoMes = invoices.reduce((acc, inv) => acc + inv.montoTotal, 0)
 
   return (
-    <div className="space-y-6">
+    <PlanFeatureGuard feature="facturacion_afip" featureTitle="Facturación Electrónica AFIP">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -600,6 +602,7 @@ export default function FacturacionPage() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+      </div>
+    </PlanFeatureGuard>
   )
 }

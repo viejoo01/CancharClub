@@ -18,7 +18,7 @@ import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/
 import { formatAutoDebitAlertDate } from '@/lib/utils'
 
 import { getPlanByCourtsCount, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
-import { assertSuperadmin, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
+import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 
 export interface ClubBillingOverviewItem {
   tenantId: string
@@ -65,18 +65,22 @@ export interface ClubPlanDetails {
 export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPlanDetails> {
   const serviceClient = await createServiceClient()
   const cookieStore = await cookies()
-  let targetTenantId = tenantIdParam
+  const targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
 
   if (!targetTenantId) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data: profile } = await serviceClient
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-      targetTenantId = profile?.tenant_id
+    return {
+      tenantId: '',
+      tenantName: 'Mi Club',
+      tenantSlug: 'mi-club',
+      courtsCount: 1,
+      highestSlotPriceArs: 30000,
+      pricing: calculateClubSaaSFee(1, 30000),
+      activePlan: getPlanByCourtsCount(1),
+      isPaid: true,
+      subscriptionStatus: 'ACTIVE',
+      nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+      invoices: [],
+      hasAutoDebit: false,
     }
   }
 
@@ -84,20 +88,6 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
   const cookieStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
   const cookiePlanId = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
-  const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-
-  if (!targetTenantId && cookieTenantId && !cookieTenantId.startsWith('demo-')) {
-    targetTenantId = cookieTenantId
-  }
-
-  if (!targetTenantId && cookieTenantSlug && cookieTenantSlug !== 'mi-club') {
-    const { data: t } = await serviceClient
-      .from('tenants')
-      .select('id')
-      .eq('slug', cookieTenantSlug)
-      .maybeSingle()
-    if (t?.id) targetTenantId = t.id
-  }
 
   let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
   let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'

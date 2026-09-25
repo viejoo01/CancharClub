@@ -102,18 +102,21 @@ export function Sidebar({
       href: '/dashboard/equipo',
       icon: UserCheck,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      requiredFeature: 'multiusuario',
     },
     {
       title: 'Cuentas de Cobro',
       href: '/dashboard/cobros',
       icon: Landmark,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      requiredFeature: 'mercadopago_deposits',
     },
     {
       title: 'Facturación AFIP',
       href: '/dashboard/facturacion',
       icon: Receipt,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      requiredFeature: 'facturacion_afip',
     },
     {
       title: 'Control de Luces',
@@ -165,7 +168,9 @@ export function Sidebar({
 
   const isStaff = userRole === 'TENANT_STAFF'
   const isSuperadmin = userRole === 'SUPERADMIN'
-  const planAllowedFeatures = planId ? SAAS_PLANS[planId]?.allowedModules ?? [] : null
+  const effectivePlanId: SaaSPlanId = planId || 'MEDIANO_2'
+  const currentPlan = SAAS_PLANS[effectivePlanId] || SAAS_PLANS.MEDIANO_2
+  const planAllowedFeatures = currentPlan.allowedModules
 
   const filteredNavItems = navItems.filter(item => {
     // Filtrar por rol
@@ -180,11 +185,14 @@ export function Sidebar({
     // SUPERADMIN: ve todo
     if (isSuperadmin) return true
 
-    // Sin plan asignado o sin requiredFeature: siempre visible para admins
-    if (!planAllowedFeatures || !item.requiredFeature) return true
+    // VERIFICACIÓN ESTRICTA DEL PLAN SAAS:
+    // Si el menú requiere una funcionalidad exclusiva de planes superiores,
+    // comprobar estrictamente si está habilitada en el plan activo del club
+    if (item.requiredFeature) {
+      return planAllowedFeatures.includes(item.requiredFeature)
+    }
 
-    // TENANT_ADMIN: solo ve ítems cuyo feature está en el plan
-    return planAllowedFeatures.includes(item.requiredFeature)
+    return true
   })
 
   return (
@@ -212,15 +220,10 @@ export function Sidebar({
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
                 Superadmin Plataforma
               </span>
-            ) : !isActive ? (
-              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Activación Pendiente
-              </span>
             ) : (
               <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Dueño del Club
+                Plan {currentPlan.courtsLabel}
               </span>
             )}
           </div>

@@ -42,7 +42,7 @@ export default function EquipoPage() {
 
   // Form state
   const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [emailPrefix, setEmailPrefix] = useState('')
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState<StaffRole>('TENANT_STAFF')
 
@@ -89,19 +89,39 @@ export default function EquipoPage() {
     }
   }, [tenantId, loadStaff])
 
+  const handleEmailPrefixChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.toLowerCase()
+    // Si escribe o pega un correo con @ (ej: "juan@...", "juan@encargado.com"), tomamos solo el usuario
+    const userPart = raw.split('@')[0]
+    // Permitir letras, números, puntos, guiones o guiones bajos
+    const clean = userPart.replace(/[^a-z0-9._-]/g, '')
+    setEmailPrefix(clean)
+  }
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setFullName('')
+    setEmailPrefix('')
+    setPhone('')
+    setRole('TENANT_STAFF')
+  }
+
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!fullName.trim() || !email.trim()) {
-      toast.error('Por favor completá el nombre y el correo.')
+    const cleanPrefix = emailPrefix.trim().toLowerCase()
+    if (!fullName.trim() || !cleanPrefix) {
+      toast.error('Por favor completá el nombre y el usuario del correo.')
       return
     }
+
+    const fullEmail = `${cleanPrefix}@encargado.com`
 
     setSubmitting(true)
     try {
       const res = await inviteStaffMember({
         tenantId: tenantId!,
         fullName: fullName.trim(),
-        email: email.trim(),
+        email: fullEmail,
         phone: phone.trim() || undefined,
         role,
       })
@@ -109,11 +129,7 @@ export default function EquipoPage() {
       if (res.success && res.member) {
         setStaff((prev) => [res.member!, ...prev])
         toast.success(`Colaborador ${res.member.full_name} añadido con éxito`)
-        setIsModalOpen(false)
-        setFullName('')
-        setEmail('')
-        setPhone('')
-        setRole('TENANT_STAFF')
+        handleCloseModal()
       } else {
         toast.error(res.error || 'Error al invitar')
       }
@@ -421,7 +437,7 @@ export default function EquipoPage() {
                 <span>Sumar Nuevo Colaborador</span>
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseModal}
                 className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -447,14 +463,25 @@ export default function EquipoPage() {
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                   Correo Electrónico
                 </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="encargado@club.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
+                <div className="flex items-center w-full bg-slate-800 border border-slate-700 rounded-xl overflow-hidden focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/30 transition-all">
+                  <input
+                    type="text"
+                    required
+                    placeholder="nombre"
+                    value={emailPrefix}
+                    onChange={handleEmailPrefixChange}
+                    className="flex-1 min-w-0 bg-transparent px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none lowercase"
+                  />
+                  <div className="px-3.5 py-2.5 text-sm font-semibold text-emerald-400 bg-slate-900/90 border-l border-slate-700 select-none whitespace-nowrap flex items-center">
+                    @encargado.com
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5">
+                  <span>Acceso final:</span>
+                  <span className="text-emerald-400 font-mono font-medium">
+                    {emailPrefix.trim() ? `${emailPrefix.trim().toLowerCase()}@encargado.com` : 'nombre@encargado.com'}
+                  </span>
+                </p>
               </div>
 
               <div>
@@ -486,7 +513,7 @@ export default function EquipoPage() {
                   >
                     <p className="text-xs font-bold text-sky-400">Encargado</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Solo Calendario, Caja y Cantina
+                      Reservas, Caja, Turnos fijos y Cantina
                     </p>
                   </button>
 
@@ -511,7 +538,7 @@ export default function EquipoPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={handleCloseModal}
                   className="border-slate-700 text-slate-300"
                 >
                   Cancelar

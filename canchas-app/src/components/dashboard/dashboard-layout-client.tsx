@@ -119,15 +119,15 @@ export function DashboardLayoutClient({
       icon: Wallet,
       exact: false,
     },
+    ...(planId === 'CHICO_1' ? [] : [
+      {
+        title: 'Cantina',
+        href: '/dashboard/cantina',
+        icon: Coffee,
+        exact: false,
+      },
+    ]),
     ...(isStaff ? [] : [
-      ...(planId === 'CHICO_1' ? [] : [
-        {
-          title: 'Cantina',
-          href: '/dashboard/cantina',
-          icon: Coffee,
-          exact: false,
-        },
-      ]),
       {
         title: 'Canchas',
         href: '/dashboard/canchas',

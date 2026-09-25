@@ -75,6 +75,7 @@ export function Sidebar({
       icon: Repeat,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'turnos_fijos',
+      staffVisible: true,
     },
     {
       title: 'Cantina',
@@ -82,6 +83,7 @@ export function Sidebar({
       icon: Coffee,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'cantina_kiosco',
+      staffVisible: true,
     },
     {
       title: 'Caja Diaria',
@@ -124,6 +126,7 @@ export function Sidebar({
       icon: Zap,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'control_luces',
+      staffVisible: true,
     },
     {
       title: 'Canchas',
@@ -143,6 +146,7 @@ export function Sidebar({
       icon: Trophy,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'torneos_expres',
+      staffVisible: true,
     },
     {
       title: 'Reportes de Ocupación',
@@ -173,20 +177,21 @@ export function Sidebar({
   const planAllowedFeatures = currentPlan.allowedModules
 
   const filteredNavItems = navItems.filter(item => {
-    // Filtrar por rol
+    // 1. Filtrar por rol de usuario
     if (!item.roles.includes(userRole)) return false
 
-    // TENANT_STAFF: solo ve ítems marcados como staffVisible
-    if (isStaff) return item.staffVisible === true
-
-    // SUPERADMIN: ve todo
+    // 2. Superadmin tiene acceso a todo
     if (isSuperadmin) return true
 
-    // VERIFICACIÓN ESTRICTA DEL PLAN SAAS:
-    // Si el menú requiere una funcionalidad exclusiva de planes superiores,
-    // comprobar estrictamente si está habilitada en el plan activo del club
-    if (item.requiredFeature) {
-      return planAllowedFeatures.includes(item.requiredFeature)
+    // 3. Verificación estricta del Plan SaaS (Aplica tanto al Dueño como al Encargado)
+    // Si el menú requiere una funcionalidad exclusiva y el club no la tiene en su plan, se oculta
+    if (item.requiredFeature && !planAllowedFeatures.includes(item.requiredFeature)) {
+      return false
+    }
+
+    // 4. Si es encargado (TENANT_STAFF), solo ve los ítems marcados como staffVisible
+    if (isStaff) {
+      return item.staffVisible === true
     }
 
     return true

@@ -14,26 +14,19 @@ export function PwaInstallBanner() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
-    // Registrar service worker y purgar cachés obsoletas
+    // Purgar cachés obsoletas y desregistrar service workers para garantizar bundles frescos
     if ('serviceWorker' in navigator && typeof window !== 'undefined') {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
         for (const registration of registrations) {
-          registration.update()
+          registration.unregister()
         }
       })
       if ('caches' in window) {
         caches.keys().then((names) => {
           for (const name of names) {
-            if (name !== 'cancharclub-v2-live') {
-              caches.delete(name)
-            }
+            caches.delete(name)
           }
         })
-      }
-      if (process.env.NODE_ENV === 'production') {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .catch((err) => console.log('SW registration failed:', err))
       }
     }
 

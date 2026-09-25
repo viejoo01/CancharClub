@@ -5,8 +5,12 @@ import './globals.css'
 import { Toaster } from 'sonner'
 
 import { siteConfig } from '@/config/site'
+import { AppAutoUpdater } from '@/components/shared/app-auto-updater'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://cancharclub.com.ar'),
@@ -90,6 +94,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <meta name="theme-color" content="#059669" />
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -118,6 +125,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <AppAutoUpdater />
           {children}
           <PwaInstallBanner />
           <Toaster

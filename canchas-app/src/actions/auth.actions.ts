@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
+import { createHmac } from 'crypto'
 import type { SaaSPlanId } from '@/config/saas-plans'
 
 export async function loginWithEmail(formData: FormData) {
@@ -84,6 +85,22 @@ export async function loginWithEmail(formData: FormData) {
   if (isSuperadmin) {
     cookieStore.set('demo_user_role', 'SUPERADMIN', { path: '/', maxAge: 86400 })
     cookieStore.set('demo_user_name', profile?.full_name || 'Superadmin Plataforma', { path: '/', maxAge: 86400 })
+    
+    // Generar sa_session firmado para acceso directo al panel /superadmin
+    const saSecret = process.env.SUPERADMIN_SESSION_SECRET
+    const saUsername = process.env.SUPERADMIN_USERNAME || 'superadmin'
+    if (saSecret) {
+      const payload = `${saUsername}:${Date.now()}`
+      const sig = createHmac('sha256', saSecret).update(payload).digest('hex')
+      const token = Buffer.from(`${payload}:${sig}`).toString('base64url')
+      cookieStore.set('sa_session', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+      })
+    }
+
     redirect('/superadmin')
   }
 

@@ -83,20 +83,27 @@ export async function POST(req: NextRequest) {
   const token = signToken(username!, secret)
 
   const res = NextResponse.json({ ok: true })
-  // Session cookie: HttpOnly, Secure, SameSite=Strict
+  // Session cookie: HttpOnly, Secure, SameSite=Strict con path / para cubrir todas las Server Actions
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    path: '/superadmin',
+    path: '/',
   })
 
   return res
 }
 
 export async function DELETE() {
-  // Logout: eliminar la cookie de sesión
+  // Logout: eliminar la cookie de sesión en ambos paths
   const res = NextResponse.json({ ok: true })
+  res.cookies.set(COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 0,
+  })
   res.cookies.set(COOKIE_NAME, '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

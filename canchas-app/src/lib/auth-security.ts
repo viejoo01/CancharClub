@@ -8,6 +8,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
+import { createHmac, timingSafeEqual } from 'crypto'
 import type { UserRole } from '@/types/database'
 
 export interface AuthUserProfile {
@@ -24,16 +25,74 @@ export interface AuthSecurityResult {
   error?: string
 }
 
+const SA_SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000 // 8 horas máximo
+
+/**
+ * Valida criptográficamente el token HMAC de sa_session generado por el panel Superadmin.
+ */
+export function verifySuperadminSessionToken(token: string, secret: string): boolean {
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8')
+    const parts = decoded.split(':')
+    if (parts.length < 3) return false
+    const tokenSig = parts.pop()!
+    const timestampStr = parts[parts.length - 1]
+    const timestamp = parseInt(timestampStr, 10)
+
+    if (isNaN(timestamp) || Date.now() - timestamp > SA_SESSION_MAX_AGE_MS) {
+      return false
+    }
+
+    const tokenPayload = parts.join(':')
+    const expected = createHmac('sha256', secret).update(tokenPayload).digest('hex')
+    const sigBuf = Buffer.from(tokenSig, 'hex')
+    const expBuf = Buffer.from(expected, 'hex')
+    if (sigBuf.length !== expBuf.length) return false
+    return timingSafeEqual(sigBuf, expBuf)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Obtiene el perfil del usuario autenticado actual desde Supabase Auth o cookies de sesión.
  * Retorna null si no hay sesión activa.
  */
 export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
   try {
+    const cookieStore = await cookies()
+
+    // 0. Prioridad Superadmin: Verificar sesión criptográfica sa_session
+    const saSession = cookieStore.get('sa_session')?.value
+    const saSecret = process.env.SUPERADMIN_SESSION_SECRET
+    if (saSession && saSecret && verifySuperadminSessionToken(saSession, saSecret)) {
+      return {
+        id: 'superadmin',
+        email: 'superadmin@canchar.club',
+        fullName: 'Superadmin Plataforma',
+        role: 'SUPERADMIN',
+        tenantId: null,
+      }
+    }
+
+    // 0.1 Cookie demo_user_role con rol SUPERADMIN
+    const demoRole = cookieStore.get('demo_user_role')?.value
+    if (demoRole === 'SUPERADMIN') {
+      const demoName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
+      return {
+        id: 'superadmin-demo',
+        email: 'superadmin@canchar.club',
+        fullName: demoName,
+        role: 'SUPERADMIN',
+        tenantId: null,
+      }
+    }
+
     const supabase = await createClient()
     const { data: { user }, error: authErr } = await supabase.auth.getUser()
 
     if (user && !authErr) {
+      const isSuperById = Boolean(process.env.SUPERADMIN_USER_ID && user.id === process.env.SUPERADMIN_USER_ID)
       const serviceClient = await createServiceClient()
       const { data: profile } = await serviceClient
         .from('profiles')
@@ -42,18 +101,26 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
         .maybeSingle()
 
       if (profile) {
+        const effectiveRole = (isSuperById ? 'SUPERADMIN' : (profile.role as UserRole)) || 'CUSTOMER'
         return {
           id: user.id,
           email: user.email || '',
           fullName: profile.full_name || '',
-          role: (profile.role as UserRole) || 'CUSTOMER',
+          role: effectiveRole,
           tenantId: profile.tenant_id || null,
+        }
+      } else if (isSuperById) {
+        return {
+          id: user.id,
+          email: user.email || '',
+          fullName: 'Superadmin Plataforma',
+          role: 'SUPERADMIN',
+          tenantId: null,
         }
       }
     }
 
     // Fallback: verificar cookies de sesión y tenant del dashboard
-    const cookieStore = await cookies()
     const tenantIdCookie = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     const slugCookie = cookieStore.get('demo_tenant_slug')?.value
     const roleCookie = (cookieStore.get('demo_user_role')?.value as UserRole) || 'TENANT_ADMIN'

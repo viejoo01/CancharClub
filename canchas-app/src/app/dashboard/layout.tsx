@@ -75,7 +75,7 @@ export default async function DashboardLayout({
     if (requestedTenantId) {
       const { data: st } = await serviceClient
         .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description, plan_id')
         .eq('id', requestedTenantId)
         .maybeSingle()
       if (st) {
@@ -86,10 +86,22 @@ export default async function DashboardLayout({
         parseTenantMeta(st)
         if (typeof st.is_active === 'boolean') isActive = st.is_active
         if (st.subscription_status) subscriptionStatus = st.subscription_status
-        if (st.base_slots_plan) {
+        if (st.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(st.plan_id)) {
+          planId = st.plan_id as SaaSPlanId
+        } else if (st.base_slots_plan) {
           planId = st.base_slots_plan === 1 ? 'CHICO_1' : st.base_slots_plan === 2 ? 'MEDIANO_2' : st.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
         }
       }
+    }
+
+    // Permitir simulación de roles operativos (ej: TENANT_STAFF) cuando se simula un club desde Superadmin
+    const simulatedRole = cookieStore.get('demo_user_role')?.value
+    if (simulatedRole === 'TENANT_STAFF' || simulatedRole === 'TENANT_ADMIN') {
+      userRole = simulatedRole
+    }
+    const simulatedPlan = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
+    if (simulatedPlan && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(simulatedPlan)) {
+      planId = simulatedPlan
     }
   } else if (user) {
     // 3. AISLAMIENTO TOTAL PARA CLUBES:
@@ -113,7 +125,7 @@ export default async function DashboardLayout({
     // Obtener estrictamente los datos del club asignado a este usuario
     const { data: t } = await serviceClient
       .from('tenants')
-      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description')
+      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description, plan_id')
       .eq('id', profile.tenant_id)
       .maybeSingle()
 
@@ -134,7 +146,9 @@ export default async function DashboardLayout({
     if (t.subscription_status) {
       subscriptionStatus = t.subscription_status
     }
-    if (t.base_slots_plan) {
+    if (t.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(t.plan_id)) {
+      planId = t.plan_id as SaaSPlanId
+    } else if (t.base_slots_plan) {
       planId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
     }
   }

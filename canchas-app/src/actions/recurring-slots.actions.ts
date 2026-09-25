@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { parseArgentinaDate } from '@/lib/utils'
 import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
-import { assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
+import { assertTenantMember } from '@/lib/auth-security'
 
 /** Obtener todos los turnos fijos del club */
 export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot[]> {
@@ -63,12 +63,12 @@ export async function createRecurringSlot(payload: {
   notes?: string
 }): Promise<{ success: boolean; slot?: RecurringSlot; error?: string }> {
   try {
-    // Protección antifraude: Solo el dueño del club puede fijar precios y crear turnos fijos recurrentes
-    const auth = await assertTenantAdmin(payload.tenant_id)
+    // Miembro del club autorizado (Dueño o Encargado)
+    const auth = await assertTenantMember(payload.tenant_id)
     if (!auth.authorized) {
       return {
         success: false,
-        error: auth.error || 'Solo el dueño del club tiene permisos para crear turnos fijos (abonados).',
+        error: auth.error || 'Sin permisos para crear turnos fijos (abonados).',
       }
     }
 

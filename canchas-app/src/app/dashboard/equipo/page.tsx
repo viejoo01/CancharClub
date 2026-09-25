@@ -229,7 +229,7 @@ export default function EquipoPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Acceso enfocado a la operación diaria: visualización y carga manual del <strong>Calendario de Turnos</strong>, cobro en <strong>Caja Diaria</strong> y despacho en <strong>Cantina</strong>. No puede ver ni alterar tarifas, canchas ni facturación.
+                Acceso operativo del club: <strong>Calendario de Turnos</strong>, <strong>Caja Diaria</strong>, <strong>Turnos Fijos</strong>, <strong>Cantina</strong>, <strong>Control de Luces</strong> y <strong>Torneos</strong> (según las funciones contratadas en el plan del club). No puede alterar reglas de precios, canchas ni facturación general.
               </p>
             </div>
           </CardContent>

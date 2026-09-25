@@ -59,12 +59,18 @@ export function PlanFeatureGuard({
 
         {/* Acciones */}
         <div className="mt-6 flex flex-col gap-2.5">
-          <Button asChild className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-900/30 transition-all">
-            <Link href="/dashboard/plan" className="flex items-center justify-center gap-2">
-              <span>Ver y ascender de plan</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </Button>
+          {role !== 'TENANT_STAFF' ? (
+            <Button asChild className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-900/30 transition-all">
+              <Link href="/dashboard/plan" className="flex items-center justify-center gap-2">
+                <span>Ver y ascender de plan</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+          ) : (
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-xs text-slate-400">
+              Módulo no disponible en el plan actual del club. Solicitá al administrador del club la activación de este módulo.
+            </div>
+          )}
 
           <Button asChild variant="outline" className="w-full h-10 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl">
             <Link href="/dashboard" className="flex items-center justify-center gap-1.5">

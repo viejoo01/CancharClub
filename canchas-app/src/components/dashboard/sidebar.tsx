@@ -66,11 +66,10 @@ export function Sidebar({
       icon: CalendarDays,
       exact: true,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      staffVisible: true,   // SIEMPRE visible para el canchero
-      // Sin requiredFeature → siempre disponible para admins también
+      staffVisible: true,
     },
     {
-      title: 'Turnos Fijos (Abonados)',
+      title: 'Turnos Fijos',
       href: '/dashboard/fijos',
       icon: Repeat,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
@@ -90,7 +89,23 @@ export function Sidebar({
       href: '/dashboard/caja',
       icon: Wallet,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      staffVisible: true,   // SIEMPRE visible para el canchero
+      staffVisible: true,
+    },
+    {
+      title: 'Control de Luces',
+      href: '/dashboard/luces',
+      icon: Zap,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      requiredFeature: 'control_luces',
+      staffVisible: true,
+    },
+    {
+      title: 'Torneos y Cuadros',
+      href: '/dashboard/torneos',
+      icon: Trophy,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      requiredFeature: 'torneos_expres',
+      staffVisible: true,
     },
     {
       title: 'Reputación de Jugadores',
@@ -121,14 +136,6 @@ export function Sidebar({
       requiredFeature: 'facturacion_afip',
     },
     {
-      title: 'Control de Luces',
-      href: '/dashboard/luces',
-      icon: Zap,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      requiredFeature: 'control_luces',
-      staffVisible: true,
-    },
-    {
       title: 'Canchas',
       href: '/dashboard/canchas',
       icon: Layers,
@@ -139,14 +146,6 @@ export function Sidebar({
       href: '/dashboard/precios',
       icon: DollarSign,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
-    },
-    {
-      title: 'Torneos y Cuadros',
-      href: '/dashboard/torneos',
-      icon: Trophy,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      requiredFeature: 'torneos_expres',
-      staffVisible: true,
     },
     {
       title: 'Reportes de Ocupación',
@@ -215,7 +214,7 @@ export function Sidebar({
             {isStaff ? (
               <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Encargado (Turnos y Caja)
+                Encargado Operativo
               </span>
             ) : isSuperadmin ? (
               <span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">

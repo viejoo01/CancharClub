@@ -1,4 +1,5 @@
 import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
+import { DashboardDailySummary } from '@/components/dashboard/dashboard-daily-summary'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
@@ -18,7 +19,6 @@ export default async function DashboardPage(props: {
   const cookieStore = await cookies()
   const activeVenueId = cookieStore.get('canchar_active_venue_id')?.value || 'venue-main'
 
-  // Obtener tenant_id del usuario activo con resolución completa
   const { data: { user } } = await supabase.auth.getUser()
   let tenantId: string | null = null
 
@@ -35,7 +35,6 @@ export default async function DashboardPage(props: {
 
   tenantId = await resolveEffectiveTenantId(tenantId)
 
-  // Cargar canchas reales de la base de datos
   interface DbCourtRow {
     id: string
     name: string
@@ -44,13 +43,21 @@ export default async function DashboardPage(props: {
     is_active: boolean
   }
 
-  const { data: rawCourts } = tenantId 
-    ? await supabase
-        .from('courts')
-        .select('id, name, sport, slot_duration_minutes, is_active')
-        .eq('tenant_id', tenantId)
-        .order('display_order', { ascending: true })
-    : { data: [] }
+  // Parallelize all independent data fetches
+  const [rawCourtsResult, bookings, schedule, priceRules] = await Promise.all([
+    tenantId
+      ? supabase
+          .from('courts')
+          .select('id, name, sport, slot_duration_minutes, is_active')
+          .eq('tenant_id', tenantId)
+          .order('display_order', { ascending: true })
+      : Promise.resolve({ data: [] as DbCourtRow[] }),
+    tenantId ? getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]> : Promise.resolve([] as CalendarBooking[]),
+    tenantId ? getClubSchedule(tenantId) : Promise.resolve(undefined),
+    tenantId ? getClubPriceRules(tenantId) : Promise.resolve([]),
+  ])
+
+  const rawCourts = rawCourtsResult.data
 
   const courts = (rawCourts && rawCourts.length > 0)
     ? (rawCourts as unknown as DbCourtRow[]).map((c) => ({
@@ -62,11 +69,6 @@ export default async function DashboardPage(props: {
       }))
     : []
 
-  // Load real bookings, price rules and club operating schedule from DB
-  const bookings = tenantId ? (await getCalendarBookings(tenantId, today)) as CalendarBooking[] : []
-  const schedule = tenantId ? await getClubSchedule(tenantId) : undefined
-  const priceRules = tenantId ? await getClubPriceRules(tenantId) : []
-
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">
@@ -75,10 +77,17 @@ export default async function DashboardPage(props: {
             Grilla de Turnos
           </h2>
           <p className="text-xs text-slate-400">
-            Visualización y control de reservas en tiempo real para todas las canchas.
+            Visualizacion y control de reservas en tiempo real para todas las canchas.
           </p>
         </div>
       </div>
+
+      <DashboardDailySummary
+        bookings={bookings as unknown as CalendarBooking[]}
+        courts={courts}
+        priceRules={priceRules}
+        dateIso={today}
+      />
 
       <div className="flex-1 min-h-0">
         <CalendarGrid

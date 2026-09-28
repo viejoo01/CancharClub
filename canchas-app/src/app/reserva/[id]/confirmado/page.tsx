@@ -1,6 +1,6 @@
 'use client'
 
-import { use, Suspense, useState } from 'react'
+import { use, Suspense, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { 
@@ -21,21 +21,40 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import { buildGoogleCalendarLink, downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
+import { getBookingPublicReceipt, type PublicBookingReceipt } from '@/actions/booking.actions'
 
 function ConfirmationContent({ bookingId }: { bookingId: string }) {
   const searchParams = useSearchParams()
+  const [receipt, setReceipt] = useState<PublicBookingReceipt | null>(null)
 
-  const clubName = searchParams.get('club') || 'Club Deportivo'
-  const courtName = searchParams.get('court') || 'Cancha'
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
-  const time = searchParams.get('time') || '19:00'
-  const customerName = searchParams.get('name') || 'Jugador'
-  const total = Number(searchParams.get('total')) || 14000
-  const deposit = Number(searchParams.get('deposit')) || 7000
-  const clubSlug = searchParams.get('slug') || ''
-  const phoneClub = searchParams.get('phoneClub') || ''
-  const method = searchParams.get('method') || 'TRANSFER'
-  const alias = searchParams.get('alias') || ''
+  useEffect(() => {
+    if (!bookingId) return
+    let isMounted = true
+    getBookingPublicReceipt(bookingId)
+      .then(res => {
+        if (isMounted && res.success && res.data) {
+          setReceipt(res.data)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [bookingId])
+
+  const clubName = receipt?.clubName || searchParams.get('club') || 'Club Deportivo'
+  const courtName = receipt?.courtName || searchParams.get('court') || 'Cancha'
+  const date = receipt?.dateFormatted || searchParams.get('date') || new Date().toISOString().split('T')[0]
+  const time = receipt?.time || searchParams.get('time') || '19:00'
+  const customerName = receipt?.customerName || searchParams.get('name') || 'Jugador'
+  const total = receipt?.totalAmount ?? (Number(searchParams.get('total')) || 14000)
+  const deposit = receipt?.depositAmount ?? (Number(searchParams.get('deposit')) || 7000)
+  const clubSlug = receipt?.clubSlug || searchParams.get('slug') || ''
+  const phoneClub = receipt?.clubPhone || searchParams.get('phoneClub') || ''
+  const method = receipt?.paymentMethod || searchParams.get('method') || 'TRANSFER'
+  const alias = receipt?.bankAlias || searchParams.get('alias') || ''
+  const clubAddress = receipt?.clubAddress || 'Dirección registrada del club'
 
   const [copiedAlias, setCopiedAlias] = useState(false)
   const shortCode = bookingId.slice(-6).toUpperCase()
@@ -115,7 +134,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
             </div>
             <div className="flex items-center gap-2 text-slate-300">
               <MapPin className="w-4 h-4 text-emerald-400" />
-              <span className="truncate">Yerba Buena, Tucumán</span>
+              <span className="truncate">{clubAddress}</span>
             </div>
           </div>
 

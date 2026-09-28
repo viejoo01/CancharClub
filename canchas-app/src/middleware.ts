@@ -14,7 +14,11 @@ const PUBLIC_PATHS = [
   '/api/webhooks',      // Webhooks externos (MP)
   '/api/availability',  // Disponibilidad pública
   '/billing',           // Pantallas de suspensión y cobranzas
+  '/onboarding',        // Carga obligatoria de tarjeta para activar club
 ]
+
+// In-memory sliding window para rate limiting de rutas sensibles
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -26,6 +30,55 @@ export async function middleware(request: NextRequest) {
   response.headers.set('Surrogate-Control', 'no-store')
 
   const pathname = request.nextUrl.pathname
+
+  // ─── RATE LIMITING (Protección contra ataques de fuerza bruta y spam) ───
+  const isRateLimitedRoute = pathname.startsWith('/auth') || (pathname.startsWith('/api') && !pathname.startsWith('/api/webhooks'))
+  if (isRateLimitedRoute) {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+               request.headers.get('x-real-ip') ||
+               '127.0.0.1'
+    const limit = pathname.startsWith('/auth') ? 35 : 120 // 35 req/min para auth, 120 req/min para APIs
+    const now = Date.now()
+    const windowMs = 60 * 1000
+
+    // Limpieza esporádica de memoria
+    if (rateLimitMap.size > 2000) {
+      for (const [k, v] of rateLimitMap.entries()) {
+        if (now > v.resetTime) rateLimitMap.delete(k)
+      }
+    }
+
+    const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs }
+    if (now > record.resetTime) {
+      record.count = 1
+      record.resetTime = now + windowMs
+    } else {
+      record.count++
+    }
+    rateLimitMap.set(ip, record)
+
+    if (record.count > limit) {
+      return new NextResponse(
+        JSON.stringify({
+          error: 'Demasiadas solicitudes. Por favor aguardá un minuto antes de reintentar.',
+          retryAfter: 60,
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '60',
+            'X-RateLimit-Limit': String(limit),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      )
+    }
+
+    response.headers.set('X-RateLimit-Limit', String(limit))
+    response.headers.set('X-RateLimit-Remaining', String(Math.max(0, limit - record.count)))
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -87,6 +140,46 @@ export async function middleware(request: NextRequest) {
       url.searchParams.set('redirectTo', pathname)
       return NextResponse.redirect(url)
     }
+
+    // SI EL USUARIO NO ES SUPERADMIN: VERIFICAR QUE EL CLUB HAYA VINCULADO SU TARJETA
+    if (!saSession && user) {
+      const isFromMpReturn = request.nextUrl.searchParams.get('subscription_active') === 'true' ||
+                             request.nextUrl.searchParams.get('auto_debit_registered') === 'true'
+
+      // Si regresa de Mercado Pago con la suscripción aprobada en /dashboard/plan, permitir procesar activación
+      if (isFromMpReturn && pathname.startsWith('/dashboard/plan')) {
+        return response
+      }
+
+      const isPendingActivation = request.cookies.get('new_club_pending_activation')?.value === 'true'
+      const cookieHasCard = request.cookies.get('demo_has_card')?.value === 'true'
+      const cookieCardLast4 = request.cookies.get('demo_card_last4')?.value
+
+      // Si la cookie explícitamente indica activación pendiente o falta de tarjeta
+      if (isPendingActivation || (!cookieHasCard || !cookieCardLast4)) {
+        // Consultar perfil para descartar superadmin y verificar metadatos de tarjeta
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, tenant_id, tenants(subscription_status, is_active, description)')
+          .eq('id', user.id)
+          .single()
+
+        if (profile && profile.role !== 'SUPERADMIN') {
+          const tenantData = profile?.tenants as unknown as { subscription_status?: string; is_active?: boolean; description?: string } | null
+          let metaCardLinked = false
+          if (tenantData?.description) {
+            try {
+              const meta = JSON.parse(tenantData.description)
+              metaCardLinked = Boolean(meta.card_linked)
+            } catch {}
+          }
+
+          if (!metaCardLinked) {
+            return NextResponse.redirect(new URL('/onboarding/tarjeta', request.url))
+          }
+        }
+      }
+    }
   }
 
   // ─── 4. PROTECCIÓN DEL PANEL SUPERADMIN ────────────────────────────────────
@@ -139,7 +232,6 @@ export async function middleware(request: NextRequest) {
 
     return response
   }
-
 
   // ─── 5. EVALUACIÓN DEL ESTADO DE DUNNING DEL CLUB (TENANT) ────────────────
   if (pathname.startsWith('/dashboard') && user) {

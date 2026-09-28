@@ -82,11 +82,11 @@ export default function ReportesPage() {
     }
     void run()
 
-    // Sondeo continuo cada 6 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (reportes no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void loadReport(false)
-    }, 6000)
+    }, 60000)
 
     const handleSync = () => void loadReport(false)
     window.addEventListener('focus', handleSync)

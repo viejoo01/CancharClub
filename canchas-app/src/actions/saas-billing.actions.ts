@@ -56,6 +56,7 @@ export interface ClubPlanDetails {
   cancellationEffectiveDate?: string | null
   reactivationDetails?: ReactivationFeeDetails
   autoDebitAlerts?: AutoDebitAlert[]
+  hasPriceConfigured?: boolean
 }
 
 /**
@@ -73,14 +74,15 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       tenantName: 'Mi Club',
       tenantSlug: 'mi-club',
       courtsCount: 1,
-      highestSlotPriceArs: 30000,
-      pricing: calculateClubSaaSFee(1, 30000),
+      highestSlotPriceArs: 0,
+      pricing: calculateClubSaaSFee(1, 0, null, null, false),
       activePlan: getPlanByCourtsCount(1),
       isPaid: true,
       subscriptionStatus: 'ACTIVE',
       nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
       invoices: [],
       hasAutoDebit: false,
+      hasPriceConfigured: false,
     }
   }
 
@@ -99,6 +101,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let cancellationRequestedAt: string | null = null
   let cancellationEffectiveDate: string | null = null
   let autoDebitAlerts: AutoDebitAlert[] = []
+  let tenantDescription: string | null = null
 
   if (targetTenantId) {
     const { data: tenant } = await serviceClient
@@ -108,6 +111,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       .maybeSingle()
 
     if (tenant?.description) {
+      tenantDescription = tenant.description
       try {
         const parsedDesc = JSON.parse(tenant.description)
         if (parsedDesc.terms_accepted_at) {
@@ -157,23 +161,29 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  // 2. Obtener el valor de turno más alto para la tarifa proporcional
-  let highestPriceArs = 30000
+  // 2. Obtener el valor de turno más alto para la tarifa proporcional (siempre el mayor entre todas las tarifas)
+  let highestPriceArs = 0
+  let hasPriceConfigured = false
   if (targetTenantId) {
     const { data: priceRules } = await serviceClient
       .from('price_rules')
-      .select('price_cents')
+      .select('price_cents, is_active')
       .eq('tenant_id', targetTenantId)
-      .order('price_cents', { ascending: false })
-      .limit(1)
 
-    if (priceRules && priceRules.length > 0 && priceRules[0].price_cents) {
-      const parsed = Math.round(Number(priceRules[0].price_cents) / 100)
-      if (parsed > 0) highestPriceArs = parsed
+    if (priceRules && priceRules.length > 0) {
+      // Filtrar reglas activas con precio válido y calcular el MÁXIMO absoluto
+      const activeRules = priceRules.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+      if (activeRules.length > 0) {
+        const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+        if (maxCents > 0) {
+          highestPriceArs = Math.round(maxCents / 100)
+          hasPriceConfigured = true
+        }
+      }
     }
   }
 
-  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt)
+  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt, null, hasPriceConfigured)
   const activePlan = getPlanByCourtsCount(courtsCount)
   const isPaid = subscriptionStatus === 'ACTIVE'
 
@@ -206,23 +216,38 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       .limit(1)
       .maybeSingle()
 
-    if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
+    if (sub && sub.payment_notes && (sub.payment_notes.toLowerCase().includes('tarjeta') || sub.payment_notes.toLowerCase().includes('card'))) {
       hasAutoDebit = true
-      if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
-        const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
-        const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
-        const holderMatch = sub.payment_notes.match(/Titular:\s*([^.]+)/i)
-        let parsedBrand = brandMatch ? brandMatch[1] : undefined
-        if (parsedBrand && (parsedBrand.toLowerCase() === 'de' || parsedBrand.toLowerCase() === 'del')) {
-          parsedBrand = 'Débito/Crédito'
-        }
-        cardInfo = {
-          brand: parsedBrand || 'Tarjeta',
-          last4: last4Match ? last4Match[1] : undefined,
-          holder: holderMatch ? holderMatch[1].trim() : undefined,
-        }
+      const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+      const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+      const holderMatch = sub.payment_notes.match(/Titular:\s*([^.]+)/i)
+      let parsedBrand = brandMatch ? brandMatch[1] : undefined
+      if (parsedBrand && (parsedBrand.toLowerCase() === 'de' || parsedBrand.toLowerCase() === 'del')) {
+        parsedBrand = 'Débito/Crédito'
+      }
+      cardInfo = {
+        brand: parsedBrand || 'Tarjeta',
+        last4: last4Match ? last4Match[1] : undefined,
+        holder: holderMatch ? holderMatch[1].trim() : undefined,
       }
     }
+  }
+
+  // Revisar si en tenantDescription está registrado card_linked: true
+  if (tenantDescription) {
+    try {
+      const meta = JSON.parse(tenantDescription)
+      if (meta.card_linked) {
+        hasAutoDebit = true
+        if (!cardInfo) {
+          cardInfo = {
+            last4: meta.card_last4 || undefined,
+            brand: meta.card_brand || 'Tarjeta de Débito/Crédito',
+            holder: meta.card_holder || undefined,
+          }
+        }
+      }
+    } catch {}
   }
 
   const cookieHasCard = cookieStore.get('demo_has_card')?.value === 'true'
@@ -230,7 +255,8 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const cookieCardBrand = cookieStore.get('demo_card_brand')?.value
   const cookieCardHolder = cookieStore.get('demo_card_holder')?.value ? decodeURIComponent(cookieStore.get('demo_card_holder')!.value) : undefined
 
-  if (cookieHasCard || subscriptionStatus === 'ACTIVE' || hasAutoDebit) {
+  // Solo si realmente hay tarjeta en cookies o confirmada en DB
+  if (cookieHasCard && cookieCardLast4) {
     hasAutoDebit = true
     if (!cardInfo) {
       cardInfo = {
@@ -275,6 +301,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     cancellationEffectiveDate: cancellationEffectiveDate || pricing.nextDueDate,
     reactivationDetails,
     autoDebitAlerts,
+    hasPriceConfigured,
   }
 }
 
@@ -306,20 +333,27 @@ export async function getClubBillingSummary(tenantId: string) {
     activeCourtsCount = courts.length
   }
 
-  // 2. Obtener la regla de precio con el valor más alto
+  // 2. Obtener la regla de precio con el valor más alto (siempre el mayor entre todas las tarifas)
   const { data: priceRules } = await serviceClient
     .from('price_rules')
-    .select('price_cents')
+    .select('price_cents, is_active')
     .eq('tenant_id', tenantId)
-    .order('price_cents', { ascending: false })
-    .limit(1)
 
-  // Si hay regla, el precio en cents se pasa a pesos; si no, valor por defecto representativo
-  const highestPriceArs = priceRules && priceRules.length > 0 && priceRules[0].price_cents
-    ? Math.round(Number(priceRules[0].price_cents) / 100)
-    : 30000
+  // Si hay reglas activas, se toma siempre el valor MÁXIMO absoluto
+  let highestPriceArs = 0
+  let hasPriceConfigured = false
+  if (priceRules && priceRules.length > 0) {
+    const activeRules = priceRules.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+    if (activeRules.length > 0) {
+      const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+      if (maxCents > 0) {
+        highestPriceArs = Math.round(maxCents / 100)
+        hasPriceConfigured = true
+      }
+    }
+  }
 
-  const pricing = calculateClubSaaSFee(activeCourtsCount, highestPriceArs, tenant?.created_at)
+  const pricing = calculateClubSaaSFee(activeCourtsCount, highestPriceArs, tenant?.created_at, null, hasPriceConfigured)
 
   // 3. Obtener suscripción del mes corriente
   const now = new Date()
@@ -383,6 +417,7 @@ export async function getAllClubsBillingOverview(): Promise<{
       phone_whatsapp,
       city,
       is_active,
+      created_at,
       courts (id, is_active),
       price_rules (price_cents)
     `)
@@ -407,13 +442,17 @@ export async function getAllClubsBillingOverview(): Promise<{
     const activeCourts = rawCourts.filter(c => c.is_active !== false).length || 2
 
     const rawRules = Array.isArray(t.price_rules) ? t.price_rules : []
-    let maxPriceArs = 30000
+    let maxPriceArs = 0
+    let hasPrice = false
     if (rawRules.length > 0) {
       const maxCents = Math.max(...rawRules.map(r => Number(r.price_cents) || 0))
-      if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
+      if (maxCents > 0) {
+        maxPriceArs = Math.round(maxCents / 100)
+        hasPrice = true
+      }
     }
 
-    const pricing = calculateClubSaaSFee(activeCourts, maxPriceArs)
+    const pricing = calculateClubSaaSFee(activeCourts, maxPriceArs, t.created_at, null, hasPrice)
 
     return {
       tenantId: t.id,
@@ -981,12 +1020,33 @@ export async function confirmAndActivateSubscriptionWithCard(
 
   // 2. Activar el club en la base de datos con serviceClient
   if (tenantId && !tenantId.startsWith('demo-')) {
+    let meta: Record<string, unknown> = {}
+    try {
+      const { data: currentT } = await serviceClient
+        .from('tenants')
+        .select('description')
+        .eq('id', tenantId)
+        .maybeSingle()
+      if (currentT?.description) {
+        meta = JSON.parse(currentT.description)
+      }
+    } catch {}
+
+    meta.card_linked = true
+    meta.card_linked_at = new Date().toISOString()
+    if (cardData?.cardLast4) meta.card_last4 = cardData.cardLast4
+    if (cardData?.cardBrand) meta.card_brand = cardData.cardBrand
+    if (cardData?.cardHolder) meta.card_holder = cardData.cardHolder
+    delete meta.pending_card
+    delete meta.pending_card_onboarding
+
     const { error: tenantErr } = await serviceClient
       .from('tenants')
       .update({
         is_active: true,
         subscription_status: 'ACTIVE',
         payment_methods: ['CARD', 'MERCADO_PAGO'],
+        description: JSON.stringify(meta),
       })
       .eq('id', tenantId)
 
@@ -1000,7 +1060,7 @@ export async function confirmAndActivateSubscriptionWithCard(
       const now = new Date()
       const periodStart = now.toISOString().split('T')[0]
       const periodEnd = summary.nextDueDate || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]
-      const refPriceCents = Math.round((summary.pricing?.highestSlotPriceArs || 30000) * 100)
+      const refPriceCents = Math.round((summary.pricing?.highestSlotPriceArs || 0) * 100)
       const multiplier = summary.pricing?.multiplier || 1.5
 
       const notes = cardData
@@ -1051,6 +1111,7 @@ export async function confirmAndActivateSubscriptionWithCard(
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/plan')
+  revalidatePath('/onboarding/tarjeta')
   revalidatePath('/billing/suspended')
   revalidatePath('/superadmin')
 

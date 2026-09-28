@@ -16,8 +16,6 @@ export interface PlayerWallet {
 // Registro dinámico de saldo a favor de jugadores (generado por cancelaciones reales o recargas)
 const ACTIVE_WALLETS: Record<string, PlayerWallet> = {}
 
-
-
 export async function getPlayerWalletBalance(rawPhone: string): Promise<PlayerWallet> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')
   const wallet = ACTIVE_WALLETS[cleanPhone]

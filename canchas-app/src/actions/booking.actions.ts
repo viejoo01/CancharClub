@@ -158,11 +158,13 @@ export async function initiateOnlineCheckout(
 
     const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
 
-    let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' = 'PADEL'
+    let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL11' | 'TENIS' = 'PADEL'
     if (effectiveCourtId) {
       const { data: courtRow } = await supabase.from('courts').select('sport').eq('id', effectiveCourtId).maybeSingle()
       if (courtRow?.sport) {
-        sportEnum = courtRow.sport as 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS'
+        sportEnum = courtRow.sport as 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL11' | 'TENIS'
+      } else if (payload.court_name?.toLowerCase().includes('11')) {
+        sportEnum = 'FUTBOL11'
       } else if (payload.court_name?.toLowerCase().includes('7')) {
         sportEnum = 'FUTBOL7'
       } else if (payload.court_name?.toLowerCase().includes('fútbol') || payload.court_name?.toLowerCase().includes('futbol') || payload.internal_notes?.toLowerCase().includes('futbol')) {
@@ -1128,4 +1130,281 @@ export async function lookupPlayerBookings(query: {
     return { success: false, error: 'Ocurrió un error al consultar las reservas.' }
   }
 }
+
+// ─── CONSULTA SEGURA DE COMPROBANTE PÚBLICO (MEJORA 7) ─────────────────────────
+
+export interface PublicBookingReceipt {
+  id: string
+  shortCode: string
+  clubName: string
+  clubSlug: string
+  clubPhone: string
+  clubAddress: string
+  courtName: string
+  sport: string
+  date: string
+  dateFormatted: string
+  time: string
+  customerName: string
+  totalAmount: number
+  depositAmount: number
+  balanceRemaining: number
+  paymentMethod: string
+  bankAlias?: string
+  status: string
+}
+
+export async function getBookingPublicReceipt(bookingId: string): Promise<{ success: boolean; data?: PublicBookingReceipt; error?: string }> {
+  try {
+    const cleanId = (bookingId || '').trim()
+    if (!cleanId) return { success: false, error: 'Identificador de reserva no proporcionado.' }
+
+    const supabase = await createServiceClient()
+
+    // 1. Consultar en base de datos Postgres
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let dbQuery: any = supabase
+      .from('bookings')
+      .select(`
+        id,
+        court_id,
+        customer_name,
+        customer_phone,
+        customer_email,
+        booked_at,
+        status,
+        price_total_cents,
+        deposit_cents,
+        payment_method,
+        created_at,
+        courts (
+          id,
+          name,
+          sport
+        ),
+        tenants (
+          id,
+          name,
+          address,
+          city,
+          phone_whatsapp,
+          slug,
+          bank_alias,
+          bank_name
+        )
+      `)
+
+    if (isValidUuid(cleanId)) {
+      dbQuery = dbQuery.eq('id', cleanId)
+    } else {
+      dbQuery = dbQuery.ilike('id', `%${cleanId}%`)
+    }
+
+    const { data: records, error } = await dbQuery.limit(1).maybeSingle()
+
+    if (!error && records) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = records as Record<string, any>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tenant = (Array.isArray(b.tenants) ? b.tenants[0] : b.tenants) as Record<string, any> | null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) as Record<string, any> | null
+
+      const total = (Number(b.price_total_cents) || 0) / 100
+      const deposit = (Number(b.deposit_cents) || 0) / 100
+      const rawId = String(b.id || '')
+      const shortCode = rawId.slice(-6).toUpperCase()
+
+      let dateIso = new Date().toISOString().split('T')[0]
+      let dateFormatted = 'Fecha confirmada'
+      let timeFormatted = '19:00'
+
+      if (b.booked_at) {
+        const match = String(b.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match) {
+          const startsAt = match[1]
+          try {
+            const d = new Date(startsAt.includes(' ') ? startsAt.replace(' ', 'T') : startsAt)
+            if (!isNaN(d.getTime())) {
+              dateIso = d.toISOString().split('T')[0]
+              dateFormatted = d.toLocaleDateString('es-AR', {
+                timeZone: 'America/Argentina/Buenos_Aires',
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long'
+              })
+              timeFormatted = d.toLocaleTimeString('es-AR', {
+                timeZone: 'America/Argentina/Buenos_Aires',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+              })
+            }
+          } catch {}
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          id: rawId,
+          shortCode,
+          clubName: String(tenant?.name || 'Club Deportivo'),
+          clubSlug: String(tenant?.slug || ''),
+          clubPhone: String(tenant?.phone_whatsapp || ''),
+          clubAddress: `${tenant?.address || 'Dirección registrada'}${tenant?.city ? `, ${tenant.city}` : ''}`,
+          courtName: String(court?.name || 'Cancha Principal'),
+          sport: String(court?.sport || 'Pádel'),
+          date: dateIso,
+          dateFormatted,
+          time: timeFormatted,
+          customerName: String(b.customer_name || 'Jugador'),
+          totalAmount: total,
+          depositAmount: deposit,
+          balanceRemaining: Math.max(0, total - deposit),
+          paymentMethod: String(b.payment_method || 'TRANSFER'),
+          bankAlias: tenant?.bank_alias || undefined,
+          status: String(b.status || 'CONFIRMED')
+        }
+      }
+    }
+
+    // 2. Fallback a venues si es un demo booking
+    const today = new Date().toISOString().split('T')[0]
+    const venueBookings = [
+      ...getVenueBookings('venue-main', today),
+      ...getVenueBookings('padel-norte', today)
+    ]
+    const foundVenue = venueBookings.find(vb => 
+      vb.id === cleanId || vb.id.toUpperCase().endsWith(cleanId.toUpperCase())
+    )
+
+    if (foundVenue) {
+      const rawId = foundVenue.id
+      const shortCode = rawId.slice(-6).toUpperCase()
+      const total = foundVenue.total_amount_ars || 14000
+      const deposit = foundVenue.deposit_amount_ars || 7000
+      const courtName = Array.isArray(foundVenue.courts) 
+        ? foundVenue.courts[0]?.name || 'Cancha 1'
+        : foundVenue.courts?.name || 'Cancha 1'
+
+      return {
+        success: true,
+        data: {
+          id: rawId,
+          shortCode,
+          clubName: 'Padel Norte Club',
+          clubSlug: 'padel-norte',
+          clubPhone: '+5493814112233',
+          clubAddress: 'Av. Aconquija 2100, Yerba Buena',
+          courtName,
+          sport: 'Pádel',
+          date: foundVenue.starts_at ? foundVenue.starts_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          dateFormatted: foundVenue.starts_at ? new Date(foundVenue.starts_at).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Hoy',
+          time: foundVenue.starts_at ? foundVenue.starts_at.substring(11, 16) : '19:00',
+          customerName: foundVenue.customer_name || 'Jugador',
+          totalAmount: total,
+          depositAmount: deposit,
+          balanceRemaining: Math.max(0, total - deposit),
+          paymentMethod: 'TRANSFER',
+          bankAlias: 'PADEL.NORTE.MP',
+          status: foundVenue.status || 'CONFIRMED'
+        }
+      }
+    }
+
+    return { success: false, error: 'No encontramos el comprobante de esta reserva en el sistema.' }
+  } catch (err) {
+    console.error('[getBookingPublicReceipt] Error:', err)
+    return { success: false, error: 'Ocurrió un error al obtener los datos del comprobante.' }
+  }
+}
+
+// ─── CANCELACIÓN DE RESERVA POR EL JUGADOR (MEJORA 12) ─────────────────────────
+
+export async function cancelBookingByPlayer(
+  bookingId: string, 
+  playerIdentifier: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const cleanId = (bookingId || '').trim()
+    const cleanPlayer = (playerIdentifier || '').trim().toLowerCase()
+
+    if (!cleanId) return { success: false, error: 'ID de reserva inválido.' }
+
+    const supabase = await createServiceClient()
+
+    // 1. Obtener la reserva actual
+    const { data: booking, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, court_id, tenant_id, customer_email, customer_phone, booked_at, status')
+      .eq('id', cleanId)
+      .maybeSingle()
+
+    if (fetchErr || !booking) {
+      return { success: false, error: 'No se encontró la reserva solicitada.' }
+    }
+
+    if (booking.status?.toLowerCase().includes('cancel')) {
+      return { success: false, error: 'Esta reserva ya fue cancelada previamente.' }
+    }
+
+    // 2. Verificar que pertenezca al jugador si se provee identificador
+    if (cleanPlayer) {
+      const emailMatches = booking.customer_email?.toLowerCase().includes(cleanPlayer)
+      const phoneMatches = booking.customer_phone?.replace(/\D/g, '').includes(cleanPlayer.replace(/\D/g, ''))
+      if (!emailMatches && !phoneMatches) {
+        return { success: false, error: 'Los datos de verificación no coinciden con el titular de la reserva.' }
+      }
+    }
+
+    // 3. Actualizar estado a CANCELLED_USER
+    const { error: updateErr } = await supabase
+      .from('bookings')
+      .update({
+        status: 'CANCELLED_USER',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', cleanId)
+
+    if (updateErr) {
+      return { success: false, error: 'No se pudo cancelar la reserva en este momento.' }
+    }
+
+    // 4. Liberar waitlist si hay interesados
+    try {
+      if (booking.tenant_id && booking.booked_at) {
+        let date = ''
+        let timeSlot = ''
+        const match = String(booking.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match) {
+          const s = match[1]
+          date = s.slice(0, 10)
+          timeSlot = s.substring(11, 16)
+        }
+        if (date && timeSlot) {
+          await processWaitlistOnCancellation({
+            tenantId: booking.tenant_id,
+            date,
+            timeSlot
+          })
+        }
+      }
+    } catch (waitlistErr) {
+      console.warn('[cancelBookingByPlayer] Waitlist error:', waitlistErr)
+    }
+
+    revalidatePath('/mis-reservas')
+    revalidatePath('/dashboard')
+
+    return { 
+      success: true, 
+      message: 'Tu reserva fue cancelada con éxito. El horario quedó disponible para otros jugadores.' 
+    }
+  } catch (err) {
+    console.error('[cancelBookingByPlayer] Error:', err)
+    return { success: false, error: 'Ocurrió un error al procesar la cancelación.' }
+  }
+}
+
 

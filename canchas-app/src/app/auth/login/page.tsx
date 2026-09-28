@@ -44,7 +44,6 @@ function LoginForm() {
     setErrorMessage(null)
 
     const cleanEmail = emailPrefix.trim().toLowerCase()
-    const fullEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@club.com`
     const cleanPassword = password.trim()
 
     if (!cleanEmail || !cleanPassword) {
@@ -55,7 +54,7 @@ function LoginForm() {
     setIsLoading(true)
 
     const formData = new FormData()
-    formData.append('email', fullEmail)
+    formData.append('email', cleanEmail)
     formData.append('password', cleanPassword)
 
     try {
@@ -108,10 +107,10 @@ function LoginForm() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
-                Email de administración
+                Email de administración o encargado
               </label>
               <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
-                @club.com
+                {emailPrefix.includes('@encargado.com') ? '@encargado.com' : '@club.com'}
               </span>
             </div>
             <div className="relative flex items-center">
@@ -120,16 +119,18 @@ function LoginForm() {
                 autoFocus
                 value={emailPrefix}
                 onChange={(e) => {
-                  const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '')
+                  const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9._@-]/g, '')
                   setEmailPrefix(cleaned)
                 }}
-                placeholder="tuclub"
+                placeholder="tuclub o usuario"
                 className="w-full h-12 pl-4 pr-28 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all font-mono"
                 required
               />
-              <div className="absolute right-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs select-none border border-indigo-500/20 font-mono pointer-events-none">
-                @club.com
-              </div>
+              {!emailPrefix.includes('@') && (
+                <div className="absolute right-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs select-none border border-indigo-500/20 font-mono pointer-events-none">
+                  @club.com
+                </div>
+              )}
             </div>
           </div>
 

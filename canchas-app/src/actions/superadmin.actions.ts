@@ -82,7 +82,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
       const activeCourts = rawCourts.filter((c) => c.is_active !== false).length || 2
 
       const rawRules = Array.isArray(t.price_rules) ? t.price_rules : []
-      let maxPriceArs = 30000
+      let maxPriceArs = 0
       if (rawRules.length > 0) {
         const maxCents = Math.max(...rawRules.map((r) => Number(r.price_cents) || 0))
         if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)

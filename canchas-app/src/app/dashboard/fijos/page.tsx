@@ -106,7 +106,7 @@ export default function TurnosFijosPage() {
         }
       })
 
-    // Auto-sincronización continua cada 6s y al enfocar la ventana
+    // Auto-sincronización periódica cada 60s y al enfocar la ventana
     const syncFijos = () => {
       if (document.hidden) return
       getRecurringSlots(tenantId).then((data) => {
@@ -116,7 +116,7 @@ export default function TurnosFijosPage() {
       }).catch(() => {})
     }
 
-    const intervalId = setInterval(syncFijos, 6000)
+    const intervalId = setInterval(syncFijos, 60000)
     window.addEventListener('focus', syncFijos)
     document.addEventListener('visibilitychange', syncFijos)
 

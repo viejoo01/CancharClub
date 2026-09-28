@@ -7,9 +7,9 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(keys.map((key) => caches.delete(key)))
-    }).then(() => {
-      return self.registration.unregister()
+      return Promise.all(
+        keys.filter(key => key !== 'canchar-v3').map(key => caches.delete(key))
+      )
     }).then(() => self.clients.claim())
   )
 })

@@ -29,6 +29,7 @@ export interface CourtDefinition {
   id: string
   name: string
   sport: SportCategory
+  specificSport?: string
   features: string[]
   pricePerHour: number
   depositPercentage: number // e.g. 0.5 for 50%
@@ -274,6 +275,7 @@ export interface ClubData {
   exactAddress?: string
   addressReference?: string
   googleMapsUrl?: string
+  coords?: { lat: number; lon: number } | null
   phone: string
   whatsappPhone: string
   sports: SportCategory[]
@@ -314,6 +316,7 @@ export interface GeneratedSlot {
   courtId: string
   courtName: string
   sport: SportCategory
+  specificSport?: string
   totalPrice: number
   depositPrice: number
   isAvailable: boolean
@@ -467,6 +470,7 @@ export function generateClubSlots(
         courtId: court.id,
         courtName: court.name,
         sport: normalizeToSportCategory(court.sport),
+        specificSport: court.specificSport || court.sport,
         totalPrice,
         depositPrice,
         isAvailable: true,

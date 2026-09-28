@@ -130,6 +130,13 @@ export default function ClubPublicPage({
   const urlSport = searchParams.get('sport')?.toUpperCase() as SportCategory | null
 
   const [userSelectedSport, setUserSelectedSport] = useState<SportCategory | null>(null)
+  const [selectedFootballFormat, setSelectedFootballFormat] = useState<'ALL' | 'FUTBOL11' | 'FUTBOL7' | 'FUTBOL5'>(() => {
+    const f = (searchParams.get('format') || searchParams.get('sport') || '').toUpperCase()
+    if (f.includes('11')) return 'FUTBOL11'
+    if (f.includes('7')) return 'FUTBOL7'
+    if (f.includes('5')) return 'FUTBOL5'
+    return 'ALL'
+  })
 
   // Deporte activo: si el usuario lo cambió manualmente lo usamos, de lo contrario usamos el del query param o el principal del club
   const selectedSport: SportCategory = useMemo(() => {
@@ -272,6 +279,15 @@ export default function ClubPublicPage({
         }
 
         if (selectedCourtFilter !== 'ALL' && slot.courtId !== selectedCourtFilter) return false
+
+        if (selectedSport === 'FUTBOL' && selectedFootballFormat !== 'ALL') {
+          const matchCourt = club.courts.find(c => c.id === slot.courtId)
+          const s = (slot.specificSport || matchCourt?.specificSport || slot.sport || '').toUpperCase()
+          const f = (slot.features || []).join(' ').toLowerCase()
+          if (selectedFootballFormat === 'FUTBOL11' && !(s.includes('11') || f.includes('11'))) return false
+          if (selectedFootballFormat === 'FUTBOL7' && !(s.includes('7') || f.includes('7'))) return false
+          if (selectedFootballFormat === 'FUTBOL5' && !(s.includes('5') || f.includes('5'))) return false
+        }
         
         const hour = parseInt(slot.time.split(':')[0], 10)
         if (timeFilter === 'MAÑANA' && hour >= 14) return false
@@ -291,14 +307,49 @@ export default function ClubPublicPage({
           isAvailable: !isOccupied
         }
       })
-  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots])
+  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots, selectedSport, selectedFootballFormat, club.courts])
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 
   // Obtener lista única de canchas del club para el deporte actual
   const courtsList = useMemo(() => {
-    return club.courts.filter(c => normalizeToSportCategory(c.sport) === selectedSport)
-  }, [club.courts, selectedSport])
+    let list = club.courts.filter(c => normalizeToSportCategory(c.sport) === selectedSport)
+    if (selectedSport === 'FUTBOL' && selectedFootballFormat !== 'ALL') {
+      list = list.filter(c => {
+        const s = (c.specificSport || c.sport || '').toUpperCase()
+        const f = (c.features || []).join(' ').toLowerCase()
+        if (selectedFootballFormat === 'FUTBOL11') return s.includes('11') || f.includes('11')
+        if (selectedFootballFormat === 'FUTBOL7') return s.includes('7') || f.includes('7')
+        if (selectedFootballFormat === 'FUTBOL5') return s.includes('5') || f.includes('5')
+        return true
+      })
+    }
+    return list
+  }, [club.courts, selectedSport, selectedFootballFormat])
+
+  const hasF11 = useMemo(() => {
+    return club.courts.some(c => {
+      const s = (c.specificSport || c.sport || '').toUpperCase()
+      const f = (c.features || []).join(' ').toLowerCase()
+      return s.includes('11') || f.includes('11')
+    })
+  }, [club.courts])
+
+  const hasF7 = useMemo(() => {
+    return club.courts.some(c => {
+      const s = (c.specificSport || c.sport || '').toUpperCase()
+      const f = (c.features || []).join(' ').toLowerCase()
+      return s.includes('7') || f.includes('7')
+    })
+  }, [club.courts])
+
+  const hasF5 = useMemo(() => {
+    return club.courts.some(c => {
+      const s = (c.specificSport || c.sport || '').toUpperCase()
+      const f = (c.features || []).join(' ').toLowerCase()
+      return s.includes('5') || f.includes('5')
+    })
+  }, [club.courts])
 
   // Estado para copiar la dirección al portapapeles
   const [copiedAddress, setCopiedAddress] = useState(false)
@@ -823,6 +874,74 @@ export default function ClubPublicPage({
             </button>
           </div>
 
+          {/* Modalidad de Fútbol si corresponde */}
+          {selectedSport === 'FUTBOL' && (hasF11 || hasF7 || hasF5) && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum mt-2 pb-0.5">
+              <span className="text-[10px] text-slate-400 font-semibold mr-0.5 shrink-0">Modalidad:</span>
+              <button
+                onClick={() => {
+                  setSelectedFootballFormat('ALL')
+                  setSelectedCourtFilter('ALL')
+                }}
+                className={`px-2.5 py-1 min-h-8 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                  selectedFootballFormat === 'ALL'
+                    ? 'bg-slate-800 text-white border border-slate-700'
+                    : 'bg-slate-950 border border-slate-800 text-slate-400'
+                }`}
+              >
+                Todas
+              </button>
+              {hasF11 && (
+                <button
+                  onClick={() => {
+                    setSelectedFootballFormat('FUTBOL11')
+                    setSelectedCourtFilter('ALL')
+                  }}
+                  className={`px-3 py-1 min-h-8 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1 ${
+                    selectedFootballFormat === 'FUTBOL11'
+                      ? 'bg-emerald-600 border border-emerald-500 text-white shadow-sm'
+                      : 'bg-slate-950 border border-slate-800 text-emerald-400 hover:border-emerald-600/50'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 11</span>
+                </button>
+              )}
+              {hasF7 && (
+                <button
+                  onClick={() => {
+                    setSelectedFootballFormat('FUTBOL7')
+                    setSelectedCourtFilter('ALL')
+                  }}
+                  className={`px-3 py-1 min-h-8 rounded-lg text-xs font-medium shrink-0 transition-all flex items-center gap-1 ${
+                    selectedFootballFormat === 'FUTBOL7'
+                      ? 'bg-emerald-600 border border-emerald-500 text-white shadow-sm'
+                      : 'bg-slate-950 border border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 7</span>
+                </button>
+              )}
+              {hasF5 && (
+                <button
+                  onClick={() => {
+                    setSelectedFootballFormat('FUTBOL5')
+                    setSelectedCourtFilter('ALL')
+                  }}
+                  className={`px-3 py-1 min-h-8 rounded-lg text-xs font-medium shrink-0 transition-all flex items-center gap-1 ${
+                    selectedFootballFormat === 'FUTBOL5'
+                      ? 'bg-emerald-600 border border-emerald-500 text-white shadow-sm'
+                      : 'bg-slate-950 border border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 5</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Filtro por Cancha si hay más de una */}
           {courtsList.length > 1 && (
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum mt-2 pb-0.5">
@@ -837,19 +956,25 @@ export default function ClubPublicPage({
               >
                 Todas
               </button>
-              {courtsList.map((court) => (
-                <button
-                  key={court.id}
-                  onClick={() => setSelectedCourtFilter(court.id)}
-                  className={`px-3 py-1.5 min-h-9 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
-                    selectedCourtFilter === court.id
-                      ? 'bg-emerald-500/20 border border-emerald-500 text-emerald-300'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400'
-                  }`}
-                >
-                  {court.name}
-                </button>
-              ))}
+              {courtsList.map((court) => {
+                const s = (court.specificSport || court.sport || '').toUpperCase()
+                const f = (court.features || []).join(' ').toLowerCase()
+                const badge = s.includes('11') || f.includes('11') ? ' • F11' : s.includes('7') || f.includes('7') ? ' • F7' : s.includes('5') || f.includes('5') ? ' • F5' : ''
+                return (
+                  <button
+                    key={court.id}
+                    onClick={() => setSelectedCourtFilter(court.id)}
+                    className={`px-3 py-1.5 min-h-9 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                      selectedCourtFilter === court.id
+                        ? 'bg-emerald-500/20 border border-emerald-500 text-emerald-300'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span>{court.name}</span>
+                    {badge && <span className="text-[10px] text-emerald-400 font-bold ml-1">{badge}</span>}
+                  </button>
+                )
+              })}
             </div>
           )}
         </section>
@@ -975,7 +1100,7 @@ export default function ClubPublicPage({
                     <div className="shrink-0">
                       {slot.isAvailable ? (
                         <Link
-                          href={`/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${slot.sport}&club=${encodeURIComponent(club.name)}`}
+                          href={`/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`}
                         >
                           <Button
                             size="sm"

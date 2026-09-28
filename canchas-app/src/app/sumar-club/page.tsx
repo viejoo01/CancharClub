@@ -7,7 +7,16 @@ import {
   MessageCircle,
   Mail,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  CloudRain,
+  Users,
+  Zap,
+  Coffee,
+  Receipt,
+  CalendarDays,
+  ShieldCheck,
+  BarChart3,
+  Smartphone
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
@@ -203,6 +212,129 @@ export default function SumarClubLandingPage() {
               </h3>
               <p className="text-sm sm:text-base text-slate-400 leading-relaxed font-normal">
                 Los jugadores ven tu disponibilidad en tiempo real y reservan sin llamar.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Línea divisoria suave */}
+      <div className="w-full max-w-4xl mx-auto border-t border-slate-800/80" />
+
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* SECCIÓN: TODAS LAS MEJORAS Y TECNOLOGÍA INCLUIDA                      */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <section className="w-full py-16 sm:py-24 px-4 sm:px-6 flex flex-col items-center">
+        <div className="max-w-5xl mx-auto w-full text-center">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-4">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Tecnología pensada para complejos deportivos</span>
+          </div>
+
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-100">
+            Todo lo que tu complejo necesita en un solo lugar
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            Plataforma 100% integral y automatizada. Menos tiempo atendiendo mensajes, más recaudación garantizada.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-12 text-left">
+            {/* 1. Mercado Pago */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Señas automáticas con Mercado Pago</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Cero clavadas y turnos vacíos. La seña ingresa directo a tu cuenta de Mercado Pago en tiempo real.
+              </p>
+            </div>
+
+            {/* 2. Protocolo Climático */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                <CloudRain className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Protocolo climático inteligente</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                ¿Llovió o hay temporal? Cancelá turnos en 1 clic y acreditá automáticamente saldo a favor al jugador con aviso por WhatsApp.
+              </p>
+            </div>
+
+            {/* 3. Lista de Espera */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Users className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Lista de espera automática</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Si se libera un turno pico, el sistema notifica de inmediato al primer jugador anotado con 10 min de prioridad para reservar.
+              </p>
+            </div>
+
+            {/* 4. Control de Luces */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-400">
+                <Zap className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Control de iluminación IoT</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Encendido y apagado de reflectores sincronizado al minuto con la grilla de turnos. Ahorrá energía y evitá descuidos.
+              </p>
+            </div>
+
+            {/* 5. Cantina POS */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400">
+                <Coffee className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Cantina, kiosco y alquileres</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Punto de venta para bebidas, comida, pelotas y alquiler de paletas. Control de stock y caja unificada de mostrador.
+              </p>
+            </div>
+
+            {/* 6. Turnos Fijos */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <CalendarDays className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Turnos fijos y abonados</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Asegurá recaudación mensual fija. Gestión de clientes semanales, cobros recurrentes y liberación de fechas anticipadas.
+              </p>
+            </div>
+
+            {/* 7. Facturación AFIP */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Facturación electrónica AFIP / ARCA</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Emisión de comprobantes oficiales (Factura C y consumidor final) con CAE al instante desde el mismo panel de cobros.
+              </p>
+            </div>
+
+            {/* 8. Métricas */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Métricas y reportes en tiempo real</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Tasa de ocupación por cancha y horario, facturación comparativa, clientes frecuentes y alertas de rendimiento.
+              </p>
+            </div>
+
+            {/* 9. PWA */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">App Web PWA instalable</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Tus jugadores y vos pueden instalar CancharClub en Android y iPhone directamente sin pasar por Play Store o App Store.
               </p>
             </div>
           </div>

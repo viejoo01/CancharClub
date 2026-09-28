@@ -128,11 +128,27 @@ export default function LucesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs py-1 px-3 flex items-center gap-1.5">
+          <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs py-1 px-3 flex items-center gap-1.5">
             <Wifi className="w-3.5 h-3.5" />
-            <span>Relés Conectados (Shelly / Sonoff)</span>
+            <span>Hardware IoT en Integración (Fase Beta)</span>
           </Badge>
         </div>
+      </div>
+
+      {/* Banner Informativo de Vinculación de Hardware (Mejora 2) */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-start sm:items-center gap-2.5">
+          <Zap className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+          <div>
+            <p className="font-bold text-amber-300">Modo de Demostración & Integración de Relés</p>
+            <p className="text-[11px] text-amber-200/80 mt-0.5">
+              Para accionar los reflectores físicos de tu complejo deportivo, se requiere vincular dispositivos relé Wi-Fi compatibles (Shelly Pro 4PM o Sonoff 4CH Pro R3) a la red local de las canchas.
+            </p>
+          </div>
+        </div>
+        <span className="text-[10px] font-mono uppercase bg-amber-950/80 border border-amber-500/30 text-amber-300 px-2.5 py-1 rounded-lg shrink-0">
+          Simulación activa
+        </span>
       </div>
 
       {/* KPI Cards de Ahorro y Eficiencia */}

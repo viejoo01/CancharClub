@@ -117,11 +117,11 @@ export default function TorneosDashboardPage() {
     }
     void run()
 
-    // Sondeo continuo cada 6 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (torneos no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void loadTournaments(false)
-    }, 6000)
+    }, 60000)
 
     const handleSync = () => void loadTournaments(false)
     window.addEventListener('focus', handleSync)

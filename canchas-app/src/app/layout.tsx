@@ -100,17 +100,10 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                  for (var i = 0; i < registrations.length; i++) {
-                    registrations[i].unregister();
-                  }
-                });
-              }
-              if ('caches' in window) {
-                caches.keys().then(function(keys) {
-                  keys.forEach(function(key) {
-                    caches.delete(key);
+              if (typeof window !== 'undefined' && 'serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                    console.warn('[SW] Falló registro:', err);
                   });
                 });
               }
@@ -122,6 +115,7 @@ export default function RootLayout({
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
+          storageKey="canchar_theme"
           enableSystem
           disableTransitionOnChange
         >

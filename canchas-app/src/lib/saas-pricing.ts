@@ -27,6 +27,7 @@ export interface ClubSaaSPricing {
   nextDueDate: string
   planId?: string
   planName?: string
+  hasPriceConfigured?: boolean
 }
 
 /**
@@ -105,12 +106,16 @@ export function calculateClubSaaSFee(
   courtsCount: number,
   highestSlotPriceArs: number,
   createdAt?: string | Date | null,
-  trialEndsAt?: string | Date | null
+  trialEndsAt?: string | Date | null,
+  hasPriceConfigured?: boolean
 ): ClubSaaSPricing {
   const safeCourts = Math.max(1, courtsCount)
-  const safePrice = Math.max(0, highestSlotPriceArs)
+  const isConfigured = hasPriceConfigured !== undefined 
+    ? hasPriceConfigured 
+    : highestSlotPriceArs > 0
+  const safePrice = isConfigured ? Math.max(0, highestSlotPriceArs) : 0
   const multiplier = calculateSaaSMultiplier(safeCourts)
-  const monthlyFeeArs = Math.round(safePrice * multiplier)
+  const monthlyFeeArs = isConfigured ? Math.round(safePrice * multiplier) : 0
   const plan = getPlanByCourtsCount(safeCourts)
   const nextDueDate = computeNextDueDate(createdAt, trialEndsAt)
 
@@ -119,12 +124,15 @@ export function calculateClubSaaSFee(
     highestSlotPriceArs: safePrice,
     multiplier,
     monthlyFeeArs,
-    formulaDescription: safeCourts >= 5 
-      ? `3 turnos de $${safePrice.toLocaleString('es-AR')} (Tope máximo garantizado para ${safeCourts} canchas)`
-      : `${multiplier} turno${multiplier > 1 ? 's' : ''} de $${safePrice.toLocaleString('es-AR')} (${safeCourts} cancha${safeCourts > 1 ? 's' : ''})`,
+    formulaDescription: isConfigured
+      ? (safeCourts >= 5 
+          ? `3 turnos de $${safePrice.toLocaleString('es-AR')} (Tope máximo garantizado para ${safeCourts} canchas)`
+          : `${multiplier} turno${multiplier > 1 ? 's' : ''} de $${safePrice.toLocaleString('es-AR')} (${safeCourts} cancha${safeCourts > 1 ? 's' : ''})`)
+      : 'Esperando carga de precios',
     nextDueDate,
     planId: plan.id,
     planName: plan.name,
+    hasPriceConfigured: isConfigured,
   }
 }
 

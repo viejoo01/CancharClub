@@ -847,7 +847,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     const createdOwner: ClubUser = {
       id: `u-${Date.now()}-1`,
       name: wizardOwnerName.trim(),
-      email: wizardOwnerEmail.trim().toLowerCase(),
+      email: wizardOwnerEmail.trim().toLowerCase() || `${createdTenant.slug}@club.com`,
       phone: wizardOwnerPhone.trim() || '+54 9 381 555-0001',
       role: 'TENANT_ADMIN',
       tenantId: newTenantId,
@@ -859,7 +859,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
     }
 
     const staffName = wizardStaffName.trim() || `Encargado ${createdTenant.name}`
-    const staffEmail = wizardStaffEmail.trim().toLowerCase() || `encargado@${createdTenant.slug}.com`
+    const staffEmail = wizardStaffEmail.trim().toLowerCase() || `${createdTenant.slug}@encargado.com`
     const createdStaff: ClubUser = {
       id: `u-${Date.now()}-2`,
       name: staffName,
@@ -3187,7 +3187,19 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     required
                     placeholder="Ej. Smash Padel Club"
                     value={wizardClubName}
-                    onChange={(e) => setWizardClubName(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setWizardClubName(val)
+                      const slug = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '')
+                      if (slug) {
+                        if (!wizardOwnerEmail || wizardOwnerEmail.endsWith('@club.com')) {
+                          setWizardOwnerEmail(`${slug}@club.com`)
+                        }
+                        if (!wizardStaffEmail || wizardStaffEmail.endsWith('@encargado.com')) {
+                          setWizardStaffEmail(`${slug}@encargado.com`)
+                        }
+                      }
+                    }}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs"
                   />
                 </div>
@@ -3294,7 +3306,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Input 
                     type="email"
                     required
-                    placeholder="carlos@miclub.com"
+                    placeholder="dueno@club.com"
                     value={wizardOwnerEmail}
                     onChange={(e) => setWizardOwnerEmail(e.target.value)}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
@@ -3357,7 +3369,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Input 
                     type="email"
                     required
-                    placeholder="mostrador@miclub.com"
+                    placeholder="encargado@encargado.com"
                     value={wizardStaffEmail}
                     onChange={(e) => setWizardStaffEmail(e.target.value)}
                     className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"

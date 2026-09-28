@@ -129,8 +129,9 @@ export function VenueSwitcher({
       if (data && !error) {
         const uniqueSports = Array.from(new Set(data.map(c => c.sport).filter(Boolean)))
         const formatted = uniqueSports.map(s => {
-          if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
+          if (s === 'FUTBOL11' || s === 'FUTBOL_11') return 'Fútbol 11'
           if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Fútbol 7'
+          if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
           if (s === 'PADEL') return 'Pádel'
           if (s === 'TENIS') return 'Tenis'
           if (s === 'BASQUET' || s === 'BASKET') return 'Básquet'

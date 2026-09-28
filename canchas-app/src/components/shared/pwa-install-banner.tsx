@@ -14,22 +14,6 @@ export function PwaInstallBanner() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
-    // Purgar cachés obsoletas y desregistrar service workers para garantizar bundles frescos
-    if ('serviceWorker' in navigator && typeof window !== 'undefined') {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister()
-        }
-      })
-      if ('caches' in window) {
-        caches.keys().then((names) => {
-          for (const name of names) {
-            caches.delete(name)
-          }
-        })
-      }
-    }
-
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)

@@ -32,18 +32,32 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
         const supabase = await createServiceClient()
         const { data } = await supabase
           .from('tenants')
-          .select('name, bank_cuit, address')
+          .select('name, bank_cuit, address, description')
           .eq('id', targetTenantId)
           .maybeSingle()
         if (data) {
+          let afipMeta: Record<string, unknown> = {}
+          try {
+            if (data.description) {
+              const parsed = JSON.parse(data.description)
+              if (parsed.afip && typeof parsed.afip === 'object') {
+                afipMeta = parsed.afip as Record<string, unknown>
+              }
+            }
+          } catch {}
+
+          const rawCuit = (afipMeta.cuit as string) || data.bank_cuit || ''
+          const isBogusCuit = rawCuit.replace(/\D/g, '') === '20381456789'
+          const cleanCuit = isBogusCuit ? '' : rawCuit
+
           return {
-            cuit: data.bank_cuit || '',
-            puntoVenta: 1,
-            razonSocial: data.name || 'Mi Club Deportivo',
-            condicionIva: 'MONOTRIBUTO',
-            domicilioComercial: data.address || '',
-            inicioActividades: new Date().toISOString().split('T')[0],
-            ingresosBrutos: '',
+            cuit: cleanCuit,
+            puntoVenta: typeof afipMeta.puntoVenta === 'number' ? afipMeta.puntoVenta : 1,
+            razonSocial: (afipMeta.razonSocial as string) || data.name || '',
+            condicionIva: (afipMeta.condicionIva as 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO') || 'MONOTRIBUTO',
+            domicilioComercial: (afipMeta.domicilioComercial as string) || data.address || '',
+            inicioActividades: (afipMeta.inicioActividades as string) || new Date().toISOString().split('T')[0],
+            ingresosBrutos: (afipMeta.ingresosBrutos as string) || '',
             environment: 'TESTING'
           }
         }
@@ -56,7 +70,7 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
   return {
     cuit: '',
     puntoVenta: 1,
-    razonSocial: 'Mi Club Deportivo',
+    razonSocial: '',
     condicionIva: 'MONOTRIBUTO',
     domicilioComercial: '',
     inicioActividades: new Date().toISOString().split('T')[0],
@@ -81,9 +95,39 @@ export async function saveAfipConfig(
     }
 
     const supabase = await createServiceClient()
+
+    // Obtener metadatos previos para no pisar otras configuraciones
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let prevMeta: Record<string, unknown> = {}
+    try {
+      if (tenant?.description) {
+        prevMeta = JSON.parse(tenant.description)
+      }
+    } catch {}
+
+    const cleanCuit = config.cuit?.trim() || null
+    const updatedMeta = {
+      ...prevMeta,
+      afip: {
+        cuit: cleanCuit,
+        puntoVenta: config.puntoVenta || 1,
+        razonSocial: config.razonSocial?.trim() || null,
+        condicionIva: config.condicionIva || 'MONOTRIBUTO',
+        domicilioComercial: config.domicilioComercial?.trim() || null,
+        inicioActividades: config.inicioActividades || null,
+        ingresosBrutos: config.ingresosBrutos || null,
+      }
+    }
+
     const { error } = await supabase.from('tenants').update({ 
-      bank_cuit: config.cuit || null,
-      address: config.domicilioComercial || null,
+      bank_cuit: cleanCuit,
+      address: config.domicilioComercial?.trim() || null,
+      description: JSON.stringify(updatedMeta),
       updated_at: new Date().toISOString() 
     }).eq('id', targetTenantId)
 
@@ -112,6 +156,13 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
     }
 
     const config = await getAfipConfig(params.tenantId)
+    if (!config.cuit || !config.cuit.trim()) {
+      return { 
+        success: false, 
+        error: 'Debés configurar tu CUIT emisor de AFIP antes de emitir comprobantes.' 
+      }
+    }
+
     const result = await emitElectronicInvoice(config, params)
 
     if (result.success && result.cae && result.comprobanteNumero) {

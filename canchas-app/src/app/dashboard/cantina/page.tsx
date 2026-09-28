@@ -506,15 +506,21 @@ export default function CantinaPage() {
       console.warn('Supabase Realtime fallback:', realtimeErr)
     }
 
-    // Polling inteligente de bajo consumo: cada 3.5s cuando la pestaña está visible
+    // Polling de respaldo: solo cada 30s (Supabase Realtime ya maneja actualizaciones en vivo)
+    let lastLoadTime = Date.now()
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       loadOrders(false)
-    }, 3500)
+      lastLoadTime = Date.now()
+    }, 30000)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
-        loadOrders(false)
+        // Recargar solo si pasaron mas de 30s desde la ultima carga
+        if (Date.now() - lastLoadTime > 30000) {
+          loadOrders(false)
+          lastLoadTime = Date.now()
+        }
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)

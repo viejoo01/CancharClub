@@ -72,11 +72,11 @@ export default function EquipoPage() {
     }
     void run()
 
-    // Sondeo continuo cada 6 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (el equipo no cambia en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void loadStaff(false)
-    }, 6000)
+    }, 60000)
 
     const handleSync = () => void loadStaff(false)
     window.addEventListener('focus', handleSync)

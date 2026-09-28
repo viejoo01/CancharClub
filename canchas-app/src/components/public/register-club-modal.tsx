@@ -38,8 +38,7 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
   const currentPlanId = selectedPlanOverride || selectedPlanId
   const [clubName, setClubName] = useState('')
   const [city, setCity] = useState('San Miguel de Tucumán')
-  const [emailUserPart, setEmailUserPart] = useState('')
-  const [hasManuallyEditedEmail, setHasManuallyEditedEmail] = useState(false)
+  const [emailPrefix, setEmailPrefix] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [selectedSports, setSelectedSports] = useState<string[]>([])
@@ -48,14 +47,12 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
 
   const handleClubNameChange = (val: string) => {
     setClubName(val)
-    if (!hasManuallyEditedEmail) {
-      const suggested = val
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9._-]/g, '')
-      setEmailUserPart(suggested)
-    }
+    const slug = val
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+    setEmailPrefix(slug)
   }
 
   const activePlanDef = SAAS_PLANS[currentPlanId] || SAAS_PLANS.MEDIANO_2
@@ -72,11 +69,13 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
     e.preventDefault()
     setErrorMessage(null)
 
-    const cleanUserPart = emailUserPart.trim()
-    if (!clubName.trim() || !cleanUserPart || !password.trim()) {
+    const cleanPrefix = emailPrefix.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '')
+    if (!clubName.trim() || !cleanPrefix || !password.trim()) {
       setErrorMessage('Por favor completá todos los campos requeridos.')
       return
     }
+
+    const fullEmail = `${cleanPrefix}@club.com`
 
     if (selectedSports.length === 0) {
       setErrorMessage('Por favor seleccioná al menos un deporte para tu complejo.')
@@ -85,12 +84,10 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
 
     setIsLoading(true)
 
-    const finalEmail = cleanUserPart.includes('@') ? cleanUserPart : `${cleanUserPart}@club.com`
-
     const formData = new FormData()
     formData.append('clubName', clubName)
     formData.append('city', city)
-    formData.append('email', finalEmail)
+    formData.append('email', fullEmail)
     formData.append('phone', phone)
     formData.append('password', password)
     formData.append('sports', JSON.stringify(selectedSports))
@@ -103,11 +100,11 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
         setIsLoading(false)
       } else {
         toast.success('¡Club registrado exitosamente!')
-        router.push('/dashboard')
+        router.push('/onboarding/tarjeta')
       }
     } catch {
       // Redirección de Next.js
-      router.push('/dashboard')
+      router.push('/onboarding/tarjeta')
     }
   }
 
@@ -228,31 +225,33 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  Email de administración (@club.com)
+                  Email Administrativo
                 </label>
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
-                  Único por club
+                  @club.com
                 </span>
               </div>
-              <div className="relative flex items-center">
+              <div className="flex items-center w-full h-11 rounded-xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-transparent transition-all">
                 <input
                   type="text"
-                  value={emailUserPart}
+                  value={emailPrefix}
                   onChange={(e) => {
-                    const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '')
-                    setEmailUserPart(cleaned)
-                    setHasManuallyEditedEmail(true)
+                    const raw = e.target.value.toLowerCase().split('@')[0]
+                    setEmailPrefix(raw.replace(/[^a-z0-9._-]/g, ''))
                   }}
-                  placeholder="nombredeclub"
-                  className="w-full h-11 pl-3.5 pr-28 rounded-xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-mono"
+                  placeholder="nombreclub"
+                  className="flex-1 min-w-0 bg-transparent px-3.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none font-mono lowercase"
                   required
                 />
-                <div className="absolute right-2 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold text-xs select-none border border-emerald-500/20 font-mono">
+                <div className="px-3.5 h-full flex items-center text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-l border-stone-200 dark:border-slate-800 font-mono select-none">
                   @club.com
                 </div>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Tu correo para iniciar sesión será: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{emailUserPart ? `${emailUserPart}@club.com` : 'tuclub@club.com'}</strong>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                <span>Tu email de acceso será:</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-mono font-medium">
+                  {emailPrefix.trim() ? `${emailPrefix.trim()}@club.com` : 'tuclub@club.com'}
+                </span>
               </p>
             </div>
 

@@ -27,11 +27,13 @@ import { getVenueBookings } from '@/config/venues-data'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
-function normalizeSportEnum(sport?: string | null): 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' {
+function normalizeSportEnum(sport?: string | null): 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL11' | 'TENIS' | 'BASQUET' {
   const s = (sport || 'PADEL').toUpperCase().replace(/[\s_-]/g, '')
+  if (s.includes('11')) return 'FUTBOL11'
   if (s.includes('7')) return 'FUTBOL7'
   if (s.includes('FUTBOL') || s.includes('5') || s.includes('SOCCER')) return 'FUTBOL5'
   if (s.includes('TENIS') || s.includes('TENNIS')) return 'TENIS'
+  if (s.includes('BASQUET') || s.includes('BASKET')) return 'BASQUET'
   return 'PADEL'
 }
 
@@ -581,6 +583,8 @@ export async function createPriceRule(payload: {
   }
 
   revalidatePath('/dashboard/precios')
+  revalidatePath('/dashboard/plan')
+  revalidatePath('/dashboard')
   return { success: true, rule: data?.[0] }
 }
 
@@ -668,6 +672,8 @@ export async function updatePriceRule(payload: {
   }
 
   revalidatePath('/dashboard/precios')
+  revalidatePath('/dashboard/plan')
+  revalidatePath('/dashboard')
   return { success: true, rule: data?.[0] }
 }
 
@@ -706,6 +712,8 @@ export async function deletePriceRule(ruleId: string, tenantId?: string | null) 
       return { success: false, error: error.message }
     }
     revalidatePath('/dashboard/precios')
+    revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
     return { success: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al eliminar tarifa'
@@ -935,6 +943,7 @@ export async function applyBulkInflationPriceAdjustment(
   }
 
   revalidatePath('/dashboard/precios')
+  revalidatePath('/dashboard/plan')
   revalidatePath('/dashboard')
   revalidatePath('/club/[slug]', 'page')
   return {
@@ -1927,14 +1936,22 @@ export async function getPublicClubs(): Promise<ClubData[]> {
             const pricePerHour = courtRules.length > 0
               ? Math.min(...courtRules.map((r) => r.priceArs))
               : 20000
+            const rawSport = c.sport || 'PADEL'
             const features: string[] = []
+            if (rawSport === 'FUTBOL11' || rawSport === 'FUTBOL_11') features.push('Fútbol 11')
+            else if (rawSport === 'FUTBOL7' || rawSport === 'FUTBOL_7') features.push('Fútbol 7')
+            else if (rawSport === 'FUTBOL5' || rawSport === 'FUTBOL_5') features.push('Fútbol 5')
             if (c.is_indoor) features.push('Techada')
             if (c.has_lights) features.push('Iluminación LED')
-            if (c.surface) features.push(c.surface)
+            if (c.surface) {
+              const surfLabel = c.surface === 'PASTO_NATURAL' ? 'Pasto Natural' : c.surface === 'CESPED_SINTETICO' ? 'Césped Sintético' : c.surface === 'POLVO_LADRILLO' ? 'Polvo de Ladrillo' : c.surface === 'CRISTAL' ? 'Cristal' : c.surface
+              features.push(surfLabel)
+            }
             return {
               id: c.id,
               name: c.name,
               sport: normalizeToSportCategory(c.sport),
+              specificSport: rawSport,
               features: features.length > 0 ? features : ['Césped Sintético'],
               pricePerHour,
               depositPercentage: 0.5,
@@ -2067,5 +2084,252 @@ export async function getPublicClubs(): Promise<ClubData[]> {
     return []
   }
 }
+
+// ─── ANALÍTICA AVANZADA Y MÉTRICAS REALES DE NEGOCIO ─────────────────────────
+
+export interface ClubAnalyticsData {
+  totalRevenue: number
+  courtsRevenue: number
+  cantinaRevenue: number
+  revenueGrowthPct: number
+  avgTicket: number
+  occupancyPrimePct: number
+  noShowsProtected: number
+  bookingsCount: number
+  courts: Array<{
+    name: string
+    sport: string
+    occupancy: number
+    revenue: number
+  }>
+  occupancyHeatmap: number[][]
+  topPlayers: Array<{
+    name: string
+    bookingsCount: number
+    totalSpent: number
+  }>
+}
+
+const HEATMAP_HOUR_BUCKETS = [8, 10, 12, 14, 16, 18, 19.5, 21, 22.5]
+
+export async function getClubAnalytics(tenantId: string | null | undefined): Promise<ClubAnalyticsData> {
+  const defaultEmpty: ClubAnalyticsData = {
+    totalRevenue: 0,
+    courtsRevenue: 0,
+    cantinaRevenue: 0,
+    revenueGrowthPct: 0,
+    avgTicket: 0,
+    occupancyPrimePct: 0,
+    noShowsProtected: 0,
+    bookingsCount: 0,
+    courts: [],
+    occupancyHeatmap: Array.from({ length: 7 }, () => Array(9).fill(0)),
+    topPlayers: []
+  }
+
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return defaultEmpty
+
+    const supabase = await createServiceClient()
+
+    // 1. Obtener canchas activas
+    const { data: dbCourts } = await supabase
+      .from('courts')
+      .select('id, name, sport')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+
+    const courtsList = dbCourts || []
+
+    // 2. Traer reservas de los últimos 60 días (para comparar con mes anterior)
+    const now = new Date()
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString()
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000).toISOString()
+
+    const { data: rawBookings } = await supabase
+      .from('bookings')
+      .select('id, court_id, customer_name, customer_phone, customer_email, booked_at, status, price_total_cents, deposit_cents, created_at')
+      .eq('tenant_id', effectiveTenantId)
+      .gte('created_at', sixtyDaysAgo)
+
+    const allBookings = rawBookings || []
+
+    // 3. Separar por períodos (actuales 30 días vs anteriores 30 días)
+    const currentPeriodBookings = allBookings.filter(b => {
+      const dateStr = b.created_at || (b.booked_at ? b.booked_at.slice(2, 22) : '')
+      return dateStr >= thirtyDaysAgo
+    })
+
+    const prevPeriodBookings = allBookings.filter(b => {
+      const dateStr = b.created_at || (b.booked_at ? b.booked_at.slice(2, 22) : '')
+      return dateStr >= sixtyDaysAgo && dateStr < thirtyDaysAgo
+    })
+
+    // 4. Calcular ingresos de canchas del período actual
+    const activeCurrentBookings = currentPeriodBookings.filter(b => {
+      const st = String(b.status || '').toLowerCase()
+      return !st.includes('cancel')
+    })
+
+    const courtsRevenue = activeCurrentBookings.reduce((sum, b) => {
+      const val = (b.price_total_cents || 0) / 100
+      return sum + val
+    }, 0)
+
+    const bookingsCount = activeCurrentBookings.length
+    const avgTicket = bookingsCount > 0 ? Math.round(courtsRevenue / bookingsCount) : 0
+
+    // Comparación mes anterior
+    const activePrevBookings = prevPeriodBookings.filter(b => {
+      const st = String(b.status || '').toLowerCase()
+      return !st.includes('cancel')
+    })
+    const prevCourtsRevenue = activePrevBookings.reduce((sum, b) => sum + ((b.price_total_cents || 0) / 100), 0)
+    const revenueGrowthPct = prevCourtsRevenue > 0
+      ? Math.round(((courtsRevenue - prevCourtsRevenue) / prevCourtsRevenue) * 100)
+      : (courtsRevenue > 0 ? 100 : 0)
+
+    // Señas retenidas por no-shows o cancelaciones
+    const noShowsProtected = currentPeriodBookings
+      .filter(b => {
+        const st = String(b.status || '').toLowerCase()
+        return st.includes('cancel') || st.includes('no_show')
+      })
+      .reduce((sum, b) => sum + ((b.deposit_cents || 0) / 100), 0)
+
+    // 5. Estadísticas de Cantina
+    let cantinaRevenue = 0
+    try {
+      const { getCantinaStats } = await import('./cantina.actions')
+      const cantinaStats = await getCantinaStats(effectiveTenantId)
+      cantinaRevenue = cantinaStats.totalRevenue || 0
+    } catch (cantinaErr) {
+      console.warn('[getClubAnalytics] Cantina stats unavailable:', cantinaErr)
+    }
+
+    const totalRevenue = courtsRevenue + cantinaRevenue
+
+    // 6. Matriz Heatmap de Ocupación (7 días x 9 horas)
+    const heatmapCounts = Array.from({ length: 7 }, () => Array(9).fill(0))
+    let primeSlotsBooked = 0
+
+    for (const b of activeCurrentBookings) {
+      let startTimeStr = ''
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match) startTimeStr = match[1]
+      }
+      if (!startTimeStr && b.created_at) startTimeStr = b.created_at
+
+      if (startTimeStr) {
+        try {
+          const d = new Date(startTimeStr.includes(' ') ? startTimeStr.replace(' ', 'T') : startTimeStr)
+          if (!isNaN(d.getTime())) {
+            // Día de la semana (0 = Lunes, ..., 6 = Domingo)
+            const jsDay = d.getDay() // 0 = Domingo, 1 = Lunes
+            const dayIdx = (jsDay + 6) % 7
+
+            // Hora aproximada
+            const hoursDecimal = d.getHours() + d.getMinutes() / 60
+
+            // Buscar bucket más cercano
+            let bestBucketIdx = 0
+            let minDiff = 999
+            for (let i = 0; i < HEATMAP_HOUR_BUCKETS.length; i++) {
+              const diff = Math.abs(hoursDecimal - HEATMAP_HOUR_BUCKETS[i])
+              if (diff < minDiff) {
+                minDiff = diff
+                bestBucketIdx = i
+              }
+            }
+
+            heatmapCounts[dayIdx][bestBucketIdx]++
+
+            // Horario prime: de 18:00 a 00:00 (índices 5, 6, 7, 8)
+            if (bestBucketIdx >= 5) {
+              primeSlotsBooked++
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const courtsCount = Math.max(1, courtsList.length)
+    // En 30 días, cada día de la semana ocurre aproximadamente 4.3 veces
+    const maxCapacityPerSlot = 4.3 * courtsCount
+
+    const occupancyHeatmap = heatmapCounts.map(row => 
+      row.map(count => Math.min(100, Math.round((count / maxCapacityPerSlot) * 100)))
+    )
+
+    // Ocupación prime estimada
+    // 4 slots prime x 30 días = 120 slots prime por cancha en el mes
+    const totalPossiblePrimeSlots = courtsCount * 120
+    const occupancyPrimePct = totalPossiblePrimeSlots > 0 
+      ? Math.min(100, Math.round((primeSlotsBooked / totalPossiblePrimeSlots) * 100))
+      : 0
+
+    // 7. Rendimiento por Cancha
+    const courtsBreakdown = courtsList.map(court => {
+      const courtBookings = activeCurrentBookings.filter(b => b.court_id === court.id)
+      const courtRevenue = courtBookings.reduce((sum, b) => sum + ((b.price_total_cents || 0) / 100), 0)
+      // 30 días x aprox 10 turnos disponibles por día = 300 slots mensuales
+      const courtOccupancy = Math.min(100, Math.round((courtBookings.length / 300) * 100))
+      const sportLabel = court.sport?.startsWith('FUTBOL') 
+        ? 'Fútbol' 
+        : court.sport === 'PADEL' ? 'Pádel' : court.sport === 'TENIS' ? 'Tenis' : (court.sport || 'Fútbol')
+
+      return {
+        name: court.name,
+        sport: sportLabel,
+        occupancy: courtOccupancy,
+        revenue: courtRevenue
+      }
+    })
+
+    // 8. Ranking de Jugadores Frecuentes
+    const playersMap = new Map<string, { name: string; count: number; spent: number }>()
+    for (const b of activeCurrentBookings) {
+      const key = (b.customer_phone || b.customer_email || b.customer_name || 'Desconocido').trim()
+      const current = playersMap.get(key) || { 
+        name: b.customer_name || 'Jugador', 
+        count: 0, 
+        spent: 0 
+      }
+      current.count += 1
+      current.spent += (b.price_total_cents || 0) / 100
+      playersMap.set(key, current)
+    }
+
+    const topPlayers = Array.from(playersMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(p => ({
+        name: p.name,
+        bookingsCount: p.count,
+        totalSpent: p.spent
+      }))
+
+    return {
+      totalRevenue,
+      courtsRevenue,
+      cantinaRevenue,
+      revenueGrowthPct,
+      avgTicket,
+      occupancyPrimePct,
+      noShowsProtected,
+      bookingsCount,
+      courts: courtsBreakdown,
+      occupancyHeatmap,
+      topPlayers
+    }
+  } catch (err) {
+    console.error('[getClubAnalytics] Error:', err)
+    return defaultEmpty
+  }
+}
+
 
 

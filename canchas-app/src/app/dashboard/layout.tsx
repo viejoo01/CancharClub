@@ -1,4 +1,4 @@
-import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
+﻿import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -19,9 +19,9 @@ export default async function DashboardLayout({
 }) {
   const cookieStore = await cookies()
   const supabase = await createClient()
+
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 1. Verificación estricta de Superadmin (HMAC firmado o ID configurado)
   const saSession = cookieStore.get('sa_session')?.value
   const saSecret = process.env.SUPERADMIN_SESSION_SECRET
   const isSuperadminHMAC = Boolean(saSession && saSecret && verifySuperadminSessionToken(saSession, saSecret))
@@ -29,9 +29,6 @@ export default async function DashboardLayout({
   const isSuperadminRole = cookieStore.get('demo_user_role')?.value === 'SUPERADMIN'
   const isSuperadmin = isSuperadminHMAC || isSuperadminUser || isSuperadminRole
 
-  // 2. SEGURIDAD CRÍTICA MULTI-TENANT:
-  // Si no hay usuario autenticado en Supabase y no es Superadmin:
-  // EXPULSIÓN INMEDIATA al login. Jamás renderizar ni adivinar clubes.
   if (!user && !isSuperadmin) {
     redirect('/auth/login')
   }
@@ -42,7 +39,7 @@ export default async function DashboardLayout({
   let tenantName = 'Mi Club Deportivo'
   let tenantSlug = 'mi-club'
   let userRole = 'TENANT_ADMIN'
-  let userName = 'Dueño del Club'
+  let userName = 'Dueno del Club'
   let mpConnected = true
   let subscriptionStatus: TenantSubscriptionStatus = 'ACTIVE'
   let planId: SaaSPlanId | undefined = undefined
@@ -55,46 +52,89 @@ export default async function DashboardLayout({
     return Boolean(t.mp_access_token)
   }
 
-  function parseTenantMeta(t: { created_at?: string | null; description?: string | null }) {
-    if (t.created_at) tenantCreatedAt = t.created_at
-    if (t.description) {
-      try {
-        const meta = JSON.parse(t.description)
-        if (meta.cancellation_effective_date) {
-          cancellationEffectiveDate = String(meta.cancellation_effective_date)
-        }
-      } catch {}
-    }
+  function parseTenantMeta(desc: string | null) {
+    if (!desc) return
+    try {
+      const meta = JSON.parse(desc)
+      if (meta.cancellation_effective_date) {
+        cancellationEffectiveDate = String(meta.cancellation_effective_date)
+      }
+      if (meta.card_linked) hasCard = true
+    } catch {}
   }
 
+  function resolvePlanId(planIdField: string | null | undefined, baseSlotsField: number | null | undefined): SaaSPlanId | undefined {
+    if (planIdField && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(planIdField)) {
+      return planIdField as SaaSPlanId
+    }
+    if (baseSlotsField) {
+      return baseSlotsField === 1 ? 'CHICO_1' : baseSlotsField === 2 ? 'MEDIANO_2' : baseSlotsField <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+    }
+    return undefined
+  }
+
+  function mapSport(s: string): string {
+    if (s === 'FUTBOL11' || s === 'FUTBOL_11') return 'Futbol 11'
+    if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Futbol 7'
+    if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Futbol 5'
+    if (s === 'PADEL') return 'Padel'
+    if (s === 'TENIS') return 'Tenis'
+    if (s === 'BASQUET' || s === 'BASKET') return 'Basquet'
+    return s
+  }
+
+  let initialCourtsCount = 0
+  let initialSports: string[] = []
+
   if (isSuperadmin) {
-    // Modo Superadmin: Puede ver el club que solicite explícitamente en cookies o el primero si no hay ninguno
     userRole = 'SUPERADMIN'
     userName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
     const requestedTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     if (requestedTenantId) {
-      const { data: st } = await serviceClient
-        .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description, plan_id')
-        .eq('id', requestedTenantId)
-        .maybeSingle()
+      const [tenantRes, courtsRes, subRes] = await Promise.all([
+        serviceClient
+          .from('tenants')
+          .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
+          .eq('id', requestedTenantId)
+          .maybeSingle(),
+        serviceClient
+          .from('courts')
+          .select('id, sport, is_active')
+          .eq('tenant_id', requestedTenantId),
+        serviceClient
+          .from('saas_subscriptions')
+          .select('payment_notes, status')
+          .eq('tenant_id', requestedTenantId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ])
+
+      const st = tenantRes.data
       if (st) {
         tenantId = st.id
         tenantName = st.name || tenantName
         tenantSlug = st.slug || tenantSlug
         mpConnected = checkMpConnected(st)
-        parseTenantMeta(st)
+        if (st.created_at) tenantCreatedAt = st.created_at
+        parseTenantMeta(st.description || null)
         if (typeof st.is_active === 'boolean') isActive = st.is_active
         if (st.subscription_status) subscriptionStatus = st.subscription_status
-        if (st.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(st.plan_id)) {
-          planId = st.plan_id as SaaSPlanId
-        } else if (st.base_slots_plan) {
-          planId = st.base_slots_plan === 1 ? 'CHICO_1' : st.base_slots_plan === 2 ? 'MEDIANO_2' : st.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
-        }
+        planId = resolvePlanId(st.plan_id, st.base_slots_plan)
+      }
+
+      const courtsData = courtsRes.data
+      if (courtsData && courtsData.length > 0) {
+        initialCourtsCount = courtsData.length
+        initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+      }
+
+      const subData = subRes.data
+      if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
+        hasCard = true
       }
     }
 
-    // Permitir simulación de roles operativos (ej: TENANT_STAFF) cuando se simula un club desde Superadmin
     const simulatedRole = cookieStore.get('demo_user_role')?.value
     if (simulatedRole === 'TENANT_STAFF' || simulatedRole === 'TENANT_ADMIN') {
       userRole = simulatedRole
@@ -104,33 +144,43 @@ export default async function DashboardLayout({
       planId = simulatedPlan
     }
   } else if (user) {
-    // 3. AISLAMIENTO TOTAL PARA CLUBES:
-    // El club es EXCLUSIVAMENTE el vinculado al profile.tenant_id del usuario autenticado en Supabase.
     const { data: profile } = await serviceClient
       .from('profiles')
       .select('role, full_name, tenant_id')
       .eq('id', user.id)
       .maybeSingle()
 
-    // Si el usuario autenticado no tiene un perfil o no tiene club asignado:
     if (!profile || !profile.tenant_id) {
-      console.warn(`[SEGURIDAD] Intento de acceso no autorizado al dashboard sin club asignado: usuario ${user.email} (${user.id}).`)
+      console.warn('[SEGURIDAD] Acceso sin club: ' + user.email)
       await supabase.auth.signOut()
       redirect('/auth/login?error=no_club_assigned')
     }
 
     userRole = profile.role || 'TENANT_ADMIN'
-    userName = profile.full_name || user.email?.split('@')[0] || 'Dueño del Club'
+    userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
 
-    // Obtener estrictamente los datos del club asignado a este usuario
-    const { data: t } = await serviceClient
-      .from('tenants')
-      .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, payment_methods, created_at, description, plan_id')
-      .eq('id', profile.tenant_id)
-      .maybeSingle()
+    const [tenantResult, courtsResult, subResult] = await Promise.all([
+      serviceClient
+        .from('tenants')
+        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
+        .eq('id', profile.tenant_id)
+        .maybeSingle(),
+      serviceClient
+        .from('courts')
+        .select('id, sport, is_active')
+        .eq('tenant_id', profile.tenant_id),
+      serviceClient
+        .from('saas_subscriptions')
+        .select('payment_notes, status')
+        .eq('tenant_id', profile.tenant_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
 
+    const t = tenantResult.data
     if (!t) {
-      console.warn(`[SEGURIDAD] Club ID ${profile.tenant_id} asignado al usuario ${user.email} no existe en la base de datos. Expulsando.`)
+      console.warn('[SEGURIDAD] Club no encontrado para ' + profile.tenant_id)
       await supabase.auth.signOut()
       redirect('/auth/login?error=club_not_found')
     }
@@ -139,82 +189,49 @@ export default async function DashboardLayout({
     tenantName = t.name || tenantName
     tenantSlug = t.slug || tenantSlug
     mpConnected = checkMpConnected(t)
-    parseTenantMeta(t)
-    if (typeof t.is_active === 'boolean') {
-      isActive = t.is_active
+    if (t.created_at) tenantCreatedAt = t.created_at
+    parseTenantMeta(t.description || null)
+    if (typeof t.is_active === 'boolean') isActive = t.is_active
+    if (t.subscription_status) subscriptionStatus = t.subscription_status
+    planId = resolvePlanId(t.plan_id, t.base_slots_plan)
+
+    const courtsData = courtsResult.data
+    if (courtsData && courtsData.length > 0) {
+      initialCourtsCount = courtsData.length
+      initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
     }
-    if (t.subscription_status) {
-      subscriptionStatus = t.subscription_status
+
+    const subData = subResult.data
+    if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
+      hasCard = true
     }
-    if (t.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(t.plan_id)) {
-      planId = t.plan_id as SaaSPlanId
-    } else if (t.base_slots_plan) {
-      planId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+    if (!hasCard) {
+      const cookieHas = cookieStore.get('demo_has_card')?.value === 'true'
+      const cookieLast4 = cookieStore.get('demo_card_last4')?.value
+      if (cookieHas && cookieLast4) hasCard = true
     }
   }
 
-  // Normalizar status: PAYMENT_PENDING se normaliza a ACTIVE para no generar pantallas de espera
   if ((subscriptionStatus as string) === 'PAYMENT_PENDING') {
     subscriptionStatus = 'ACTIVE'
   }
 
-  // Obtener canchas y deportes reales del club para sincronizar sedes/switcher
-  let initialCourtsCount = 0
-  let initialSports: string[] = []
-  if (tenantId) {
-    try {
-      const { data: courtsData } = await serviceClient
-        .from('courts')
-        .select('id, sport, is_active')
-        .eq('tenant_id', tenantId)
-      if (courtsData && courtsData.length > 0) {
-        initialCourtsCount = courtsData.length
-        const rawSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean)))
-        initialSports = rawSports.map(s => {
-          if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
-          if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Fútbol 7'
-          if (s === 'PADEL') return 'Pádel'
-          if (s === 'TENIS') return 'Tenis'
-          if (s === 'BASQUET' || s === 'BASKET') return 'Básquet'
-          return s
-        })
-      }
-    } catch {}
-  }
-
-  // REGLA ESTRICTA DE ASIGNACIÓN DE PLAN SAAS:
-  // Si no está explícitamente fijado, se calcula estrictamente según la cantidad real de canchas del club:
   if (!planId) {
     const courtsCount = initialCourtsCount > 0 ? initialCourtsCount : 2
     planId = courtsCount === 1 ? 'CHICO_1' : courtsCount === 2 ? 'MEDIANO_2' : courtsCount <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
   }
 
-  // Cálculo del vencimiento oficial y días restantes para alertas progresivas
-  const pricing = calculateClubSaaSFee(initialCourtsCount || 2, 30000, tenantCreatedAt)
-  const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
-  const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
-
-  // Verificar en saas_subscriptions si el club ya vinculó su tarjeta oficial
-  if (tenantId && !hasCard) {
-    try {
-      const { data: subData } = await serviceClient
-        .from('saas_subscriptions')
-        .select('payment_notes, status')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (subData && (subData.payment_notes?.includes('Tarjeta') || subData.payment_notes?.includes('card') || subData.status === 'active')) {
-        hasCard = true
-      }
-    } catch {}
+  if (!isSuperadmin && tenantId && !hasCard) {
+    redirect('/onboarding/tarjeta')
   }
 
-  // Los clubes recién agregados o activos siempre tienen acceso operativo completo.
-  // Solo se consideran bloqueados por mora si su estado es explícitamente PAUSED o LOCKED.
   if (subscriptionStatus !== 'PAUSED' && subscriptionStatus !== 'LOCKED') {
     isActive = true
   }
+
+  const pricing = calculateClubSaaSFee(initialCourtsCount || 2, 30000, tenantCreatedAt)
+  const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
+  const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
 
   return (
     <DashboardLayoutClient

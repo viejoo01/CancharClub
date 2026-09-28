@@ -58,6 +58,14 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       paymentMethods.push('MERCADOPAGO')
     }
 
+    let cleanWhatsapp = tenant.phone_whatsapp || ''
+    const stripped = cleanWhatsapp.replace(/\D/g, '')
+    if (stripped === '5493816839320' || stripped === '3816839320') {
+      cleanWhatsapp = ''
+      // Limpiar proactivamente en la base de datos para no arrastrar el número de prueba
+      void supabase.from('tenants').update({ phone_whatsapp: null }).eq('id', tenant.id)
+    }
+
     return {
       tenantId: tenant.id,
       clubName: tenant.name || 'Mi Club',
@@ -66,7 +74,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       cbu: tenant.bank_cbu || '',
       alias: tenant.bank_alias || '',
       cuit: tenant.bank_cuit || '',
-      whatsappPhone: tenant.phone_whatsapp || '',
+      whatsappPhone: cleanWhatsapp,
       paymentMethods,
       mpConnected,
       mpCollectorId: tenant.mp_collector_id,
@@ -202,7 +210,7 @@ export async function saveTenantMpCredentials(
     publicKey?: string
     collectorId?: string
   }
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; collectorId?: string; accountName?: string }> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) {
@@ -219,7 +227,36 @@ export async function saveTenantMpCredentials(
 
     // Validación básica de token Mercado Pago
     if (!trimmedToken.startsWith('APP_USR-') && !trimmedToken.startsWith('TEST-')) {
-      return { success: false, error: 'El Access Token debe comenzar con APP_USR- o TEST-' }
+      return { 
+        success: false, 
+        error: 'El Access Token debe comenzar con APP_USR- (o TEST- para pruebas). Verificá haber copiado las Credenciales de Producción.' 
+      }
+    }
+
+    // Auto-validación en vivo con la API de Mercado Pago y extracción de collectorId
+    let collectorId = data.collectorId?.trim() || null
+    let accountName: string | undefined = undefined
+
+    try {
+      const mpRes = await fetch('https://api.mercadopago.com/users/me', {
+        headers: {
+          'Authorization': `Bearer ${trimmedToken}`,
+        },
+      })
+      if (mpRes.ok) {
+        const mpUserData = await mpRes.json()
+        if (mpUserData.id) {
+          collectorId = String(mpUserData.id)
+        }
+        accountName = mpUserData.nickname || `${mpUserData.first_name || ''} ${mpUserData.last_name || ''}`.trim() || mpUserData.email
+      } else if (mpRes.status === 401 || mpRes.status === 403) {
+        return {
+          success: false,
+          error: 'El Access Token ingresado no es válido o ha expirado en Mercado Pago. Por favor verificá copiar el Access Token correcto desde Mercado Pago Developers.',
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[saveTenantMpCredentials] Warning fetching MP user details:', apiErr)
     }
 
     const { error } = await supabase
@@ -227,7 +264,7 @@ export async function saveTenantMpCredentials(
       .update({
         mp_access_token: trimmedToken,
         mp_public_key: data.publicKey?.trim() || null,
-        mp_collector_id: data.collectorId?.trim() || null,
+        mp_collector_id: collectorId,
         mp_connected_at: new Date().toISOString(),
         payment_methods: ['TRANSFER', 'MERCADO_PAGO'],
         updated_at: new Date().toISOString(),
@@ -242,7 +279,7 @@ export async function saveTenantMpCredentials(
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
     revalidatePath('/club/[slug]', 'page')
-    return { success: true }
+    return { success: true, collectorId: collectorId || undefined, accountName }
   } catch (err: unknown) {
     console.error('[saveTenantMpCredentials] Error:', err)
     const msg = err instanceof Error ? err.message : 'Error desconocido al vincular Mercado Pago'

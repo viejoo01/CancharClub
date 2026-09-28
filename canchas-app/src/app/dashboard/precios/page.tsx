@@ -113,11 +113,11 @@ export default function PreciosPage() {
 
     void init(true)
 
-    // Sondeo continuo cada 5 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (precios no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void init(false)
-    }, 5000)
+    }, 60000)
 
     const handleSync = () => void init(false)
     window.addEventListener('focus', handleSync)

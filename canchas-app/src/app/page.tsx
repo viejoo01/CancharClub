@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import {
   Calendar,
@@ -13,7 +13,8 @@ import {
   Star,
   Zap,
   Coffee,
-  Loader2
+  Loader2,
+  Navigation,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -24,8 +25,14 @@ import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
 import { ClubLoginModal } from '@/components/public/club-login-modal'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
+import { toast } from 'sonner'
 
-import { type SportCategory, type ClubData, normalizeToSportCategory } from '@/config/clubs-catalog'
+import {
+  type SportCategory,
+  type ClubData,
+  normalizeToSportCategory,
+  extractCoordsFromGoogleMapsUrl,
+} from '@/config/clubs-catalog'
 import { getPublicClubs } from '@/actions/club.actions'
 
 
@@ -151,7 +158,13 @@ const SPORTS_LIST: {
 
 export default function HomePage() {
   const [selectedSport, setSelectedSport] = useState<SportCategory | null>(null)
+  const [isBrowsingAll, setIsBrowsingAll] = useState(false)
+  const [selectedSubSport, setSelectedSubSport] = useState<'ALL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL11'>('ALL')
+  const [selectedCity, setSelectedCity] = useState<string>('ALL')
   const [searchTerm, setSearchTerm] = useState('')
+  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null)
+  const [sortByDistance, setSortByDistance] = useState(false)
+  const [isLocating, setIsLocating] = useState(false)
   const [isReservasModalOpen, setIsReservasModalOpen] = useState(false)
   const [isClubLoginModalOpen, setIsClubLoginModalOpen] = useState(false)
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
@@ -171,17 +184,107 @@ export default function HomePage() {
       })
   }, [])
 
-  // Filtrado de clubes según deporte seleccionado y término de búsqueda
-  const filteredClubs = clubs.filter((club: ClubData) => {
-    const matchesSport = selectedSport
-      ? club.sports.some((s) => normalizeToSportCategory(s) === normalizeToSportCategory(selectedSport))
-      : true
-    const matchesSearch = 
-      club.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      club.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      club.address.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSport && matchesSearch
-  })
+  // Lista única de ciudades y localidades presentes en los clubes
+  const availableCities = useMemo(() => {
+    const set = new Set<string>()
+    clubs.forEach((c) => {
+      if (c.city && c.city.trim()) {
+        set.add(c.city.trim())
+      }
+    })
+    return Array.from(set).sort()
+  }, [clubs])
+
+  // Cálculo de distancia en km (fórmula Haversine)
+  const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371 // Radio de la Tierra en km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180
+    const dLon = ((lon2 - lon1) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return Math.round(R * c * 10) / 10
+  }
+
+  const handleToggleLocation = () => {
+    if (sortByDistance) {
+      setSortByDistance(false)
+      return
+    }
+    if (userCoords) {
+      setSortByDistance(true)
+      return
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast.error('Tu navegador no soporta geolocalización')
+      return
+    }
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+        setSortByDistance(true)
+        setIsLocating(false)
+        toast.success('Ubicación detectada. Ordenando clubes por cercanía.')
+      },
+      (err) => {
+        setIsLocating(false)
+        console.warn('Geolocation error:', err)
+        toast.error('No se pudo acceder a tu ubicación. Podés elegir tu zona en los filtros.')
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    )
+  }
+
+  // Filtrado y ordenamiento de clubes
+  const filteredClubs = useMemo(() => {
+    let result = clubs.filter((club: ClubData) => {
+      const matchesSport = selectedSport
+        ? club.sports.some((s) => normalizeToSportCategory(s) === normalizeToSportCategory(selectedSport))
+        : true
+
+      const matchesSubSport = (selectedSport === 'FUTBOL' && selectedSubSport !== 'ALL')
+        ? club.courts.some(c => {
+            const s = (c.specificSport || c.sport || '').toUpperCase()
+            const f = c.features.join(' ').toLowerCase()
+            if (selectedSubSport === 'FUTBOL11') return s.includes('11') || f.includes('11')
+            if (selectedSubSport === 'FUTBOL7') return s.includes('7') || f.includes('7')
+            if (selectedSubSport === 'FUTBOL5') return s.includes('5') || f.includes('5')
+            return true
+          })
+        : true
+
+      const matchesCity = selectedCity === 'ALL' || club.city.toLowerCase() === selectedCity.toLowerCase()
+
+      const term = searchTerm.toLowerCase().trim()
+      const matchesSearch = !term ||
+        club.name.toLowerCase().includes(term) ||
+        club.city.toLowerCase().includes(term) ||
+        club.address.toLowerCase().includes(term) ||
+        club.courts.some(c => 
+          c.name.toLowerCase().includes(term) ||
+          c.features.some(feat => feat.toLowerCase().includes(term)) ||
+          ((term.includes('11') || term.includes('f11')) && ((c.specificSport && c.specificSport.includes('11')) || c.features.some(feat => feat.includes('11')))) ||
+          ((term.includes('7') || term.includes('f7')) && ((c.specificSport && c.specificSport.includes('7')) || c.features.some(feat => feat.includes('7')))) ||
+          ((term.includes('5') || term.includes('f5')) && ((c.specificSport && c.specificSport.includes('5')) || c.features.some(feat => feat.includes('5'))))
+        )
+      return matchesSport && matchesSubSport && matchesCity && matchesSearch
+    })
+
+    if (sortByDistance && userCoords) {
+      result = [...result].sort((a, b) => {
+        const coordsA = a.coords || extractCoordsFromGoogleMapsUrl(a.googleMapsUrl)
+        const coordsB = b.coords || extractCoordsFromGoogleMapsUrl(b.googleMapsUrl)
+        const distA = coordsA ? calculateDistanceKm(userCoords.lat, userCoords.lon, coordsA.lat, coordsA.lon) : 9999
+        const distB = coordsB ? calculateDistanceKm(userCoords.lat, userCoords.lon, coordsB.lat, coordsB.lon) : 9999
+        return distA - distB
+      })
+    }
+
+    return result
+  }, [clubs, selectedSport, selectedSubSport, selectedCity, searchTerm, sortByDistance, userCoords])
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-6 transition-colors duration-200">
@@ -194,7 +297,7 @@ export default function HomePage() {
       {/* ────────────────────────────────────────────────────────────────────── */}
       {/* VISTA 1: MENÚ INICIAL DE SELECCIÓN (ESTILO EXACTO A LA REFERENCIA)     */}
       {/* ────────────────────────────────────────────────────────────────────── */}
-      {!selectedSport ? (
+      {!selectedSport && !isBrowsingAll ? (
         <main className="w-full max-w-sm sm:max-w-xl lg:max-w-3xl my-auto flex flex-col items-center text-center space-y-6 sm:space-y-8 animate-fade-in py-4 sm:py-8">
           
           {/* Logo / Encabezado superior */}
@@ -215,7 +318,10 @@ export default function HomePage() {
             {SPORTS_LIST.map((sport) => (
               <button
                 key={sport.id}
-                onClick={() => setSelectedSport(sport.id)}
+                onClick={() => {
+                  setSelectedSport(sport.id)
+                  setIsBrowsingAll(false)
+                }}
                 className="group p-5 sm:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-sm hover:shadow-md hover:border-emerald-500/50 transition-all duration-200 flex flex-col items-center justify-center text-center space-y-3 cursor-pointer"
               >
                 <div className="w-16 h-16 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
@@ -226,6 +332,20 @@ export default function HomePage() {
                 </span>
               </button>
             ))}
+          </div>
+
+          {/* Botón Explorar todos los complejos cerca */}
+          <div className="w-full flex items-center justify-center">
+            <button
+              onClick={() => {
+                setSelectedSport(null)
+                setIsBrowsingAll(true)
+              }}
+              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-slate-900 border border-slate-800 hover:border-emerald-500/50 px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Ver todos los complejos deportivos cerca de vos</span>
+            </button>
           </div>
 
           {/* Menú inferior con separadores (Fiel a la captura) */}
@@ -276,7 +396,10 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedSport(null)}
+                onClick={() => {
+                  setSelectedSport(null)
+                  setIsBrowsingAll(false)
+                }}
                 className="rounded-xl border-slate-800 bg-slate-900 text-slate-100 text-xs font-semibold gap-1.5 min-h-10 sm:min-h-9"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -284,8 +407,17 @@ export default function HomePage() {
               </Button>
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight flex items-center gap-2">
-                  <span>Canchas de {SPORTS_LIST.find(s => s.id === selectedSport)?.name}</span>
-                  <span className="text-xl">{SPORTS_LIST.find(s => s.id === selectedSport)?.iconEmoji}</span>
+                  {selectedSport ? (
+                    <>
+                      <span>Canchas de {SPORTS_LIST.find(s => s.id === selectedSport)?.name}</span>
+                      <span className="text-xl">{SPORTS_LIST.find(s => s.id === selectedSport)?.iconEmoji}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Todos los Complejos Deportivos</span>
+                      <span className="text-xl">🏆</span>
+                    </>
+                  )}
                 </h2>
                 <p className="text-xs text-slate-400">
                   {filteredClubs.length} complejos disponibles para reservar turnos online
@@ -317,22 +449,141 @@ export default function HomePage() {
           </div>
 
           {/* Selector de Deporte Rápido (Tabs / Pills) */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar touch-momentum pb-1">
-            <span className="text-xs text-slate-400 font-semibold mr-1">Deporte:</span>
-            {SPORTS_LIST.map(sport => (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar touch-momentum pb-1">
+              <span className="text-xs text-slate-400 font-semibold mr-1">Deporte:</span>
               <button
-                key={sport.id}
-                onClick={() => setSelectedSport(sport.id)}
+                onClick={() => {
+                  setSelectedSport(null)
+                  setSelectedSubSport('ALL')
+                  setIsBrowsingAll(true)
+                }}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-                  selectedSport === sport.id
+                  !selectedSport && isBrowsingAll
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
                     : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <span>{sport.iconEmoji}</span>
-                <span>{sport.name}</span>
+                <span>🏆</span>
+                <span>Todos</span>
               </button>
-            ))}
+              {SPORTS_LIST.map(sport => (
+                <button
+                  key={sport.id}
+                  onClick={() => {
+                    setSelectedSport(sport.id)
+                    setSelectedSubSport('ALL')
+                    setIsBrowsingAll(false)
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                    selectedSport === sport.id
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                      : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <span>{sport.iconEmoji}</span>
+                  <span>{sport.name}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Sub-filtro de Modalidad para Fútbol (Fútbol 11, Fútbol 7, Fútbol 5) */}
+            {selectedSport === 'FUTBOL' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pt-1 pb-1">
+                <span className="text-[11px] text-slate-400 font-semibold mr-1 shrink-0">Modalidad:</span>
+                <button
+                  onClick={() => setSelectedSubSport('ALL')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-colors ${
+                    selectedSubSport === 'ALL'
+                      ? 'bg-slate-800 text-white border border-slate-700'
+                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Todas
+                </button>
+                <button
+                  onClick={() => setSelectedSubSport('FUTBOL11')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 ${
+                    selectedSubSport === 'FUTBOL11'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 border border-slate-800 text-emerald-400 hover:border-emerald-600/50'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 11</span>
+                </button>
+                <button
+                  onClick={() => setSelectedSubSport('FUTBOL7')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium shrink-0 transition-all flex items-center gap-1.5 ${
+                    selectedSubSport === 'FUTBOL7'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 7</span>
+                </button>
+                <button
+                  onClick={() => setSelectedSubSport('FUTBOL5')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium shrink-0 transition-all flex items-center gap-1.5 ${
+                    selectedSubSport === 'FUTBOL5'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <span>⚽</span>
+                  <span>Fútbol 5</span>
+                </button>
+              </div>
+            )}
+
+            {/* Sub-filtro de Ciudad / Zona y Geolocalización Cerca de mí */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pt-1 pb-1">
+              <span className="text-[11px] text-slate-400 font-semibold mr-1 shrink-0 flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-emerald-400" />
+                Zona:
+              </span>
+              <button
+                onClick={() => setSelectedCity('ALL')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-colors ${
+                  selectedCity === 'ALL'
+                    ? 'bg-slate-800 text-white border border-slate-700'
+                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Todas
+              </button>
+              {availableCities.map((city) => (
+                <button
+                  key={city}
+                  onClick={() => setSelectedCity(city)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium shrink-0 transition-all ${
+                    selectedCity === city
+                      ? 'bg-emerald-600 text-white shadow-sm font-bold'
+                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  {city}
+                </button>
+              ))}
+
+              <button
+                onClick={handleToggleLocation}
+                disabled={isLocating}
+                className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 ml-auto cursor-pointer ${
+                  sortByDistance
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-slate-900 border border-slate-800 text-emerald-400 hover:border-emerald-500/50'
+                }`}
+              >
+                {isLocating ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Navigation className={`w-3 h-3 ${sortByDistance ? 'text-white' : 'text-emerald-400'}`} />
+                )}
+                <span>{sortByDistance ? 'Cerca de mí (activo)' : 'Cerca de mí'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Grilla de Clubes */}
@@ -345,29 +596,36 @@ export default function HomePage() {
             <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800 space-y-3">
               <div className="text-4xl">🔍</div>
               <h3 className="font-bold text-base text-slate-100">
-                {searchTerm
-                  ? `No se encontraron complejos para "${searchTerm}"`
+                {searchTerm || selectedCity !== 'ALL'
+                  ? `No se encontraron complejos con los filtros seleccionados`
                   : 'No hay complejos disponibles en esta categoría'}
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                {searchTerm
-                  ? 'Probá buscando por otro término o limpiá el filtro para ver todos los clubes.'
+                {searchTerm || selectedCity !== 'ALL'
+                  ? 'Probá cambiando la zona o el término de búsqueda.'
                   : 'Sé el primero en publicar turnos para este deporte sumando tu club a CancharClub.'}
               </p>
-              {searchTerm && (
+              {(searchTerm || selectedCity !== 'ALL') && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => {
+                    setSearchTerm('')
+                    setSelectedCity('ALL')
+                  }}
                   className="text-xs rounded-xl border-slate-800 text-slate-100"
                 >
-                  Limpiar búsqueda
+                  Restablecer filtros
                 </Button>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredClubs.map(club => (
+              {filteredClubs.map(club => {
+                const clubCoords = club.coords || extractCoordsFromGoogleMapsUrl(club.googleMapsUrl)
+                const distanceKm = userCoords && clubCoords ? calculateDistanceKm(userCoords.lat, userCoords.lon, clubCoords.lat, clubCoords.lon) : null
+
+                return (
                 <div
                   key={club.id}
                   className="p-5 rounded-3xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 hover:shadow-xl transition-all flex flex-col justify-between space-y-4"
@@ -375,13 +633,19 @@ export default function HomePage() {
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <h3 className="font-bold text-base text-white">
                             {club.name}
                           </h3>
                           <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0">
                             Verificado
                           </Badge>
+                          {distanceKm !== null && (
+                            <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-500/30 text-[10px] px-1.5 py-0 flex items-center gap-1">
+                              <Navigation className="w-2.5 h-2.5" />
+                              a {distanceKm} km
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
                           <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -403,6 +667,21 @@ export default function HomePage() {
                       <Badge variant="outline" className="border-slate-800 text-slate-300">
                         {club.courtsCount} Canchas
                       </Badge>
+                      {club.courts.some(c => (c.specificSport?.includes('11') || c.features.some(f => f.includes('11')))) && (
+                        <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                          ⚽ Fútbol 11
+                        </Badge>
+                      )}
+                      {club.courts.some(c => (c.specificSport?.includes('7') || c.features.some(f => f.includes('7')))) && (
+                        <Badge variant="outline" className="border-slate-800 text-slate-300">
+                          ⚽ Fútbol 7
+                        </Badge>
+                      )}
+                      {club.courts.some(c => (c.specificSport?.includes('5') || c.features.some(f => f.includes('5')))) && (
+                        <Badge variant="outline" className="border-slate-800 text-slate-300">
+                          ⚽ Fútbol 5
+                        </Badge>
+                      )}
                       {club.isIndoor && (
                         <Badge variant="outline" className="border-slate-800 text-slate-300">
                           Techada
@@ -430,7 +709,7 @@ export default function HomePage() {
                       </span>
                     </div>
 
-                    <Link href={`/club/${club.slug}${selectedSport ? `?sport=${selectedSport}` : ''}`}>
+                    <Link href={`/club/${club.slug}${selectedSport ? `?sport=${selectedSport}${selectedSubSport !== 'ALL' ? `&format=${selectedSubSport}` : ''}` : ''}`}>
                       <Button
                         size="sm"
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 gap-1.5 min-h-10"
@@ -441,7 +720,8 @@ export default function HomePage() {
                     </Link>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -450,10 +730,13 @@ export default function HomePage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setSelectedSport(null)}
+              onClick={() => {
+                setSelectedSport(null)
+                setIsBrowsingAll(false)
+              }}
               className="text-xs text-slate-400 hover:text-white cursor-pointer"
             >
-              ← Volver a elegir otro deporte
+              ← Volver a inicio
             </Button>
 
             {/* Opción "¿Sos dueño de un club? Sumá tu club →" */}

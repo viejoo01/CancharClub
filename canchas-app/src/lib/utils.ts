@@ -66,8 +66,10 @@ export function sportLabel(sport: SportType): string {
     PADEL: 'Pádel',
     FUTBOL_5: 'Fútbol 5',
     FUTBOL_7: 'Fútbol 7',
+    FUTBOL_11: 'Fútbol 11',
     FUTBOL5: 'Fútbol 5',
     FUTBOL7: 'Fútbol 7',
+    FUTBOL11: 'Fútbol 11',
     TENIS: 'Tenis',
     SQUASH: 'Squash',
     BASQUET: 'Básquet',
@@ -248,26 +250,24 @@ export function generateExternalReference(): string {
   return crypto.randomUUID()
 }
 
-// ─── Formateo de Email Oficial de Clubes (@club.com) ─────────────────────────
+// ─── Formateo de Emails Oficiales (@club.com para dueños, @encargado.com para personal) ───
 
 /**
  * Normaliza y formatea el correo electrónico de un club para que siempre sea
- * "nombre_que_el_dueño_quiera@club.com".
+ * por defecto "usuario@club.com".
  * - Elimina espacios y mayúsculas.
  * - Convierte tildes y caracteres especiales a formato válido de correo (ej. "pádel" -> "padel").
- * - Si el usuario ingresa solo el nombre ("shari"), se añade "@club.com".
- * - Si ingresa con "@algo", se toma la parte del usuario y se le fija "@club.com".
+ * - Si el usuario ingresa solo el nombre ("padelnorte"), se fija "@club.com".
+ * - Si ingresa con "@algo", toma la parte del usuario y le fija "@club.com".
  */
 export function formatClubEmail(rawInput?: string | null, fallbackName?: string): string {
-  let input = (rawInput || fallbackName || 'club').trim().toLowerCase()
-
-  // Si viene con un dominio, extraer la parte del usuario antes del @
-  if (input.includes('@')) {
-    input = input.split('@')[0].trim()
+  let base = (rawInput || fallbackName || 'club').trim().toLowerCase()
+  if (base.includes('@')) {
+    base = base.split('@')[0].trim()
   }
 
   // Normalizar tildes y caracteres especiales
-  const sanitized = input
+  const sanitized = base
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // Quitar tildes
     .replace(/[^a-z0-9._-]/g, '')     // Solo caracteres válidos de usuario
@@ -275,6 +275,26 @@ export function formatClubEmail(rawInput?: string | null, fallbackName?: string)
 
   const finalUser = sanitized || 'club'
   return `${finalUser}@club.com`
+}
+
+/**
+ * Normaliza y formatea el correo de un encargado del club para que siempre sea
+ * por defecto "usuario@encargado.com".
+ */
+export function formatStaffEmail(rawInput?: string | null, fallbackName?: string): string {
+  let base = (rawInput || fallbackName || 'encargado').trim().toLowerCase()
+  if (base.includes('@')) {
+    base = base.split('@')[0].trim()
+  }
+
+  const sanitized = base
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/^[._-]+|[._-]+$/g, '')
+
+  const finalUser = sanitized || 'encargado'
+  return `${finalUser}@encargado.com`
 }
 
 // ─── Verificación de horario de atención ─────────────────────────────────────

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Trophy, Mail, Lock, Phone, Building2, ArrowRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,35 +12,39 @@ import { registerClub } from '@/actions/auth.actions'
 import { toast } from 'sonner'
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [clubName, setClubName] = useState('')
-  const [emailUserPart, setEmailUserPart] = useState('')
-  const [hasManuallyEditedEmail, setHasManuallyEditedEmail] = useState(false)
+  const [emailPrefix, setEmailPrefix] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleClubNameChange = (val: string) => {
     setClubName(val)
-    if (!hasManuallyEditedEmail) {
-      const suggested = val
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9._-]/g, '')
-      setEmailUserPart(suggested)
-    }
+    const slug = val
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+    setEmailPrefix(slug)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
+    const cleanPrefix = emailPrefix.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '')
+    
+    if (!cleanPrefix) {
+      toast.error('Por favor ingresá un usuario para el email de tu club.')
+      return
+    }
 
-    const cleanPart = emailUserPart.trim()
-    const finalEmail = cleanPart.includes('@') ? cleanPart : `${cleanPart}@club.com`
+    const fullEmail = `${cleanPrefix}@club.com`
+
+    setLoading(true)
 
     const formData = new FormData()
     formData.append('clubName', clubName)
-    formData.append('email', finalEmail)
+    formData.append('email', fullEmail)
     formData.append('phone', phone)
     formData.append('password', password)
     formData.append('planId', 'MEDIANO_2')
@@ -49,9 +54,12 @@ export default function RegisterPage() {
       if (res && !res.success) {
         toast.error(res.error || 'Error al registrar el club')
         setLoading(false)
+      } else {
+        router.push('/onboarding/tarjeta')
       }
     } catch {
       // Manejado por redirect
+      router.push('/onboarding/tarjeta')
     }
   }
 
@@ -97,32 +105,36 @@ export default function RegisterPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="email">Email Administrativo (@club.com) *</Label>
+                  <Label htmlFor="emailPrefix">Email Administrativo *</Label>
                   <span className="text-[10px] text-emerald-400 font-semibold font-mono">
-                    Único por club
+                    @club.com
                   </span>
                 </div>
-                <div className="relative flex items-center">
-                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
-                  <Input
-                    id="email"
+                <div className="flex items-center w-full bg-slate-950 border border-slate-800 rounded-xl overflow-hidden focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/30 transition-all">
+                  <div className="pl-3 text-slate-500 flex items-center pointer-events-none">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="emailPrefix"
                     type="text"
-                    placeholder="padelnorte"
-                    value={emailUserPart}
-                    onChange={(e) => {
-                      const val = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '')
-                      setEmailUserPart(val)
-                      setHasManuallyEditedEmail(true)
-                    }}
-                    className="pl-9 pr-24 font-mono"
                     required
+                    placeholder="nombreclub"
+                    value={emailPrefix}
+                    onChange={(e) => {
+                      const raw = e.target.value.toLowerCase().split('@')[0]
+                      setEmailPrefix(raw.replace(/[^a-z0-9._-]/g, ''))
+                    }}
+                    className="flex-1 min-w-0 bg-transparent px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none lowercase font-mono"
                   />
-                  <div className="absolute right-2 px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold text-xs select-none border border-emerald-500/20 font-mono">
+                  <div className="px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-emerald-400 bg-slate-900 border-l border-slate-800 select-none whitespace-nowrap flex items-center font-mono">
                     @club.com
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Tu correo de acceso será: <strong className="text-emerald-400 font-mono">{emailUserPart ? `${emailUserPart}@club.com` : 'tuclub@club.com'}</strong>
+                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                  <span>Con este correo ingresarás al sistema:</span>
+                  <span className="text-emerald-400 font-mono font-medium">
+                    {emailPrefix.trim() ? `${emailPrefix.trim()}@club.com` : 'tuclub@club.com'}
+                  </span>
                 </p>
               </div>
 

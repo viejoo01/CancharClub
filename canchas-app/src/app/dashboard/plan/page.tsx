@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { 
   CreditCard, 
   CheckCircle2, 
@@ -70,8 +71,8 @@ export default function ClubPlanPage() {
     try {
       const details = await getClubPlanDetails(tenantId || undefined)
       setPlanDetails(details)
-      if (details?.hasAutoDebit) {
-        setHasAutoDebit(true)
+      if (details) {
+        setHasAutoDebit(Boolean(details.hasAutoDebit))
       }
       if (showToast) {
         toast.success('Estado e historial contable actualizados desde la base de datos')
@@ -153,8 +154,8 @@ export default function ClubPlanPage() {
         const details = await getClubPlanDetails(tenantId || undefined)
         if (isMounted) {
           setPlanDetails(details)
-          if (details?.hasAutoDebit) {
-            setHasAutoDebit(true)
+          if (details) {
+            setHasAutoDebit(Boolean(details.hasAutoDebit))
           }
         }
       } catch (err) {
@@ -163,11 +164,11 @@ export default function ClubPlanPage() {
     }
     void fetchInitial()
 
-    // Sondeo periódico continuo cada 5s para consultar la base de datos en tiempo real
+    // Sondeo de respaldo cada 60s (el plan no cambia en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void fetchInitial()
-    }, 5000)
+    }, 60000)
 
     // Revalidar inmediatamente cuando el usuario vuelve o cambia de pestaña
     const handleSync = () => void fetchInitial()
@@ -188,13 +189,18 @@ export default function ClubPlanPage() {
     planDetails?.subscriptionStatus === 'LOCKED' ||
     isSimulatedPaused
 
-  const isAutoDebitActive = !isPaused && (hasAutoDebit || Boolean(planDetails?.hasAutoDebit) || (planDetails?.subscriptionStatus === 'ACTIVE'))
-  const isPaid = !isPaused && ((planDetails?.isPaid ?? false) || isAutoDebitActive)
+  const isAutoDebitActive = !isPaused && Boolean(hasAutoDebit || planDetails?.hasAutoDebit)
+  const isPaid = !isPaused && isAutoDebitActive && ((planDetails?.isPaid ?? false) || isAutoDebitActive)
 
   const clubName = planDetails?.tenantName || 'Cargando club...'
   const courtsCount = planDetails?.courtsCount || 2
-  const highestSlotPrice = planDetails?.highestSlotPriceArs || 30000
-  const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice)
+  const hasPriceConfigured = Boolean(
+    planDetails?.hasPriceConfigured !== undefined
+      ? planDetails.hasPriceConfigured
+      : (planDetails?.highestSlotPriceArs && planDetails.highestSlotPriceArs > 0)
+  )
+  const highestSlotPrice = hasPriceConfigured ? (planDetails?.highestSlotPriceArs || 0) : 0
+  const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice, null, null, hasPriceConfigured)
   const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
   const cancellationDate = planDetails?.cancellationEffectiveDate || pricing.nextDueDate
 
@@ -320,7 +326,9 @@ export default function ClubPlanPage() {
       setHasAutoDebit(true)
       setShowSubscriptionModal(false)
       toast.success('¡Débito Automático Adherido con Éxito!', {
-        description: `Tu suscripción a CancharClub (${formatARS(pricing.monthlyFeeArs)}/mes) fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
+        description: hasPriceConfigured
+          ? `Tu suscripción a CancharClub (${formatARS(pricing.monthlyFeeArs)}/mes) fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
+          : `Tu suscripción a CancharClub fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
       })
       loadPlanData(false)
     } catch {
@@ -656,9 +664,13 @@ export default function ClubPlanPage() {
                 Modelo adaptado automáticamente a la infraestructura de tu complejo.
               </p>
             </div>
-            {isPaid ? (
+            {isPaid && isAutoDebitActive ? (
               <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs px-3 py-1 shrink-0 self-start">
                 Al Día (Pagado)
+              </Badge>
+            ) : !isAutoDebitActive ? (
+              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start">
+                ⚠️ Pendiente de Tarjeta
               </Badge>
             ) : isPaused ? (
               <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-xs px-3 py-1 font-bold animate-pulse shrink-0 self-start">
@@ -703,10 +715,26 @@ export default function ClubPlanPage() {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 Cuota Mensual Final
               </span>
-              <div className="text-3xl font-extrabold text-emerald-400 font-mono mt-1">
-                {formatARS(pricing.monthlyFeeArs)}
-              </div>
-              <span className="text-[11px] text-slate-400">{activePlan.priceTurnosLabel}</span>
+              {hasPriceConfigured ? (
+                <>
+                  <div className="text-3xl font-extrabold text-emerald-400 font-mono mt-1">
+                    {formatARS(pricing.monthlyFeeArs)}
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Basado en turno mayor de {formatARS(highestSlotPrice)} ({activePlan.priceTurnosLabel})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-bold text-amber-400 mt-1 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span>Esperando carga de precios</span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Se calculará según la cancha más cara ({pricing.multiplier}x turnos)
+                  </span>
+                </>
+              )}
             </div>
 
             <div>
@@ -732,6 +760,22 @@ export default function ClubPlanPage() {
               <span className="text-[11px] text-slate-400">Cierre del período</span>
             </div>
           </div>
+
+          {!hasPriceConfigured && (
+            <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 text-amber-300">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  Aún no configuraste tarifas para tus canchas. Cuando las agregues en <strong>Tarifas y Reglas de Seña</strong>, el valor de tu cuota mensual se calculará automáticamente en base a tu turno más caro.
+                </span>
+              </div>
+              <Link href="/dashboard/precios">
+                <Button size="sm" variant="outline" className="text-xs border-amber-500/30 text-amber-300 hover:text-amber-200 hover:bg-amber-500/20 whitespace-nowrap h-7">
+                  Configurar Tarifas &rarr;
+                </Button>
+              </Link>
+            </div>
+          )}
 
           {/* Prestaciones activas del plan */}
           <div className="mt-6 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-xs space-y-2">
@@ -963,7 +1007,12 @@ export default function ClubPlanPage() {
               Adherí tu Club al Débito Automático Mensual
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Disfrutá de <strong>15 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>. La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 15 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.
+              Disfrutá de <strong>15 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>.{' '}
+              {hasPriceConfigured ? (
+                <>La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 15 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.</>
+              ) : (
+                <>La primera cuota se calculará automáticamente en base a tu turno más caro ({pricing.multiplier}x turnos) al cumplirse los 15 días ({pricing.nextDueDate}), continuando de forma automática cada mes.</>
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
               <span className="flex items-center gap-1 text-emerald-300 font-semibold">
@@ -985,7 +1034,9 @@ export default function ClubPlanPage() {
               <div className="flex flex-col gap-1.5 items-end">
                 <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Débito Automático Activo ({formatARS(pricing.monthlyFeeArs)}/mes)</span>
+                  <span>
+                    Débito Automático Activo {hasPriceConfigured ? `(${formatARS(pricing.monthlyFeeArs)}/mes)` : ''}
+                  </span>
                 </div>
                 <span className="text-[11px] text-slate-400 font-mono">
                   Concepto: <strong className="text-white">CancharClub</strong>
@@ -1379,7 +1430,7 @@ export default function ClubPlanPage() {
               <div className="sm:text-right">
                 <span className="text-slate-400 block text-[11px]">Monto mensual (desde día 16):</span>
                 <span className="text-base font-extrabold text-emerald-400 font-mono">
-                  {formatARS(pricing.monthlyFeeArs)}/mes
+                  {hasPriceConfigured ? `${formatARS(pricing.monthlyFeeArs)}/mes` : 'Esperando carga de precios'}
                 </span>
               </div>
             </div>

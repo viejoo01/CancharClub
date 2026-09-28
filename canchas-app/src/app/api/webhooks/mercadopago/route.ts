@@ -15,6 +15,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { releaseBookingLock } from '@/lib/redis'
+import { sendBookingConfirmationToPlayer, sendNewBookingAlertToClub } from '@/lib/notifications/email.service'
 import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
@@ -184,6 +185,10 @@ export async function POST(request: NextRequest) {
     staff_notes: string | null
     price_total_cents: number
     deposit_cents: number
+    customer_name?: string | null
+    customer_email?: string | null
+    starts_at?: string | null
+    court_id?: string | null
   } | null = null
 
   if (bookingIdCandidate) {
@@ -191,7 +196,7 @@ export async function POST(request: NextRequest) {
     if (isUUID) {
       const { data } = await supabase
         .from('bookings')
-        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, customer_name, customer_email, starts_at, court_id')
         .eq('id', bookingIdCandidate)
         .maybeSingle()
       booking = data
@@ -200,7 +205,7 @@ export async function POST(request: NextRequest) {
       if (sanitizedCandidate.length >= 4) {
         const { data } = await supabase
           .from('bookings')
-          .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents')
+          .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, customer_name, customer_email, starts_at, court_id')
           .ilike('staff_notes', `%${sanitizedCandidate}%`)
           .limit(1)
           .maybeSingle()
@@ -276,6 +281,60 @@ export async function POST(request: NextRequest) {
     // Si el pago fue aprobado o rechazado, el lock ya no es necesario
     if (booking.redis_lock_key) {
       await releaseBookingLock(booking.redis_lock_key, booking.id)
+    }
+
+    // ── Despachar correos electrónicos transaccionales ────────────────────
+    if (newStatus === 'confirmed') {
+      try {
+        const { data: tenantData } = await supabase
+          .from('tenants')
+          .select('name, email')
+          .eq('id', booking.tenant_id)
+          .maybeSingle()
+
+        const { data: courtData } = await supabase
+          .from('courts')
+          .select('name')
+          .eq('id', booking.court_id || '')
+          .maybeSingle()
+
+        const clubName = tenantData?.name || 'CancharClub'
+        const clubEmail = tenantData?.email
+        const courtName = courtData?.name || 'Cancha'
+        const timeStr = booking.starts_at
+          ? new Date(booking.starts_at).toLocaleTimeString('es-AR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'America/Argentina/Buenos_Aires',
+            })
+          : ''
+
+        if (booking.customer_email) {
+          await sendBookingConfirmationToPlayer({
+            playerEmail: booking.customer_email,
+            playerName: booking.customer_name || 'Jugador',
+            clubName,
+            courtName,
+            time: `${timeStr} hs`,
+            bookingId: booking.id,
+          })
+        }
+
+        if (clubEmail) {
+          const depositCents = Math.round(Number(payment.transaction_amount || 0) * 100)
+          await sendNewBookingAlertToClub({
+            clubEmail,
+            clubName,
+            playerName: booking.customer_name || 'Jugador',
+            courtName,
+            time: `${timeStr} hs`,
+            totalPrice: (booking.price_total_cents || 0) / 100,
+            depositPaid: depositCents / 100,
+          })
+        }
+      } catch (err) {
+        console.warn('[MP Webhook] No se pudo enviar email de notificación:', err)
+      }
     }
   }
 

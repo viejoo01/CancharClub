@@ -108,9 +108,17 @@ export async function emitElectronicInvoice(
     const nextCmpNumber = Math.floor(100 + Math.random() * 900)
     const docRecNum = Number((params.nroDocRec || '').replace(/\D/g, '')) || 0
 
+    const cleanCuit = (config.cuit || '').replace(/\D/g, '')
+    if (!cleanCuit) {
+      return {
+        success: false,
+        error: 'Debe configurar un CUIT emisor de AFIP antes de emitir comprobantes.'
+      }
+    }
+
     const qrUrl = generateAfipQrUrl({
       fecha: fechaEmision,
-      cuit: Number(config.cuit.replace(/\D/g, '') || 20381456789),
+      cuit: Number(cleanCuit),
       ptoVta: config.puntoVenta || 1,
       tipoCmp: params.tipoComprobante || 11,
       nroCmp: nextCmpNumber,

@@ -121,11 +121,11 @@ export default function CobrosConfigPage() {
 
     void loadSettings(true)
 
-    // Sondeo continuo cada 6 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (cobros no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void loadSettings(false)
-    }, 6000)
+    }, 60000)
 
     const handleSync = () => void loadSettings(false)
     window.addEventListener('focus', handleSync)

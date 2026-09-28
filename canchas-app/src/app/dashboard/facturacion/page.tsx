@@ -13,7 +13,9 @@ import {
   FileText,
   Loader2,
   DollarSign,
-  Building2
+  Building2,
+  AlertTriangle,
+  Pencil
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,7 +46,16 @@ import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 export default function FacturacionPage() {
   const tenantId = useTenantId()
   const [invoices, setInvoices] = useState<IssuedInvoice[]>([])
-  const [config, setConfig] = useState<AfipConfig | null>(null)
+  const [config, setConfig] = useState<AfipConfig>({
+    cuit: '',
+    puntoVenta: 1,
+    razonSocial: '',
+    condicionIva: 'MONOTRIBUTO',
+    domicilioComercial: '',
+    inicioActividades: new Date().toISOString().split('T')[0],
+    ingresosBrutos: '',
+    environment: 'TESTING'
+  })
   const [loading, setLoading] = useState(true)
 
   // Modales
@@ -70,7 +81,7 @@ export default function FacturacionPage() {
       .then(([invs, cfg]) => {
         if (isMounted) {
           setInvoices(invs)
-          setConfig(cfg)
+          if (cfg) setConfig(cfg)
           setLoading(false)
         }
       })
@@ -85,6 +96,13 @@ export default function FacturacionPage() {
 
   const handleEmitInvoice = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!config.cuit || !config.cuit.trim()) {
+      toast.error('Antes de emitir facturas, debés configurar tu CUIT emisor')
+      setIsEmitOpen(false)
+      setIsConfigOpen(true)
+      return
+    }
+
     if (!clienteNombre.trim() || Number(montoTotal) <= 0) {
       toast.error('Completá los datos del comprobante')
       return
@@ -126,18 +144,25 @@ export default function FacturacionPage() {
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!config) return
+    if (!tenantId) {
+      toast.error('No se pudo identificar el club')
+      return
+    }
+    if (!config.cuit?.trim()) {
+      toast.error('Por favor ingresá un CUIT emisor válido')
+      return
+    }
     setSubmitting(true)
     try {
-      const res = await saveAfipConfig(tenantId || '00000000-0000-0000-0000-000000000001', config)
+      const res = await saveAfipConfig(tenantId, config)
       if (res.success) {
-        toast.success('Configuración AFIP guardada')
+        toast.success('Configuración fiscal y CUIT de AFIP guardados con éxito')
         setIsConfigOpen(false)
       } else {
-        toast.error(res.error || 'Error al guardar')
+        toast.error(res.error || 'Error al guardar configuración')
       }
     } catch {
-      toast.error('Error de red')
+      toast.error('Error de red al guardar')
     } finally {
       setSubmitting(false)
     }
@@ -169,14 +194,21 @@ export default function FacturacionPage() {
           <Button
             variant="outline"
             onClick={() => setIsConfigOpen(true)}
-            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5 min-h-10"
+            className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white text-xs gap-1.5 min-h-10 hover:border-slate-600"
           >
             <Settings2 className="w-3.5 h-3.5 text-slate-400" />
-            <span>Punto de Venta &amp; CUIT</span>
+            <span>Configurar Facturación &amp; CUIT</span>
           </Button>
 
           <Button
-            onClick={() => setIsEmitOpen(true)}
+            onClick={() => {
+              if (!config.cuit) {
+                toast.error('Primero debés configurar el CUIT de tu club para emitir comprobantes')
+                setIsConfigOpen(true)
+              } else {
+                setIsEmitOpen(true)
+              }
+            }}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-emerald-950/40 min-h-10"
           >
             <Plus className="w-4 h-4" />
@@ -184,6 +216,30 @@ export default function FacturacionPage() {
           </Button>
         </div>
       </div>
+
+      {/* Alerta de CUIT pendiente si no está configurado */}
+      {!config.cuit && !loading && (
+        <div className="bg-amber-950/40 border border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-500/20 rounded-lg text-amber-400 shrink-0 mt-0.5 sm:mt-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-amber-200">Facturación AFIP pendiente de configuración</h3>
+              <p className="text-xs text-amber-300/80 mt-0.5">
+                Aún no registraste el CUIT ni los datos fiscales de tu club. Hacé clic para configurarlos y habilitar la emisión de facturas electrónicas oficiales con CAE.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => setIsConfigOpen(true)}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5 shrink-0 shadow-md"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            <span>Configurar CUIT Ahora</span>
+          </Button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -203,41 +259,77 @@ export default function FacturacionPage() {
         <Card className="bg-slate-900/70 border-slate-800 p-4 space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
             <span>Estado de Conexión AFIP</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <ShieldCheck className={`w-4 h-4 ${config.cuit ? 'text-emerald-400' : 'text-amber-400'}`} />
           </div>
-          <div className="text-lg font-black text-emerald-400 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Servicio Online</span>
-          </div>
+          {config.cuit ? (
+            <div className="text-lg font-black text-emerald-400 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Servicio Online</span>
+            </div>
+          ) : (
+            <div className="text-lg font-black text-amber-400 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+              <span>Requiere CUIT</span>
+            </div>
+          )}
           <p className="text-[11px] text-slate-400">
-            Homologación WSFEv1 Activo
+            {config.cuit ? 'Homologación WSFEv1 Activo' : 'Configuración fiscal pendiente'}
           </p>
         </Card>
 
-        <Card className="bg-slate-900/70 border-slate-800 p-4 space-y-1">
+        <Card 
+          onClick={() => setIsConfigOpen(true)}
+          className="bg-slate-900/70 border-slate-800 p-4 space-y-1 cursor-pointer hover:border-slate-700 transition-colors group"
+        >
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-            <span>Punto de Venta</span>
+            <span className="group-hover:text-purple-300 transition-colors">Punto de Venta</span>
             <Building2 className="w-4 h-4 text-purple-400" />
           </div>
-          <div className="text-2xl font-black text-white font-mono">
-            Pto. {config?.puntoVenta ? config.puntoVenta.toString().padStart(4, '0') : '0001'}
+          <div className="text-2xl font-black text-white font-mono flex items-center justify-between">
+            <span>
+              {config.cuit
+                ? `Pto. ${(config.puntoVenta || 1).toString().padStart(4, '0')}`
+                : 'Sin asignar'}
+            </span>
+            <Pencil className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-300 transition-colors" />
           </div>
           <p className="text-[11px] text-slate-400 truncate">
-            {config?.razonSocial || 'Club Central'}
+            {config.razonSocial ? config.razonSocial : (config.cuit ? 'Punto de venta fiscal' : 'Hacé clic para configurar')}
           </p>
         </Card>
 
-        <Card className="bg-slate-900/70 border-slate-800 p-4 space-y-1">
+        <Card 
+          onClick={() => setIsConfigOpen(true)}
+          className="bg-slate-900/70 border-slate-800 p-4 space-y-1 cursor-pointer hover:border-slate-700 transition-colors group"
+        >
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-            <span>CUIT Registrado</span>
-            <FileText className="w-4 h-4 text-blue-400" />
+            <span className="group-hover:text-blue-300 transition-colors">CUIT Registrado</span>
+            <div className="flex items-center gap-1.5">
+              <Pencil className="w-3 h-3 text-slate-500 group-hover:text-blue-400 transition-colors" />
+              <FileText className="w-4 h-4 text-blue-400" />
+            </div>
           </div>
-          <div className="text-xl font-black text-slate-200 font-mono">
-            {config?.cuit || '20-38145678-9'}
-          </div>
-          <p className="text-[11px] text-slate-400">
-            {config?.condicionIva === 'MONOTRIBUTO' ? 'Monotributista' : 'Resp. Inscripto'}
-          </p>
+          {config.cuit ? (
+            <>
+              <div className="text-xl font-black text-slate-200 font-mono tracking-tight">
+                {config.cuit}
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>{config.condicionIva === 'MONOTRIBUTO' ? 'Monotributista' : 'Resp. Inscripto'}</span>
+                <span className="text-xs text-blue-400 font-medium group-hover:underline">Editar</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-base font-bold text-amber-400">
+                Sin configurar
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span className="text-amber-300/80">Pendiente de registro</span>
+                <span className="text-xs text-amber-400 font-bold group-hover:underline">Configurar &rarr;</span>
+              </div>
+            </>
+          )}
         </Card>
       </div>
 
@@ -524,73 +616,113 @@ export default function FacturacionPage() {
       {/* Modal Configuración AFIP */}
       {config && (
         <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
-          <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+          <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
             <DialogHeader>
               <DialogTitle className="text-white flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-purple-400" />
                 Configuración de Facturación AFIP
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-400">
-                Datos de la empresa y punto de venta para la emisión electrónica.
+                Configurá el CUIT y los datos fiscales oficiales del club para emitir comprobantes electrónicos con CAE.
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleSaveConfig} className="space-y-3 py-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-300 font-bold">Razón Social</Label>
+            <form onSubmit={handleSaveConfig} className="space-y-4 py-2">
+              <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 text-xs text-slate-400 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>
+                  Estos datos se registrarán para la generación de comprobantes con validez fiscal nacional según la RG 4291 de AFIP.
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300 font-bold">Razón Social o Nombre del Titular</Label>
                 <Input
                   value={config.razonSocial}
                   onChange={(e) => setConfig({ ...config, razonSocial: e.target.value })}
+                  placeholder="Ej: Club Deportivo Palermo S.R.L. o Juan Pérez"
                   required
                   className="bg-slate-900 border-slate-800 text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300 font-bold">CUIT Emisor</Label>
                   <Input
                     value={config.cuit}
                     onChange={(e) => setConfig({ ...config, cuit: e.target.value })}
+                    placeholder="Ej: 20-30123456-7"
                     required
                     className="bg-slate-900 border-slate-800 text-xs font-mono"
                   />
+                  <p className="text-[10px] text-slate-500">
+                    CUIT fiscal del titular (11 dígitos).
+                  </p>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <Label className="text-xs text-slate-300 font-bold">Punto de Venta</Label>
                   <Input
                     type="number"
-                    value={config.puntoVenta}
+                    min="1"
+                    max="9999"
+                    value={config.puntoVenta || 1}
                     onChange={(e) => setConfig({ ...config, puntoVenta: Number(e.target.value) })}
                     required
                     className="bg-slate-900 border-slate-800 text-xs font-mono"
                   />
+                  <p className="text-[10px] text-slate-500">
+                    Pto. habilitado en AFIP para WSFEv1.
+                  </p>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-300 font-bold">Domicilio Comercial</Label>
-                <Input
-                  value={config.domicilioComercial}
-                  onChange={(e) => setConfig({ ...config, domicilioComercial: e.target.value })}
-                  className="bg-slate-900 border-slate-800 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <Label className="text-xs text-slate-300 font-bold">Condición frente al IVA</Label>
                 <select
                   value={config.condicionIva}
                   onChange={(e) => setConfig({ ...config, condicionIva: e.target.value as 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO' })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-purple-500"
                 >
-                  <option value="MONOTRIBUTO">Monotributo (Factura C)</option>
-                  <option value="RESPONSABLE_INSCRIPTO">Responsable Inscripto (Factura B / A)</option>
+                  <option value="MONOTRIBUTO">Monotributo (Emite Factura C)</option>
+                  <option value="RESPONSABLE_INSCRIPTO">Responsable Inscripto (Emite Factura B y A)</option>
                 </select>
               </div>
 
-              <DialogFooter className="pt-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300 font-bold">Domicilio Comercial</Label>
+                <Input
+                  value={config.domicilioComercial}
+                  onChange={(e) => setConfig({ ...config, domicilioComercial: e.target.value })}
+                  placeholder="Ej: Av. Santa Fe 1234, CABA"
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300 font-bold">Ingresos Brutos (IIBB)</Label>
+                  <Input
+                    value={config.ingresosBrutos || ''}
+                    onChange={(e) => setConfig({ ...config, ingresosBrutos: e.target.value })}
+                    placeholder="Ej: Mismo CUIT o Exento"
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-300 font-bold">Inicio de Actividades</Label>
+                  <Input
+                    type="date"
+                    value={config.inicioActividades || ''}
+                    onChange={(e) => setConfig({ ...config, inicioActividades: e.target.value })}
+                    className="bg-slate-900 border-slate-800 text-xs text-slate-300"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 gap-2">
                 <Button type="button" variant="ghost" onClick={() => setIsConfigOpen(false)} className="text-xs">
                   Cancelar
                 </Button>

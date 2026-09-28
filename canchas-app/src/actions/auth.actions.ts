@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createHmac } from 'crypto'
+import type { User, Session, AuthError } from '@supabase/supabase-js'
 import type { SaaSPlanId } from '@/config/saas-plans'
 import { formatClubEmail } from '@/lib/utils'
 
@@ -42,15 +43,24 @@ export async function clearAuthCookies() {
 
 export async function loginWithEmail(formData: FormData) {
   const rawEmail = (formData.get('email') as string)?.trim()
-  let email = rawEmail?.toLowerCase()
-  if (email && !email.includes('@')) {
-    email = `${email}@club.com`
-  }
   const rawPassword = formData.get('password') as string
   const password = rawPassword?.trim()
 
-  if (!email || !password) {
+  if (!rawEmail || !password) {
     return { success: false, error: 'Completá email y contraseña' }
+  }
+
+  const cleanEmail = rawEmail.toLowerCase()
+  let candidateEmails: string[] = []
+  if (cleanEmail.includes('@')) {
+    if (cleanEmail.endsWith('@club.com')) {
+      candidateEmails = [cleanEmail, `${cleanEmail.replace(/@club\.com$/, '')}@encargado.com`]
+    } else {
+      candidateEmails = [cleanEmail]
+    }
+  } else {
+    // Si ingresó solo el usuario, probar por defecto como dueño (@club.com) y luego como encargado (@encargado.com)
+    candidateEmails = [`${cleanEmail}@club.com`, `${cleanEmail}@encargado.com`]
   }
 
   const cookieStore = await cookies()
@@ -60,59 +70,74 @@ export async function loginWithEmail(formData: FormData) {
   await supabase.auth.signOut()
   STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
 
-  let { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  })
+  let authData: { user: User; session: Session | null } | null = null
+  let authError: AuthError | null = null
 
-  // Si hay error en el inicio de sesión, verificar auto-confirmación o auto-sincronización de credenciales
-  if (error) {
-    try {
-      const serviceClient = await createServiceClient()
-      const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
-      const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email)
+  for (const candidate of candidateEmails) {
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: candidate,
+      password,
+    })
 
-      if (existingUser) {
-        let shouldUpdate = false
-        const updatePayload: { email_confirm?: boolean; password?: string } = {}
+    // Si hay error en el inicio de sesión, verificar auto-confirmación o auto-sincronización de credenciales
+    if (error) {
+      try {
+        const serviceClient = await createServiceClient()
+        const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
+        const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === candidate)
 
-        if (!existingUser.email_confirmed_at) {
-          updatePayload.email_confirm = true
-          shouldUpdate = true
-        }
+        if (existingUser) {
+          let shouldUpdate = false
+          const updatePayload: { email_confirm?: boolean; password?: string } = {}
 
-        // Si la clave ingresada coincide con la asignada en metadatos, reparar hash desincronizado
-        const metaPwd = (existingUser.user_metadata?.assigned_password || existingUser.user_metadata?.initial_password) as string | undefined
-        if (metaPwd && (metaPwd.trim() === password || metaPwd === rawPassword)) {
-          updatePayload.password = password
-          updatePayload.email_confirm = true
-          shouldUpdate = true
-        }
+          if (!existingUser.email_confirmed_at) {
+            updatePayload.email_confirm = true
+            shouldUpdate = true
+          }
 
-        if (shouldUpdate) {
-          await serviceClient.auth.admin.updateUserById(existingUser.id, updatePayload)
-          const retry = await supabase.auth.signInWithPassword({ email, password })
-          if (retry.data?.user) {
-            data = retry.data
-            error = null
+          // Si la clave ingresada coincide con la asignada en metadatos, reparar hash desincronizado
+          const metaPwd = (existingUser.user_metadata?.assigned_password || existingUser.user_metadata?.initial_password) as string | undefined
+          if (metaPwd && (metaPwd.trim() === password || metaPwd === rawPassword)) {
+            updatePayload.password = password
+            updatePayload.email_confirm = true
+            shouldUpdate = true
+          }
+
+          if (shouldUpdate) {
+            await serviceClient.auth.admin.updateUserById(existingUser.id, updatePayload)
+            const retry = await supabase.auth.signInWithPassword({ email: candidate, password })
+            if (retry.data?.user) {
+              data = retry.data
+              error = null
+            }
           }
         }
+      } catch (adminErr) {
+        console.error('Error auto-syncing credentials:', adminErr)
       }
-    } catch (adminErr) {
-      console.error('Error auto-syncing credentials:', adminErr)
+    }
+
+    if (!error && data?.user) {
+      authData = data
+      authError = null
+      break
+    } else {
+      authError = error
     }
   }
 
-  // Si no se pudo autenticar, PURGAR Y RETORNAR ERROR INMEDIATO. NUNCA DEJAR PASAR NI REDIRIGIR.
-  if (error || !data?.user) {
+  // Si no se pudo autenticar con ningún candidato, PURGAR Y RETORNAR ERROR INMEDIATO.
+  if (authError || !authData?.user) {
     await supabase.auth.signOut()
     STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
-    let friendlyError = error?.message || 'Credenciales incorrectas'
+    let friendlyError = authError?.message || 'Credenciales incorrectas'
     if (friendlyError.toLowerCase().includes('invalid login credentials')) {
       friendlyError = 'Email o contraseña incorrectos. Verificá que no haya errores de tipeo.'
     }
     return { success: false, error: friendlyError }
   }
+
+  const data = authData
 
   // Comprobar rol de usuario y tenant
   const serviceClient = await createServiceClient()
@@ -162,7 +187,7 @@ export async function loginWithEmail(formData: FormData) {
   // Buscar estrictamente el club asignado en la base de datos
   const { data: t } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods')
+    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods, description')
     .eq('id', profile.tenant_id)
     .maybeSingle()
 
@@ -187,14 +212,23 @@ export async function loginWithEmail(formData: FormData) {
     .limit(1)
     .maybeSingle()
 
-  if (sub && (sub.status === 'active' || sub.status === 'trialing' || sub.payment_notes?.toLowerCase().includes('tarjeta'))) {
+  if (sub && sub.payment_notes && (sub.payment_notes.toLowerCase().includes('tarjeta') || sub.payment_notes.toLowerCase().includes('card'))) {
     hasCard = true
-    if (sub.payment_notes && sub.payment_notes.toLowerCase().includes('tarjeta')) {
-      const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
-      const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
-      cardBrand = brandMatch && !brandMatch[1].toLowerCase().startsWith('de') ? brandMatch[1] : 'Tarjeta'
-      cardLast4 = last4Match ? last4Match[1] : undefined
-    }
+    const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+    const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
+    cardBrand = brandMatch && !brandMatch[1].toLowerCase().startsWith('de') ? brandMatch[1] : 'Tarjeta'
+    cardLast4 = last4Match ? last4Match[1] : undefined
+  }
+
+  if (t?.description) {
+    try {
+      const meta = JSON.parse(t.description)
+      if (meta.card_linked) {
+        hasCard = true
+        if (meta.card_last4) cardLast4 = meta.card_last4
+        if (meta.card_brand) cardBrand = meta.card_brand
+      }
+    } catch {}
   }
 
   const isProd = process.env.NODE_ENV === 'production'
@@ -208,17 +242,23 @@ export async function loginWithEmail(formData: FormData) {
 
   const isActuallyActive = t?.is_active === true
   cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', cookieOpts)
-  cookieStore.delete('new_club_pending_activation')
 
   if (t?.base_slots_plan) {
     const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
     cookieStore.set('demo_plan_id', planId, cookieOpts)
   }
 
-  if (hasCard || isActuallyActive) {
+  if (hasCard) {
     cookieStore.set('demo_has_card', 'true', cookieOpts)
+    cookieStore.delete('new_club_pending_activation')
     if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, cookieOpts)
     if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, cookieOpts)
+  } else {
+    cookieStore.delete('demo_has_card')
+    cookieStore.delete('demo_card_last4')
+    cookieStore.delete('demo_card_brand')
+    cookieStore.delete('demo_card_holder')
+    cookieStore.set('new_club_pending_activation', 'true', cookieOpts)
   }
 
   if (profile?.role === 'TENANT_STAFF') {
@@ -229,6 +269,11 @@ export async function loginWithEmail(formData: FormData) {
     cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', cookieOpts)
   }
 
+  // SI EL CLUB AÚN NO VINCULÓ TARJETA, EXIGIRLA ANTES DE ENTRAR AL PANEL
+  if (!hasCard && profile.role !== 'SUPERADMIN') {
+    redirect('/onboarding/tarjeta')
+  }
+
   redirect('/dashboard')
 }
 
@@ -236,9 +281,8 @@ export async function registerClub(formData: FormData) {
   const clubName = (formData.get('clubName') as string)?.trim()
   const rawEmail = (formData.get('email') as string)?.trim()
   const password = formData.get('password') as string
-  const phone = (formData.get('phone') as string)?.trim() || '+5493816839320'
+  const phone = (formData.get('phone') as string)?.trim() || null
   const city = (formData.get('city') as string)?.trim() || 'San Miguel de Tucumán'
-  const sportsRaw = formData.get('sports') as string
   const planId = ((formData.get('planId') as string) || 'MEDIANO_2') as SaaSPlanId
 
   if (!clubName || !password) {
@@ -281,17 +325,7 @@ export async function registerClub(formData: FormData) {
     }
   }
 
-  let sports: string[] = ['PADEL']
-  if (sportsRaw) {
-    try {
-      const parsed = JSON.parse(sportsRaw)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        sports = parsed
-      }
-    } catch {
-      sports = ['PADEL']
-    }
-  }
+
 
   // 3. Crear o actualizar usuario en Supabase Auth con confirmación automática
   let userId: string | null = null
@@ -304,7 +338,7 @@ export async function registerClub(formData: FormData) {
       email_confirm: true,
       user_metadata: {
         full_name: clubName,
-        phone,
+        phone: phone || undefined,
       },
     })
   } else {
@@ -314,7 +348,7 @@ export async function registerClub(formData: FormData) {
       email_confirm: true,
       user_metadata: {
         full_name: clubName,
-        phone,
+        phone: phone || undefined,
       },
     })
 
@@ -353,15 +387,20 @@ export async function registerClub(formData: FormData) {
       name: clubName,
       slug,
       email,
-      phone_whatsapp: phone,
+      phone_whatsapp: phone || null,
       city,
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: true, // Club recién agregado queda activo y operativo de inmediato
-      subscription_status: 'ACTIVE', // Suscripción activa
+      is_active: false, // Inactivo hasta que ingrese la tarjeta de débito o crédito
+      subscription_status: 'PAYMENT_PENDING', // Pendiente de vinculación de tarjeta
       base_slots_plan: baseSlots,
       payment_methods: ['CARD', 'MERCADO_PAGO'],
+      description: JSON.stringify({
+        card_linked: false,
+        plan_id: planId,
+        pending_card: true,
+      }),
     })
     .select()
     .single()
@@ -379,44 +418,10 @@ export async function registerClub(formData: FormData) {
       tenant_id: tenant.id,
       full_name: clubName,
       role: 'TENANT_ADMIN',
-      phone,
+      phone: phone || null,
     })
 
-  // 4. Crear canchas iniciales según plan y deportes seleccionados
-  try {
-    const targetCourts = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
-    const courtsToInsert = []
-    for (let index = 0; index < targetCourts; index++) {
-      const sport = sports[index % sports.length] || 'PADEL'
-      const s = sport.toUpperCase()
-      const isPadel = s.includes('PADEL')
-      let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'TENIS' | 'BASQUET' = 'PADEL'
-      if (s.includes('7')) sportEnum = 'FUTBOL7'
-      else if (s.includes('FUTBOL') || s.includes('SOCCER') || s.includes('5')) sportEnum = 'FUTBOL5'
-      else if (s.includes('TENIS') || s.includes('TENNIS')) sportEnum = 'TENIS'
-      else if (s.includes('BASQUET') || s.includes('BASKET')) sportEnum = 'BASQUET'
-
-      const isBasket = sportEnum === 'BASQUET'
-      const isTenis = sportEnum === 'TENIS'
-      const surfaceName = isPadel ? 'Cristal' : isBasket ? 'Parquet' : isTenis ? 'Polvo de ladrillo' : 'Sintético'
-      const surfaceEnum = isPadel ? 'CRISTAL' : isBasket ? 'PARQUET' : isTenis ? 'POLVO_LADRILLO' : 'CESPED_SINTETICO'
-
-      courtsToInsert.push({
-        tenant_id: tenant.id,
-        name: `Cancha ${index + 1} (${surfaceName})`,
-        sport: sportEnum,
-        surface: surfaceEnum,
-        slot_duration_minutes: isPadel ? 90 : 60,
-        has_lights: true,
-        display_order: index + 1,
-        is_active: true,
-      })
-    }
-    const { error: insertCourtsErr } = await serviceClient.from('courts').insert(courtsToInsert)
-    if (insertCourtsErr) console.error('Error creating initial courts:', insertCourtsErr.message)
-  } catch (courtErr) {
-    console.warn('Initial courts creation notice:', courtErr)
-  }
+  // 4. Canchas: El club inicia en blanco para que el dueño cree manualmente sus canchas exactas
 
   // 5. Iniciar sesión de Supabase para generar sesión y cookies
   const supabase = await createClient()
@@ -425,7 +430,7 @@ export async function registerClub(formData: FormData) {
     password,
   })
 
-  // 6. Configurar cookies de sesión
+  // 6. Configurar cookies de sesión exigiendo vinculación de tarjeta
   const cookieStore = await cookies()
   cookieStore.set('canchar_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
@@ -433,13 +438,17 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'PAYMENT_PENDING', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
-  cookieStore.delete('new_club_pending_activation')
-  cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.delete('demo_has_card')
+  cookieStore.delete('demo_card_last4')
+  cookieStore.delete('demo_card_brand')
+  cookieStore.delete('demo_card_holder')
 
-  redirect('/dashboard')
+  // Redirigir obligatoriamente al paso de vinculación de tarjeta antes del panel
+  redirect('/onboarding/tarjeta')
 }
 
 export async function logout() {

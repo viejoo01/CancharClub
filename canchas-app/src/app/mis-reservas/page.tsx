@@ -14,12 +14,24 @@ import {
   Check,
   Loader2,
   MessageCircle,
-  Ticket
+  Ticket,
+  XCircle,
+  AlertTriangle
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { toast } from 'sonner'
 import { formatARS } from '@/lib/utils'
-import { lookupPlayerBookings, type PlayerBookingDetail } from '@/actions/booking.actions'
+import { lookupPlayerBookings, cancelBookingByPlayer, type PlayerBookingDetail } from '@/actions/booking.actions'
 
 export default function MisReservasPage() {
   const [activeTab, setActiveTab] = useState<'code' | 'email'>('code')
@@ -29,6 +41,32 @@ export default function MisReservasPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [bookings, setBookings] = useState<PlayerBookingDetail[] | null>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [cancellingBooking, setCancellingBooking] = useState<PlayerBookingDetail | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  const handleCancelBooking = async () => {
+    if (!cancellingBooking) return
+    setIsCancelling(true)
+    try {
+      const res = await cancelBookingByPlayer(
+        cancellingBooking.id,
+        emailQuery || cancellingBooking.customerEmail || cancellingBooking.customerPhone || ''
+      )
+      if (res.success) {
+        toast.success(res.message || 'Tu reserva fue cancelada con éxito.')
+        setBookings(prev => 
+          prev ? prev.map(b => b.id === cancellingBooking.id ? { ...b, status: 'CANCELLED' } : b) : null
+        )
+        setCancellingBooking(null)
+      } else {
+        toast.error(res.error || 'No se pudo cancelar la reserva.')
+      }
+    } catch {
+      toast.error('Ocurrió un error inesperado al cancelar la reserva.')
+    } finally {
+      setIsCancelling(false)
+    }
+  }
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -341,11 +379,23 @@ export default function MisReservasPage() {
                           )}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-800"
+                          className="h-10 px-3 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-800"
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-500" />
-                          WhatsApp Club
+                          WhatsApp
                         </a>
+                      )}
+
+                      {!isCancelled && (
+                        <button
+                          type="button"
+                          onClick={() => setCancellingBooking(booking)}
+                          className="h-10 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-rose-500/20 shrink-0"
+                          title="Cancelar mi reserva"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>Cancelar</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -355,6 +405,56 @@ export default function MisReservasPage() {
           )}
         </div>
       </main>
+
+      {/* Modal de Confirmación de Cancelación (Mejora 12) */}
+      <Dialog open={Boolean(cancellingBooking)} onOpenChange={(open) => !open && setCancellingBooking(null)}>
+        <DialogContent className="max-w-md bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-base">
+              <AlertTriangle className="w-5 h-5" />
+              ¿Cancelar esta reserva?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              Estás a punto de cancelar tu turno en <strong>{cancellingBooking?.clubName}</strong> para el <strong>{cancellingBooking?.dateFormatted}</strong> a las <strong>{cancellingBooking?.timeFormatted}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 space-y-1">
+            <p className="font-semibold">⚠️ Política de Cancelación:</p>
+            <p className="text-[11px] leading-relaxed">
+              El horario quedará liberado automáticamente para que otro jugador o la lista de espera pueda reservar.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCancellingBooking(null)}
+              disabled={isCancelling}
+              className="text-xs"
+            >
+              Mantener mi turno
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCancelBooking}
+              disabled={isCancelling}
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  Cancelando...
+                </>
+              ) : (
+                'Sí, cancelar reserva'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <footer className="w-full max-w-xl text-center py-2 text-[11px] text-slate-400">
         CancharClub • Consulta y seguimiento de reservas en tiempo real

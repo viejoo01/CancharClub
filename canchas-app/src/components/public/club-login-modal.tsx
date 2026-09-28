@@ -82,15 +82,15 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
           <form onSubmit={handleSubmit} className="w-full space-y-4 mt-6 text-left">
             <div className="space-y-1.5">
               <label className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
-                Email
+                Email o Usuario de acceso
               </label>
               <input
-                type="email"
+                type="text"
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nombre@club.com"
-                className="w-full h-12 px-4 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all"
+                placeholder="nombre@club.com o usuario"
+                className="w-full h-12 px-4 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all font-mono"
                 required
               />
             </div>

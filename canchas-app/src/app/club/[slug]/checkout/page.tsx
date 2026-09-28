@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast, sportLabel } from '@/lib/utils'
 import { initiateOnlineCheckout } from '@/actions/booking.actions'
 import { 
   getPlayerWalletBalance, 
@@ -405,7 +405,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
               <div>
                 <div className="flex items-center gap-1.5 mb-1">
                   <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] uppercase font-extrabold px-1.5 py-0">
-                    {sport}
+                    {sportLabel(sport)}
                   </Badge>
                   <span className="text-[11px] text-slate-400 font-semibold">{club.name}</span>
                 </div>

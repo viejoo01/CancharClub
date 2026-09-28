@@ -71,11 +71,11 @@ export default function JugadoresPage() {
       void loadData(true)
     }, 300)
 
-    // Sondeo continuo cada 6 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (jugadores no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void loadData(false)
-    }, 6000)
+    }, 60000)
 
     const handleSync = () => void loadData(false)
     window.addEventListener('focus', handleSync)

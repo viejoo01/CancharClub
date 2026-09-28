@@ -11,6 +11,7 @@ import { siteConfig } from '@/config/site'
  * Parámetros para la confirmación de reserva al jugador
  */
 export interface PlayerBookingConfirmationParams {
+  playerName?: string
   clubName: string
   courtName: string
   time: string // Ej: "20:00 hs - 07/09/2026"

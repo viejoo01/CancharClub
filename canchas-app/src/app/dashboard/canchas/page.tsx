@@ -187,11 +187,11 @@ export default function CanchasPage() {
     }
     void fetchCourts()
 
-    // Sondeo continuo cada 5 segundos a la base de datos
+    // Sondeo de respaldo cada 60 segundos (canchas no cambian en tiempo real)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void fetchCourts()
-    }, 5000)
+    }, 60000)
 
     const handleSync = () => void fetchCourts()
     window.addEventListener('focus', handleSync)

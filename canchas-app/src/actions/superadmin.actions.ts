@@ -713,7 +713,7 @@ export async function deleteProfileById(userId: string): Promise<{ success: bool
 }
 
 /**
- * Elimina un club completamente de la base de datos (con sus canchas, perfiles, etc.).
+ * Elimina un club completamente de la base de datos (con sus canchas, perfiles, suscripciones SaaS, etc.).
  * Requiere service role key.
  */
 export async function deleteTenantById(tenantId: string): Promise<{ success: boolean; error?: string }> {
@@ -723,18 +723,90 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
 
     const supabase = await createServiceClient()
 
-    // 1. Eliminar dependencias en orden relacional estricto
-    try { await supabase.from('court_orders').delete().eq('tenant_id', tenantId) } catch {}
+    // 1. Torneos y fixtures dependientes
+    try {
+      const { data: tourneys } = await supabase.from('tournaments').select('id').eq('tenant_id', tenantId)
+      if (tourneys && tourneys.length > 0) {
+        const tIds = tourneys.map(t => t.id)
+        const { data: cats } = await supabase.from('tournament_categories').select('id').in('tournament_id', tIds)
+        if (cats && cats.length > 0) {
+          const cIds = cats.map(c => c.id)
+          try { await supabase.from('tournament_matches').delete().in('category_id', cIds) } catch {}
+          try { await supabase.from('tournament_teams').delete().in('category_id', cIds) } catch {}
+          try { await supabase.from('tournament_categories').delete().in('tournament_id', tIds) } catch {}
+        }
+      }
+      await supabase.from('tournaments').delete().eq('tenant_id', tenantId)
+    } catch (e) {
+      console.warn('Error eliminando torneos:', e)
+    }
+
+    // 2. Órdenes y cantina
+    try {
+      const { data: orders } = await supabase.from('court_orders').select('id').eq('tenant_id', tenantId)
+      if (orders && orders.length > 0) {
+        const orderIds = orders.map(o => o.id)
+        try { await supabase.from('court_order_items').delete().in('order_id', orderIds) } catch {}
+      }
+      await supabase.from('court_orders').delete().eq('tenant_id', tenantId)
+    } catch (e) {
+      console.warn('Error eliminando órdenes de cantina:', e)
+    }
+
+    // 3. Bloqueos, turnos fijos y listas de espera
     try { await supabase.from('court_blocks').delete().eq('tenant_id', tenantId) } catch {}
     try { await supabase.from('recurring_slots').delete().eq('tenant_id', tenantId) } catch {}
     try { await supabase.from('waitlists').delete().eq('tenant_id', tenantId) } catch {}
-    try { await supabase.from('tournaments').delete().eq('tenant_id', tenantId) } catch {}
-    await supabase.from('bookings').delete().eq('tenant_id', tenantId)
-    await supabase.from('price_rules').delete().eq('tenant_id', tenantId)
-    await supabase.from('courts').delete().eq('tenant_id', tenantId)
-    await supabase.from('profiles').delete().eq('tenant_id', tenantId)
 
-    // 2. Eliminar tenant
+    // 4. Reservas y pagos de reservas
+    try {
+      const { data: bookings } = await supabase.from('bookings').select('id').eq('tenant_id', tenantId)
+      if (bookings && bookings.length > 0) {
+        const bIds = bookings.map(b => b.id)
+        try { await supabase.from('booking_payments').delete().in('booking_id', bIds) } catch {}
+      }
+      try { await supabase.from('booking_payments').delete().eq('tenant_id', tenantId) } catch {}
+      await supabase.from('bookings').delete().eq('tenant_id', tenantId)
+    } catch (e) {
+      console.warn('Error eliminando reservas:', e)
+    }
+
+    // 5. Reglas de precios y canchas
+    try { await supabase.from('price_rules').delete().eq('tenant_id', tenantId) } catch {}
+    try { await supabase.from('courts').delete().eq('tenant_id', tenantId) } catch {}
+
+    // 6. Facturación y suscripciones SaaS (CRÍTICO: evita violaciones de foreign key)
+    try { await supabase.from('tenant_invoices').delete().eq('tenant_id', tenantId) } catch (e) {
+      console.warn('Error eliminando facturas SaaS:', e)
+    }
+    try { await supabase.from('saas_subscriptions').delete().eq('tenant_id', tenantId) } catch (e) {
+      console.warn('Error eliminando suscripciones SaaS:', e)
+    }
+    try { await supabase.from('audit_log').delete().eq('tenant_id', tenantId) } catch {}
+
+    // 7. Perfiles de usuario y cuentas auth asociadas al club (sin tocar SUPERADMINs)
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('id, role').eq('tenant_id', tenantId)
+      if (profiles && profiles.length > 0) {
+        for (const p of profiles) {
+          if (p.role !== 'SUPERADMIN') {
+            try {
+              await supabase.auth.admin.deleteUser(p.id)
+            } catch (userErr) {
+              console.warn('No se pudo eliminar auth user:', p.id, userErr)
+            }
+          }
+        }
+        await supabase.from('profiles').delete().eq('tenant_id', tenantId)
+      }
+    } catch (profErr) {
+      console.warn('Error limpiando perfiles:', profErr)
+      try {
+        await supabase.from('profiles').update({ tenant_id: null }).eq('tenant_id', tenantId)
+      } catch {}
+    }
+
+    // 8. Eliminar el club (tenant)
     const { error } = await supabase
       .from('tenants')
       .delete()
@@ -746,6 +818,7 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
     }
 
     revalidatePath('/superadmin')
+    revalidatePath('/dashboard')
     revalidatePath('/')
     return { success: true }
   } catch (err) {

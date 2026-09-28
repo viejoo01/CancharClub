@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createHmac } from 'crypto'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
-import type { SaaSPlanId } from '@/config/saas-plans'
+import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { formatClubEmail } from '@/lib/utils'
 
 const STALE_AUTH_COOKIES = [
@@ -187,7 +187,7 @@ export async function loginWithEmail(formData: FormData) {
   // Buscar estrictamente el club asignado en la base de datos
   const { data: t } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods, description')
+    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods, description, plan_id')
     .eq('id', profile.tenant_id)
     .maybeSingle()
 
@@ -243,10 +243,28 @@ export async function loginWithEmail(formData: FormData) {
   const isActuallyActive = t?.is_active === true
   cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', cookieOpts)
 
-  if (t?.base_slots_plan) {
-    const planId: SaaSPlanId = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
-    cookieStore.set('demo_plan_id', planId, cookieOpts)
+  // Consultar canchas activas para resolver el plan exacto sin degradación
+  const { data: userCourts } = await serviceClient
+    .from('courts')
+    .select('id')
+    .eq('tenant_id', profile.tenant_id)
+    .eq('is_active', true)
+  const courtsLen = userCourts?.length || 0
+
+  let resolvedLoginPlan: SaaSPlanId = 'MEDIANO_2'
+  if (t?.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(t.plan_id)) {
+    resolvedLoginPlan = t.plan_id as SaaSPlanId
+  } else if (t?.base_slots_plan) {
+    resolvedLoginPlan = t.base_slots_plan === 1 ? 'CHICO_1' : t.base_slots_plan === 2 ? 'MEDIANO_2' : t.base_slots_plan <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
   }
+  if (courtsLen > 0) {
+    const fromCourts = getPlanByCourtsCount(courtsLen).id
+    const PLAN_RANKS: Record<SaaSPlanId, number> = { CHICO_1: 1, MEDIANO_2: 2, CONSOLIDADO_3_4: 3, GRANDE_5_PLUS: 4 }
+    if (PLAN_RANKS[fromCourts] > PLAN_RANKS[resolvedLoginPlan]) {
+      resolvedLoginPlan = fromCourts
+    }
+  }
+  cookieStore.set('demo_plan_id', resolvedLoginPlan, cookieOpts)
 
   if (hasCard) {
     cookieStore.set('demo_has_card', 'true', cookieOpts)
@@ -373,11 +391,27 @@ export async function registerClub(formData: FormData) {
 
   const slug = `${baseSlug || 'club'}-${Date.now().toString().slice(-4)}`
 
+  const rawSports = formData.get('sports') as string | null
+  let selectedSports: string[] = []
+  if (rawSports) {
+    try {
+      const parsed = JSON.parse(rawSports)
+      if (Array.isArray(parsed)) {
+        selectedSports = parsed.map(s => String(s).trim()).filter(Boolean)
+      }
+    } catch {
+      selectedSports = rawSports.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+  if (selectedSports.length === 0) {
+    selectedSports = ['FUTBOL', 'PADEL']
+  }
+
   const baseSlotsMap: Record<SaaSPlanId, number> = {
     CHICO_1: 1,
     MEDIANO_2: 2,
     CONSOLIDADO_3_4: 4,
-    GRANDE_5_PLUS: 6,
+    GRANDE_5_PLUS: 5,
   }
   const baseSlots = baseSlotsMap[planId] || 2
 
@@ -394,12 +428,14 @@ export async function registerClub(formData: FormData) {
       timezone: 'America/Argentina/Tucuman',
       is_active: false, // Inactivo hasta que ingrese la tarjeta de débito o crédito
       subscription_status: 'PAYMENT_PENDING', // Pendiente de vinculación de tarjeta
+      plan_id: planId, // Garantiza que no se degrade por el DEFAULT 'CHICO_1'
       base_slots_plan: baseSlots,
       payment_methods: ['CARD', 'MERCADO_PAGO'],
       description: JSON.stringify({
         card_linked: false,
         plan_id: planId,
         pending_card: true,
+        selected_sports: selectedSports,
       }),
     })
     .select()
@@ -421,7 +457,72 @@ export async function registerClub(formData: FormData) {
       phone: phone || null,
     })
 
-  // 4. Canchas: El club inicia en blanco para que el dueño cree manualmente sus canchas exactas
+  // 4. Sembrar automáticamente las canchas iniciales según el plan y deportes seleccionados
+  try {
+    const courtsToInsert = []
+    for (let i = 0; i < baseSlots; i++) {
+      const sportKey = selectedSports[i % selectedSports.length] || 'FUTBOL'
+      const isPadel = sportKey.toUpperCase().includes('PADEL')
+      const isTenis = sportKey.toUpperCase().includes('TENIS')
+      const isBasquet = sportKey.toUpperCase().includes('BASQUET') || sportKey.toUpperCase().includes('BASKET')
+
+      let sportEnum: 'PADEL' | 'FUTBOL5' | 'TENIS' | 'BASQUET' = 'FUTBOL5'
+      let surface: 'CESPED_SINTETICO' | 'CRISTAL' | 'POLVO_LADRILLO' | 'CEMENTO' = 'CESPED_SINTETICO'
+      let slotDurationMinutes = 60
+      let sportLabel = 'Fútbol 5'
+
+      if (isPadel) {
+        sportEnum = 'PADEL'
+        surface = 'CRISTAL'
+        slotDurationMinutes = 90
+        sportLabel = 'Pádel'
+      } else if (isTenis) {
+        sportEnum = 'TENIS'
+        surface = 'POLVO_LADRILLO'
+        slotDurationMinutes = 90
+        sportLabel = 'Tenis'
+      } else if (isBasquet) {
+        sportEnum = 'BASQUET'
+        surface = 'CEMENTO'
+        slotDurationMinutes = 60
+        sportLabel = 'Básquet'
+      }
+
+      courtsToInsert.push({
+        tenant_id: tenant.id,
+        name: `Cancha ${i + 1} (${sportLabel})`,
+        sport: sportEnum,
+        surface: surface,
+        slot_duration_minutes: slotDurationMinutes,
+        has_lights: true,
+        is_indoor: false,
+        is_active: true,
+        display_order: i + 1,
+      })
+    }
+
+    const { data: createdCourts } = await serviceClient
+      .from('courts')
+      .insert(courtsToInsert)
+      .select('id, name')
+
+    if (createdCourts && createdCourts.length > 0) {
+      const priceRulesToInsert = createdCourts.map((c) => ({
+        tenant_id: tenant.id,
+        court_id: c.id,
+        name: `Tarifa Estándar - ${c.name}`,
+        day_of_week: [0, 1, 2, 3, 4, 5, 6],
+        time_from: '08:00',
+        time_to: '00:00',
+        price_cents: 3000000,
+        priority: 1,
+        is_active: true,
+      }))
+      await serviceClient.from('price_rules').insert(priceRulesToInsert)
+    }
+  } catch (courtErr) {
+    console.warn('[registerClub] Error sembrando canchas iniciales:', courtErr)
+  }
 
   // 5. Iniciar sesión de Supabase para generar sesión y cookies
   const supabase = await createClient()

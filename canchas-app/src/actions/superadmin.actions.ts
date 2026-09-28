@@ -2,7 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { SaaSPlanId } from '@/config/saas-plans'
+import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { assertSuperadmin } from '@/lib/auth-security'
 
 export interface SuperadminTenantItem {
@@ -47,6 +47,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         mp_access_token,
         created_at,
         description,
+        plan_id,
         courts (id, is_active),
         price_rules (price_cents)
       `)
@@ -88,17 +89,22 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
       }
 
-      // Determinar plan respetando la configuración oficial de la administración (base_slots_plan)
+      // Determinar plan respetando canchas activas y configuración asignada
+      const PLAN_RANKS: Record<SaaSPlanId, number> = { CHICO_1: 1, MEDIANO_2: 2, CONSOLIDADO_3_4: 3, GRANDE_5_PLUS: 4 }
       let defaultPlan: SaaSPlanId = 'MEDIANO_2'
-      const baseSlots = Number(t.base_slots_plan)
-      if (baseSlots === 1) defaultPlan = 'CHICO_1'
-      else if (baseSlots === 1.5 || baseSlots === 2) defaultPlan = 'MEDIANO_2'
-      else if (baseSlots === 3 || baseSlots === 4) defaultPlan = 'CONSOLIDADO_3_4'
-      else if (baseSlots >= 5) defaultPlan = 'GRANDE_5_PLUS'
-      else if (activeCourts <= 1) defaultPlan = 'CHICO_1'
-      else if (activeCourts === 2) defaultPlan = 'MEDIANO_2'
-      else if (activeCourts <= 4) defaultPlan = 'CONSOLIDADO_3_4'
-      else defaultPlan = 'GRANDE_5_PLUS'
+      if (t.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(t.plan_id)) {
+        defaultPlan = t.plan_id as SaaSPlanId
+      } else if (t.base_slots_plan) {
+        const baseSlots = Number(t.base_slots_plan)
+        defaultPlan = baseSlots === 1 ? 'CHICO_1' : (baseSlots === 1.5 || baseSlots === 2) ? 'MEDIANO_2' : baseSlots <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+      }
+
+      if (activeCourts > 0) {
+        const fromCourts = getPlanByCourtsCount(activeCourts).id
+        if (PLAN_RANKS[fromCourts] > PLAN_RANKS[defaultPlan]) {
+          defaultPlan = fromCourts
+        }
+      }
 
       const isActuallyActive = t.is_active === true
       const realLastPaid = lastPaidMap.get(t.id) || null
@@ -214,11 +220,14 @@ export async function updateTenantPlan(tenantId: string, planId: SaaSPlanId) {
     if (!auth.authorized) return { success: false, error: auth.error }
 
     const supabase = await createServiceClient()
-    const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
+    const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 4 : 5
 
     const { error } = await supabase
       .from('tenants')
-      .update({ base_slots_plan: baseSlots })
+      .update({ 
+        plan_id: planId,
+        base_slots_plan: baseSlots 
+      })
       .eq('id', tenantId)
 
     if (error) {
@@ -251,8 +260,9 @@ export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId
     }
 
     if (planId) {
-      const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 3 : 5
+      const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 4 : 5
       updateData.base_slots_plan = baseSlots
+      updateData.plan_id = planId
     }
 
     const { error } = await supabase

@@ -1,11 +1,11 @@
-﻿import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
+import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { GracePeriodBanner } from '@/components/billing/grace-period-banner'
 import { TenantProvider } from '@/hooks/use-tenant-id'
 import type { TenantSubscriptionStatus } from '@/types/database'
-import type { SaaSPlanId } from '@/config/saas-plans'
+import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { calculateClubSaaSFee, calculateDaysUntilDueDate } from '@/lib/saas-pricing'
 import { verifySuperadminSessionToken } from '@/lib/auth-security'
 
@@ -63,14 +63,59 @@ export default async function DashboardLayout({
     } catch {}
   }
 
-  function resolvePlanId(planIdField: string | null | undefined, baseSlotsField: number | null | undefined): SaaSPlanId | undefined {
+  const PLAN_RANK: Record<SaaSPlanId, number> = {
+    CHICO_1: 1,
+    MEDIANO_2: 2,
+    CONSOLIDADO_3_4: 3,
+    GRANDE_5_PLUS: 4,
+  }
+
+  function getHigherPlan(p1?: SaaSPlanId, p2?: SaaSPlanId): SaaSPlanId | undefined {
+    if (!p1) return p2
+    if (!p2) return p1
+    return (PLAN_RANK[p1] || 0) >= (PLAN_RANK[p2] || 0) ? p1 : p2
+  }
+
+  function resolvePlanId(
+    planIdField: string | null | undefined, 
+    baseSlotsField: number | null | undefined,
+    descField: string | null | undefined,
+    courtsCount?: number
+  ): SaaSPlanId {
+    let resolved: SaaSPlanId | undefined = undefined
+
+    // 1. Si tiene plan_id directo en columna tenants
     if (planIdField && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(planIdField)) {
-      return planIdField as SaaSPlanId
+      resolved = planIdField as SaaSPlanId
     }
+
+    // 2. Si tiene plan_id en description JSON
+    if (!resolved && descField) {
+      try {
+        const meta = JSON.parse(descField)
+        if (meta.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(meta.plan_id)) {
+          resolved = meta.plan_id as SaaSPlanId
+        }
+      } catch {}
+    }
+
+    // 3. Evaluar base_slots_plan
     if (baseSlotsField) {
-      return baseSlotsField === 1 ? 'CHICO_1' : baseSlotsField === 2 ? 'MEDIANO_2' : baseSlotsField <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+      const fromSlots: SaaSPlanId = 
+        baseSlotsField === 1 ? 'CHICO_1' : 
+        baseSlotsField === 2 ? 'MEDIANO_2' : 
+        baseSlotsField <= 4 ? 'CONSOLIDADO_3_4' : 
+        'GRANDE_5_PLUS'
+      resolved = getHigherPlan(resolved, fromSlots)
     }
-    return undefined
+
+    // 4. Si el club tiene canchas reales registradas, el plan NUNCA puede ser inferior a las canchas
+    if (courtsCount && courtsCount > 0) {
+      const fromCourts = getPlanByCourtsCount(courtsCount).id
+      resolved = getHigherPlan(resolved, fromCourts)
+    }
+
+    return resolved || 'MEDIANO_2'
   }
 
   function mapSport(s: string): string {
@@ -85,13 +130,15 @@ export default async function DashboardLayout({
 
   let initialCourtsCount = 0
   let initialSports: string[] = []
+  let highestPriceArs = 0
+  let hasPriceConfigured = false
 
   if (isSuperadmin) {
     userRole = 'SUPERADMIN'
     userName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
     const requestedTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     if (requestedTenantId) {
-      const [tenantRes, courtsRes, subRes] = await Promise.all([
+      const [tenantRes, courtsRes, subRes, priceRulesRes] = await Promise.all([
         serviceClient
           .from('tenants')
           .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
@@ -108,7 +155,17 @@ export default async function DashboardLayout({
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        serviceClient
+          .from('price_rules')
+          .select('price_cents, is_active')
+          .eq('tenant_id', requestedTenantId),
       ])
+
+      const courtsData = courtsRes.data
+      if (courtsData && courtsData.length > 0) {
+        initialCourtsCount = courtsData.length
+        initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+      }
 
       const st = tenantRes.data
       if (st) {
@@ -120,13 +177,29 @@ export default async function DashboardLayout({
         parseTenantMeta(st.description || null)
         if (typeof st.is_active === 'boolean') isActive = st.is_active
         if (st.subscription_status) subscriptionStatus = st.subscription_status
-        planId = resolvePlanId(st.plan_id, st.base_slots_plan)
+        planId = resolvePlanId(st.plan_id, st.base_slots_plan, st.description, initialCourtsCount)
+
+        // Auto-reparar la base de datos si el plan registrado era inferior
+        if (st.id && (st.plan_id !== planId || Number(st.base_slots_plan) < (initialCourtsCount || 1))) {
+          void serviceClient
+            .from('tenants')
+            .update({
+              plan_id: planId,
+              base_slots_plan: Math.max(Number(st.base_slots_plan) || 1, initialCourtsCount || 1)
+            })
+            .eq('id', st.id)
+        }
       }
 
-      const courtsData = courtsRes.data
-      if (courtsData && courtsData.length > 0) {
-        initialCourtsCount = courtsData.length
-        initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+      if (priceRulesRes?.data && priceRulesRes.data.length > 0) {
+        const activeRules = priceRulesRes.data.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+        if (activeRules.length > 0) {
+          const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+          if (maxCents > 0) {
+            highestPriceArs = Math.round(maxCents / 100)
+            hasPriceConfigured = true
+          }
+        }
       }
 
       const subData = subRes.data
@@ -141,7 +214,7 @@ export default async function DashboardLayout({
     }
     const simulatedPlan = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
     if (simulatedPlan && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(simulatedPlan)) {
-      planId = simulatedPlan
+      planId = getHigherPlan(planId, simulatedPlan)
     }
   } else if (user) {
     const { data: profile } = await serviceClient
@@ -159,7 +232,7 @@ export default async function DashboardLayout({
     userRole = profile.role || 'TENANT_ADMIN'
     userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
 
-    const [tenantResult, courtsResult, subResult] = await Promise.all([
+    const [tenantResult, courtsResult, subResult, priceRulesResult] = await Promise.all([
       serviceClient
         .from('tenants')
         .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
@@ -176,7 +249,17 @@ export default async function DashboardLayout({
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      serviceClient
+        .from('price_rules')
+        .select('price_cents, is_active')
+        .eq('tenant_id', profile.tenant_id),
     ])
+
+    const courtsData = courtsResult.data
+    if (courtsData && courtsData.length > 0) {
+      initialCourtsCount = courtsData.length
+      initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+    }
 
     const t = tenantResult.data
     if (!t) {
@@ -193,12 +276,28 @@ export default async function DashboardLayout({
     parseTenantMeta(t.description || null)
     if (typeof t.is_active === 'boolean') isActive = t.is_active
     if (t.subscription_status) subscriptionStatus = t.subscription_status
-    planId = resolvePlanId(t.plan_id, t.base_slots_plan)
+    planId = resolvePlanId(t.plan_id, t.base_slots_plan, t.description, initialCourtsCount)
 
-    const courtsData = courtsResult.data
-    if (courtsData && courtsData.length > 0) {
-      initialCourtsCount = courtsData.length
-      initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+    // Auto-reparar la base de datos si el plan registrado era inferior
+    if (t.id && (t.plan_id !== planId || Number(t.base_slots_plan) < (initialCourtsCount || 1))) {
+      void serviceClient
+        .from('tenants')
+        .update({
+          plan_id: planId,
+          base_slots_plan: Math.max(Number(t.base_slots_plan) || 1, initialCourtsCount || 1)
+        })
+        .eq('id', t.id)
+    }
+
+    if (priceRulesResult?.data && priceRulesResult.data.length > 0) {
+      const activeRules = priceRulesResult.data.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+      if (activeRules.length > 0) {
+        const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+        if (maxCents > 0) {
+          highestPriceArs = Math.round(maxCents / 100)
+          hasPriceConfigured = true
+        }
+      }
     }
 
     const subData = subResult.data
@@ -217,8 +316,7 @@ export default async function DashboardLayout({
   }
 
   if (!planId) {
-    const courtsCount = initialCourtsCount > 0 ? initialCourtsCount : 2
-    planId = courtsCount === 1 ? 'CHICO_1' : courtsCount === 2 ? 'MEDIANO_2' : courtsCount <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+    planId = getPlanByCourtsCount(initialCourtsCount || 2).id
   }
 
   if (!isSuperadmin && tenantId && !hasCard) {
@@ -229,7 +327,14 @@ export default async function DashboardLayout({
     isActive = true
   }
 
-  const pricing = calculateClubSaaSFee(initialCourtsCount || 2, 30000, tenantCreatedAt)
+  const effectiveSlotPrice = hasPriceConfigured ? highestPriceArs : 30000
+  const pricing = calculateClubSaaSFee(
+    Math.max(initialCourtsCount, 1), 
+    effectiveSlotPrice, 
+    tenantCreatedAt, 
+    null, 
+    hasPriceConfigured
+  )
   const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
   const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
 

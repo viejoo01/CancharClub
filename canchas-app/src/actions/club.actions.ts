@@ -24,6 +24,7 @@ import {
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 import { getArgentinaTimeStr, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
+import { getPlanByCourtsCount } from '@/config/saas-plans'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -125,8 +126,31 @@ export async function createCourt(payload: {
     console.error('[createCourt] Error inserting court:', error.message)
     return { success: false, error: error.message }
   }
+
+  // Sincronizar automáticamente el plan y base_slots_plan en la tabla tenants
+  try {
+    const { data: allCourts } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('is_active', true)
+    
+    const activeCount = allCourts?.length || 1
+    const newPlan = getPlanByCourtsCount(activeCount)
+    await supabase
+      .from('tenants')
+      .update({
+        plan_id: newPlan.id,
+        base_slots_plan: activeCount,
+      })
+      .eq('id', effectiveTenantId)
+  } catch (syncErr) {
+    console.warn('[createCourt] Error auto-syncing tenant plan:', syncErr)
+  }
+
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
   return { success: true, court: data }
 }
 
@@ -179,8 +203,34 @@ export async function updateCourt(courtId: string, payload: Partial<{
     console.error('[updateCourt] Error updating court:', error.message)
     return { success: false, error: error.message }
   }
+
+  if (payload.is_active !== undefined) {
+    try {
+      const { data: courtRow } = await supabase.from('courts').select('tenant_id').eq('id', courtId).maybeSingle()
+      if (courtRow?.tenant_id) {
+        const { data: allCourts } = await supabase
+          .from('courts')
+          .select('id')
+          .eq('tenant_id', courtRow.tenant_id)
+          .eq('is_active', true)
+        const activeCount = allCourts?.length || 1
+        const newPlan = getPlanByCourtsCount(activeCount)
+        await supabase
+          .from('tenants')
+          .update({
+            plan_id: newPlan.id,
+            base_slots_plan: activeCount,
+          })
+          .eq('id', courtRow.tenant_id)
+      }
+    } catch (syncErr) {
+      console.warn('[updateCourt] Error auto-syncing tenant plan:', syncErr)
+    }
+  }
+
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
   return { success: true }
 }
 
@@ -279,10 +329,32 @@ export async function deleteCourt(
       return { success: false, error: courtErr.message }
     }
 
+    // Sincronizar automáticamente el plan y base_slots_plan tras eliminar una cancha
+    try {
+      const { data: allCourts } = await supabase
+        .from('courts')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true)
+
+      const activeCount = allCourts?.length || 1
+      const newPlan = getPlanByCourtsCount(activeCount)
+      await supabase
+        .from('tenants')
+        .update({
+          plan_id: newPlan.id,
+          base_slots_plan: activeCount,
+        })
+        .eq('id', tenantId)
+    } catch (syncErr) {
+      console.warn('[deleteCourt] Error auto-syncing tenant plan:', syncErr)
+    }
+
     revalidatePath('/dashboard/canchas')
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/precios')
     revalidatePath('/dashboard/fijos')
+    revalidatePath('/dashboard/plan')
     return { success: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error inesperado al eliminar la cancha'

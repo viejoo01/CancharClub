@@ -102,13 +102,15 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let cancellationEffectiveDate: string | null = null
   let autoDebitAlerts: AutoDebitAlert[] = []
   let tenantDescription: string | null = null
+  let tenantRow: { id: string; name?: string | null; slug?: string | null; base_slots_plan?: number | null; subscription_status?: TenantSubscriptionStatus | null; is_active?: boolean | null; created_at?: string | null; description?: string | null; plan_id?: string | null } | null = null
 
   if (targetTenantId) {
     const { data: tenant } = await serviceClient
       .from('tenants')
-      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at, description')
+      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at, description, plan_id')
       .eq('id', targetTenantId)
       .maybeSingle()
+    tenantRow = tenant
 
     if (tenant?.description) {
       tenantDescription = tenant.description
@@ -144,22 +146,27 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  // 1. Determinar canchas asignadas (prioridad a base_slots_plan fijado por Superadmin)
-  let courtsCount = 2
-  if (baseSlots && baseSlots > 0) {
-    courtsCount = baseSlots === 1 ? 1 : (baseSlots === 1.5 || baseSlots === 2) ? 2 : baseSlots <= 4 ? 3 : 5
-  } else if (cookiePlanId) {
-    courtsCount = cookiePlanId === 'CHICO_1' ? 1 : cookiePlanId === 'MEDIANO_2' ? 2 : cookiePlanId === 'CONSOLIDADO_3_4' ? 3 : 5
-  } else if (targetTenantId) {
+  // 1. Determinar canchas asignadas (El total es el máximo entre canchas reales creadas y cupo del plan)
+  let realCourtsCount = 0
+  if (targetTenantId) {
     const { data: courts } = await serviceClient
       .from('courts')
       .select('id')
       .eq('tenant_id', targetTenantId)
       .eq('is_active', true)
     if (courts && courts.length > 0) {
-      courtsCount = courts.length
+      realCourtsCount = courts.length
     }
   }
+
+  let slotBasedCourts = 0
+  if (baseSlots && baseSlots > 0) {
+    slotBasedCourts = baseSlots === 1 ? 1 : (baseSlots === 1.5 || baseSlots === 2) ? 2 : baseSlots <= 4 ? baseSlots : 5
+  } else if (cookiePlanId) {
+    slotBasedCourts = cookiePlanId === 'CHICO_1' ? 1 : cookiePlanId === 'MEDIANO_2' ? 2 : cookiePlanId === 'CONSOLIDADO_3_4' ? 4 : 5
+  }
+
+  const courtsCount = Math.max(realCourtsCount, slotBasedCourts) || 2
 
   // 2. Obtener el valor de turno más alto para la tarifa proporcional (siempre el mayor entre todas las tarifas)
   let highestPriceArs = 0
@@ -186,6 +193,17 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt, null, hasPriceConfigured)
   const activePlan = getPlanByCourtsCount(courtsCount)
   const isPaid = subscriptionStatus === 'ACTIVE'
+
+  // Auto-reparar la base de datos si el plan o base_slots_plan estaban desfasados
+  if (targetTenantId && tenantRow && (tenantRow.plan_id !== activePlan.id || Number(tenantRow.base_slots_plan) < courtsCount)) {
+    void serviceClient
+      .from('tenants')
+      .update({
+        plan_id: activePlan.id,
+        base_slots_plan: Math.max(Number(tenantRow.base_slots_plan) || 1, courtsCount)
+      })
+      .eq('id', targetTenantId)
+  }
 
   // 3. Obtener facturas reales emitidas desde la base de datos
   let invoices: TenantInvoice[] = []
@@ -325,13 +343,13 @@ export async function getClubBillingSummary(tenantId: string) {
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
 
-  let activeCourtsCount = 2
+  const realCourts = courts?.length || 0
+  let slotCourts = 0
   if (tenant?.base_slots_plan) {
     const b = Number(tenant.base_slots_plan)
-    activeCourtsCount = b === 1 ? 1 : (b === 1.5 || b === 2) ? 2 : b <= 4 ? 3 : 5
-  } else if (courts && courts.length > 0) {
-    activeCourtsCount = courts.length
+    slotCourts = b === 1 ? 1 : (b === 1.5 || b === 2) ? 2 : b <= 4 ? b : 5
   }
+  const activeCourtsCount = Math.max(realCourts, slotCourts) || 2
 
   // 2. Obtener la regla de precio con el valor más alto (siempre el mayor entre todas las tarifas)
   const { data: priceRules } = await serviceClient
@@ -1018,17 +1036,25 @@ export async function confirmAndActivateSubscriptionWithCard(
     return { success: false, error: auth.error || 'No autorizado' }
   }
 
+  let savedPlanId: SaaSPlanId | undefined = undefined
+
   // 2. Activar el club en la base de datos con serviceClient
   if (tenantId && !tenantId.startsWith('demo-')) {
     let meta: Record<string, unknown> = {}
     try {
       const { data: currentT } = await serviceClient
         .from('tenants')
-        .select('description')
+        .select('description, plan_id')
         .eq('id', tenantId)
         .maybeSingle()
+      if (currentT?.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(currentT.plan_id)) {
+        savedPlanId = currentT.plan_id as SaaSPlanId
+      }
       if (currentT?.description) {
         meta = JSON.parse(currentT.description)
+        if (!savedPlanId && meta.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(meta.plan_id as string)) {
+          savedPlanId = meta.plan_id as SaaSPlanId
+        }
       }
     } catch {}
 
@@ -1108,6 +1134,25 @@ export async function confirmAndActivateSubscriptionWithCard(
     cookieStore.set('demo_card_holder', encodeURIComponent(cardData.cardHolder), { path: '/', maxAge: 60 * 60 * 24 * 30 })
   }
   cookieStore.delete('new_club_pending_activation')
+
+  // Asegurar que la cookie demo_plan_id refleje el plan contratado o las canchas reales
+  try {
+    const { data: activeCourts } = await serviceClient
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+    const count = activeCourts?.length || 0
+    let effectivePlan: SaaSPlanId = savedPlanId || 'MEDIANO_2'
+    if (count > 0) {
+      const fromCourts = getPlanByCourtsCount(count).id
+      const PLAN_RANKS: Record<SaaSPlanId, number> = { CHICO_1: 1, MEDIANO_2: 2, CONSOLIDADO_3_4: 3, GRANDE_5_PLUS: 4 }
+      if (PLAN_RANKS[fromCourts] > PLAN_RANKS[effectivePlan]) {
+        effectivePlan = fromCourts
+      }
+    }
+    cookieStore.set('demo_plan_id', effectivePlan, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+  } catch {}
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/plan')

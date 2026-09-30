@@ -36,7 +36,6 @@ import {
   getClubPlanDetails,
   requestSubscriptionRevocationAction,
   undoSubscriptionRevocationAction,
-  recordAutoDebitAlertAction,
   dismissAutoDebitAlertAction,
   clearAutoDebitAlertsAction,
   type ClubPlanDetails
@@ -57,7 +56,6 @@ export default function ClubPlanPage() {
   })
 
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isSimulatedPaused, setIsSimulatedPaused] = useState(false)
   const [showReactivationModal, setShowReactivationModal] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -87,41 +85,6 @@ export default function ClubPlanPage() {
     }
   }
 
-  const handleTestDebitFailed = async () => {
-    try {
-      const now = new Date()
-      window.dispatchEvent(new CustomEvent('trigger-auto-debit-alert', { 
-        detail: { type: 'FAILED', date: now, detail: 'Simulación de intento no completado' } 
-      }))
-      await recordAutoDebitAlertAction({
-        tenantId: tenantId || undefined,
-        type: 'FAILED',
-        timestamp: now.toISOString(),
-        detail: 'Simulación de cobro no completado',
-      })
-      void loadPlanData(false)
-    } catch {
-      toast.error('Error al generar alerta de prueba')
-    }
-  }
-
-  const handleTestDebitSuccess = async () => {
-    try {
-      const now = new Date()
-      window.dispatchEvent(new CustomEvent('trigger-auto-debit-alert', { 
-        detail: { type: 'SUCCESS', date: now, detail: 'Simulación de débito acreditado' } 
-      }))
-      await recordAutoDebitAlertAction({
-        tenantId: tenantId || undefined,
-        type: 'SUCCESS',
-        timestamp: now.toISOString(),
-        detail: 'Simulación de cobro exitoso',
-      })
-      void loadPlanData(false)
-    } catch {
-      toast.error('Error al generar alerta de prueba')
-    }
-  }
 
   const handleDismissAlertFromList = async (alertId: string) => {
     try {
@@ -186,8 +149,7 @@ export default function ClubPlanPage() {
   const isPaused = 
     planDetails?.subscriptionStatus === 'PARTIALLY_SUSPENDED' ||
     planDetails?.subscriptionStatus === 'PAUSED' ||
-    planDetails?.subscriptionStatus === 'LOCKED' ||
-    isSimulatedPaused
+    planDetails?.subscriptionStatus === 'LOCKED'
 
   const isAutoDebitActive = !isPaused && Boolean(hasAutoDebit || planDetails?.hasAutoDebit)
   const isPaid = !isPaused && isAutoDebitActive && ((planDetails?.isPaid ?? false) || isAutoDebitActive)
@@ -444,91 +406,6 @@ export default function ClubPlanPage() {
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
           Actualizar Estado
         </Button>
-      </div>
-
-      {/* Simulador interactivo de Alertas Progresivas Emergentes y Estado de Pausa */}
-      <div className="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-slate-300">
-          <Clock className="w-4 h-4 text-amber-400" />
-          <span className="font-semibold text-white">Simulador de Estados & Alertas:</span>
-          <span className="text-slate-400 hidden sm:inline">Probar alertas emergentes y pausa en pantalla</span>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsSimulatedPaused(prev => !prev)}
-            className={`h-7 text-[11px] rounded-lg cursor-pointer transition-colors ${
-              isSimulatedPaused
-                ? 'bg-rose-600 text-white border-rose-500 hover:bg-rose-700'
-                : 'border-rose-500/30 text-rose-300 hover:bg-rose-500/10'
-            }`}
-          >
-            {isSimulatedPaused ? '⏸️ Quitar Pausa' : '⏸️ Probar Estado de Pausa'}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowReactivationModal(true)}
-            className="h-7 text-[11px] border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 rounded-lg cursor-pointer flex items-center gap-1"
-            title="Abonar reactivación con cuota base + 3% por día de mora"
-          >
-            <Sparkles className="w-3 h-3 text-emerald-400" />
-            <span>Abonar Reactivación (+3%/día)</span>
-          </Button>
-          <div className="h-4 w-px bg-slate-800 hidden sm:block mx-1" />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 3, dueDate: cancellationDate } }))
-            }}
-            className="h-7 text-[11px] border-amber-500/30 text-amber-300 hover:bg-amber-500/10 rounded-lg cursor-pointer"
-          >
-            3 días
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 2, dueDate: cancellationDate } }))
-            }}
-            className="h-7 text-[11px] border-orange-500/30 text-orange-300 hover:bg-orange-500/10 rounded-lg cursor-pointer"
-          >
-            2 días
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('test-plan-expiration-alert', { detail: { days: 1, dueDate: cancellationDate } }))
-            }}
-            className="h-7 text-[11px] border-rose-500/30 text-rose-300 hover:bg-rose-500/10 rounded-lg cursor-pointer"
-          >
-            1 día
-          </Button>
-          <div className="h-4 w-px bg-slate-800 hidden sm:block mx-1" />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleTestDebitFailed}
-            className="h-7 text-[11px] border-rose-500/40 text-rose-300 hover:bg-rose-500/20 rounded-lg cursor-pointer flex items-center gap-1 font-semibold"
-            title="Probar alerta de Intento de pago mensual fallido (DD/MM/AAAA HH:MM) con botón Entendido"
-          >
-            <AlertCircle className="w-3 h-3 text-rose-400" />
-            <span>💳 Débito Fallido</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleTestDebitSuccess}
-            className="h-7 text-[11px] border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 rounded-lg cursor-pointer flex items-center gap-1 font-semibold"
-            title="Probar alerta de Pago mensual realizado (DD/MM/AAAA HH:MM) con botón Entendido"
-          >
-            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-            <span>💳 Débito Exitoso</span>
-          </Button>
-        </div>
       </div>
 
       {/* Banner Prominente de 15 Días de Prueba Gratuita */}
@@ -1853,7 +1730,6 @@ export default function ClubPlanPage() {
         baseMonthlyFeeArs={pricing.monthlyFeeArs}
         dueDateStr={pricing.nextDueDate}
         onSuccess={() => {
-          setIsSimulatedPaused(false)
           loadPlanData(true)
         }}
       />

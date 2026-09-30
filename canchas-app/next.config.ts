@@ -80,7 +80,7 @@ const nextConfig: NextConfig = {
               "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: blob: https:",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mercadopago.com https://events.mercadopago.com https://*.upstash.io",
-              "frame-src 'self' https://www.mercadopago.com.ar https://www.mercadopago.com https://sdk.mercadopago.com",
+              "frame-src 'self' https://www.mercadopago.com.ar https://www.mercadopago.com https://sdk.mercadopago.com https://maps.google.com https://www.google.com https://*.google.com https://*.googleapis.com https://www.openstreetmap.org https://*.openstreetmap.org",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",

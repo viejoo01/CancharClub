@@ -35,6 +35,13 @@ const SPORTS_OPTIONS = [
 export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIANO_2' }: RegisterClubModalProps) {
   const router = useRouter()
   const [selectedPlanOverride, setSelectedPlanOverride] = useState<SaaSPlanId | null>(null)
+  const [prevSelectedPlanId, setPrevSelectedPlanId] = useState<SaaSPlanId>(selectedPlanId)
+
+  if (selectedPlanId !== prevSelectedPlanId) {
+    setPrevSelectedPlanId(selectedPlanId)
+    setSelectedPlanOverride(null)
+  }
+
   const currentPlanId = selectedPlanOverride || selectedPlanId
   const [clubName, setClubName] = useState('')
   const [city, setCity] = useState('San Miguel de Tucumán')

@@ -485,6 +485,9 @@ export default function ClubPublicPage({
     return list
   }, [club])
 
+  // Modo de visualización de mapa: Satelital por defecto
+  const [mapViewMode, setMapViewMode] = useState<'hybrid' | 'roadmap'>('hybrid')
+
   // URLs generadas para Google Maps y Waze
   const mapsEmbedUrl = useMemo(() => {
     return getGoogleMapsEmbedUrl({
@@ -493,8 +496,9 @@ export default function ClubPublicPage({
       province: club.province || 'Argentina',
       google_maps_url: club.googleMapsUrl,
       coords: geocodedCoords,
+      mapType: mapViewMode,
     })
-  }, [club, geocodedCoords])
+  }, [club, geocodedCoords, mapViewMode])
 
   const mapsDirectUrl = useMemo(() => {
     return getGoogleMapsDirectUrl({
@@ -1216,6 +1220,34 @@ export default function ClubPublicPage({
 
               {/* Botones de acción rápida */}
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                {/* Selector Satélite / Mapa Callejero */}
+                <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setMapViewMode('hybrid')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      mapViewMode === 'hybrid'
+                        ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Vista satelital de Google Maps"
+                  >
+                    🛰️ Satélite
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMapViewMode('roadmap')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      mapViewMode === 'roadmap'
+                        ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Vista callejera de Google Maps"
+                  >
+                    🗺️ Mapa
+                  </button>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => handleCopyAddress(`${club.exactAddress || club.address}, ${club.city}`)}
@@ -1276,7 +1308,7 @@ export default function ClubPublicPage({
                 <div className="absolute bottom-2 right-2 pointer-events-none">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] text-slate-300 font-mono shadow-md backdrop-blur-xs">
                     <MapPin className="w-2.5 h-2.5 text-emerald-400" />
-                    {mapsEmbedUrl.includes('google.com') ? 'Google Maps' : 'Mapa GPS'}
+                    {mapViewMode === 'hybrid' ? 'Google Maps Satelital' : 'Google Maps'}
                   </span>
                 </div>
               </div>

@@ -120,6 +120,20 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
       }
     }
 
+    // 0.2 Sesión de club por cookie (Onboarding / Demo / Autenticación de club)
+    const demoTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    const tenantRole = cookieStore.get('demo_user_role')?.value as UserRole | undefined
+    if (demoTenantId && (tenantRole === 'TENANT_ADMIN' || tenantRole === 'TENANT_STAFF')) {
+      const demoName = cookieStore.get('demo_user_name')?.value || cookieStore.get('demo_tenant_name')?.value || 'Admin de Club'
+      return {
+        id: `tenant-user-${demoTenantId}`,
+        email: `${demoTenantId}@club.com`,
+        fullName: demoName,
+        role: tenantRole,
+        tenantId: demoTenantId,
+      }
+    }
+
     // SEGURIDAD ESTRICTA: Si no hay usuario autenticado en Supabase con perfil asignado,
     // NO se permite acceso ni se recurre a fallbacks de otros clubes en la BD.
     return null
@@ -139,6 +153,11 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
+    const cookieStore = await cookies()
+    const fallbackTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    if (fallbackTenantId && !fallbackTenantId.startsWith('demo-')) {
+      return fallbackTenantId
+    }
     return null
   }
 

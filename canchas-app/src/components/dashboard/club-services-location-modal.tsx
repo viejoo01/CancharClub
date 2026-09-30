@@ -169,6 +169,8 @@ export function ClubServicesLocationModal({
     equipmentRental,
   ].filter(Boolean).length
 
+  const [previewMapMode, setPreviewMapMode] = useState<'hybrid' | 'roadmap'>('hybrid')
+
   // URLs de mapa computadas
   const embedUrl = getGoogleMapsEmbedUrl({
     address,
@@ -176,6 +178,7 @@ export function ClubServicesLocationModal({
     province,
     google_maps_url: googleMapsUrl,
     coords: geocodedCoords,
+    mapType: previewMapMode,
   })
 
   const isOfficialGoogleEmbed = Boolean(extractGoogleMapsEmbedUrl(googleMapsUrl))
@@ -598,7 +601,7 @@ export function ClubServicesLocationModal({
 
               {/* Previsualización del Mapa */}
               <div className="p-4 rounded-2xl bg-linear-to-b from-slate-900/90 to-slate-950 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-bold text-white">
@@ -609,12 +612,38 @@ export function ClubServicesLocationModal({
                         Google Maps Oficial
                       </Badge>
                     ) : embedUrl ? (
-                      <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/30 text-[10px]">
-                        Mapa GPS Activo
+                      <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                        {previewMapMode === 'hybrid' ? 'Google Maps Satelital' : 'Google Maps Callejero'}
                       </Badge>
                     ) : null}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Toggle Satélite / Callejero */}
+                    <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMapMode('hybrid')}
+                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                          previewMapMode === 'hybrid'
+                            ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        🛰️ Satélite
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMapMode('roadmap')}
+                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                          previewMapMode === 'roadmap'
+                            ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        🗺️ Mapa
+                      </button>
+                    </div>
+
                     {directMapsUrl && (
                       <a
                         href={directMapsUrl}

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2 } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -18,6 +18,9 @@ interface HeaderProps {
   tenantId?: string | null
   courtsCount?: number
   sports?: string[]
+  isTrial?: boolean
+  trialDaysRemaining?: number
+  trialDueDate?: string
 }
 
 export function Header({
@@ -29,6 +32,9 @@ export function Header({
   tenantId,
   courtsCount,
   sports,
+  isTrial = false,
+  trialDaysRemaining,
+  trialDueDate,
 }: HeaderProps) {
   const { isOwner } = useUserRole()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -81,6 +87,21 @@ export function Header({
           initialCourtsCount={courtsCount}
           initialSports={sports}
         />
+
+        {/* Badge de Prueba Gratuita (15 días) */}
+        {isTrial && (
+          <Link 
+            href="/dashboard/plan" 
+            title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
+          >
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>
+                Prueba 15 Días: <strong className="text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+              </span>
+            </Badge>
+          </Link>
+        )}
 
         {mpConnected ? (
           isOwner ? (

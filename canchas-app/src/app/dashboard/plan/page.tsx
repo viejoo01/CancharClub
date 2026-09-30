@@ -203,6 +203,8 @@ export default function ClubPlanPage() {
   const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice, null, null, hasPriceConfigured)
   const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
   const cancellationDate = planDetails?.cancellationEffectiveDate || pricing.nextDueDate
+  const isTrial = Boolean(planDetails?.isTrial || planDetails?.pricing?.isTrial || planDetails?.subscriptionStatus === 'TRIAL')
+  const trialDaysRemaining = planDetails?.trialDaysRemaining ?? planDetails?.pricing?.trialDaysRemaining ?? 15
 
   const [subscribing, setSubscribing] = useState(false)
 
@@ -523,6 +525,51 @@ export default function ClubPlanPage() {
           </Button>
         </div>
       </div>
+
+      {/* Banner Prominente de 15 Días de Prueba Gratuita */}
+      {isTrial && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-linear-to-r from-emerald-950/60 via-slate-900 to-indigo-950/50 border-2 border-emerald-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-2xl shadow-emerald-950/30 backdrop-blur-md">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+              <Sparkles className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-base sm:text-lg font-black text-white">
+                  Período de Prueba Gratuita (15 Días) Activo
+                </h4>
+                <Badge className="bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 text-[11px] px-2.5 py-0.5 font-bold uppercase tracking-wider">
+                  {trialDaysRemaining} {trialDaysRemaining === 1 ? 'Día Restante' : 'Días Restantes'}
+                </Badge>
+                <Badge variant="outline" className="text-[11px] border-emerald-500/30 text-emerald-400 bg-emerald-950/40 font-mono">
+                  Hoy: $0 (Bonificado)
+                </Badge>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                Tu club está disfrutando de sus <strong>15 días de prueba 100% bonificados</strong>. Tenés acceso total a todas las funcionalidades del sistema (turnos, caja, luces, señas y torneos) sin cargo alguno. Tu primera liquidación oficial se emitirá el <strong>{pricing.nextDueDate}</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-start md:self-auto">
+            {!isAutoDebitActive ? (
+              <Button
+                size="sm"
+                onClick={handleSetupAutoDebit}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs h-10 px-4 rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Adherir Tarjeta para el Abono</span>
+              </Button>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 text-xs text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-3.5 py-2 rounded-xl font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Débito Programado para el {pricing.nextDueDate}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Banner Prominente de Club en Pausa por Falta de Pago */}
       {isPaused && (

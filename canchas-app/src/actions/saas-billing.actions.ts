@@ -17,7 +17,7 @@ import { MercadoPagoConfig, Preference, PreApproval } from 'mercadopago'
 import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/types/database'
 import { formatAutoDebitAlertDate } from '@/lib/utils'
 
-import { getPlanByCourtsCount, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
+import { getPlanByCourtsCount, SAAS_PLANS, getHigherPlan, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
 import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 
 export interface ClubBillingOverviewItem {
@@ -57,6 +57,9 @@ export interface ClubPlanDetails {
   reactivationDetails?: ReactivationFeeDetails
   autoDebitAlerts?: AutoDebitAlert[]
   hasPriceConfigured?: boolean
+  isTrial?: boolean
+  trialDaysRemaining?: number
+  trialEndsAt?: string | null
 }
 
 /**
@@ -66,36 +69,61 @@ export interface ClubPlanDetails {
 export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPlanDetails> {
   const serviceClient = await createServiceClient()
   const cookieStore = await cookies()
-  const targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
-
-  if (!targetTenantId) {
-    return {
-      tenantId: '',
-      tenantName: 'Mi Club',
-      tenantSlug: 'mi-club',
-      courtsCount: 1,
-      highestSlotPriceArs: 0,
-      pricing: calculateClubSaaSFee(1, 0, null, null, false),
-      activePlan: getPlanByCourtsCount(1),
-      isPaid: true,
-      subscriptionStatus: 'ACTIVE',
-      nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-      invoices: [],
-      hasAutoDebit: false,
-      hasPriceConfigured: false,
-    }
-  }
 
   const cookieTenantName = cookieStore.get('demo_tenant_name')?.value
   const cookieTenantSlug = cookieStore.get('demo_tenant_slug')?.value
   const cookieStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
   const cookiePlanId = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
 
+  // 0. Resolver targetTenantId con máxima tolerancia y seguridad
+  let targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
+  if (!targetTenantId) {
+    const cId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    if (cId && !cId.startsWith('demo-')) {
+      targetTenantId = cId
+    } else {
+      const slug = cookieTenantSlug
+      if (slug && slug !== 'mi-club') {
+        const { data: t } = await serviceClient.from('tenants').select('id').eq('slug', slug).maybeSingle()
+        if (t?.id) targetTenantId = t.id
+      }
+    }
+  }
+
+  if (!targetTenantId) {
+    const fallbackPlanId: SaaSPlanId = (cookiePlanId && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(cookiePlanId))
+      ? cookiePlanId
+      : 'MEDIANO_2'
+    const fallbackCourts = fallbackPlanId === 'CHICO_1' ? 1 : fallbackPlanId === 'MEDIANO_2' ? 2 : fallbackPlanId === 'CONSOLIDADO_3_4' ? 4 : 5
+    const fallbackPlan = SAAS_PLANS[fallbackPlanId] || getPlanByCourtsCount(fallbackCourts)
+
+    const fallbackPricing = calculateClubSaaSFee(fallbackCourts, 0, null, null, false)
+    return {
+      tenantId: '',
+      tenantName: cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club',
+      tenantSlug: cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club',
+      courtsCount: fallbackCourts,
+      highestSlotPriceArs: 0,
+      pricing: fallbackPricing,
+      activePlan: fallbackPlan,
+      isPaid: false,
+      subscriptionStatus: 'TRIAL',
+      nextDueDate: fallbackPricing.nextDueDate,
+      invoices: [],
+      hasAutoDebit: false,
+      hasPriceConfigured: false,
+      isTrial: true,
+      trialDaysRemaining: fallbackPricing.trialDaysRemaining || 15,
+      trialEndsAt: fallbackPricing.trialEndsAt,
+    }
+  }
+
   let tenantName = cookieTenantName ? decodeURIComponent(cookieTenantName) : 'Mi Club'
   let tenantSlug = cookieTenantSlug ? decodeURIComponent(cookieTenantSlug) : 'mi-club'
   let subscriptionStatus: TenantSubscriptionStatus = cookieStatus || 'ACTIVE'
   let baseSlots: number | null = null
   let tenantCreatedAt: string | null = null
+  let trialEndsAt: string | null = null
   let termsAcceptedAt: string | null = null
   let cancelAtPeriodEnd = false
   let cancellationRequestedAt: string | null = null
@@ -116,6 +144,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       tenantDescription = tenant.description
       try {
         const parsedDesc = JSON.parse(tenant.description)
+        if (parsedDesc.trial_ends_at) {
+          trialEndsAt = String(parsedDesc.trial_ends_at)
+        }
         if (parsedDesc.terms_accepted_at) {
           termsAcceptedAt = String(parsedDesc.terms_accepted_at)
         }
@@ -135,6 +166,13 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       termsAcceptedAt = cookieTermsAccepted
     }
 
+    const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
+    if (!trialEndsAt && cookieTrialEndsAt) {
+      trialEndsAt = cookieTrialEndsAt
+    } else if (!trialEndsAt && tenant?.created_at) {
+      trialEndsAt = new Date(new Date(tenant.created_at).getTime() + 15 * 86400000).toISOString()
+    }
+
     if (tenant) {
       tenantName = tenant.name || tenantName
       tenantSlug = tenant.slug || tenantSlug
@@ -146,7 +184,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  // 1. Determinar canchas asignadas (El total es el máximo entre canchas reales creadas y cupo del plan)
+  // 1. Determinar canchas asignadas
   let realCourtsCount = 0
   if (targetTenantId) {
     const { data: courts } = await serviceClient
@@ -159,27 +197,70 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  let slotBasedCourts = 0
-  if (baseSlots && baseSlots > 0) {
-    slotBasedCourts = baseSlots === 1 ? 1 : (baseSlots === 1.5 || baseSlots === 2) ? 2 : baseSlots <= 4 ? baseSlots : 5
-  } else if (cookiePlanId) {
-    slotBasedCourts = cookiePlanId === 'CHICO_1' ? 1 : cookiePlanId === 'MEDIANO_2' ? 2 : cookiePlanId === 'CONSOLIDADO_3_4' ? 4 : 5
+  // 2. Determinar el plan SaaS de forma jerárquica y blindada (nunca se degrada)
+  let resolvedPlanId: SaaSPlanId | undefined = undefined
+
+  // 2.1 Columna plan_id en tabla tenants
+  if (tenantRow?.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(tenantRow.plan_id)) {
+    resolvedPlanId = tenantRow.plan_id as SaaSPlanId
   }
 
-  const courtsCount = Math.max(realCourtsCount, slotBasedCourts) || 2
+  // 2.2 Campo plan_id en description JSON
+  if (tenantDescription) {
+    try {
+      const parsedDesc = JSON.parse(tenantDescription)
+      if (parsedDesc?.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(parsedDesc.plan_id)) {
+        resolvedPlanId = getHigherPlan(resolvedPlanId, parsedDesc.plan_id as SaaSPlanId)
+      }
+    } catch {}
+  }
 
-  // 2. Obtener el valor de turno más alto para la tarifa proporcional (siempre el mayor entre todas las tarifas)
+  // 2.3 base_slots_plan
+  if (baseSlots && baseSlots > 0) {
+    const fromSlots: SaaSPlanId = baseSlots === 1 ? 'CHICO_1' : (baseSlots === 1.5 || baseSlots === 2) ? 'MEDIANO_2' : baseSlots <= 4 ? 'CONSOLIDADO_3_4' : 'GRANDE_5_PLUS'
+    resolvedPlanId = getHigherPlan(resolvedPlanId, fromSlots)
+  }
+
+  // 2.4 Canchas reales
+  if (realCourtsCount > 0) {
+    const fromCourts = getPlanByCourtsCount(realCourtsCount).id
+    resolvedPlanId = getHigherPlan(resolvedPlanId, fromCourts)
+  }
+
+  // 2.5 Cookie demo_plan_id si está activa
+  if (cookiePlanId && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(cookiePlanId)) {
+    resolvedPlanId = getHigherPlan(resolvedPlanId, cookiePlanId)
+  }
+
+  const finalPlanId: SaaSPlanId = resolvedPlanId || 'MEDIANO_2'
+  const activePlan = SAAS_PLANS[finalPlanId] || getPlanByCourtsCount(finalPlanId === 'GRANDE_5_PLUS' ? 5 : 2)
+
+  const planMinCourts = activePlan.minCourts || (finalPlanId === 'GRANDE_5_PLUS' ? 5 : finalPlanId === 'CONSOLIDADO_3_4' ? 3 : finalPlanId === 'MEDIANO_2' ? 2 : 1)
+  const courtsCount = Math.max(realCourtsCount, baseSlots || 0, planMinCourts)
+
+  // 3. Obtener el valor de turno más alto para la tarifa proporcional (siempre el mayor entre todas las tarifas)
   let highestPriceArs = 0
   let hasPriceConfigured = false
   if (targetTenantId) {
     const { data: priceRules } = await serviceClient
       .from('price_rules')
-      .select('price_cents, is_active')
+      .select('name, price_cents, is_active')
       .eq('tenant_id', targetTenantId)
 
     if (priceRules && priceRules.length > 0) {
-      // Filtrar reglas activas con precio válido y calcular el MÁXIMO absoluto
-      const activeRules = priceRules.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+      // Filtrar reglas activas con precio válido y omitir semillas automáticas ficticias si no se configuraron datos
+      const activeRules = priceRules.filter(r => {
+        if (r.is_active === false) return false
+        const cents = Number(r.price_cents) || 0
+        if (cents <= 0) return false
+        const isDummySeed = Boolean(r.name && r.name.startsWith('Tarifa Estándar') && cents === 3000000)
+        const isNewClub = tenantRow?.is_active === false || tenantRow?.subscription_status === 'PAYMENT_PENDING' || cookieStore.get('new_club_pending_activation')?.value === 'true'
+        if (isDummySeed && isNewClub) {
+          return false
+        }
+        return true
+      })
+
       if (activeRules.length > 0) {
         const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
         if (maxCents > 0) {
@@ -190,8 +271,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt, null, hasPriceConfigured)
-  const activePlan = getPlanByCourtsCount(courtsCount)
+  const pricing = calculateClubSaaSFee(courtsCount, highestPriceArs, tenantCreatedAt, trialEndsAt, hasPriceConfigured)
   const isPaid = subscriptionStatus === 'ACTIVE'
 
   // Auto-reparar la base de datos si el plan o base_slots_plan estaban desfasados
@@ -320,6 +400,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     reactivationDetails,
     autoDebitAlerts,
     hasPriceConfigured,
+    isTrial: pricing.isTrial,
+    trialDaysRemaining: pricing.trialDaysRemaining,
+    trialEndsAt: pricing.trialEndsAt || trialEndsAt,
   }
 }
 
@@ -952,7 +1035,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
         auto_recurring: {
           frequency: 1,
           frequency_type: 'months',
-          transaction_amount: monthlyAmount,
+          transaction_amount: Math.max(1, monthlyAmount || 1),
           currency_id: 'ARS',
           start_date: startDate,
         },
@@ -1065,6 +1148,14 @@ export async function confirmAndActivateSubscriptionWithCard(
     if (cardData?.cardHolder) meta.card_holder = cardData.cardHolder
     delete meta.pending_card
     delete meta.pending_card_onboarding
+
+    if (!meta.trial_ends_at) {
+      meta.trial_ends_at = new Date(Date.now() + 15 * 86400000).toISOString()
+      meta.trial_days = 15
+      meta.trial_activated_at = new Date().toISOString()
+    }
+    const isStillTrial = new Date() < new Date(String(meta.trial_ends_at))
+    meta.is_trial = isStillTrial
 
     const { error: tenantErr } = await serviceClient
       .from('tenants')
@@ -1351,6 +1442,7 @@ export async function requestSubscriptionRevocationAction(
     } catch {}
 
     revalidatePath('/dashboard/plan')
+    revalidatePath('/superadmin')
     return { success: true, effectiveDate }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error inesperado al procesar el arrepentimiento'
@@ -1433,6 +1525,7 @@ export async function undoSubscriptionRevocationAction(
     } catch {}
 
     revalidatePath('/dashboard/plan')
+    revalidatePath('/superadmin')
     return { success: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al reactivar suscripción'

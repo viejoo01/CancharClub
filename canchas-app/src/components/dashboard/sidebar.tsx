@@ -23,7 +23,8 @@ import {
   Receipt,
   Monitor,
   KeyRound,
-  Share2
+  Share2,
+  Sparkles
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -46,6 +47,9 @@ interface SidebarProps {
   planId?: SaaSPlanId
   isMobile?: boolean
   onClose?: () => void
+  isTrial?: boolean
+  trialDaysRemaining?: number
+  trialDueDate?: string
 }
 
 export function Sidebar({ 
@@ -56,6 +60,9 @@ export function Sidebar({
   planId,
   isMobile = false,
   onClose,
+  isTrial = false,
+  trialDaysRemaining,
+  trialDueDate,
 }: SidebarProps) {
   const pathname = usePathname()
 
@@ -245,6 +252,35 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
+        {isTrial && (
+          <Link
+            href="/dashboard/plan"
+            onClick={() => onClose?.()}
+            className="block mb-3 p-2.5 rounded-xl bg-linear-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/15 border border-emerald-500/30 hover:border-emerald-500/50 transition-all group cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>15 Días Gratis</span>
+                    {typeof trialDaysRemaining === 'number' && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                        {trialDaysRemaining}d
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {trialDueDate ? `Vence: ${trialDueDate}` : 'Prueba Bonificada'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
+
         <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
           {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
         </div>

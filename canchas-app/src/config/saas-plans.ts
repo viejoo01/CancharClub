@@ -212,3 +212,19 @@ export function isFeatureAllowedForPlan(planId: SaaSPlanId, feature: SaaSFeature
   if (!plan) return false
   return plan.allowedModules.includes(feature)
 }
+
+/**
+ * Retorna el plan de mayor jerarquía entre dos planes SaaS.
+ */
+export function getHigherPlan(p1?: SaaSPlanId | null, p2?: SaaSPlanId | null): SaaSPlanId {
+  const order: Record<SaaSPlanId, number> = {
+    CHICO_1: 1,
+    MEDIANO_2: 2,
+    CONSOLIDADO_3_4: 3,
+    GRANDE_5_PLUS: 4,
+  }
+  if (!p1 && !p2) return 'MEDIANO_2'
+  if (!p1) return (p2 as SaaSPlanId) || 'MEDIANO_2'
+  if (!p2) return (p1 as SaaSPlanId) || 'MEDIANO_2'
+  return order[p1] >= order[p2] ? p1 : p2
+}

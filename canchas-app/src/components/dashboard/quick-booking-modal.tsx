@@ -190,7 +190,7 @@ export function QuickBookingModal({
         ? `[ABONO SEMANAL FIJO] ${notes}`.trim()
         : notes || undefined
 
-      // 1. Crear reserva manual en PostgreSQL
+      // 1. Crear reserva manual en PostgreSQL (con seña en 0 para que registerCashPayment la registre formalmente con timestamp y desglose en caja)
       const res = await createManualBooking({
         tenant_id: tenantId,
         court_id: courtId,
@@ -200,7 +200,8 @@ export function QuickBookingModal({
         duration_minutes: durationMinutes,
         origin: isRecurring ? 'ADMIN_MANUAL' : 'PHONE',
         total_amount_ars: total,
-        deposit_amount_ars: deposit,
+        deposit_amount_ars: 0,
+        payment_method: paymentMethod === 'TRANSFER' ? 'TRANSFER' : paymentMethod === 'CASH' ? 'CASH' : undefined,
         internal_notes: fullNotes,
       })
 
@@ -210,14 +211,15 @@ export function QuickBookingModal({
         return
       }
 
-      // 2. Si se cobró seña o pago en el momento
+      // 2. Si se cobró seña o pago en el momento, registrar cobro en caja
       if (deposit > 0 && paymentMethod !== 'NONE' && res.booking_id) {
         const isFull = deposit >= total && total > 0
+        const methodSpanish = paymentMethod === 'TRANSFER' ? 'Transferencia' : 'Efectivo'
         await registerCashPayment({
           booking_id: res.booking_id,
           amount_ars: deposit,
           payment_method: paymentMethod as 'CASH' | 'TRANSFER',
-          notes: isFull ? 'Pago total en mostrador' : 'Seña inicial en mostrador',
+          notes: isFull ? 'Pago total en mostrador (verificado)' : `Seña inicial verificada y cobrada en mostrador (${methodSpanish})`,
         })
       }
 

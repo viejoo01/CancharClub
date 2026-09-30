@@ -10,7 +10,8 @@ import {
   Clock, 
   CheckCircle, 
   AlertCircle,
-  CloudRain
+  CloudRain,
+  DollarSign
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
@@ -734,11 +735,19 @@ export function CalendarGrid({
                   if (slotInfo) {
                     const { booking, isStart, isEnd, isMiddle, endTime, totalSlots } = slotInfo
                     const isHovered = hoveredBookingId === booking.id
+                    const isStaffDeskPaid = Boolean(
+                      booking.internal_notes?.includes('Cobro $') ||
+                      booking.internal_notes?.includes('en mostrador') ||
+                      booking.internal_notes?.includes('Seña inicial') ||
+                      booking.origin === 'STAFF_MANUAL'
+                    )
                     const isPendingValidation = Boolean(
-                      String(booking.status) === 'PENDING_DEPOSIT' ||
-                      String(booking.status) === 'PENDING' ||
-                      ((booking.internal_notes?.toUpperCase().includes('TRANSFER') || booking.deposit_amount_ars > 0) &&
-                       !booking.internal_notes?.includes('Seña verificada y aprobada'))
+                      (String(booking.status) === 'PENDING_DEPOSIT' ||
+                       String(booking.status) === 'PENDING' ||
+                       (booking.origin === 'ONLINE_PORTAL' &&
+                        booking.internal_notes?.toUpperCase().includes('TRANSFER') &&
+                        !booking.internal_notes?.includes('Seña verificada y aprobada'))) &&
+                      !isStaffDeskPaid
                     )
                     const isFullyPaid = (booking.status === 'FULLY_PAID' || booking.balance_due === 0) && !isPendingValidation
                     const isConfirmed = (booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID') && !isPendingValidation
@@ -805,12 +814,21 @@ export function CalendarGrid({
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90">
+                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
                               <span>{formatARS(booking.total_amount_ars)}</span>
                               {booking.balance_due > 0 ? (
-                                <span className="text-amber-400 font-semibold">
-                                  Resta: {formatARS(booking.balance_due)}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedBooking(booking)
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                  title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
+                                >
+                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span>Cobrar {formatARS(booking.balance_due)}</span>
+                                </button>
                               ) : (
                                 <span className="text-emerald-400 font-semibold">Saldado</span>
                               )}
@@ -857,12 +875,21 @@ export function CalendarGrid({
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90">
+                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
                               <span>{formatARS(booking.total_amount_ars)}</span>
                               {booking.balance_due > 0 ? (
-                                <span className="text-amber-400 font-semibold">
-                                  Resta: {formatARS(booking.balance_due)}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedBooking(booking)
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                  title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
+                                >
+                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span>Cobrar resto ({formatARS(booking.balance_due)})</span>
+                                </button>
                               ) : (
                                 <span className="text-emerald-400 font-semibold">Saldado</span>
                               )}
@@ -908,14 +935,29 @@ export function CalendarGrid({
                         <div
                           className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
                         >
-                          <div className="flex items-center justify-between w-full h-full text-[11px] opacity-90 mt-auto">
+                          <div className="flex items-center justify-between w-full h-full text-[11px] opacity-90 mt-auto gap-1">
                             <div className="flex items-center gap-1.5 font-semibold text-slate-300">
                               <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                               <span>Hasta las {endTime} hs</span>
                             </div>
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300">
-                              {totalSlots === 2 ? '1 hora' : `${totalSlots * 30} min`}
-                            </span>
+                            {booking.balance_due > 0 ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedBooking(booking)
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
+                              >
+                                <DollarSign className="w-3 h-3 text-emerald-400" />
+                                <span>Cobrar Resto ({formatARS(booking.balance_due)})</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300">
+                                {totalSlots === 2 ? '1 hora' : `${totalSlots * 30} min`}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

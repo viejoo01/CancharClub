@@ -122,6 +122,13 @@ export function extractCoordsFromGoogleMapsUrl(raw?: string | null): { lat: numb
     if (!isNaN(lat) && !isNaN(lon)) return { lat, lon }
   }
 
+  const pbMatch = trimmed.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+  if (pbMatch) {
+    const lat = parseFloat(pbMatch[1])
+    const lon = parseFloat(pbMatch[2])
+    if (!isNaN(lat) && !isNaN(lon)) return { lat, lon }
+  }
+
   const qMatch = trimmed.match(/[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/)
   if (qMatch) {
     const lat = parseFloat(qMatch[1])
@@ -132,8 +139,39 @@ export function extractCoordsFromGoogleMapsUrl(raw?: string | null): { lat: numb
   return null
 }
 
+export type GoogleMapType = 'satellite' | 'hybrid' | 'roadmap'
+
 /**
- * Genera una URL de incrustación de OpenStreetMap para coordenadas dadas (nunca bloqueada por iframes)
+ * Genera una URL de incrustación de Google Maps con vista satelital u ordinaria (compatible con iframe y sin API key obligatoria)
+ */
+export function buildGoogleMapsEmbedUrl(options: {
+  lat?: number
+  lon?: number
+  query?: string
+  mapType?: GoogleMapType
+  zoom?: number
+}): string {
+  const { lat, lon, query, mapType = 'hybrid', zoom } = options
+  // Google Maps URL params:
+  // t=k: Satélite puro (Keyhole / Satellite imagery)
+  // t=h: Satélite híbrido (imágenes satelitales con nombres de calles y rutas superpuestas)
+  // t=m: Mapa estándar vectorial / callejero
+  const t = mapType === 'roadmap' ? 'm' : mapType === 'satellite' ? 'k' : 'h'
+  const z = zoom || (lat !== undefined && lon !== undefined ? 17 : 16)
+
+  if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+    return `https://maps.google.com/maps?q=${lat},${lon}&t=${t}&z=${z}&output=embed`
+  }
+
+  if (query && query.trim()) {
+    return `https://maps.google.com/maps?q=${encodeURIComponent(query.trim())}&t=${t}&z=${z}&output=embed`
+  }
+
+  return ''
+}
+
+/**
+ * Genera una URL de incrustación de OpenStreetMap para coordenadas dadas (fallback de respaldo)
  */
 export function buildOsmEmbedUrl(lat: number, lon: number, delta = 0.006): string {
   const minLon = (lon - delta).toFixed(6)
@@ -144,8 +182,9 @@ export function buildOsmEmbedUrl(lat: number, lon: number, delta = 0.006): strin
 }
 
 /**
- * Genera la URL para incrustar el mapa interactivo de forma segura y sin bloqueos de iframe.
- * Prioriza el embed oficial de Google Maps si fue provisto; de lo contrario utiliza OpenStreetMap.
+ * Genera la URL para incrustar el mapa interactivo de Google Maps.
+ * Prioriza el embed oficial si fue provisto; de lo contrario genera el mapa satelital de Google Maps
+ * usando coordenadas exactas o dirección/localidad como fallback directo.
  */
 export function getGoogleMapsEmbedUrl(location: {
   address?: string
@@ -153,6 +192,8 @@ export function getGoogleMapsEmbedUrl(location: {
   province?: string
   google_maps_url?: string
   coords?: { lat: number; lon: number } | null
+  mapType?: GoogleMapType
+  zoom?: number
 }): string {
   // 1. Si hay un embed oficial de Google Maps (Compartir > Insertar un mapa), usarlo directamente
   const officialEmbed = extractGoogleMapsEmbedUrl(location.google_maps_url)
@@ -160,10 +201,26 @@ export function getGoogleMapsEmbedUrl(location: {
     return officialEmbed
   }
 
-  // 2. Si se suministraron coordenadas o se pueden extraer del enlace de Google Maps
+  // 2. Coordenadas provistas o extraídas del enlace de Google Maps
   const coords = location.coords || extractCoordsFromGoogleMapsUrl(location.google_maps_url)
   if (coords) {
-    return buildOsmEmbedUrl(coords.lat, coords.lon)
+    return buildGoogleMapsEmbedUrl({
+      lat: coords.lat,
+      lon: coords.lon,
+      mapType: location.mapType || 'hybrid',
+      zoom: location.zoom || 17,
+    })
+  }
+
+  // 3. Fallback directo a Google Maps satelital por dirección, ciudad o provincia
+  const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)
+  const query = queryParts.join(', ')
+  if (query) {
+    return buildGoogleMapsEmbedUrl({
+      query,
+      mapType: location.mapType || 'hybrid',
+      zoom: location.zoom || 16,
+    })
   }
 
   return ''

@@ -27,6 +27,7 @@ export type SubscriptionPaymentStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'WAIVED
 
 // Estados del inquilino según el ciclo de cobranza escalonado (Dunning)
 export type TenantSubscriptionStatus = 
+  | 'TRIAL'                // Período de prueba gratuita de 15 días bonificados
   | 'ACTIVE'               // Al día y operativo
   | 'PAYMENT_PENDING'      // Días 1 al 7: Factura emitida, período ordinario de pago
   | 'GRACE_PERIOD'         // Días 8 al 12: Aviso suave (banner flotante sin bloqueo)
@@ -482,7 +483,7 @@ export interface CreateBookingPayload {
   internal_notes?: string
   customer_notes?: string
   price_rule_id?: string
-  payment_method?: 'TRANSFER' | 'MERCADOPAGO'
+  payment_method?: 'TRANSFER' | 'MERCADOPAGO' | 'CASH'
   duration_minutes?: number
 }
 

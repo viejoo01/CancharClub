@@ -636,9 +636,23 @@ export async function registerCashPayment(params: {
     }
 
     const amountCents = Math.round(params.amount_ars * 100)
-    const currentDeposit = Number(booking.deposit_cents) || 0
-    const newDepositCents = currentDeposit + amountCents
+    let currentDeposit = Number(booking.deposit_cents) || 0
     const totalPriceCents = Number(booking.price_total_cents) || 0
+
+    // Auto-sanar si deposit_cents en BD estaba inflado por el bug de duplicación previa
+    const cobroMatches = [...(booking.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)/gi)]
+    if (cobroMatches.length > 0) {
+      const sumCobros = cobroMatches.reduce((acc, m) => {
+        const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+        return acc + (Math.round(Number(clean)) || 0)
+      }, 0)
+      const sumCobrosCents = Math.round(sumCobros * 100)
+      if (sumCobrosCents > 0 && sumCobrosCents < currentDeposit && currentDeposit >= totalPriceCents) {
+        currentDeposit = sumCobrosCents
+      }
+    }
+
+    const newDepositCents = currentDeposit + amountCents
 
     const methodStr = String(params.payment_method).toUpperCase()
     const methodEnum = methodStr.includes('TRANSFER') ? 'bank_transfer'

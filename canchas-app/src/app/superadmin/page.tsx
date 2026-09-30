@@ -30,7 +30,9 @@ import {
   Smartphone,
   CreditCard,
   RefreshCw,
-  Gift
+  Gift,
+  AlertTriangle,
+  Undo2
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,7 +66,7 @@ import {
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
-import { recordClubSubscriptionPayment } from '@/actions/saas-billing.actions'
+import { recordClubSubscriptionPayment, undoSubscriptionRevocationAction } from '@/actions/saas-billing.actions'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -89,9 +91,9 @@ export default function SuperadminPage() {
   const [tenants, setTenants] = useState<SuperadminTenantItem[]>([])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' | 'PRUEBA'>('ALL')
+  const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' | 'PRUEBA' | 'BAJAS'>('ALL')
   const [tenantSearchTerm, setTenantSearchTerm] = useState('')
-  const [tenantStatusFilter, setTenantStatusFilter] = useState<'ALL' | 'ACTIVE' | 'TRIAL' | 'PENDING'>('ALL')
+  const [tenantStatusFilter, setTenantStatusFilter] = useState<'ALL' | 'ACTIVE' | 'TRIAL' | 'PENDING' | 'CANCELLATION'>('ALL')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newClubName, setNewClubName] = useState('')
   const [newCity, setNewCity] = useState('San Miguel de Tucumán')
@@ -344,6 +346,7 @@ export default function SuperadminPage() {
   const pendingCount = tenants.filter(t => t.subscription_status === 'PENDIENTE').length
   const pausedCount = tenants.filter(t => t.subscription_status === 'PAUSADO').length
   const trialCount = tenants.filter(t => Boolean(t.is_trial)).length
+  const cancellationCount = tenants.filter(t => Boolean(t.cancel_at_period_end)).length
 
   const filteredTenants = tenantsWithPricing.filter(t => {
     const term = searchTerm.toLowerCase().trim()
@@ -356,6 +359,7 @@ export default function SuperadminPage() {
     if (subscriptionFilter === 'PENDIENTE') return t.subscription_status === 'PENDIENTE'
     if (subscriptionFilter === 'PAUSADO') return t.subscription_status === 'PAUSADO'
     if (subscriptionFilter === 'PRUEBA') return Boolean(t.is_trial)
+    if (subscriptionFilter === 'BAJAS') return Boolean(t.cancel_at_period_end)
     return true
   })
 
@@ -366,11 +370,33 @@ export default function SuperadminPage() {
       t.slug.toLowerCase().includes(term) ||
       (t.city && t.city.toLowerCase().includes(term))
     if (!matchesSearch) return false
-    if (tenantStatusFilter === 'ACTIVE') return t.is_active && !t.is_trial
-    if (tenantStatusFilter === 'TRIAL') return Boolean(t.is_trial)
+    if (tenantStatusFilter === 'ACTIVE') return t.is_active && !t.is_trial && !t.cancel_at_period_end
+    if (tenantStatusFilter === 'TRIAL') return Boolean(t.is_trial) && !t.cancel_at_period_end
+    if (tenantStatusFilter === 'CANCELLATION') return Boolean(t.cancel_at_period_end)
     if (tenantStatusFilter === 'PENDING') return !t.is_active
     return true
   })
+
+  const handleUndoCancellation = async (tenantId: string, clubName: string) => {
+    if (!confirm(`¿Deseás anular la solicitud de baja para el club "${clubName}" y mantener su suscripción activa?`)) return
+    try {
+      const res = await undoSubscriptionRevocationAction(tenantId)
+      if (res.success) {
+        setTenants(prev => prev.map(t => t.id === tenantId ? {
+          ...t,
+          cancel_at_period_end: false,
+          cancellation_effective_date: null,
+          cancellation_requested_at: null,
+          cancellation_reason: null,
+        } : t))
+        toast.success(`Solicitud de baja anulada para "${clubName}". El club continúa activo.`)
+      } else {
+        toast.error('Error al anular baja: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error al comunicarse con el servidor')
+    }
+  }
 
   const handleRegisterPayment = async (tenantId: string, clubName: string, amount: number) => {
     try {
@@ -1126,6 +1152,51 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         </div>
       </div>
 
+      {/* Cartel / Alerta Global si hay Clubes con Solicitud de Baja por Arrepentimiento */}
+      {cancellationCount > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500/50 text-amber-200 shadow-xl mb-1 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-in fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/25 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 shadow-xs">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-extrabold text-white">
+                  ⚠️ Club con Baja Programada por Arrepentimiento ({cancellationCount} {cancellationCount === 1 ? 'club' : 'clubes'})
+                </span>
+                <Badge className="bg-amber-500/30 text-amber-300 border-amber-500/50 text-[10px] font-bold px-2 py-0.5">
+                  Baja por Dueño
+                </Badge>
+              </div>
+              <div className="text-xs text-amber-200/90 mt-1 leading-relaxed space-y-1">
+                {tenants.filter(t => t.cancel_at_period_end).map(t => (
+                  <div key={t.id} className="flex flex-wrap items-center gap-1.5">
+                    <span>• Club <strong className="text-white font-bold">{t.name}</strong>:</span>
+                    <span>El día <strong className="text-amber-300 underline font-mono font-bold">{t.cancellation_effective_date || 'al finalizar su ciclo'}</strong> se dará de baja el sistema por pedido del dueño.</span>
+                    {t.cancellation_requested_at && (
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        (Solicitado el {new Date(t.cancellation_requested_at).toLocaleDateString('es-AR')})
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              setActiveTab('TENANTS')
+              setTenantStatusFilter('CANCELLATION')
+            }}
+            className="h-8 text-xs bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 rounded-xl shrink-0 cursor-pointer shadow-md shadow-amber-950/40 gap-1.5"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Ver en Directorio ({cancellationCount})</span>
+          </Button>
+        </div>
+      )}
+
       {/* Tabs Navigation Control: Moderno Segmented Pills */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         <div className="p-1 rounded-2xl bg-slate-950/90 border border-slate-800/80 backdrop-blur-xl shadow-inner inline-flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
@@ -1169,6 +1240,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             )}>
               {tenants.length}
             </Badge>
+            {cancellationCount > 0 && (
+              <Badge className="text-[10px] px-1.5 py-0 border bg-amber-500/30 text-amber-200 border-amber-400/40 animate-pulse font-bold">
+                ⚠️ {cancellationCount} por cancelar
+              </Badge>
+            )}
           </button>
 
           <button
@@ -1322,6 +1398,21 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               >
                 🎁 En Prueba ({trialCount})
               </button>
+              {cancellationCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSubscriptionFilter('BAJAS')}
+                  className={cn(
+                    "px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5",
+                    subscriptionFilter === 'BAJAS'
+                      ? "bg-amber-600 text-white shadow-md shadow-amber-950/40"
+                      : "bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 border border-amber-500/40 animate-pulse"
+                  )}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  <span>⚠️ Bajas Programadas ({cancellationCount})</span>
+                </button>
+              )}
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -1333,11 +1424,43 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               ) : (
                 filteredTenants.map((t) => (
-                  <div key={t.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                  <div 
+                    key={t.id} 
+                    className={cn(
+                      "p-3.5 rounded-2xl bg-slate-950/70 border space-y-3 transition-colors",
+                      t.cancel_at_period_end ? "border-amber-500/60 bg-amber-950/20" : "border-slate-800/80"
+                    )}
+                  >
+                    {t.cancel_at_period_end && (
+                      <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <div>
+                            <p className="font-bold text-amber-300">Baja por Arrepentimiento</p>
+                            <p className="text-[11px] text-amber-200/90">
+                              El día <strong>{t.cancellation_effective_date || t.pricing.nextDueDate}</strong> se dará de baja el sistema por pedido del dueño.
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleUndoCancellation(t.id, t.name)}
+                          className="h-7 text-[11px] bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2 shrink-0 font-bold cursor-pointer"
+                        >
+                          Mantener
+                        </Button>
+                      </div>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-sm text-white">{t.name}</span>
+                          {t.cancel_at_period_end && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                              Baja Solicitada
+                            </span>
+                          )}
                           {t.pricing.planName && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                               {t.pricing.planName}
@@ -1347,7 +1470,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <div className="text-[11px] text-slate-400 mt-0.5">{t.city}</div>
                       </div>
                       <div className="shrink-0">
-                        {t.subscription_status === 'PAUSADO' ? (
+                        {t.cancel_at_period_end ? (
+                          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" />
+                            Baja Solicitada
+                          </Badge>
+                        ) : t.subscription_status === 'PAUSADO' ? (
                           <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
                             ⏸️ En Pausa
                           </Badge>
@@ -1475,10 +1603,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-xs">
                   {filteredTenants.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
+                    <tr 
+                      key={t.id} 
+                      className={cn(
+                        "hover:bg-slate-800/20 transition-colors",
+                        t.cancel_at_period_end && "bg-amber-950/20 border-l-2 border-l-amber-500"
+                      )}
+                    >
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-white">{t.name}</span>
+                          {t.cancel_at_period_end && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                              Baja Solicitada
+                            </span>
+                          )}
                           {t.pricing.planName && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                               {t.pricing.planName}
@@ -1512,7 +1652,20 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         {t.pricing.nextDueDate}
                       </td>
                       <td className="p-4 text-center">
-                        {t.is_trial ? (
+                        {t.cancel_at_period_end ? (
+                          <div className="inline-flex flex-col items-center p-2 rounded-xl bg-amber-950/40 border border-amber-500/40 text-center">
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              Baja Solicitada
+                            </Badge>
+                            <div className="text-[10px] text-amber-300 font-bold mt-1">
+                              Se da de baja: {t.cancellation_effective_date || t.pricing.nextDueDate}
+                            </div>
+                            <div className="text-[9px] text-amber-400/80">
+                              Por pedido del dueño
+                            </div>
+                          </div>
+                        ) : t.is_trial ? (
                           <div>
                             <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
                               🎁 En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : '15d'})
@@ -1542,6 +1695,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {t.cancel_at_period_end && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleUndoCancellation(t.id, t.name)}
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                              title="Anular solicitud de baja y mantener club en el sistema"
+                            >
+                              <Undo2 className="w-3.5 h-3.5" />
+                              <span>Mantener</span>
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1694,7 +1858,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40 border border-emerald-500/20"
                 )}
               >
-                ✅ Habilitados ({tenants.filter(t => t.is_active && !t.is_trial).length})
+                ✅ Habilitados ({tenants.filter(t => t.is_active && !t.is_trial && !t.cancel_at_period_end).length})
               </button>
               <button
                 type="button"
@@ -1706,8 +1870,23 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     : "bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/30"
                 )}
               >
-                🎁 En Prueba ({trialCount})
+                🎁 En Prueba ({tenants.filter(t => Boolean(t.is_trial) && !t.cancel_at_period_end).length})
               </button>
+              {cancellationCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setTenantStatusFilter('CANCELLATION')}
+                  className={cn(
+                    "px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5",
+                    tenantStatusFilter === 'CANCELLATION'
+                      ? "bg-amber-600 text-white shadow-md shadow-amber-950/40"
+                      : "bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 border border-amber-500/40 animate-pulse"
+                  )}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  <span>⚠️ Bajas Programadas ({cancellationCount})</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setTenantStatusFilter('PENDING')}
@@ -1731,29 +1910,76 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               ) : (
                 directoryTenants.map((t) => (
-                  <div key={t.id} className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                  <div key={t.id} className={cn(
+                    "p-3.5 rounded-2xl bg-slate-950/70 border space-y-3 transition-colors",
+                    t.cancel_at_period_end ? "border-amber-500/60 bg-amber-950/20" : "border-slate-800/80"
+                  )}>
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="font-bold text-sm text-white block">{t.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-white block">{t.name}</span>
+                          {t.cancel_at_period_end && (
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[9px] font-bold px-1.5 py-0 flex items-center gap-1">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                              Baja Programada
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-[11px] text-slate-400 block mt-0.5">{t.city}</span>
                       </div>
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        {t.is_trial && (
-                          <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
-                            🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
-                          </Badge>
-                        )}
-                        {t.is_active !== false ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
-                            ✅ Habilitado
+                      <div className="shrink-0 flex flex-col items-end gap-1">
+                        {t.cancel_at_period_end ? (
+                          <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" />
+                            <span>Baja Programada</span>
                           </Badge>
                         ) : (
-                          <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
-                            ⏳ Pendiente
-                          </Badge>
+                          <>
+                            {t.is_trial && (
+                              <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
+                                🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                              </Badge>
+                            )}
+                            {t.is_active !== false ? (
+                              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                                ✅ Habilitado
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
+                                ⏳ Pendiente
+                              </Badge>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
+
+                    {/* Cartel específico si tiene solicitud de baja programada por arrepentimiento */}
+                    {t.cancel_at_period_end && (
+                      <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-bold text-white">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Baja Solicitada por Arrepentimiento</span>
+                        </div>
+                        <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                          El día <strong className="text-white underline font-mono text-xs">{t.cancellation_effective_date || 'al fin del ciclo'}</strong> se dará de baja el sistema por pedido del dueño.
+                        </p>
+                        {t.cancellation_requested_at && (
+                          <div className="text-[10px] text-slate-400">
+                            Registrado el {new Date(t.cancellation_requested_at).toLocaleDateString('es-AR')}
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleUndoCancellation(t.id, t.name)}
+                          className="mt-1 w-full h-8 text-xs font-bold border-emerald-500/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 hover:text-white rounded-xl gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Undo2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Anular Baja / Mantener Club Activo</span>
+                        </Button>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/60 text-xs">
                       <div>
@@ -1885,9 +2111,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     </tr>
                   ) : (
                     directoryTenants.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-800/20 transition-colors">
+                      <tr key={t.id} className={cn(
+                        "transition-colors",
+                        t.cancel_at_period_end 
+                          ? "bg-amber-950/25 hover:bg-amber-950/40 border-l-4 border-l-amber-500" 
+                          : "hover:bg-slate-800/20"
+                      )}>
                       <td className="p-4 pl-6 font-semibold text-white">
-                        {t.name}
+                        <div className="flex items-center gap-2">
+                          <span>{t.name}</span>
+                          {t.cancel_at_period_end && (
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[9px] font-bold px-1.5 py-0 flex items-center gap-1">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                              Baja Programada
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-slate-400">
                         {t.city}
@@ -1899,19 +2138,44 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          {t.is_trial && (
-                            <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
-                              🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
-                            </Badge>
-                          )}
-                          {t.is_active ? (
-                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                              ✅ Habilitado
-                            </Badge>
+                          {t.cancel_at_period_end ? (
+                            <div className="p-2.5 rounded-xl bg-amber-950/70 border border-amber-500/50 text-center space-y-1 shadow-md min-w-44 max-w-56">
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold px-2 py-0.5 mx-auto flex items-center justify-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                                <span>Baja por Arrepentimiento</span>
+                              </Badge>
+                              <div className="text-[11px] font-bold text-white leading-tight">
+                                Se dará de baja el{' '}
+                                <span className="text-amber-300 font-mono underline font-extrabold">
+                                  {t.cancellation_effective_date || 'Fin de ciclo'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-amber-200/90 font-medium">
+                                Por pedido del dueño
+                              </div>
+                              {t.is_trial && (
+                                <span className="text-[9px] text-purple-300 block font-mono">
+                                  🎁 En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : 'Activa'})
+                                </span>
+                              )}
+                            </div>
                           ) : (
-                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
-                              ⏳ Pendiente
-                            </Badge>
+                            <>
+                              {t.is_trial && (
+                                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
+                                  🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                                </Badge>
+                              )}
+                              {t.is_active ? (
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                                  ✅ Habilitado
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
+                                  ⏳ Pendiente
+                                </Badge>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -1931,6 +2195,19 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {t.cancel_at_period_end && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUndoCancellation(t.id, t.name)}
+                              className="h-7 text-xs border-emerald-500/50 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/50 hover:text-white px-2.5 rounded-lg flex items-center gap-1 cursor-pointer font-semibold shadow-xs"
+                              title="Anular la solicitud de baja y mantener el club activo"
+                            >
+                              <Undo2 className="w-3 h-3 text-emerald-400" />
+                              <span>Mantener Club</span>
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
                             variant="outline"

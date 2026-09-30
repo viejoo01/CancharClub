@@ -234,7 +234,15 @@ function OnboardingCardContent() {
   const tenantName = planDetails?.tenantName || 'Tu Club Deportivo'
   const courtsCount = planDetails?.courtsCount || 2
   const planInfo = planDetails?.activePlan || SAAS_PLANS.MEDIANO_2
-  const monthlyFeeArs = planDetails?.pricing?.monthlyFeeArs || 90000
+  const hasPriceConfigured = Boolean(
+    planDetails?.hasPriceConfigured &&
+    planDetails?.pricing?.highestSlotPriceArs &&
+    planDetails.pricing.highestSlotPriceArs > 0 &&
+    planDetails?.pricing?.monthlyFeeArs &&
+    planDetails.pricing.monthlyFeeArs > 0
+  )
+  const monthlyFeeArs = hasPriceConfigured ? (planDetails?.pricing?.monthlyFeeArs || 0) : 0
+  const courtsLabel = courtsCount >= 5 ? '5+ Canchas' : `${courtsCount} Cancha${courtsCount > 1 ? 's' : ''}`
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative overflow-hidden">
@@ -269,17 +277,17 @@ function OnboardingCardContent() {
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-8 sm:py-12 flex flex-col items-center relative z-10">
         {/* Encabezado del Onboarding */}
         <div className="text-center space-y-3 mb-6 sm:mb-8">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-xs">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Paso 2 de 2 • Activación de Club</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+            <span>15 Días de Prueba Gratuita Activados Automáticamente</span>
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-            Vinculá tu Tarjeta para Activar tu Club
+            ¡Tu Club ya tiene 15 Días de Prueba Gratis!
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
-            Para ingresar al panel de gestión de <strong className="text-white">&quot;{tenantName}&quot;</strong> y habilitar reservas, caja y turnos, es obligatorio adherir una tarjeta de crédito o débito como único medio de pago oficial.
+            Tu complejo <strong className="text-white">&quot;{tenantName}&quot;</strong> ya cuenta con <strong className="text-emerald-400">15 días de prueba 100% bonificados</strong> hasta el <strong className="text-white">{planDetails?.nextDueDate || 'día 15'}</strong> ($0 hoy). Adherí tu tarjeta para que tu servicio continúe sin interrupciones al finalizar los 15 días, o ingresá directo al panel.
           </p>
         </div>
 
@@ -292,14 +300,27 @@ function OnboardingCardContent() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-white text-sm">
-                  {planInfo.name} ({courtsCount} Canchas)
+                  {planInfo.name} ({courtsLabel})
                 </span>
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] px-2 py-0.5 font-bold">
                   15 Días Gratis
                 </Badge>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Cuota mensual estimada: <strong className="text-emerald-400 font-mono">{formatARS(monthlyFeeArs)}/mes</strong> (se debita recién en el día 16).
+                {hasPriceConfigured && monthlyFeeArs > 0 ? (
+                  <>
+                    Cuota mensual estimada:{' '}
+                    <strong className="text-emerald-400 font-mono">{formatARS(monthlyFeeArs)}/mes</strong> (se debita recién en el día 16).
+                  </>
+                ) : (
+                  <>
+                    Cuota mensual:{' '}
+                    <strong className="text-emerald-400 font-semibold">
+                      Equivalente a {planInfo.priceTurnosLabel}
+                    </strong>{' '}
+                    (el monto final se calculará según el precio de tus canchas al configurarlas en el panel).
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -437,7 +458,15 @@ function OnboardingCardContent() {
                 <span>Débito Automático Oficial con Protección de Prueba</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Hoy se cobra <strong>$0</strong>. Tu primera cuota mensual de <strong>{formatARS(monthlyFeeArs)}</strong> se debitará de forma automática recién al cumplirse los 15 días corridos. En tu resumen bancario aparecerá bajo el concepto <strong className="text-white">CancharClub</strong>. Podés cancelar en cualquier momento desde tu panel.
+                {hasPriceConfigured && monthlyFeeArs > 0 ? (
+                  <>
+                    Hoy se cobra <strong>$0</strong>. Tu primera cuota mensual de <strong>{formatARS(monthlyFeeArs)}</strong> se debitará de forma automática recién al cumplirse los 15 días corridos. En tu resumen bancario aparecerá bajo el concepto <strong className="text-white">CancharClub</strong>. Podés cancelar en cualquier momento desde tu panel.
+                  </>
+                ) : (
+                  <>
+                    Hoy se cobra <strong>$0</strong>. Tu primera cuota mensual equivalente a <strong>{planInfo.priceTurnosLabel}</strong> se debitará de forma automática recién al cumplirse los 15 días corridos según el valor de turnos que configures en tu club. En tu resumen bancario aparecerá bajo el concepto <strong className="text-white">CancharClub</strong>. Podés cancelar en cualquier momento desde tu panel.
+                  </>
+                )}
               </p>
             </div>
 
@@ -485,6 +514,21 @@ function OnboardingCardContent() {
                 </>
               )}
             </Button>
+          </div>
+
+          {/* Opción de ingreso directo al panel para probar 15 días gratis */}
+          <div className="mt-5 pt-4 border-t border-slate-800 text-center space-y-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => router.push('/dashboard')}
+              className="w-full text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/30 rounded-xl h-11 cursor-pointer transition-all"
+            >
+              <span>Comenzar mis 15 días gratis ahora → Ir al Panel de Control</span>
+            </Button>
+            <p className="text-[11px] text-slate-400">
+              Podés adherir tu tarjeta de cobro mensual en cualquier momento durante los 15 días desde la pestaña &quot;Mi Plan&quot;.
+            </p>
           </div>
         </Card>
       </main>

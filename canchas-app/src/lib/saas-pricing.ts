@@ -28,6 +28,9 @@ export interface ClubSaaSPricing {
   planId?: string
   planName?: string
   hasPriceConfigured?: boolean
+  isTrial?: boolean
+  trialDaysRemaining?: number
+  trialEndsAt?: string | null
 }
 
 /**
@@ -118,6 +121,14 @@ export function calculateClubSaaSFee(
   const monthlyFeeArs = isConfigured ? Math.round(safePrice * multiplier) : 0
   const plan = getPlanByCourtsCount(safeCourts)
   const nextDueDate = computeNextDueDate(createdAt, trialEndsAt)
+  const now = new Date()
+  const regDate = createdAt ? new Date(createdAt) : now
+  const trialEnd = trialEndsAt 
+    ? new Date(trialEndsAt) 
+    : new Date(regDate.getTime() + 15 * 24 * 60 * 60 * 1000)
+  const isTrial = now < trialEnd
+  const msRemaining = trialEnd.getTime() - now.getTime()
+  const trialDaysRemaining = isTrial ? Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24))) : 0
 
   return {
     courtsCount: safeCourts,
@@ -133,6 +144,9 @@ export function calculateClubSaaSFee(
     planId: plan.id,
     planName: plan.name,
     hasPriceConfigured: isConfigured,
+    isTrial,
+    trialDaysRemaining,
+    trialEndsAt: trialEnd.toISOString(),
   }
 }
 

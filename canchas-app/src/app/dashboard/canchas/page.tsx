@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, QrCode, Clock, Trash2, Megaphone, Share2, MapPin } from 'lucide-react'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, Pencil, Clock, Trash2, Megaphone, Share2, MapPin } from 'lucide-react'
 import { InstagramIcon, FacebookIcon, TikTokIcon } from '@/components/icons/social-icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -16,7 +16,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { CourtQrModal } from '@/components/dashboard/court-qr-modal'
 import { 
   createCourt, 
   updateCourt, 
@@ -63,6 +62,7 @@ function formatSport(sport?: string | null) {
   if (!sport) return 'Pádel'
   if (sport === 'FUTBOL5' || sport === 'FUTBOL_5') return 'Fútbol 5'
   if (sport === 'FUTBOL7' || sport === 'FUTBOL_7') return 'Fútbol 7'
+  if (sport === 'FUTBOL11' || sport === 'FUTBOL_11') return 'Fútbol 11'
   if (sport === 'TENIS') return 'Tenis'
   if (sport === 'PADEL') return 'Pádel'
   if (sport === 'BASQUET' || sport === 'BASKET') return 'Básquet'
@@ -110,13 +110,79 @@ export default function CanchasPage() {
   })
   const [isServicesLocationModalOpen, setIsServicesLocationModalOpen] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedQrCourt, setSelectedQrCourt] = useState<{ id: string; name: string; sport: string } | null>(null)
   const [name, setName] = useState('')
   const [sport, setSport] = useState<SportType>('PADEL')
   const [slotDuration, setSlotDuration] = useState<SlotDuration>('MIN_90')
   const [isCovered, setIsCovered] = useState(false)
   const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
   const [loading, setLoading] = useState(false)
+
+  // Estados para Editar Cancha
+  const [editingCourt, setEditingCourt] = useState<Court | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editSport, setEditSport] = useState<SportType>('PADEL')
+  const [editSlotDuration, setEditSlotDuration] = useState<SlotDuration>('MIN_90')
+  const [editSurface, setEditSurface] = useState<CourtSurface>('CESPED_SINTETICO')
+  const [editIsCovered, setEditIsCovered] = useState(false)
+  const [editHasLighting, setEditHasLighting] = useState(true)
+  const [editIsActive, setEditIsActive] = useState(true)
+  const [editLoading, setEditLoading] = useState(false)
+
+  const handleOpenEditModal = (court: Court) => {
+    setEditingCourt(court)
+    setEditName(court.name)
+    setEditSport(court.sport)
+    setEditSlotDuration(court.slot_duration)
+    setEditSurface(court.surface)
+    setEditIsCovered(court.is_indoor)
+    setEditHasLighting(court.has_lighting)
+    setEditIsActive(court.is_active)
+  }
+
+  const handleUpdateCourt = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingCourt || !editName.trim()) return
+
+    setEditLoading(true)
+    try {
+      const res = await updateCourt(editingCourt.id, {
+        name: editName.trim(),
+        sport: editSport,
+        slot_duration: editSlotDuration,
+        surface: editSurface,
+        is_indoor: editIsCovered,
+        has_lighting: editHasLighting,
+        is_active: editIsActive,
+      })
+
+      if (!res.success) {
+        toast.error(res.error || 'Error al actualizar la cancha')
+        return
+      }
+
+      setCourts(prev => prev.map(c => c.id === editingCourt.id ? {
+        ...c,
+        name: editName.trim(),
+        sport: editSport,
+        slot_duration: editSlotDuration,
+        surface: editSurface,
+        is_indoor: editIsCovered,
+        has_lighting: editHasLighting,
+        is_active: editIsActive,
+      } : c))
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
+      }
+      toast.success(`Cancha "${editName.trim()}" actualizada con éxito`)
+      setEditingCourt(null)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al guardar cambios de la cancha'
+      toast.error(msg)
+    } finally {
+      setEditLoading(false)
+    }
+  }
 
   const loadCourtsData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
@@ -683,7 +749,7 @@ export default function CanchasPage() {
                 </span>
               </div>
 
-              {/* Botones de acción: QR Cantina y Eliminar */}
+              {/* Botones de acción: Editar y Eliminar */}
               <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
                 <Button
                   size="sm"
@@ -699,11 +765,12 @@ export default function CanchasPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setSelectedQrCourt({ id: court.id, name: court.name, sport: court.sport })}
-                  className="h-7 text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                  onClick={() => handleOpenEditModal(court)}
+                  className="h-7 text-xs border-sky-500/40 text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 gap-1.5 font-medium"
+                  title="Editar cancha"
                 >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>Código QR Cantina</span>
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Editar</span>
                 </Button>
               </div>
             </CardContent>
@@ -711,13 +778,129 @@ export default function CanchasPage() {
         ))}
       </div>
 
-      {/* Modal QR Cantina */}
-      <CourtQrModal
-        isOpen={!!selectedQrCourt}
-        onClose={() => setSelectedQrCourt(null)}
-        court={selectedQrCourt}
-        clubSlug={clubSlug}
-      />
+      {/* Modal Editar Cancha */}
+      <Dialog open={!!editingCourt} onOpenChange={(open) => !open && setEditingCourt(null)}>
+        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle>Editar Cancha</DialogTitle>
+            <DialogDescription>
+              Modificá las características, deporte o configuración de {editingCourt?.name}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleUpdateCourt} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="editCourtName">Nombre de la Cancha *</Label>
+              <Input
+                id="editCourtName"
+                placeholder="Ej. Cancha 1 Piso"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="editSport">Deporte</Label>
+                <select
+                  id="editSport"
+                  value={editSport}
+                  onChange={(e) => setEditSport(e.target.value as SportType)}
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="PADEL">Pádel</option>
+                  <option value="FUTBOL5">Fútbol 5</option>
+                  <option value="FUTBOL7">Fútbol 7</option>
+                  <option value="FUTBOL11">Fútbol 11</option>
+                  <option value="TENIS">Tenis</option>
+                  <option value="BASQUET">Básquet</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="editDuration">Duración de Turno</Label>
+                <select
+                  id="editDuration"
+                  value={editSlotDuration}
+                  onChange={(e) => setEditSlotDuration(e.target.value as SlotDuration)}
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="MIN_60">60 minutos</option>
+                  <option value="MIN_90">90 minutos</option>
+                  <option value="MIN_120">120 minutos</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="editSurface">Superficie</Label>
+              <select
+                id="editSurface"
+                value={editSurface}
+                onChange={(e) => setEditSurface(e.target.value as CourtSurface)}
+                className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="CESPED_SINTETICO">Césped Sintético</option>
+                <option value="CRISTAL">Cristal / Panorámica</option>
+                <option value="CEMENTO">Cemento / Quick</option>
+                <option value="POLVO_LADRILLO">Polvo de Ladrillo</option>
+                <option value="PASTO_NATURAL">Pasto Natural</option>
+              </select>
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              <div className="flex items-center gap-2">
+                <input
+                  id="editCovered"
+                  type="checkbox"
+                  checked={editIsCovered}
+                  onChange={(e) => setEditIsCovered(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="editCovered" className="text-sm text-slate-300 font-medium cursor-pointer">
+                  Cancha techada / cubierta
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="editLighting"
+                  type="checkbox"
+                  checked={editHasLighting}
+                  onChange={(e) => setEditHasLighting(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="editLighting" className="text-sm text-slate-300 font-medium cursor-pointer">
+                  Iluminación LED Profesional
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="editActive"
+                  type="checkbox"
+                  checked={editIsActive}
+                  onChange={(e) => setEditIsActive(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="editActive" className="text-sm text-slate-300 font-medium cursor-pointer">
+                  Cancha activa (disponible para reservas)
+                </label>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-3">
+              <Button type="button" variant="ghost" onClick={() => setEditingCourt(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={editLoading} className="bg-sky-600 hover:bg-sky-500 text-white font-semibold">
+                {editLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : 'Guardar Cambios'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Loading state while fetching courts */}
       {courtsLoading && (
@@ -767,6 +950,7 @@ export default function CanchasPage() {
                   <option value="PADEL">Pádel</option>
                   <option value="FUTBOL5">Fútbol 5</option>
                   <option value="FUTBOL7">Fútbol 7</option>
+                  <option value="FUTBOL11">Fútbol 11</option>
                   <option value="TENIS">Tenis</option>
                   <option value="BASQUET">Básquet</option>
                 </select>

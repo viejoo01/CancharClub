@@ -4,13 +4,10 @@ import { useState, useEffect } from 'react'
 import NextLink from 'next/link'
 import { 
   Building2, 
-  CreditCard, 
   ShieldCheck, 
   Save, 
   Loader2, 
   CheckCircle2, 
-  Link as LinkIcon, 
-  Unlink,
   ShieldAlert
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
@@ -21,9 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { 
   getTenantPaymentSettings, 
-  saveTenantBankSettings, 
-  saveTenantMpCredentials, 
-  disconnectTenantMpAccount 
+  saveTenantBankSettings
 } from '@/actions/tenant-payment-settings.actions'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
@@ -33,8 +28,6 @@ export default function CobrosConfigPage() {
   const { role, isOwner } = useUserRole()
   const [loading, setLoading] = useState(true)
   const [savingBank, setSavingBank] = useState(false)
-  const [savingMp, setSavingMp] = useState(false)
-  const [disconnectingMp, setDisconnectingMp] = useState(false)
 
   // Datos bancarios
   const [bankName, setBankName] = useState('')
@@ -43,17 +36,6 @@ export default function CobrosConfigPage() {
   const [alias, setAlias] = useState('')
   const [cuit, setCuit] = useState('')
   const [whatsappPhone, setWhatsappPhone] = useState('')
-
-  // Mercado Pago del Club
-  const [mpConnected, setMpConnected] = useState(false)
-  const [mpCollectorId, setMpCollectorId] = useState<string | null>(null)
-  const [mpAccessToken, setMpAccessToken] = useState('')
-  const [mpPublicKey, setMpPublicKey] = useState('')
-  const [showMpForm, setShowMpForm] = useState(false)
-
-  // Métodos habilitados
-  const [allowTransfer, setAllowTransfer] = useState(true)
-  const [allowMp, setAllowMp] = useState(false)
 
   // Estado de persistencia y borrador
   const [isSavedInDb, setIsSavedInDb] = useState(false)
@@ -104,11 +86,6 @@ export default function CobrosConfigPage() {
               setWhatsappPhone(settings.whatsappPhone || '')
             }
           }
-
-          setMpConnected(settings.mpConnected)
-          setMpCollectorId(settings.mpCollectorId || null)
-          setAllowTransfer(settings.paymentMethods.includes('TRANSFER'))
-          setAllowMp(settings.paymentMethods.includes('MERCADOPAGO'))
         }
       } catch (err) {
         console.error('Error cargando configuración de cobros:', err)
@@ -165,11 +142,6 @@ export default function CobrosConfigPage() {
 
     setSavingBank(true)
     try {
-      const activeMethods: ('TRANSFER' | 'MERCADOPAGO')[] = []
-      if (allowTransfer) activeMethods.push('TRANSFER')
-      if (allowMp && mpConnected) activeMethods.push('MERCADOPAGO')
-      if (activeMethods.length === 0) activeMethods.push('TRANSFER')
-
       const res = await saveTenantBankSettings(tenantId || undefined, {
         bankName,
         accountHolder,
@@ -177,7 +149,7 @@ export default function CobrosConfigPage() {
         alias,
         cuit,
         whatsappPhone,
-        paymentMethods: activeMethods,
+        paymentMethods: ['TRANSFER'],
       })
 
       if (res.success) {
@@ -210,58 +182,6 @@ export default function CobrosConfigPage() {
     }
   }
 
-  const handleSaveMp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!mpAccessToken.trim()) {
-      toast.error('Ingresá tu Access Token de Mercado Pago')
-      return
-    }
-
-    setSavingMp(true)
-    try {
-      const res = await saveTenantMpCredentials(tenantId || undefined, {
-        accessToken: mpAccessToken,
-        publicKey: mpPublicKey || undefined,
-      })
-
-      if (res.success) {
-        setMpConnected(true)
-        setShowMpForm(false)
-        setAllowMp(true)
-        setMpAccessToken('')
-        toast.success('¡Cuenta de Mercado Pago vinculada al Club!', {
-          description: 'Las señas pagadas por tarjeta ingresarán directo a tu cuenta de MP.',
-        })
-      } else {
-        toast.error(res.error || 'Error al vincular Mercado Pago')
-      }
-    } catch {
-      toast.error('Error inesperado al vincular')
-    } finally {
-      setSavingMp(false)
-    }
-  }
-
-  const handleDisconnectMp = async () => {
-    if (!confirm('¿Seguro que querés desvincular tu cuenta de Mercado Pago del club?')) return
-    setDisconnectingMp(true)
-    try {
-      const res = await disconnectTenantMpAccount(tenantId || undefined)
-      if (res.success) {
-        setMpConnected(false)
-        setAllowMp(false)
-        setMpCollectorId(null)
-        toast.info('Cuenta de Mercado Pago desvinculada')
-      } else {
-        toast.error(res.error || 'Error al desvincular')
-      }
-    } catch {
-      toast.error('Error inesperado')
-    } finally {
-      setDisconnectingMp(false)
-    }
-  }
-
   if (role === 'TENANT_STAFF' || !isOwner) {
     return (
       <div className="max-w-xl mx-auto py-12 px-4">
@@ -272,7 +192,7 @@ export default function CobrosConfigPage() {
             </div>
             <CardTitle className="text-xl font-bold text-white">Acceso Restringido</CardTitle>
             <CardDescription className="text-slate-300 max-w-md mt-2 text-sm leading-relaxed">
-              La configuración de cuentas bancarias y credenciales de cobro está reservada exclusivamente para los administradores y dueños del club.
+              La configuración de cuentas bancarias y recepción de señas está reservada exclusivamente para los administradores y dueños del club.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center pt-2">
@@ -309,7 +229,7 @@ export default function CobrosConfigPage() {
           </Badge>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          Configurá las cuentas bancarias o de Mercado Pago donde querés recibir las señas de los turnos.
+          Configurá la cuenta bancaria o billetera virtual (Mercado Pago, banco, etc.) donde recibirás las transferencias directas de las señas.
         </p>
       </div>
 
@@ -323,7 +243,7 @@ export default function CobrosConfigPage() {
             Tus señas van directamente a tu cuenta, sin intermediarios
           </h4>
           <p className="text-slate-300 leading-relaxed">
-            <strong>CancharClub nunca retiene ni toca la recaudación de tus canchas.</strong> Cuando un jugador abona una seña por transferencia o Mercado Pago, el dinero se acredita íntegramente en tu cuenta configurada. La plataforma solo te cobra el abono mensual fijo del software.
+            <strong>CancharClub nunca retiene ni toca la recaudación de tus canchas.</strong> Cuando un jugador abona una seña por transferencia, el dinero se acredita íntegramente en tu cuenta configurada. La plataforma solo te cobra el abono mensual fijo del software.
           </p>
         </div>
       </div>
@@ -505,139 +425,6 @@ export default function CobrosConfigPage() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
-
-      {/* ─── 2. MERCADO PAGO PROPIO DEL CLUB (OPCIONAL) ─── */}
-      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg">
-        <CardHeader className="border-b border-slate-800 pb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400">
-                <CreditCard className="w-4 h-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-white">
-                  Mercado Pago Propio del Club (Cobro Online con Tarjeta)
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-400">
-                  Opcional: Si querés que tus clientes puedan señar online con tarjeta de débito/crédito
-                </CardDescription>
-              </div>
-            </div>
-
-            {mpConnected ? (
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[11px] font-bold">
-                Conectado
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-slate-400 border-slate-700 text-[11px]">
-                No conectado
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-5 space-y-4">
-          {mpConnected ? (
-            <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Tu cuenta de Mercado Pago está conectada</h4>
-                  <p className="text-[11px] text-slate-400">
-                    Las señas cobradas con tarjeta de tus canchas se depositan al instante en tu billetera de MP.
-                  </p>
-                  {mpCollectorId && (
-                    <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
-                      ID de Cuenta MP: {mpCollectorId}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDisconnectMp}
-                disabled={disconnectingMp}
-                className="h-9 px-3 rounded-lg border-red-500/40 text-red-400 hover:bg-red-950/30 hover:text-red-300 text-xs gap-1.5"
-              >
-                {disconnectingMp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
-                <span>Desvincular Cuenta</span>
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {!showMpForm ? (
-                <Button
-                  type="button"
-                  onClick={() => setShowMpForm(true)}
-                  className="h-10 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs gap-2 shadow-md shadow-sky-950/40"
-                >
-                  <LinkIcon className="w-4 h-4" />
-                  <span>Configurar Credenciales de Mercado Pago del Club</span>
-                </Button>
-              ) : (
-                <form onSubmit={handleSaveMp} className="space-y-3 pt-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mpToken" className="text-xs font-semibold text-slate-300">
-                      Access Token de tu cuenta Mercado Pago *
-                    </Label>
-                    <Input
-                      id="mpToken"
-                      type="password"
-                      value={mpAccessToken}
-                      onChange={(e) => setMpAccessToken(e.target.value)}
-                      placeholder="APP_USR-..."
-                      className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-white focus:border-sky-500"
-                      required
-                    />
-                    <p className="text-[10px] text-slate-500">
-                      Obtenelo en Mercado Pago Developers &gt; Tus Integraciones &gt; Credenciales de Producción.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mpPublic" className="text-xs font-semibold text-slate-300">
-                      Public Key (Opcional)
-                    </Label>
-                    <Input
-                      id="mpPublic"
-                      value={mpPublicKey}
-                      onChange={(e) => setMpPublicKey(e.target.value)}
-                      placeholder="APP_USR-..."
-                      className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-white focus:border-sky-500"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 justify-end pt-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowMpForm(false)}
-                      className="h-9 px-3 rounded-lg border-slate-700 text-slate-300 text-xs"
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={savingMp}
-                      size="sm"
-                      className="h-9 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs gap-1.5"
-                    >
-                      {savingMp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      <span>Vincular mi Mercado Pago</span>
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

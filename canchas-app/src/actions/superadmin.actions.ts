@@ -23,6 +23,10 @@ export interface SuperadminTenantItem {
   trial_ends_at?: string | null
   is_trial?: boolean
   trial_days_remaining?: number
+  cancel_at_period_end?: boolean
+  cancellation_effective_date?: string | null
+  cancellation_requested_at?: string | null
+  cancellation_reason?: string | null
 }
 
 /**
@@ -123,10 +127,19 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
       }
 
       let trialEndsAt: string | null = (t as unknown as { trial_ends_at?: string | null }).trial_ends_at || null
-      if (!trialEndsAt && (t as unknown as { description?: string | null }).description) {
+      let cancelAtPeriodEnd = false
+      let cancellationEffectiveDate: string | null = null
+      let cancellationRequestedAt: string | null = null
+      let cancellationReason: string | null = null
+
+      if ((t as unknown as { description?: string | null }).description) {
         try {
           const meta = JSON.parse((t as unknown as { description: string }).description)
           if (meta.trial_ends_at) trialEndsAt = meta.trial_ends_at
+          if (meta.cancel_at_period_end) cancelAtPeriodEnd = true
+          if (meta.cancellation_effective_date) cancellationEffectiveDate = String(meta.cancellation_effective_date)
+          if (meta.cancellation_requested_at) cancellationRequestedAt = String(meta.cancellation_requested_at)
+          if (meta.cancellation_reason) cancellationReason = String(meta.cancellation_reason)
         } catch {}
       }
 
@@ -153,6 +166,10 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         trial_ends_at: trialEndsAt,
         is_trial: isTrial,
         trial_days_remaining: trialDaysRemaining,
+        cancel_at_period_end: cancelAtPeriodEnd,
+        cancellation_effective_date: cancellationEffectiveDate,
+        cancellation_requested_at: cancellationRequestedAt,
+        cancellation_reason: cancellationReason,
       }
     })
 

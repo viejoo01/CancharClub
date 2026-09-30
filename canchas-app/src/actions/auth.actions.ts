@@ -415,6 +415,9 @@ export async function registerClub(formData: FormData) {
   }
   const baseSlots = baseSlotsMap[planId] || 2
 
+  const now = new Date()
+  const trialEndsAt = new Date(now.getTime() + 15 * 86400000).toISOString()
+
   const { data: tenant, error: tenantError } = await serviceClient
     .from('tenants')
     .insert({
@@ -426,16 +429,20 @@ export async function registerClub(formData: FormData) {
       province: 'Tucumán',
       country: 'Argentina',
       timezone: 'America/Argentina/Tucuman',
-      is_active: false, // Inactivo hasta que ingrese la tarjeta de débito o crédito
-      subscription_status: 'PAYMENT_PENDING', // Pendiente de vinculación de tarjeta
+      is_active: true, // Club activo inmediatamente con sus 15 días de prueba gratis
+      subscription_status: 'ACTIVE', // Activo en base de datos con prueba bonificada en metadata
       plan_id: planId, // Garantiza que no se degrade por el DEFAULT 'CHICO_1'
       base_slots_plan: baseSlots,
       payment_methods: ['CARD', 'MERCADO_PAGO'],
       description: JSON.stringify({
         card_linked: false,
         plan_id: planId,
-        pending_card: true,
+        pending_card: false,
         selected_sports: selectedSports,
+        is_trial: true,
+        trial_days: 15,
+        trial_activated_at: now.toISOString(),
+        trial_ends_at: trialEndsAt,
       }),
     })
     .select()
@@ -501,25 +508,9 @@ export async function registerClub(formData: FormData) {
       })
     }
 
-    const { data: createdCourts } = await serviceClient
+    await serviceClient
       .from('courts')
       .insert(courtsToInsert)
-      .select('id, name')
-
-    if (createdCourts && createdCourts.length > 0) {
-      const priceRulesToInsert = createdCourts.map((c) => ({
-        tenant_id: tenant.id,
-        court_id: c.id,
-        name: `Tarifa Estándar - ${c.name}`,
-        day_of_week: [0, 1, 2, 3, 4, 5, 6],
-        time_from: '08:00',
-        time_to: '00:00',
-        price_cents: 3000000,
-        priority: 1,
-        is_active: true,
-      }))
-      await serviceClient.from('price_rules').insert(priceRulesToInsert)
-    }
   } catch (courtErr) {
     console.warn('[registerClub] Error sembrando canchas iniciales:', courtErr)
   }
@@ -539,16 +530,17 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'PAYMENT_PENDING', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'false', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_subscription_status', 'TRIAL', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
-  cookieStore.set('new_club_pending_activation', 'true', { path: '/', maxAge: 86400 })
+  cookieStore.set('demo_trial_ends_at', trialEndsAt, { path: '/', maxAge: 86400 })
+  cookieStore.delete('new_club_pending_activation')
   cookieStore.delete('demo_has_card')
   cookieStore.delete('demo_card_last4')
   cookieStore.delete('demo_card_brand')
   cookieStore.delete('demo_card_holder')
 
-  // Redirigir obligatoriamente al paso de vinculación de tarjeta antes del panel
+  // Redirigir al paso de vinculación de tarjeta donde se destaca la prueba gratis y se permite ingresar directo al panel
   redirect('/onboarding/tarjeta')
 }
 

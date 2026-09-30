@@ -59,6 +59,7 @@ interface BookingDetailsModalProps {
     internal_notes?: string | null
     courts?: { name?: string; sport?: string } | Array<{ name?: string; sport?: string }> | null
     booking_payments?: Array<{ amount_ars: number; payment_method: string; created_at: string }>
+    origin?: string | null
   } | null
   onSuccess?: () => void
 }
@@ -120,6 +121,14 @@ export function BookingDetailsModal({
     }
   }, [booking?.customer_phone])
 
+  const [prevBookingId, setPrevBookingId] = useState(booking?.id)
+  if (booking?.id !== prevBookingId) {
+    setPrevBookingId(booking?.id)
+    setLocalStatus(null)
+    setShowPayForm(false)
+    setPayAmount('')
+  }
+
   if (!booking) return null
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
@@ -136,7 +145,7 @@ export function BookingDetailsModal({
         booking_id: booking.id,
         amount_ars: amount,
         payment_method: payMethod,
-        notes: 'Cobro en mostrador',
+        notes: (hasPaidAny || hasDepositAmount) ? 'Cobro de saldo restante' : 'Cobro en mostrador',
       })
 
       if (!res.success) {
@@ -157,6 +166,49 @@ export function BookingDetailsModal({
       }
     } catch {
       toast.error('Error al procesar el pago')
+    } finally {
+      setLoadingPay(false)
+    }
+  }
+
+  const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO', customAmount?: number) => {
+    if (!booking) return
+    const amount = customAmount ?? booking.balance_due
+    if (amount <= 0) {
+      toast.error('No hay saldo pendiente por cobrar')
+      return
+    }
+
+    setLoadingPay(true)
+    try {
+      const res = await registerCashPayment({
+        booking_id: booking.id,
+        amount_ars: amount,
+        payment_method: method,
+        notes: (hasPaidAny || hasDepositAmount) ? 'Saldo restante cobrado' : 'Cobro total en mostrador',
+      })
+
+      if (!res.success) {
+        toast.error(res.error || 'Error al registrar cobro')
+      } else {
+        const methodLabel = method === 'TRANSFER' ? 'Transferencia' : method === 'MERCADOPAGO' ? 'Mercado Pago' : 'Efectivo'
+        toast.success(`¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado!`, {
+          description: 'El turno quedó completamente saldado.',
+        })
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel('canchar_bookings')
+            bc.postMessage({ type: 'BOOKING_CONFIRMED', booking_id: booking.id })
+            bc.close()
+          }
+        } catch {}
+        setShowPayForm(false)
+        setPayAmount('')
+        onSuccess?.()
+        onClose()
+      }
+    } catch {
+      toast.error('Error al procesar el cobro')
     } finally {
       setLoadingPay(false)
     }
@@ -269,6 +321,13 @@ export function BookingDetailsModal({
   const hasPaidAny = (booking.total_paid || 0) > 0
   const isFullyPaid = (booking.balance_due || 0) === 0 && (booking.total_amount_ars || 0) > 0
 
+  const isStaffDeskPaid = Boolean(
+    booking.internal_notes?.includes('Cobro $') ||
+    booking.internal_notes?.includes('en mostrador') ||
+    booking.internal_notes?.includes('Seña inicial') ||
+    booking.origin === 'STAFF_MANUAL'
+  )
+
   const isTransfer = Boolean(
     booking.internal_notes?.toUpperCase().includes('TRANSFER') ||
     booking.internal_notes?.toUpperCase().includes('BANCO') ||
@@ -277,13 +336,15 @@ export function BookingDetailsModal({
   )
   const isAlreadyVerified = Boolean(
     booking.internal_notes?.includes('Seña verificada y aprobada') ||
-    booking.internal_notes?.includes('verificada y aprobada')
+    booking.internal_notes?.includes('verificada y aprobada') ||
+    isStaffDeskPaid
   )
 
   const isPendingDeposit =
     (currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
       currentStatus.toUpperCase() === 'PENDING' ||
       (isTransfer && !isAlreadyVerified)) &&
+    !isStaffDeskPaid &&
     hasDepositAmount
 
   const getStatusBadge = (status: string) => {
@@ -312,7 +373,7 @@ export function BookingDetailsModal({
       }
       return (
         <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
-          CONFIRMADO
+          SEÑA CONFIRMADA
         </Badge>
       )
     }
@@ -459,7 +520,7 @@ export function BookingDetailsModal({
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                El jugador registró la reserva por transferencia. Verificá el ingreso en tu cuenta bancaria o billetera y confirmá el turno:
+                El jugador registró la reserva por transferencia online. Verificá el ingreso en tu cuenta bancaria o billetera y confirmá el turno:
               </p>
               <Button
                 type="button"
@@ -491,31 +552,15 @@ export function BookingDetailsModal({
               <div className="flex items-center justify-between text-xs text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Turno Confirmado — Seña Verificada ({formatARS(booking.total_paid || booking.deposit_amount_ars)})</span>
+                  <span>Turno Confirmado — Seña Abonada ({formatARS(booking.total_paid || booking.deposit_amount_ars)})</span>
                 </div>
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
                   SEÑA PAGADA
                 </Badge>
               </div>
-              {isTransfer && (
-                <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[11px] text-slate-400">
-                  <span className="truncate max-w-70">
-                    {booking.internal_notes?.includes('Seña verificada')
-                      ? '✓ Verificación registrada en historial'
-                      : 'Transferencia bancaria registrada'}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleConfirmDeposit}
-                    disabled={loadingConfirm}
-                    className="h-6 px-2 text-[10px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40"
-                  >
-                    Volver a validar
-                  </Button>
-                </div>
-              )}
+              <p className="text-[11px] text-slate-300 pl-6">
+                Seña acreditada. Resta cobrar <strong className="text-amber-300 font-bold">{formatARS(booking.balance_due)}</strong> al momento del partido.
+              </p>
             </div>
           ) : (
             <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/60 space-y-1.5">
@@ -534,46 +579,87 @@ export function BookingDetailsModal({
             </div>
           )}
 
-          {/* Acción 2: Formulario de Cobro rápido si tiene saldo pendiente */}
+          {/* Acción 2: Cobro rápido del saldo restante del turno */}
           {booking.balance_due > 0 && (
-            <div className="pt-0.5">
-              {!showPayForm ? (
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 shadow-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
+                    <DollarSign className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-emerald-300 uppercase tracking-wide">
+                      {hasPaidAny || hasDepositAmount ? 'Terminar de Cobrar Resto' : 'Cobrar Turno en Mostrador'}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Resta abonar al club: <strong className="text-amber-400 font-bold">{formatARS(booking.balance_due)}</strong>
+                    </div>
+                  </div>
+                </div>
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-2 py-0.5 text-xs font-mono">
+                  {formatARS(booking.balance_due)}
+                </Badge>
+              </div>
+
+              {/* Botones de Cobro Rápido en 1 Clic */}
+              <div className="grid grid-cols-2 gap-2">
                 <Button
-                  onClick={() => {
-                    setShowPayForm(true)
-                    setPayAmount(booking.balance_due.toString())
-                  }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 h-11 text-sm shadow-md shadow-emerald-950/30 cursor-pointer"
+                  type="button"
+                  disabled={loadingPay}
+                  onClick={() => handleQuickPay('CASH')}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95"
                 >
-                  <DollarSign className="w-4 h-4" />
-                  <span>
-                    {hasPaidAny || hasDepositAmount
-                      ? `Cobrar Saldo (${formatARS(booking.balance_due)})`
-                      : `Cobrar Total en Mostrador (${formatARS(booking.balance_due)})`}
-                  </span>
+                  {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  <span>Cobrar Efectivo ({formatARS(booking.balance_due)})</span>
                 </Button>
+
+                <Button
+                  type="button"
+                  disabled={loadingPay}
+                  onClick={() => handleQuickPay('TRANSFER')}
+                  className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-cyan-950/40 cursor-pointer transition-all active:scale-95"
+                >
+                  {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>Cobrar Transferencia ({formatARS(booking.balance_due)})</span>
+                </Button>
+              </div>
+
+              {/* Opción de personalizar monto / método */}
+              {!showPayForm ? (
+                <div className="text-center pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPayForm(true)
+                      setPayAmount(booking.balance_due.toString())
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
+                  >
+                    ¿Monto parcial o Mercado Pago / QR? Clic acá
+                  </button>
+                </div>
               ) : (
-                <form onSubmit={handleRegisterPayment} className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-3">
-                  <div className="text-xs font-bold text-emerald-400">Registrar Cobro de Saldo en Caja</div>
+                <form onSubmit={handleRegisterPayment} className="pt-2 border-t border-slate-800 space-y-2.5">
+                  <div className="text-[11px] font-semibold text-slate-300">Cobro con monto o medio personalizado:</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor="payAmount" className="text-xs text-slate-300">Monto ($)</Label>
+                      <Label htmlFor="payAmount" className="text-[11px] text-slate-300">Monto ($)</Label>
                       <Input
                         id="payAmount"
                         type="number"
                         value={payAmount}
                         onChange={(e) => setPayAmount(e.target.value)}
-                        className="h-10 mt-1"
+                        className="h-9 mt-1 text-xs"
                         required
                       />
                     </div>
                     <div>
-                      <Label htmlFor="payMethod" className="text-xs text-slate-300">Medio</Label>
+                      <Label htmlFor="payMethod" className="text-[11px] text-slate-300">Medio</Label>
                       <select
                         id="payMethod"
                         value={payMethod}
                         onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO')}
-                        className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 mt-1"
+                        className="flex h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 mt-1"
                       >
                         <option value="CASH">Efectivo en Caja</option>
                         <option value="TRANSFER">Transferencia / Alias</option>
@@ -587,17 +673,17 @@ export function BookingDetailsModal({
                       size="sm"
                       variant="ghost"
                       onClick={() => setShowPayForm(false)}
-                      className="h-9 text-xs"
+                      className="h-8 text-xs"
                     >
-                      Cancelar
+                      Ocultar
                     </Button>
                     <Button
                       type="submit"
                       size="sm"
                       disabled={loadingPay}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-9 text-xs"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-8 text-xs"
                     >
-                      {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirmar Cobro'}
+                      {loadingPay ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirmar Cobro'}
                     </Button>
                   </div>
                 </form>
@@ -656,15 +742,29 @@ export function BookingDetailsModal({
             </Button>
           </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-10 px-4 text-slate-400 hover:text-slate-100 hover:bg-slate-800 text-xs font-medium rounded-lg w-full sm:w-auto"
-          >
-            Cerrar
-          </Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            {booking.balance_due > 0 && (
+              <Button
+                type="button"
+                onClick={() => handleQuickPay('CASH')}
+                disabled={loadingPay}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-4 rounded-lg shadow-md gap-1.5 cursor-pointer flex-1 sm:flex-initial"
+              >
+                {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
+                <span>Cobrar Resto ({formatARS(booking.balance_due)})</span>
+              </Button>
+            )}
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-10 px-4 text-slate-400 hover:text-slate-100 hover:bg-slate-800 text-xs font-medium rounded-lg w-full sm:w-auto"
+            >
+              Cerrar
+            </Button>
+          </div>
         </DialogFooter>
 
         {/* Modal de Impresión Térmica */}

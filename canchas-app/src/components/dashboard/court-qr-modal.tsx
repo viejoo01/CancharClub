@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import QRCode from 'qrcode'
 import {
   Dialog,
   DialogContent,
@@ -38,8 +39,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
   const [selectedTable, setSelectedTable] = useState(tableName || '')
   const [downloading, setDownloading] = useState(false)
   const [printing, setPrinting] = useState(false)
-
-  if (!isOpen) return null
+  const [qrDataUrl, setQrDataUrl] = useState<string>('')
 
   const effectiveSlug = clubSlug || 'club'
   const isCourtMode = Boolean(court)
@@ -49,7 +49,33 @@ export function CourtQrModal(props: CourtQrModalProps) {
     ? `${origin}/club/${effectiveSlug}/pedido?cancha=${encodeURIComponent(court?.name || '')}`
     : `${origin}/club/${effectiveSlug}/pedido?origen=mesa${tableParam}`
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(orderUrl)}&bgcolor=ffffff&color=020617&qzone=2`
+  useEffect(() => {
+    if (!isOpen) return
+    let isMounted = true
+    QRCode.toDataURL(orderUrl, {
+      width: 600,
+      margin: 1,
+      color: {
+        dark: '#020617',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'H',
+    })
+      .then((url) => {
+        if (isMounted) {
+          setQrDataUrl(url)
+        }
+      })
+      .catch((err) => {
+        console.error('Error generating QR code:', err)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [orderUrl, isOpen])
+
+  if (!isOpen) return null
 
   const titleText = isCourtMode
     ? `CANCHA ${court?.name?.replace(/cancha/i, '').trim() || ''}`
@@ -234,7 +260,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
             <div class="subtitle">${subtitleText}</div>
 
             <div class="qr-frame">
-              <img class="qr-img" src="${qrImageUrl}" alt="QR Pedido" />
+              <img class="qr-img" src="${qrDataUrl || ''}" alt="QR Pedido" />
             </div>
 
             <div class="cta-heading">Escaneá con la cámara de tu celular</div>
@@ -336,14 +362,19 @@ export function CourtQrModal(props: CourtQrModalProps) {
       ctx.stroke()
 
       // Carga del QR
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.src = qrImageUrl
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-      })
-      ctx.drawImage(img, 360, 410, 480, 480)
+      if (qrDataUrl) {
+        const img = new Image()
+        img.src = qrDataUrl
+        await new Promise((resolve, reject) => {
+          if (img.complete) {
+            resolve(true)
+          } else {
+            img.onload = () => resolve(true)
+            img.onerror = reject
+          }
+        })
+        ctx.drawImage(img, 360, 410, 480, 480)
+      }
 
       // Llamado a la acción
       ctx.fillStyle = '#0f172a'
@@ -455,13 +486,19 @@ export function CourtQrModal(props: CourtQrModalProps) {
             {subtitleText}
           </div>
 
-          <div className="p-2 bg-white border-2 border-slate-200 rounded-xl shadow-inner mb-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src={qrImageUrl} 
-              alt="QR Pedidos Cantina" 
-              className="w-40 h-40 mx-auto"
-            />
+          <div className="p-2 bg-white border-2 border-slate-200 rounded-xl shadow-inner mb-2 flex items-center justify-center min-w-40 min-h-40">
+            {!qrDataUrl ? (
+              <div className="w-40 h-40 flex items-center justify-center text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+              </div>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img 
+                src={qrDataUrl} 
+                alt="QR Pedidos Cantina" 
+                className="w-40 h-40 mx-auto block"
+              />
+            )}
           </div>
 
           <div className="text-[11px] font-extrabold text-slate-900 mb-0.5">

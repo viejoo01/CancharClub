@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
+import { TrialBanner } from './trial-banner'
 import { PlanActivationModal } from './plan-activation-modal'
 import { PlanExpirationAlert } from './plan-expiration-alert'
 import { AutoDebitAlertModal } from './auto-debit-alert-modal'
@@ -39,6 +40,9 @@ interface DashboardLayoutClientProps {
   daysRemaining?: number
   subscriptionStatus?: TenantSubscriptionStatus
   monthlyFeeArs?: number
+  isTrial?: boolean
+  trialDaysRemaining?: number
+  trialDueDate?: string
 }
 
 export function DashboardLayoutClient({
@@ -50,12 +54,16 @@ export function DashboardLayoutClient({
   mpConnected,
   planId,
   isActive,
+  hasCard,
   courtsCount,
   sports,
   gracePeriodBanner,
   children,
   dueDate,
   daysRemaining,
+  isTrial,
+  trialDaysRemaining,
+  trialDueDate,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(false)
@@ -147,6 +155,9 @@ export function DashboardLayoutClient({
           userRole={userRole}
           isActive={isActive}
           planId={planId}
+          isTrial={isTrial}
+          trialDaysRemaining={trialDaysRemaining}
+          trialDueDate={trialDueDate || dueDate}
         />
       </div>
 
@@ -177,6 +188,9 @@ export function DashboardLayoutClient({
               planId={planId}
               isMobile={true}
               onClose={() => setMobileMenuOpen(false)}
+              isTrial={isTrial}
+              trialDaysRemaining={trialDaysRemaining}
+              trialDueDate={trialDueDate || dueDate}
             />
           </div>
         </>
@@ -191,6 +205,9 @@ export function DashboardLayoutClient({
           sports={sports}
           mpConnected={mpConnected}
           onToggleMobileMenu={() => setMobileMenuOpen(true)}
+          isTrial={isTrial}
+          trialDaysRemaining={trialDaysRemaining}
+          trialDueDate={trialDueDate || dueDate}
         />
 
         {/* Modal de cambio de contraseña para dueño y encargado */}
@@ -212,7 +229,17 @@ export function DashboardLayoutClient({
         )}
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
-          {isActive && gracePeriodBanner}
+          {/* Banner visual prominente de 15 Días de Prueba Gratuita */}
+          {isTrial && (
+            <TrialBanner
+              daysRemaining={typeof trialDaysRemaining === 'number' ? trialDaysRemaining : 15}
+              dueDate={trialDueDate || dueDate || ''}
+              hasCard={hasCard}
+              tenantId={tenantId}
+            />
+          )}
+
+          {isActive && !isTrial && gracePeriodBanner}
 
           {/* Modal de vinculación de tarjeta para activar plan */}
           <PlanActivationModal

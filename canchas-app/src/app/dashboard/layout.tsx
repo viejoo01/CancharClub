@@ -47,6 +47,7 @@ export default async function DashboardLayout({
   let cancellationEffectiveDate: string | null = null
   let isActive = true
   let hasCard = false
+  let trialEndsAt: string | null = null
 
   function checkMpConnected(t: { mp_access_token?: string | null }): boolean {
     return Boolean(t.mp_access_token)
@@ -60,6 +61,9 @@ export default async function DashboardLayout({
         cancellationEffectiveDate = String(meta.cancellation_effective_date)
       }
       if (meta.card_linked) hasCard = true
+      if (meta.trial_ends_at) {
+        trialEndsAt = String(meta.trial_ends_at)
+      }
     } catch {}
   }
 
@@ -319,7 +323,20 @@ export default async function DashboardLayout({
     planId = getPlanByCourtsCount(initialCourtsCount || 2).id
   }
 
-  if (!isSuperadmin && tenantId && !hasCard) {
+  const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
+  if (!trialEndsAt && cookieTrialEndsAt) {
+    trialEndsAt = cookieTrialEndsAt
+  } else if (!trialEndsAt && tenantCreatedAt) {
+    trialEndsAt = new Date(new Date(tenantCreatedAt).getTime() + 15 * 86400000).toISOString()
+  }
+
+  const now = new Date()
+  const trialEnd = trialEndsAt ? new Date(trialEndsAt) : null
+  const isCurrentlyInTrial = trialEnd ? (now < trialEnd) : false
+  const trialDaysRemaining = isCurrentlyInTrial && trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0
+
+  // Si no tiene tarjeta pero está dentro de los 15 días de prueba gratis, NO se lo bloquea
+  if (!isSuperadmin && tenantId && !hasCard && !isCurrentlyInTrial) {
     redirect('/onboarding/tarjeta')
   }
 
@@ -332,11 +349,12 @@ export default async function DashboardLayout({
     Math.max(initialCourtsCount, 1), 
     effectiveSlotPrice, 
     tenantCreatedAt, 
-    null, 
+    trialEndsAt, 
     hasPriceConfigured
   )
   const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
   const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
+  const isTrial = Boolean(pricing.isTrial || isCurrentlyInTrial)
 
   return (
     <DashboardLayoutClient
@@ -353,9 +371,12 @@ export default async function DashboardLayout({
       sports={initialSports}
       dueDate={effectiveDueDate}
       daysRemaining={daysRemaining}
-      subscriptionStatus={subscriptionStatus}
+      subscriptionStatus={isTrial ? 'TRIAL' : subscriptionStatus}
       monthlyFeeArs={pricing.monthlyFeeArs}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
+      isTrial={isTrial}
+      trialDaysRemaining={pricing.trialDaysRemaining ?? trialDaysRemaining}
+      trialDueDate={pricing.nextDueDate}
     >
       <TenantProvider value={tenantId} role={userRole} planId={planId}>
         {children}

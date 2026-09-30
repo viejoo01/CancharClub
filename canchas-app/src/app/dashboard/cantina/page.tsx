@@ -888,6 +888,19 @@ export default function CantinaPage() {
             </span>
           )}
         </button>
+
+        <div className="ml-auto shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsTableQrOpen(true)}
+            className="text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 rounded-xl gap-1.5 h-10 px-3.5 cursor-pointer font-medium"
+            title="Generar e imprimir cartel con código QR de la Cantina"
+          >
+            <QrCode className="w-4 h-4 text-emerald-400" />
+            <span>Código QR Cantina</span>
+          </Button>
+        </div>
       </div>
 
       {/* VISTA 1: COMANDAS EN VIVO */}

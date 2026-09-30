@@ -108,17 +108,30 @@ export async function getDailyCashReport(
   for (const row of bookingRows ?? []) {
     const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
     const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
-    const totalDepositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
+    let totalDepositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
     const totalPriceArs = Math.round((Number(row.price_total_cents) || 0) / 100)
     const notes = row.staff_notes || ''
 
-    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $12500 (Efectivo) [2026-09-19T...]")
-    const cobroMatches = [...notes.matchAll(/Cobro \$?(\d+)\s*\((CASH|EFECTIVO|TRANSFER|TRANSFERENCIA|MERCADOPAGO|MERCADO PAGO|MP|DEBIT_CARD|CREDIT_CARD|QR_MP|OTHER)\)(?:\s*\[([^\]]+)\])?/gi)]
+    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $10.000 (Transferencia) a las 10:46 hs [2026-09-30T...]")
+    const cobroMatches = [...notes.matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)(?:[^\[\n]*\[([^\]]+)\])?/gi)]
+    
+    // Auto-sanar si deposit_cents en BD estaba inflado por el bug de duplicación previa
+    if (cobroMatches.length > 0) {
+      const sumCobrosArs = cobroMatches.reduce((acc, m) => {
+        const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+        return acc + (Math.round(Number(clean)) || 0)
+      }, 0)
+      if (sumCobrosArs > 0 && sumCobrosArs < totalDepositArs && totalDepositArs >= totalPriceArs) {
+        totalDepositArs = sumCobrosArs
+      }
+    }
+
     let cobrosTotal = 0
 
     for (let idx = 0; idx < cobroMatches.length; idx++) {
       const m = cobroMatches[idx]
-      const amt = Number(m[1])
+      const cleanAmt = m[1].replace(/\./g, '').replace(/,/g, '.')
+      const amt = Math.round(Number(cleanAmt)) || 0
       const rawMeth = m[2].toUpperCase()
       const isoTimestamp = m[3] || row.paid_at || row.updated_at || row.created_at
       cobrosTotal += amt
@@ -129,12 +142,13 @@ export async function getDailyCashReport(
         else if (rawMeth.includes('MERCADO') || rawMeth.includes('MP') || rawMeth.includes('QR')) method = 'MERCADOPAGO'
         else if (rawMeth.includes('CASH') || rawMeth.includes('EFECTIVO')) method = 'CASH'
 
+        const isDeposit = (notes.toLowerCase().includes('seña') && idx === 0)
         entries.push({
           id: `cobro-${row.id}-${idx}`,
           customer_name: row.customer_name || 'Cliente',
           court_name: courtName,
           amount_ars: amt,
-          payment_type: 'BALANCE',
+          payment_type: isDeposit ? 'DEPOSIT' : 'BALANCE',
           payment_method: method,
           paid_at: isoTimestamp,
           notes: cleanNoteForDisplay(notes),

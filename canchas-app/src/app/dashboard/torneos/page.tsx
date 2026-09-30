@@ -862,6 +862,8 @@ export default function TorneosDashboardPage() {
                 >
                   <option value="PADEL">Pádel</option>
                   <option value="FUTBOL_5">Fútbol 5</option>
+                  <option value="FUTBOL_7">Fútbol 7</option>
+                  <option value="FUTBOL_11">Fútbol 11</option>
                   <option value="TENIS">Tenis</option>
                 </select>
               </div>

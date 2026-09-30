@@ -456,12 +456,26 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
       const totalArs = (b.price_total_cents !== null && b.price_total_cents !== undefined)
         ? Math.round(Number(b.price_total_cents) / 100)
         : 0
-      const depositArs = (b.deposit_cents !== null && b.deposit_cents !== undefined)
+      let depositArs = (b.deposit_cents !== null && b.deposit_cents !== undefined)
         ? Math.round(Number(b.deposit_cents) / 100)
         : 0
 
-      const isConfirmedCash = b.status === 'confirmed_cash'
-      const isPendingDeposit = b.status === 'pending_deposit' || b.status === 'pending'
+      // Auto-detección y corrección de doble registro previo:
+      // Si el turno tiene en notas un cobro registrado explícito (ej. "Cobro $10.000... - Seña inicial...")
+      // y deposit_cents en BD quedó inflado igual al total del turno, corregir al monto real cobrado.
+      const cobroMatches = [...(b.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)/gi)]
+      if (cobroMatches.length > 0) {
+        const sumCobros = cobroMatches.reduce((acc, m) => {
+          const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+          return acc + (Math.round(Number(clean)) || 0)
+        }, 0)
+        if (sumCobros > 0 && sumCobros < totalArs && depositArs >= totalArs) {
+          depositArs = sumCobros
+        }
+      }
+
+      const isConfirmedCash = b.status === 'confirmed_cash' && depositArs >= totalArs
+      const isPendingDeposit = (b.status === 'pending_deposit' || b.status === 'pending') && depositArs < totalArs
       const isFullyPaid = isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
       const totalPaid = isFullyPaid ? totalArs : depositArs
       const balanceDue = Math.max(0, totalArs - totalPaid)

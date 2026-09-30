@@ -411,10 +411,10 @@ export default function SuperadminPage() {
     try {
       const res = await testSuperadminTelemetryAction()
       if (res.success) {
-        if (res.telegramDelivered || res.webhookDelivered) {
-          toast.success('¡Alerta de telemetría enviada a tus canales externos!')
+        if (res.emailDelivered || res.whatsappDelivered || res.webhookDelivered) {
+          toast.success('¡Alerta de telemetría enviada a tus canales oficiales (Email / WhatsApp)!')
         } else {
-          toast.info('Alerta registrada en el servidor (configurá TELEGRAM_BOT_TOKEN o SUPERADMIN_WEBHOOK_URL para recibirla en tu móvil).')
+          toast.info('Alerta registrada en el servidor.')
         }
       } else {
         toast.error(res.error || 'Error al enviar alerta')
@@ -1423,7 +1423,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   onClick={handleTestTelemetry}
                   disabled={isTestingTelemetry}
                   className="h-9 text-xs border-indigo-800/60 bg-indigo-950/40 text-indigo-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
-                  title="Enviar mensaje de prueba a Telegram / Webhook"
+                  title="Enviar mensaje de prueba a Email / WhatsApp / Webhook"
                 >
                   <Radio className={`w-3.5 h-3.5 mr-1.5 ${isTestingTelemetry ? 'animate-ping text-indigo-400' : 'text-indigo-400'}`} />
                   Probar Telemetría

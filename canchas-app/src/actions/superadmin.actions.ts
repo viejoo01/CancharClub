@@ -854,17 +854,18 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
 }
 
 /**
- * Envía una prueba de telemetría a Telegram / Webhook configurado.
+ * Envía una prueba de telemetría a Email / WhatsApp / Webhook configurado.
  */
 export async function testSuperadminTelemetryAction(): Promise<{
   success: boolean
-  telegramDelivered: boolean
+  emailDelivered: boolean
+  whatsappDelivered: boolean
   webhookDelivered: boolean
   error?: string
 }> {
   const auth = await assertSuperadmin()
   if (!auth.authorized) {
-    return { success: false, telegramDelivered: false, webhookDelivered: false, error: 'No autorizado' }
+    return { success: false, emailDelivered: false, whatsappDelivered: false, webhookDelivered: false, error: 'No autorizado' }
   }
 
   const { sendSuperadminAlert } = await import('@/lib/superadmin-notifications')

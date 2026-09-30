@@ -11,7 +11,6 @@ import {
   RefreshCw,
   LogOut,
   Building2,
-  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,7 +18,6 @@ import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import {
   confirmAndActivateSubscriptionWithCard,
-  setupMonthlySubscriptionPreapproval,
   getClubPlanDetails,
   type ClubPlanDetails,
 } from '@/actions/saas-billing.actions'
@@ -48,7 +46,6 @@ function OnboardingCardContent() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [openingMp, setOpeningMp] = useState(false)
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
 
   // Campos de la tarjeta
@@ -191,28 +188,6 @@ function OnboardingCardContent() {
       console.error('Error activating with card:', err)
       toast.error('Ocurrió un error al vincular la tarjeta')
       setSubmitting(false)
-    }
-  }
-
-  const handleOpenMpSubscriptions = async () => {
-    setOpeningMp(true)
-    try {
-      const activeTenant = planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const res = await setupMonthlySubscriptionPreapproval(activeTenant)
-      if (res.success && res.initPoint) {
-        toast.info('Abriendo portal oficial de Mercado Pago Subscriptions...', {
-          description: 'Cargá tu tarjeta en la pasarela segura para activar tu prueba gratis.',
-        })
-        window.location.assign(res.initPoint)
-      } else {
-        toast.error(
-          'No se pudo conectar directamente con Mercado Pago. Podés cargar los datos de la tarjeta en el formulario superior para activar al instante.'
-        )
-      }
-    } catch {
-      toast.error('Error al inicializar la pasarela de Mercado Pago')
-    } finally {
-      setOpeningMp(false)
     }
   }
 
@@ -489,47 +464,6 @@ function OnboardingCardContent() {
               )}
             </Button>
           </form>
-
-          {/* Opción alternativa: Mercado Pago Subscriptions */}
-          <div className="mt-5 pt-5 border-t border-slate-800 text-center">
-            <p className="text-xs text-slate-400 mb-2.5">
-              ¿Preferís usar tu cuenta guardada de Mercado Pago?
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleOpenMpSubscriptions}
-              disabled={openingMp || submitting}
-              className="w-full sm:w-auto border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 text-xs font-bold rounded-xl h-10 px-5 cursor-pointer gap-2"
-            >
-              {openingMp ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Conectando con Mercado Pago...</span>
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Adherir Débito vía Mercado Pago Subscriptions</span>
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Opción de ingreso directo al panel para probar 15 días gratis */}
-          <div className="mt-5 pt-4 border-t border-slate-800 text-center space-y-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => router.push('/dashboard')}
-              className="w-full text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/30 rounded-xl h-11 cursor-pointer transition-all"
-            >
-              <span>Comenzar mis 15 días gratis ahora → Ir al Panel de Control</span>
-            </Button>
-            <p className="text-[11px] text-slate-400">
-              Podés adherir tu tarjeta de cobro mensual en cualquier momento durante los 15 días desde la pestaña &quot;Mi Plan&quot;.
-            </p>
-          </div>
         </Card>
       </main>
 

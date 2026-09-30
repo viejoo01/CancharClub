@@ -60,6 +60,8 @@ export interface ClubPlanDetails {
   isTrial?: boolean
   trialDaysRemaining?: number
   trialEndsAt?: string | null
+  trialForfeited?: boolean
+  trialForfeitedAt?: string | null
 }
 
 /**
@@ -130,6 +132,8 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let cancellationEffectiveDate: string | null = null
   let autoDebitAlerts: AutoDebitAlert[] = []
   let tenantDescription: string | null = null
+  let trialForfeited = false
+  let trialForfeitedAt: string | null = null
   let tenantRow: { id: string; name?: string | null; slug?: string | null; base_slots_plan?: number | null; subscription_status?: TenantSubscriptionStatus | null; is_active?: boolean | null; created_at?: string | null; description?: string | null; plan_id?: string | null } | null = null
 
   if (targetTenantId) {
@@ -144,6 +148,10 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       tenantDescription = tenant.description
       try {
         const parsedDesc = JSON.parse(tenant.description)
+        if (parsedDesc.trial_forfeited) {
+          trialForfeited = true
+          trialForfeitedAt = parsedDesc.trial_forfeited_at || null
+        }
         if (parsedDesc.trial_ends_at) {
           trialEndsAt = String(parsedDesc.trial_ends_at)
         }
@@ -161,16 +169,25 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       } catch {}
     }
 
-    const cookieTermsAccepted = cookieStore.get('demo_terms_accepted_at')?.value
-    if (!termsAcceptedAt && cookieTermsAccepted) {
-      termsAcceptedAt = cookieTermsAccepted
+    const cookieTrialForfeited = cookieStore.get('demo_trial_forfeited')?.value === 'true'
+    if (cookieTrialForfeited) {
+      trialForfeited = true
     }
 
-    const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
-    if (!trialEndsAt && cookieTrialEndsAt) {
-      trialEndsAt = cookieTrialEndsAt
-    } else if (!trialEndsAt && tenant?.created_at) {
-      trialEndsAt = new Date(new Date(tenant.created_at).getTime() + 15 * 86400000).toISOString()
+    if (trialForfeited) {
+      trialEndsAt = new Date('2000-01-01T00:00:00.000Z').toISOString()
+    } else {
+      const cookieTermsAccepted = cookieStore.get('demo_terms_accepted_at')?.value
+      if (!termsAcceptedAt && cookieTermsAccepted) {
+        termsAcceptedAt = cookieTermsAccepted
+      }
+
+      const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
+      if (!trialEndsAt && cookieTrialEndsAt) {
+        trialEndsAt = cookieTrialEndsAt
+      } else if (!trialEndsAt && tenant?.created_at) {
+        trialEndsAt = new Date(new Date(tenant.created_at).getTime() + 15 * 86400000).toISOString()
+      }
     }
 
     if (tenant) {
@@ -400,9 +417,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     reactivationDetails,
     autoDebitAlerts,
     hasPriceConfigured,
-    isTrial: pricing.isTrial,
-    trialDaysRemaining: pricing.trialDaysRemaining,
-    trialEndsAt: pricing.trialEndsAt || trialEndsAt,
+    isTrial: trialForfeited ? false : pricing.isTrial,
+    trialDaysRemaining: trialForfeited ? 0 : pricing.trialDaysRemaining,
+    trialEndsAt: trialForfeited ? new Date('2000-01-01T00:00:00.000Z').toISOString() : (pricing.trialEndsAt || trialEndsAt),
+    trialForfeited,
+    trialForfeitedAt,
   }
 }
 
@@ -1455,7 +1474,7 @@ export async function requestSubscriptionRevocationAction(
  */
 export async function undoSubscriptionRevocationAction(
   tenantIdParam?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; trialForfeited?: boolean }> {
   try {
     const serviceClient = await createServiceClient()
     let targetTenantId = tenantIdParam
@@ -1507,6 +1526,15 @@ export async function undoSubscriptionRevocationAction(
     delete meta.cancellation_effective_date
     delete meta.cancellation_reason
 
+    // REGLA DE NEGOCIO OBLIGATORIA:
+    // Si un club solicitó la baja por arrepentimiento y luego decide reactivar su plan,
+    // pierde inmediatamente cualquier día restante de la prueba gratuita de 15 días.
+    // A partir de ese momento, comienza a regir el cobro de su plan mensual regular.
+    meta.trial_ends_at = new Date('2000-01-01T00:00:00.000Z').toISOString()
+    meta.trial_forfeited = true
+    meta.trial_forfeited_at = new Date().toISOString()
+    meta.trial_forfeited_reason = 'Reactivación posterior a solicitud de baja por arrepentimiento'
+
     const { error } = await serviceClient
       .from('tenants')
       .update({
@@ -1522,11 +1550,14 @@ export async function undoSubscriptionRevocationAction(
     try {
       const cookieStore = await cookies()
       cookieStore.delete('demo_cancel_at_period_end')
+      cookieStore.delete('demo_trial_ends_at')
+      cookieStore.set('demo_trial_forfeited', 'true', { path: '/' })
     } catch {}
 
     revalidatePath('/dashboard/plan')
+    revalidatePath('/dashboard')
     revalidatePath('/superadmin')
-    return { success: true }
+    return { success: true, trialForfeited: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al reactivar suscripción'
     return { success: false, error: msg }

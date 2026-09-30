@@ -48,6 +48,7 @@ export default async function DashboardLayout({
   let isActive = true
   let hasCard = false
   let trialEndsAt: string | null = null
+  let trialForfeited = false
 
   function checkMpConnected(t: { mp_access_token?: string | null }): boolean {
     return Boolean(t.mp_access_token)
@@ -57,6 +58,9 @@ export default async function DashboardLayout({
     if (!desc) return
     try {
       const meta = JSON.parse(desc)
+      if (meta.trial_forfeited) {
+        trialForfeited = true
+      }
       if (meta.cancellation_effective_date) {
         cancellationEffectiveDate = String(meta.cancellation_effective_date)
       }
@@ -323,16 +327,25 @@ export default async function DashboardLayout({
     planId = getPlanByCourtsCount(initialCourtsCount || 2).id
   }
 
-  const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
-  if (!trialEndsAt && cookieTrialEndsAt) {
-    trialEndsAt = cookieTrialEndsAt
-  } else if (!trialEndsAt && tenantCreatedAt) {
-    trialEndsAt = new Date(new Date(tenantCreatedAt).getTime() + 15 * 86400000).toISOString()
+  const cookieTrialForfeited = cookieStore.get('demo_trial_forfeited')?.value === 'true'
+  if (cookieTrialForfeited) {
+    trialForfeited = true
+  }
+
+  if (trialForfeited) {
+    trialEndsAt = new Date('2000-01-01T00:00:00.000Z').toISOString()
+  } else {
+    const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
+    if (!trialEndsAt && cookieTrialEndsAt) {
+      trialEndsAt = cookieTrialEndsAt
+    } else if (!trialEndsAt && tenantCreatedAt) {
+      trialEndsAt = new Date(new Date(tenantCreatedAt).getTime() + 15 * 86400000).toISOString()
+    }
   }
 
   const now = new Date()
   const trialEnd = trialEndsAt ? new Date(trialEndsAt) : null
-  const isCurrentlyInTrial = trialEnd ? (now < trialEnd) : false
+  const isCurrentlyInTrial = trialForfeited ? false : (trialEnd ? (now < trialEnd) : false)
   const trialDaysRemaining = isCurrentlyInTrial && trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0
 
   // Si no tiene tarjeta pero está dentro de los 15 días de prueba gratis, NO se lo bloquea
@@ -354,7 +367,7 @@ export default async function DashboardLayout({
   )
   const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
   const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
-  const isTrial = Boolean(pricing.isTrial || isCurrentlyInTrial)
+  const isTrial = trialForfeited ? false : Boolean(pricing.isTrial || isCurrentlyInTrial)
 
   return (
     <DashboardLayoutClient
@@ -375,8 +388,9 @@ export default async function DashboardLayout({
       monthlyFeeArs={pricing.monthlyFeeArs}
       gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
       isTrial={isTrial}
-      trialDaysRemaining={pricing.trialDaysRemaining ?? trialDaysRemaining}
+      trialDaysRemaining={trialForfeited ? 0 : (pricing.trialDaysRemaining ?? trialDaysRemaining)}
       trialDueDate={pricing.nextDueDate}
+      trialForfeited={trialForfeited}
     >
       <TenantProvider value={tenantId} role={userRole} planId={planId}>
         {children}

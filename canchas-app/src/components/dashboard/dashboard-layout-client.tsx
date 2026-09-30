@@ -8,8 +8,10 @@ import {
   Wallet, 
   Coffee, 
   Layers, 
-  Menu 
+  Menu,
+  AlertTriangle
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { TrialBanner } from './trial-banner'
@@ -43,6 +45,7 @@ interface DashboardLayoutClientProps {
   isTrial?: boolean
   trialDaysRemaining?: number
   trialDueDate?: string
+  trialForfeited?: boolean
 }
 
 export function DashboardLayoutClient({
@@ -64,6 +67,7 @@ export function DashboardLayoutClient({
   isTrial,
   trialDaysRemaining,
   trialDueDate,
+  trialForfeited,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showActivationModal, setShowActivationModal] = useState(false)
@@ -237,6 +241,30 @@ export function DashboardLayoutClient({
               hasCard={hasCard}
               tenantId={tenantId}
             />
+          )}
+
+          {/* Banner de Aviso: Prueba Gratuita Revocada por Reactivación */}
+          {trialForfeited && !isTrial && (
+            <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-200 text-xs shadow-lg shadow-amber-950/20 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-amber-300 block text-sm">
+                    Plan Reactivado — Comienza a Cobrarse tu Abono Mensual
+                  </span>
+                  <span className="text-slate-300 text-xs">
+                    Al reactivar el servicio tras la solicitud de baja por arrepentimiento, se dio por finalizada la prueba gratuita de 15 días. Tu abono mensual se encuentra activo.
+                  </span>
+                </div>
+              </div>
+              <Link href="/dashboard/plan" className="shrink-0 self-end sm:self-center">
+                <Button size="sm" variant="outline" className="h-8 text-xs border-amber-500/40 bg-amber-950/30 text-amber-300 hover:bg-amber-900/50 hover:text-white rounded-xl">
+                  Ver Mi Plan
+                </Button>
+              </Link>
+            </div>
           )}
 
           {isActive && !isTrial && gracePeriodBanner}

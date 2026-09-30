@@ -203,8 +203,8 @@ export default function ClubPlanPage() {
   const pricing = planDetails?.pricing || calculateClubSaaSFee(courtsCount, highestSlotPrice, null, null, hasPriceConfigured)
   const activePlan = planDetails?.activePlan || getPlanByCourtsCount(courtsCount)
   const cancellationDate = planDetails?.cancellationEffectiveDate || pricing.nextDueDate
-  const isTrial = Boolean(planDetails?.isTrial || planDetails?.pricing?.isTrial || planDetails?.subscriptionStatus === 'TRIAL')
-  const trialDaysRemaining = planDetails?.trialDaysRemaining ?? planDetails?.pricing?.trialDaysRemaining ?? 15
+  const isTrial = !planDetails?.trialForfeited && Boolean(planDetails?.isTrial || planDetails?.pricing?.isTrial || planDetails?.subscriptionStatus === 'TRIAL')
+  const trialDaysRemaining = planDetails?.trialForfeited ? 0 : (planDetails?.trialDaysRemaining ?? planDetails?.pricing?.trialDaysRemaining ?? 15)
 
   const [subscribing, setSubscribing] = useState(false)
 
@@ -219,6 +219,7 @@ export default function ClubPlanPage() {
 
   // Botón de Arrepentimiento / Revocación de Suscripción (Ley 24.240 - Res. 424/2020)
   const [showRevocationModal, setShowRevocationModal] = useState(false)
+  const [showConfirmReactivationModal, setShowConfirmReactivationModal] = useState(false)
   const [revocationReason, setRevocationReason] = useState('')
   const [isRevoking, setIsRevoking] = useState(false)
   const [isUndoingRevocation, setIsUndoingRevocation] = useState(false)
@@ -249,7 +250,11 @@ export default function ClubPlanPage() {
       const activeTenant = tenantId || planDetails?.tenantId
       const res = await undoSubscriptionRevocationAction(activeTenant || undefined)
       if (res.success) {
-        toast.success('¡Suscripción reactivada! Tu plan continuará activo y renovándose con normalidad.')
+        setShowConfirmReactivationModal(false)
+        toast.warning('Plan Reactivado — Prueba Gratuita Finalizada', {
+          description: `Se reactivó el plan. Los días restantes de prueba gratuita han sido anulados definitivamente y comenzará a cobrarse tu abono mensual (${formatARS(pricing.monthlyFeeArs)}/mes).`,
+          duration: 9000,
+        })
         await loadPlanData()
       } else {
         toast.error(res.error || 'Error al revertir la cancelación')
@@ -633,7 +638,7 @@ export default function ClubPlanPage() {
           </div>
           <Button
             size="sm"
-            onClick={handleUndoRevocation}
+            onClick={() => setShowConfirmReactivationModal(true)}
             disabled={isUndoingRevocation}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 px-4 rounded-xl shrink-0 cursor-pointer shadow-md flex items-center gap-1.5 self-start md:self-auto"
           >
@@ -649,6 +654,40 @@ export default function ClubPlanPage() {
               </>
             )}
           </Button>
+        </div>
+      )}
+
+      {/* Alerta de Prueba Gratuita Revocada por Reactivación */}
+      {planDetails?.trialForfeited && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-amber-500/10 border border-amber-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-amber-950/20 backdrop-blur-md">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 sm:mt-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-bold text-white">
+                  Prueba Gratuita Revocada por Reactivación
+                </h4>
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] px-2 py-0.5 font-bold">
+                  Comenzó a regir cobro mensual
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                Al haber reactivado tu plan tras solicitar la baja por arrepentimiento, <strong>se anularon los 15 días de prueba gratuita</strong>. A partir de este momento comenzó a regir el cobro regular de tu abono mensual de <strong>{formatARS(pricing.monthlyFeeArs)}/mes</strong>.
+              </p>
+            </div>
+          </div>
+          {!isAutoDebitActive && (
+            <Button
+              size="sm"
+              onClick={handleSetupAutoDebit}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 px-4 rounded-xl shrink-0 cursor-pointer shadow-md flex items-center gap-1.5 self-start md:self-auto"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>Adherir Tarjeta</span>
+            </Button>
+          )}
         </div>
       )}
 
@@ -1732,6 +1771,76 @@ export default function ClubPlanPage() {
             <p className="text-[10px] text-center text-slate-500">
               Podrás deshacer esta solicitud en cualquier momento antes del {cancellationDate} desde este mismo panel.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Advertencia al Reactivar Plan tras Arrepentimiento */}
+      {showConfirmReactivationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] px-2 py-0.5 font-bold">
+                    ⚠️ Pérdida de Prueba Gratuita
+                  </Badge>
+                  <h3 className="text-lg font-bold text-white mt-1">
+                    ¿Reactivar tu Plan y Anular la Baja?
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowConfirmReactivationModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-slate-200 space-y-2.5 leading-relaxed">
+              <p className="font-semibold text-amber-300 text-sm">
+                Al reactivar el plan tras solicitar la baja, perderás los 15 días de prueba gratuita.
+              </p>
+              <p className="text-slate-300">
+                Al haber ejercido el derecho de revocación por arrepentimiento y solicitar nuevamente la reactivación, <strong>se anularán de manera automática e irrevocable todos los días restantes de tu prueba gratuita</strong>.
+              </p>
+              <div className="pt-2 border-t border-amber-500/20 text-amber-200 font-medium">
+                👉 <strong>Comenzará a regir el cobro de tu abono mensual</strong> por un valor de <strong>{formatARS(pricing.monthlyFeeArs)}/mes</strong> según la tarifa contratada.
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowConfirmReactivationModal(false)}
+                className="w-full sm:w-1/2 border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs py-5 cursor-pointer"
+              >
+                Mantener Baja
+              </Button>
+              <Button
+                type="button"
+                disabled={isUndoingRevocation}
+                onClick={handleUndoRevocation}
+                className="w-full sm:w-1/2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs py-5 shadow-lg shadow-emerald-950/50 gap-2 cursor-pointer"
+              >
+                {isUndoingRevocation ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Reactivando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirmar y Comenzar Cobro</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}

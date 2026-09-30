@@ -378,7 +378,7 @@ export default function SuperadminPage() {
   })
 
   const handleUndoCancellation = async (tenantId: string, clubName: string) => {
-    if (!confirm(`¿Deseás anular la solicitud de baja para el club "${clubName}" y mantener su suscripción activa?`)) return
+    if (!confirm(`¿Deseás anular la solicitud de baja para el club "${clubName}"? Al reactivar el plan tras el arrepentimiento, perderá los días restantes de prueba gratuita y comenzará a regir su cobro mensual.`)) return
     try {
       const res = await undoSubscriptionRevocationAction(tenantId)
       if (res.success) {
@@ -388,8 +388,11 @@ export default function SuperadminPage() {
           cancellation_effective_date: null,
           cancellation_requested_at: null,
           cancellation_reason: null,
+          is_trial: false,
+          trial_days_remaining: 0,
+          trial_forfeited: true,
         } : t))
-        toast.success(`Solicitud de baja anulada para "${clubName}". El club continúa activo.`)
+        toast.success(`Solicitud de baja anulada para "${clubName}". Prueba gratuita revocada y cobro mensual activado.`)
       } else {
         toast.error('Error al anular baja: ' + (res.error || ''))
       }

@@ -27,6 +27,7 @@ export interface SuperadminTenantItem {
   cancellation_effective_date?: string | null
   cancellation_requested_at?: string | null
   cancellation_reason?: string | null
+  trial_forfeited?: boolean
 }
 
 /**
@@ -132,10 +133,17 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
       let cancellationRequestedAt: string | null = null
       let cancellationReason: string | null = null
 
+      let trialForfeited = false
+
       if ((t as unknown as { description?: string | null }).description) {
         try {
           const meta = JSON.parse((t as unknown as { description: string }).description)
-          if (meta.trial_ends_at) trialEndsAt = meta.trial_ends_at
+          if (meta.trial_forfeited) {
+            trialForfeited = true
+            trialEndsAt = new Date('2000-01-01T00:00:00.000Z').toISOString()
+          } else if (meta.trial_ends_at) {
+            trialEndsAt = meta.trial_ends_at
+          }
           if (meta.cancel_at_period_end) cancelAtPeriodEnd = true
           if (meta.cancellation_effective_date) cancellationEffectiveDate = String(meta.cancellation_effective_date)
           if (meta.cancellation_requested_at) cancellationRequestedAt = String(meta.cancellation_requested_at)
@@ -145,7 +153,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
 
       const now = Date.now()
       const trialDate = trialEndsAt ? new Date(trialEndsAt).getTime() : null
-      const isTrial = Boolean(trialDate && trialDate > now)
+      const isTrial = trialForfeited ? false : Boolean(trialDate && trialDate > now)
       const trialDaysRemaining = isTrial && trialDate ? Math.max(0, Math.ceil((trialDate - now) / (1000 * 60 * 60 * 24))) : 0
 
       return {
@@ -170,6 +178,7 @@ export async function getSuperadminTenants(): Promise<{ success: boolean; data: 
         cancellation_effective_date: cancellationEffectiveDate,
         cancellation_requested_at: cancellationRequestedAt,
         cancellation_reason: cancellationReason,
+        trial_forfeited: trialForfeited,
       }
     })
 

@@ -535,6 +535,7 @@ export async function registerClub(formData: FormData) {
   cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
   cookieStore.set('demo_trial_ends_at', trialEndsAt, { path: '/', maxAge: 86400 })
   cookieStore.delete('new_club_pending_activation')
+  cookieStore.delete('demo_terms_accepted_at')
   cookieStore.delete('demo_has_card')
   cookieStore.delete('demo_card_last4')
   cookieStore.delete('demo_card_brand')
@@ -562,6 +563,7 @@ export async function logout() {
     'demo_card_last4',
     'demo_card_brand',
     'demo_card_holder',
+    'demo_terms_accepted_at',
     'new_club_pending_activation',
     'canchar_active_venue_id',
     'canchar_active_venue_name',

@@ -177,9 +177,9 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     if (trialForfeited) {
       trialEndsAt = new Date('2000-01-01T00:00:00.000Z').toISOString()
     } else {
-      const cookieTermsAccepted = cookieStore.get('demo_terms_accepted_at')?.value
-      if (!termsAcceptedAt && cookieTermsAccepted) {
-        termsAcceptedAt = cookieTermsAccepted
+      // Asegurar que no quede la cookie global no particionada
+      if (cookieStore.has('demo_terms_accepted_at')) {
+        cookieStore.delete('demo_terms_accepted_at')
       }
 
       const cookieTrialEndsAt = cookieStore.get('demo_trial_ends_at')?.value
@@ -1339,12 +1339,8 @@ export async function acceptClubTermsAction(tenantIdParam?: string): Promise<{ s
       return { success: false, error: error.message }
     }
 
-    // Persistir cookie para acceso inmediato y compatibilidad en todo el panel
-    cookieStore.set('demo_terms_accepted_at', acceptedAt, {
-      maxAge: 60 * 60 * 24 * 365,
-      path: '/',
-      sameSite: 'lax',
-    })
+    // Asegurar que se elimine cualquier cookie global residual para que cada club tenga su propio estado
+    cookieStore.delete('demo_terms_accepted_at')
 
     revalidatePath('/dashboard/plan')
     revalidatePath('/dashboard')

@@ -35,21 +35,33 @@ export function ClubTermsCard({
   const [agreedCheckbox, setAgreedCheckbox] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Sincronizar en localStorage cuando se reciba de la base de datos
+  // Limpiar cualquier residuo de la clave global antigua
   useEffect(() => {
-    if (initialAcceptedAt && typeof window !== 'undefined') {
-      localStorage.setItem('canchar_terms_accepted_at', initialAcceptedAt)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('canchar_terms_accepted_at')
+      } catch {}
     }
-  }, [initialAcceptedAt])
+  }, [])
 
-  // Fuente de verdad reactiva:
+  // Sincronizar en localStorage por tenant cuando se reciba de la base de datos
+  useEffect(() => {
+    if (initialAcceptedAt && typeof window !== 'undefined' && tenantId) {
+      try {
+        localStorage.setItem(`canchar_terms_accepted_${tenantId}`, initialAcceptedAt)
+      } catch {}
+    }
+  }, [initialAcceptedAt, tenantId])
+
+  // Fuente de verdad reactiva específica del club:
   // 1. Si acaba de aceptar en esta misma vista
   // 2. Si viene de la base de datos (initialAcceptedAt)
-  // 3. Si está guardado en localStorage del navegador
+  // 3. Si está guardado en localStorage específicamente para este tenantId
+  const tenantStorageKey = tenantId ? `canchar_terms_accepted_${tenantId}` : null
   const effectiveAcceptedAt =
     locallyAcceptedAt ||
     initialAcceptedAt ||
-    (typeof window !== 'undefined' ? localStorage.getItem('canchar_terms_accepted_at') : null)
+    (typeof window !== 'undefined' && tenantStorageKey ? localStorage.getItem(tenantStorageKey) : null)
 
   const isAccepted = Boolean(effectiveAcceptedAt)
 
@@ -64,8 +76,10 @@ export function ClubTermsCard({
       const res = await acceptClubTermsAction(tenantId)
       if (res.success && res.acceptedAt) {
         setLocallyAcceptedAt(res.acceptedAt)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('canchar_terms_accepted_at', res.acceptedAt)
+        if (typeof window !== 'undefined' && tenantId) {
+          try {
+            localStorage.setItem(`canchar_terms_accepted_${tenantId}`, res.acceptedAt)
+          } catch {}
         }
         onAccepted?.(res.acceptedAt)
         toast.success('¡Términos y Condiciones aceptados exitosamente!', {

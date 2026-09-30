@@ -146,6 +146,15 @@ export default function ClubPlanPage() {
     }
   }, [tenantId])
 
+  // Limpiar cualquier residuo de clave global de términos para no contaminar el club
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('canchar_terms_accepted_at')
+      } catch {}
+    }
+  }, [])
+
   const isPaused = 
     planDetails?.subscriptionStatus === 'PARTIALLY_SUSPENDED' ||
     planDetails?.subscriptionStatus === 'PAUSED' ||
@@ -376,7 +385,7 @@ export default function ClubPlanPage() {
 
   const isTermsAccepted = Boolean(
     planDetails?.termsAcceptedAt ||
-    (typeof window !== 'undefined' ? localStorage.getItem('canchar_terms_accepted_at') : null)
+    (typeof window !== 'undefined' && tenantId ? localStorage.getItem(`canchar_terms_accepted_${tenantId}`) : null)
   )
 
   return (

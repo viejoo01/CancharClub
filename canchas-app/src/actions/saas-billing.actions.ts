@@ -19,6 +19,7 @@ import { formatAutoDebitAlertDate } from '@/lib/utils'
 
 import { getPlanByCourtsCount, SAAS_PLANS, getHigherPlan, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
 import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
+import { sendSuperadminAlert } from '@/lib/superadmin-notifications'
 
 export interface ClubBillingOverviewItem {
   tenantId: string
@@ -1139,6 +1140,9 @@ export async function confirmAndActivateSubscriptionWithCard(
   }
 
   let savedPlanId: SaaSPlanId | undefined = undefined
+  let clubName = 'Club'
+  let clubSlug: string | undefined = undefined
+  let isTrial = false
 
   // 2. Activar el club en la base de datos con serviceClient
   if (tenantId && !tenantId.startsWith('demo-')) {
@@ -1146,14 +1150,17 @@ export async function confirmAndActivateSubscriptionWithCard(
     try {
       const { data: currentT } = await serviceClient
         .from('tenants')
-        .select('description, plan_id')
+        .select('name, slug, description, plan_id')
         .eq('id', tenantId)
         .maybeSingle()
+      if (currentT?.name) clubName = currentT.name
+      if (currentT?.slug) clubSlug = currentT.slug
       if (currentT?.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(currentT.plan_id)) {
         savedPlanId = currentT.plan_id as SaaSPlanId
       }
       if (currentT?.description) {
         meta = JSON.parse(currentT.description)
+        if (meta.is_trial) isTrial = Boolean(meta.is_trial)
         if (!savedPlanId && meta.plan_id && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(meta.plan_id as string)) {
           savedPlanId = meta.plan_id as SaaSPlanId
         }
@@ -1262,6 +1269,21 @@ export async function confirmAndActivateSubscriptionWithCard(
       }
     }
     cookieStore.set('demo_plan_id', effectivePlan, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+
+    // Telemetría inmediata al Superadmin
+    sendSuperadminAlert({
+      event: 'CARD_MANDATE_LINKED',
+      title: 'Tarjeta de Débito Automático Vinculada',
+      clubName,
+      clubSlug,
+      details: {
+        'Tarjeta': `${cardData?.cardBrand || 'TARJETA'} ****${cardData?.cardLast4 || '****'}`,
+        'Titular': cardData?.cardHolder || 'No especificado',
+        'Plan': effectivePlan,
+        'Período': isTrial ? 'En período de prueba (15 días bonificados)' : 'Cobro mensual regular',
+      },
+      priority: 'NORMAL',
+    }).catch(() => {})
   } catch {}
 
   revalidatePath('/dashboard')
@@ -1392,7 +1414,7 @@ export async function requestSubscriptionRevocationAction(
 
     const { data: tenant } = await serviceClient
       .from('tenants')
-      .select('id, description, created_at')
+      .select('id, name, slug, description, created_at')
       .eq('id', targetTenantId)
       .maybeSingle()
 
@@ -1456,6 +1478,19 @@ export async function requestSubscriptionRevocationAction(
       cookieStore.set('demo_cancel_at_period_end', 'true', { path: '/' })
     } catch {}
 
+    // Telemetría inmediata al Superadmin
+    sendSuperadminAlert({
+      event: 'REVOCATION_REQUESTED',
+      title: 'Baja Solicitada (Botón de Arrepentimiento)',
+      clubName: tenant?.name || targetTenantId,
+      clubSlug: tenant?.slug || undefined,
+      details: {
+        'Motivo': reason || 'Sin motivo especificado',
+        'Fecha fin de ciclo': effectiveDate,
+      },
+      priority: 'URGENT',
+    }).catch(() => {})
+
     revalidatePath('/dashboard/plan')
     revalidatePath('/superadmin')
     return { success: true, effectiveDate }
@@ -1504,7 +1539,7 @@ export async function undoSubscriptionRevocationAction(
 
     const { data: tenant } = await serviceClient
       .from('tenants')
-      .select('id, description')
+      .select('id, name, slug, description')
       .eq('id', targetTenantId)
       .maybeSingle()
 
@@ -1549,6 +1584,18 @@ export async function undoSubscriptionRevocationAction(
       cookieStore.delete('demo_trial_ends_at')
       cookieStore.set('demo_trial_forfeited', 'true', { path: '/' })
     } catch {}
+
+    // Telemetría inmediata al Superadmin
+    sendSuperadminAlert({
+      event: 'REVOCATION_UNDONE',
+      title: 'Club Reactivó su Suscripción',
+      clubName: tenant?.name || targetTenantId,
+      clubSlug: tenant?.slug || undefined,
+      details: {
+        'Prueba Gratuita': 'REVOCADA (Comienza facturación mensual regular)',
+      },
+      priority: 'HIGH',
+    }).catch(() => {})
 
     revalidatePath('/dashboard/plan')
     revalidatePath('/dashboard')

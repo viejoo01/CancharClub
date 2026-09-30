@@ -7,6 +7,7 @@ import { createHmac } from 'crypto'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { formatClubEmail } from '@/lib/utils'
+import { sendSuperadminAlert } from '@/lib/superadmin-notifications'
 
 const STALE_AUTH_COOKIES = [
   'canchar_tenant_id',
@@ -463,6 +464,23 @@ export async function registerClub(formData: FormData) {
       role: 'TENANT_ADMIN',
       phone: phone || null,
     })
+
+  // Telemetría inmediata al Superadmin
+  sendSuperadminAlert({
+    event: 'NEW_CLUB_REGISTRATION',
+    title: '¡Nuevo Club Registrado!',
+    clubName,
+    clubSlug: tenant.slug,
+    details: {
+      'Email': email,
+      'Teléfono': phone || 'No informado',
+      'Ciudad': city,
+      'Plan': planId,
+      'Canchas base': baseSlots,
+      'Prueba': '15 días gratis bonificados',
+    },
+    priority: 'HIGH',
+  }).catch(() => {})
 
   // 4. Sembrar automáticamente las canchas iniciales según el plan y deportes seleccionados
   try {

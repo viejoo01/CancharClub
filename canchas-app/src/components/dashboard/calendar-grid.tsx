@@ -237,6 +237,47 @@ export function CalendarGrid({
     }
   }, [])
 
+  // Atajos de teclado rápidos para el encargado de recepción
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        setQuickBookSlot(null)
+        setIsQuickBookOpen(true)
+        toast.info('Atajo [N]: Nuevo Turno', { duration: 1500 })
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault()
+        toast.info('Atajo [C]: Ir a Cantina', { duration: 1500 })
+        router.push('/dashboard/cantina')
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        toast.info('Atajo [F]: Ir a Caja', { duration: 1500 })
+        router.push('/dashboard/caja')
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        scrollToNow()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [router, scrollToNow])
+
   // Canchas y reservas activas derivadas limpiamente
   const activeCourts = useMemo(() => {
     if (courts && courts.length > 0) {
@@ -650,6 +691,30 @@ export function CalendarGrid({
               <span className="sm:hidden">En Vivo</span>
             </div>
           </div>
+        </div>
+
+        {/* Atajos de teclado en Recepción (Visible en pantallas medianas y grandes) */}
+        <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 select-none">
+          <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Atajos de Recepción:</span>
+          <span className="inline-flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">N</kbd>
+            <span>Nuevo Turno</span>
+          </span>
+          <span className="text-slate-700">•</span>
+          <span className="inline-flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">C</kbd>
+            <span>Cantina</span>
+          </span>
+          <span className="text-slate-700">•</span>
+          <span className="inline-flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">F</kbd>
+            <span>Caja</span>
+          </span>
+          <span className="text-slate-700">•</span>
+          <span className="inline-flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">T</kbd>
+            <span>Hora Actual</span>
+          </span>
         </div>
       </div>
 

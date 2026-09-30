@@ -67,6 +67,16 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
 
   const waUrl = buildWhatsAppLink(phoneClub, message)
 
+  const teamMessage = `⚽ *¡Hay partido en CancharClub!* 🎾\n\n` +
+    `🏟️ *Club:* ${clubName}\n` +
+    `📍 *Cancha:* ${courtName}\n` +
+    `📅 *Fecha:* ${date}\n` +
+    `🕐 *Horario:* ${time} hs\n` +
+    `🗺️ *Dirección:* ${clubAddress}\n\n` +
+    `👉 *Comprobante y cómo llegar:* ${typeof window !== 'undefined' ? window.location.href : ''}\n\n` +
+    `¡Avisen quién va y quién falta!`
+  const teamWaUrl = `https://wa.me/?text=${encodeURIComponent(teamMessage)}`
+
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
@@ -232,6 +242,16 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
         >
           <MessageCircle className="w-4 h-4" />
           <span>{isTransfer ? 'Enviar Comprobante por WhatsApp' : 'Avisar al Club por WhatsApp'}</span>
+        </a>
+
+        <a
+          href={teamWaUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-indigo-200 font-bold text-xs transition-colors shadow-sm"
+        >
+          <Share2 className="w-4 h-4 text-indigo-400" />
+          <span>Armar Partido con el Equipo (WhatsApp)</span>
         </a>
 
         <div className="flex gap-2">

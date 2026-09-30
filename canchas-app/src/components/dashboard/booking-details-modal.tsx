@@ -20,7 +20,6 @@ import {
   getPlayerReputation,
   confirmBookingDeposit 
 } from '@/actions/booking.actions'
-import { getPlayerMatchReminderText, createWhatsAppShareUrl } from '@/lib/notifications/templates'
 import { formatARS, formatTime, buildWhatsAppLink, cleanNoteForDisplay } from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
@@ -304,17 +303,18 @@ export function BookingDetailsModal({
     ? buildWhatsAppLink(booking.customer_phone, waMessage)
     : null
 
-  // Recordatorio 3h antes
-  const reminderText = getPlayerMatchReminderText({
-    playerName: booking.customer_name,
-    clubName: clubName || 'Club',
-    courtName: courtDisplayName,
-    time: booking.starts_at ? `${formatTime(booking.starts_at)} hs` : 'el horario acordado',
-    hoursBefore: 3,
-    link: clubSlug ? `${siteConfig.url}/club/${clubSlug}` : `${siteConfig.url}`,
-  })
+  // Recordatorio inteligente de turno para el jugador
+  const formattedTime = booking.starts_at ? `${formatTime(booking.starts_at)} hs` : 'el horario acordado'
+  const customReminderMessage = 
+    `¡Hola ${booking.customer_name}! 👋 Te recordamos tu turno en *${clubName || 'CancharClub'}*:\n` +
+    `🏟️ *Cancha:* ${courtDisplayName}\n` +
+    `🕐 *Horario:* ${formattedTime}\n` +
+    ((booking.balance_due || 0) > 0 ? `💳 *Saldo pendiente a cancelar:* ${formatARS(booking.balance_due)}\n` : `✅ *Turno totalmente abonado*\n`) +
+    `📍 ¡Te recomendamos llegar 10 minutos antes!\n` +
+    (clubSlug ? `👉 Ubicación y servicios: ${siteConfig.url}/club/${clubSlug}` : '')
+
   const reminderWaUrl = booking.customer_phone
-    ? createWhatsAppShareUrl(booking.customer_phone, reminderText)
+    ? buildWhatsAppLink(booking.customer_phone, customReminderMessage)
     : null
 
   const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
@@ -464,11 +464,11 @@ export function BookingDetailsModal({
                     href={reminderWaUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 border border-sky-500/30 font-medium text-xs transition-colors min-h-9"
-                    title="Enviar recordatorio de 3 horas antes"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/25 text-emerald-300 hover:bg-emerald-600/40 border border-emerald-500/40 font-bold text-xs transition-colors min-h-9 shadow-xs"
+                    title="Enviar recordatorio de turno por WhatsApp al jugador"
                   >
-                    <BellRing className="w-3.5 h-3.5" />
-                    <span>3h</span>
+                    <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Recordatorio WhatsApp</span>
                   </a>
                 )}
               </div>

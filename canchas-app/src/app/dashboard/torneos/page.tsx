@@ -42,6 +42,84 @@ import type { Tournament, TournamentTeam, TournamentMatch } from '@/types/databa
 
 // tenant isolation: useTenantId hook
 
+interface GroupStandingRow {
+  teamId: string
+  name: string
+  pj: number
+  pg: number
+  pp: number
+  sf: number
+  sc: number
+  dif: number
+  pts: number
+}
+
+// Cálculo automático de Tabla de Posiciones de Fase de Grupos
+function computeGroupStandings(matches: TournamentMatch[], allTeams: TournamentTeam[]): GroupStandingRow[] {
+  const groupTeamIds = new Set<string>()
+  matches.forEach(m => {
+    if (m.team_a_id) groupTeamIds.add(m.team_a_id)
+    if (m.team_b_id) groupTeamIds.add(m.team_b_id)
+  })
+
+  const rows: GroupStandingRow[] = Array.from(groupTeamIds).map(id => {
+    const team = allTeams.find(t => t.id === id)
+    return {
+      teamId: id,
+      name: team?.name || 'Equipo',
+      pj: 0,
+      pg: 0,
+      pp: 0,
+      sf: 0,
+      sc: 0,
+      dif: 0,
+      pts: 0,
+    }
+  })
+
+  const map = new Map(rows.map(r => [r.teamId, r]))
+
+  matches.forEach(m => {
+    if (m.status !== 'FINISHED' || !m.team_a_id || !m.team_b_id) return
+    const tA = map.get(m.team_a_id)
+    const tB = map.get(m.team_b_id)
+    if (!tA || !tB) return
+
+    const scoreA = Number(m.score_team_a) || 0
+    const scoreB = Number(m.score_team_b) || 0
+
+    tA.pj += 1
+    tB.pj += 1
+    tA.sf += scoreA
+    tA.sc += scoreB
+    tB.sf += scoreB
+    tB.sc += scoreA
+
+    if (m.winner_team_id === m.team_a_id || scoreA > scoreB) {
+      tA.pg += 1
+      tA.pts += 3
+      tB.pp += 1
+    } else if (m.winner_team_id === m.team_b_id || scoreB > scoreA) {
+      tB.pg += 1
+      tB.pts += 3
+      tA.pp += 1
+    } else {
+      tA.pts += 1
+      tB.pts += 1
+    }
+  })
+
+  rows.forEach(r => {
+    r.dif = r.sf - r.sc
+  })
+
+  return rows.sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts
+    if (b.dif !== a.dif) return b.dif - a.dif
+    return b.sf - a.sf
+  })
+}
+
 export default function TorneosDashboardPage() {
   const tenantId = useTenantId()
   const [tournaments, setTournaments] = useState<Tournament[]>([])
@@ -292,6 +370,11 @@ export default function TorneosDashboardPage() {
   const finalMatches = activeCategory?.matches.filter((m) => m.round === 'FINAL') || []
   const hasGroupMatches = grupoAMatches.length > 0 || grupoBMatches.length > 0
 
+
+
+  const standingsA = computeGroupStandings(grupoAMatches, activeCategory?.teams || [])
+  const standingsB = computeGroupStandings(grupoBMatches, activeCategory?.teams || [])
+
   const copyPublicLink = () => {
     if (!selectedTournament) return
     const url = `${window.location.origin}/torneo/${selectedTournament.id}`
@@ -472,6 +555,35 @@ export default function TorneosDashboardPage() {
                           <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">Zona A</span>
                           <Badge variant="secondary" className="text-[10px]">{grupoAMatches.length} partidos</Badge>
                         </div>
+
+                        {/* Tabla de Posiciones Zona A */}
+                        {standingsA.length > 0 && (
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden text-xs">
+                            <div className="grid grid-cols-12 bg-slate-900/90 px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span className="col-span-1">#</span>
+                              <span className="col-span-5">Equipo</span>
+                              <span className="col-span-1 text-center">PJ</span>
+                              <span className="col-span-1 text-center">PG</span>
+                              <span className="col-span-1 text-center">PP</span>
+                              <span className="col-span-1 text-center">DIF</span>
+                              <span className="col-span-2 text-right font-black text-emerald-400">PTS</span>
+                            </div>
+                            <div className="divide-y divide-slate-800/60">
+                              {standingsA.map((row: GroupStandingRow, idx: number) => (
+                                <div key={row.teamId} className={`grid grid-cols-12 px-3 py-1.5 text-[11px] items-center ${idx < 2 ? 'bg-emerald-950/20' : ''}`}>
+                                  <span className="col-span-1 font-bold text-slate-400">{idx + 1}</span>
+                                  <span className="col-span-5 font-semibold text-white truncate">{row.name}</span>
+                                  <span className="col-span-1 text-center text-slate-300 font-mono">{row.pj}</span>
+                                  <span className="col-span-1 text-center text-emerald-400 font-mono">{row.pg}</span>
+                                  <span className="col-span-1 text-center text-slate-400 font-mono">{row.pp}</span>
+                                  <span className="col-span-1 text-center text-slate-300 font-mono">{row.dif > 0 ? `+${row.dif}` : row.dif}</span>
+                                  <span className="col-span-2 text-right font-black text-emerald-400 font-mono">{row.pts}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="space-y-2">
                           {grupoAMatches.map((m) => {
                             const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null
@@ -523,6 +635,35 @@ export default function TorneosDashboardPage() {
                           <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Zona B</span>
                           <Badge variant="secondary" className="text-[10px]">{grupoBMatches.length} partidos</Badge>
                         </div>
+
+                        {/* Tabla de Posiciones Zona B */}
+                        {standingsB.length > 0 && (
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden text-xs">
+                            <div className="grid grid-cols-12 bg-slate-900/90 px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span className="col-span-1">#</span>
+                              <span className="col-span-5">Equipo</span>
+                              <span className="col-span-1 text-center">PJ</span>
+                              <span className="col-span-1 text-center">PG</span>
+                              <span className="col-span-1 text-center">PP</span>
+                              <span className="col-span-1 text-center">DIF</span>
+                              <span className="col-span-2 text-right font-black text-amber-400">PTS</span>
+                            </div>
+                            <div className="divide-y divide-slate-800/60">
+                              {standingsB.map((row: GroupStandingRow, idx: number) => (
+                                <div key={row.teamId} className={`grid grid-cols-12 px-3 py-1.5 text-[11px] items-center ${idx < 2 ? 'bg-amber-950/20' : ''}`}>
+                                  <span className="col-span-1 font-bold text-slate-400">{idx + 1}</span>
+                                  <span className="col-span-5 font-semibold text-white truncate">{row.name}</span>
+                                  <span className="col-span-1 text-center text-slate-300 font-mono">{row.pj}</span>
+                                  <span className="col-span-1 text-center text-amber-400 font-mono">{row.pg}</span>
+                                  <span className="col-span-1 text-center text-slate-400 font-mono">{row.pp}</span>
+                                  <span className="col-span-1 text-center text-slate-300 font-mono">{row.dif > 0 ? `+${row.dif}` : row.dif}</span>
+                                  <span className="col-span-2 text-right font-black text-amber-400 font-mono">{row.pts}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="space-y-2">
                           {grupoBMatches.map((m) => {
                             const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null

@@ -14,10 +14,21 @@ import {
   Loader2,
   Receipt,
   CheckCircle2,
+  Lock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { formatARS, cleanNoteForDisplay, paymentMethodLabel } from '@/lib/utils'
 import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
@@ -62,6 +73,19 @@ export default function CajaPage() {
   const [selectedDate, setSelectedDate] = useState(today)
   const [report, setReport] = useState<DailyCashReport | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Estado de Arqueo Ciego
+  const [showBlindAuditModal, setShowBlindAuditModal] = useState(false)
+  const [declaredCash, setDeclaredCash] = useState('')
+  const [cashierName, setCashierName] = useState('')
+  const [auditResult, setAuditResult] = useState<{
+    declared: number
+    expected: number
+    diff: number
+    status: 'EXACT' | 'OVER' | 'SHORT'
+    timestamp: string
+    notes?: string
+  } | null>(null)
 
   useEffect(() => {
     if (!tenantId) return
@@ -175,6 +199,19 @@ export default function CajaPage() {
               </Link>
             </Button>
           )}
+          <Button 
+            onClick={() => {
+              setDeclaredCash('')
+              setAuditResult(null)
+              setShowBlindAuditModal(true)
+            }} 
+            variant="outline" 
+            size="sm" 
+            className="gap-2 border-amber-500/40 bg-amber-950/25 text-amber-300 hover:bg-amber-900/40 text-xs h-10 font-bold"
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Arqueo Ciego</span>
+          </Button>
           <Button onClick={handleExportCSV} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
             <Download className="w-3.5 h-3.5 text-emerald-400" />
             <span>Exportar CSV</span>
@@ -300,6 +337,151 @@ export default function CajaPage() {
           </div>
         )}
       </Card>
+
+      {/* Modal de Arqueo Ciego de Turno */}
+      <Dialog open={showBlindAuditModal} onOpenChange={setShowBlindAuditModal}>
+        <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg text-white">
+              <Lock className="w-5 h-5 text-amber-400" />
+              <span>Arqueo Ciego de Caja ({selectedDate})</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Contá el dinero físico en mano sin consultar el saldo teórico del sistema. El sistema comparará lo contado contra los cobros en efectivo registrados para detectar cualquier diferencia.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!auditResult ? (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="cashier" className="text-xs text-slate-300">
+                  Encargado / Turno (Opcional)
+                </Label>
+                <Input
+                  id="cashier"
+                  placeholder="Ej: Turno Tarde - Martín"
+                  value={cashierName}
+                  onChange={(e) => setCashierName(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-xs h-10"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="declared" className="text-xs font-bold text-emerald-400">
+                  Total de Efectivo en Mano (ARS) *
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">$</span>
+                  <Input
+                    id="declared"
+                    type="number"
+                    min="0"
+                    step="100"
+                    placeholder="0"
+                    value={declaredCash}
+                    onChange={(e) => setDeclaredCash(e.target.value)}
+                    className="bg-slate-950 border-emerald-500/40 text-emerald-300 pl-8 text-base font-bold h-11"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Ingresá la suma de billetes y monedas que tenés físicamente en el cajón.
+                </p>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowBlindAuditModal(false)}
+                  className="text-xs text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!declaredCash || isNaN(Number(declaredCash))}
+                  onClick={() => {
+                    const declared = Number(declaredCash) || 0
+                    const expected = report?.totalCash ?? 0
+                    const diff = declared - expected
+                    const status = diff === 0 ? 'EXACT' : diff > 0 ? 'OVER' : 'SHORT'
+                    setAuditResult({
+                      declared,
+                      expected,
+                      diff,
+                      status,
+                      timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+                      notes: cashierName
+                    })
+                  }}
+                  className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs h-10 px-5 shadow-lg shadow-amber-950/40"
+                >
+                  Comparar y Cerrar Arqueo
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className={`p-4 rounded-2xl border text-center space-y-1 ${
+                auditResult.status === 'EXACT'
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                  : auditResult.status === 'OVER'
+                  ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+              }`}>
+                <div className="text-xs uppercase tracking-wider font-bold">
+                  {auditResult.status === 'EXACT' && '✅ Caja Cuadrada Perfecta'}
+                  {auditResult.status === 'OVER' && '⚠️ Sobrante de Efectivo'}
+                  {auditResult.status === 'SHORT' && '🚨 Faltante de Efectivo'}
+                </div>
+                <div className="text-2xl font-black">
+                  {auditResult.diff === 0 ? '$0 de Diferencia' : (auditResult.diff > 0 ? `+${formatARS(auditResult.diff)}` : formatARS(auditResult.diff))}
+                </div>
+                <div className="text-[11px] opacity-80">
+                  Arqueo realizado a las {auditResult.timestamp} hs {auditResult.notes ? `por ${auditResult.notes}` : ''}
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-slate-400">Efectivo Físico Declarado:</span>
+                  <span className="font-bold text-white font-mono">{formatARS(auditResult.declared)}</span>
+                </div>
+                <div className="flex justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-slate-400">Efectivo Teórico Esperado (Sistema):</span>
+                  <span className="font-bold text-slate-300 font-mono">{formatARS(auditResult.expected)}</span>
+                </div>
+                <div className="flex justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-slate-400">Total Transferencias del Día:</span>
+                  <span className="font-semibold text-sky-400 font-mono">{formatARS(report?.totalTransfer ?? 0)}</span>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2 flex flex-col sm:flex-row gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAuditResult(null)}
+                  className="text-xs border-slate-700 text-slate-300"
+                >
+                  Volver a Contar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    toast.success('Arqueo ciego archivado correctamente')
+                    setShowBlindAuditModal(false)
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-5"
+                >
+                  Aceptar y Finalizar
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -32,7 +32,9 @@ import {
   RefreshCw,
   Gift,
   AlertTriangle,
-  Undo2
+  Undo2,
+  Download,
+  Radio
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -63,10 +65,12 @@ import {
   generateUserImpersonationUrl,
   updateTenantSubscriptionStatusAction,
   activateTenantTrialPeriodAction,
+  testSuperadminTelemetryAction,
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
 import { recordClubSubscriptionPayment, undoSubscriptionRevocationAction } from '@/actions/saas-billing.actions'
+import { exportToCsv } from '@/lib/export'
 import { toast } from 'sonner'
 
 export interface ClubUser {
@@ -399,6 +403,103 @@ export default function SuperadminPage() {
     } catch {
       toast.error('Error al comunicarse con el servidor')
     }
+  }
+
+  const [isTestingTelemetry, setIsTestingTelemetry] = useState(false)
+  const handleTestTelemetry = async () => {
+    setIsTestingTelemetry(true)
+    try {
+      const res = await testSuperadminTelemetryAction()
+      if (res.success) {
+        if (res.telegramDelivered || res.webhookDelivered) {
+          toast.success('¡Alerta de telemetría enviada a tus canales externos!')
+        } else {
+          toast.info('Alerta registrada en el servidor (configurá TELEGRAM_BOT_TOKEN o SUPERADMIN_WEBHOOK_URL para recibirla en tu móvil).')
+        }
+      } else {
+        toast.error(res.error || 'Error al enviar alerta')
+      }
+    } catch {
+      toast.error('Error al probar telemetría')
+    } finally {
+      setIsTestingTelemetry(false)
+    }
+  }
+
+  const handleExportBillingCsv = () => {
+    const headers = [
+      'Club',
+      'Slug',
+      'Ciudad',
+      'Canchas Activas',
+      'Precio Turno Referencia',
+      'Plan SaaS',
+      'Cuota Mensual (ARS)',
+      'Estado Suscripción',
+      'Prueba Activa',
+      'Baja Programada',
+      'Próximo Vencimiento',
+    ]
+    const rows = filteredTenants.map((t) => [
+      t.name,
+      t.slug,
+      t.city,
+      t.active_courts,
+      formatARS(t.highest_slot_price),
+      t.pricing.planName || t.plan_id,
+      formatARS(t.pricing.monthlyFeeArs),
+      t.subscription_status,
+      t.is_trial ? 'Sí' : 'No',
+      t.cancel_at_period_end ? 'Sí (Arrepentimiento)' : 'No',
+      t.cancellation_effective_date || t.pricing.nextDueDate,
+    ])
+    exportToCsv({
+      title: 'Reporte de Facturación SaaS CancharClub',
+      filename: `facturacion-cancharclub-${new Date().toISOString().slice(0, 10)}.csv`,
+      headers,
+      rows,
+    })
+    toast.success('Reporte de facturación exportado exitosamente a CSV/Excel')
+  }
+
+  const handleExportTenantsCsv = () => {
+    const headers = [
+      'ID Club',
+      'Nombre',
+      'Slug',
+      'Ciudad',
+      'Canchas Activas',
+      'Plan',
+      'Operativo',
+      'Suscripción',
+      'MercadoPago Vinculado',
+      'En Prueba',
+      'Días Prueba Restantes',
+      'Baja Programada',
+      'Fecha Creación',
+    ]
+    const rows = directoryTenants.map((t) => [
+      t.id,
+      t.name,
+      t.slug,
+      t.city,
+      t.active_courts,
+      t.plan_id,
+      t.is_active ? 'Habilitado' : 'Pausado',
+      t.subscription_status,
+      t.mp_connected ? 'Sí' : 'No',
+      t.is_trial ? 'Sí' : 'No',
+      t.trial_days_remaining ?? 'N/A',
+      t.cancel_at_period_end ? 'Sí' : 'No',
+      t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Sin fecha',
+    ])
+    exportToCsv({
+      title: 'Directorio de Clubes CancharClub',
+      filename: `directorio-clubes-${new Date().toISOString().slice(0, 10)}.csv`,
+      headers,
+      rows,
+    })
+    toast.success('Directorio de clubes exportado exitosamente a CSV/Excel')
   }
 
   const handleRegisterPayment = async (tenantId: string, clubName: string, amount: number) => {
@@ -1319,6 +1420,27 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={handleTestTelemetry}
+                  disabled={isTestingTelemetry}
+                  className="h-9 text-xs border-indigo-800/60 bg-indigo-950/40 text-indigo-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
+                  title="Enviar mensaje de prueba a Telegram / Webhook"
+                >
+                  <Radio className={`w-3.5 h-3.5 mr-1.5 ${isTestingTelemetry ? 'animate-ping text-indigo-400' : 'text-indigo-400'}`} />
+                  Probar Telemetría
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportBillingCsv}
+                  className="h-9 text-xs border-emerald-800/60 bg-emerald-950/40 text-emerald-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
+                  title="Exportar a CSV compatible con Microsoft Excel"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+                  Exportar Excel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => void loadData(true)}
                   disabled={isRefreshing}
                   className="h-9 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
@@ -1817,6 +1939,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </p>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportTenantsCsv}
+                  className="h-9 text-xs border-emerald-800/60 bg-emerald-950/40 text-emerald-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
+                  title="Exportar listado a CSV compatible con Microsoft Excel"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+                  Exportar CSV
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => setIsModalOpen(true)}

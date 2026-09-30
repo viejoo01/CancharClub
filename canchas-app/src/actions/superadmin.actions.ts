@@ -853,3 +853,32 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
   }
 }
 
+/**
+ * Envía una prueba de telemetría a Telegram / Webhook configurado.
+ */
+export async function testSuperadminTelemetryAction(): Promise<{
+  success: boolean
+  telegramDelivered: boolean
+  webhookDelivered: boolean
+  error?: string
+}> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, telegramDelivered: false, webhookDelivered: false, error: 'No autorizado' }
+  }
+
+  const { sendSuperadminAlert } = await import('@/lib/superadmin-notifications')
+  return await sendSuperadminAlert({
+    event: 'TEST_ALERT',
+    title: 'Prueba de Conexión de Telemetría Superadmin',
+    clubName: 'Club Demo / Test',
+    clubSlug: 'club-test',
+    details: {
+      'Estado': 'Canal de alertas operativo y conectado correctamente',
+      'Plataforma': 'CancharClub SaaS Enterprise',
+      'Versión': '2.0 Producción',
+    },
+    priority: 'HIGH',
+  })
+}
+

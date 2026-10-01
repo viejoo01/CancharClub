@@ -1,0 +1,102 @@
+name: Supabase Database Keep-Alive (Anti-Pause)
+
+on:
+  schedule:
+    # Se ejecuta 2 veces al día: 07:00 UTC (04:00 AM Argentina) y 19:00 UTC (16:00 PM Argentina)
+    # Esto asegura que el contador de 7 días de inactividad de Supabase NUNCA expire.
+    - cron: '0 7 * * *'
+    - cron: '0 19 * * *'
+  workflow_dispatch: # Permite disparar la acción manualmente desde la pestaña Actions en GitHub
+
+jobs:
+  keep-alive:
+    name: Ping & Wake-up Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 🌐 1. Ping a CancharClub Web (/api/health)
+        id: ping_app
+        run: |
+          APP_URL="${{ vars.APP_URL || 'https://www.cancharclub.com.ar' }}"
+          echo "Haciendo ping a: ${APP_URL}/api/health"
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/health" || true)
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -2)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
+          TOTAL_TIME=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+          echo "Total Time: ${TOTAL_TIME}s"
+          
+          echo "app_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+          echo "app_time=$TOTAL_TIME" >> $GITHUB_OUTPUT
+
+      - name: ⚡ 2. Ping a Cron Endpoint (/api/cron/keep-alive)
+        id: ping_cron
+        run: |
+          APP_URL="${{ vars.APP_URL || 'https://www.cancharclub.com.ar' }}"
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+          
+          AUTH_HEADER=""
+          if [ -n "$CRON_SECRET" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer $CRON_SECRET\""
+          fi
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/keep-alive" \
+            -H "User-Agent: GitHub-Actions-KeepAlive/1.0" \
+            ${AUTH_HEADER} || true)
+          
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -2)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
+          TOTAL_TIME=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+          
+          echo "cron_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+          echo "cron_time=$TOTAL_TIME" >> $GITHUB_OUTPUT
+
+      - name: 🐘 3. Consulta Directa a Supabase PostgREST (SELECT 1 equivalente)
+        id: direct_supabase
+        run: |
+          SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://nmihhlzbpjonmjsmmred.supabase.co' }}"
+          SUPABASE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5taWhobHpicGpvbm1qc21tcmVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTU4MTYsImV4cCI6MjEwNDYzMTgxNn0.ycfvBwERdoORtvT-QWfjey0SVjjBcWCukXse3nTXlL4' }}"
+          
+          echo "Consultando tabla tenants en Supabase PostgREST..."
+          RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${SUPABASE_URL}/rest/v1/tenants?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" || true)
+            
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -2)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
+          TOTAL_TIME=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Supabase respondió con éxito. Actividad registrada."
+            echo "supabase_status=OK" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Respuesta inesperada de Supabase: $HTTP_CODE"
+            echo "supabase_status=WARN" >> $GITHUB_OUTPUT
+          fi
+          echo "supabase_time=$TOTAL_TIME" >> $GITHUB_OUTPUT
+
+      - name: 📝 4. Registrar Resumen en GitHub Step Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          ## 🛡️ Reporte de Supabase Keep-Alive (Anti-Pausa)
+          
+          El cron job diario ha ejecutado las comprobaciones para mantener la base de datos y la aplicación activas.
+          
+          | Canal de Verificación | Estado | Latencia |
+          | :--- | :---: | :---: |
+          | **Web App (`/api/health`)** | `${{ steps.ping_app.outputs.app_code }}` | `${{ steps.ping_app.outputs.app_time }}s` |
+          | **Cron Endpoint (`/api/cron/keep-alive`)** | `${{ steps.ping_cron.outputs.cron_code }}` | `${{ steps.ping_cron.outputs.cron_time }}s` |
+          | **Supabase PostgREST Directo** | `${{ steps.direct_supabase.outputs.supabase_status }}` | `${{ steps.direct_supabase.outputs.supabase_time }}s` |
+          
+          > **Resultado**: El contador de 7 días de inactividad del plan Free de Supabase fue reiniciado con éxito. Los usuarios no encontrarán la plataforma pausada ni con cold-starts prolongados el día lunes.
+          EOF

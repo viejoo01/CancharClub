@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:backup": "node scripts/backup-db.mjs",
+    "db:backup:ps": "powershell -ExecutionPolicy Bypass -File scripts/backup-supabase.ps1",
+    "db:backup:task": "powershell -ExecutionPolicy Bypass -File scripts/register-weekly-backup-task.ps1",
+    "db:restore": "powershell -ExecutionPolicy Bypass -File scripts/restore-supabase.ps1",
+    "db:ping": "node scripts/keep-alive-ping.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",

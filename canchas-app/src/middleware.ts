@@ -13,11 +13,16 @@ const PUBLIC_PATHS = [
   '/auth',              // Login/Register/Callback
   '/api/webhooks',      // Webhooks externos (MP)
   '/api/availability',  // Disponibilidad pública
+  '/api/health',        // Health check & keep-alive monitor (Supabase wake-up)
+  '/api/cron',          // Tareas programadas de mantenimiento y keep-alive
   '/billing',           // Pantallas de suspensión y cobranzas
   '/onboarding',        // Carga obligatoria de tarjeta para activar club
 ]
 
-// In-memory sliding window para rate limiting de rutas sensibles
+// Sliding window en memoria local para protección perimetral en Edge/Node isolates.
+// Nota de seguridad (MED-03): Para entornos serverless con múltiples réplicas concurrentes,
+// las rutas críticas (/api/superadmin/login, reservas, etc.) complementan este control
+// con el rate limiter distribuido basado en Upstash Redis de src/lib/rate-limiter.ts.
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
 export async function middleware(request: NextRequest) {
@@ -151,12 +156,16 @@ export async function middleware(request: NextRequest) {
         return response
       }
 
+      // En producción, NUNCA confiar ciegamente en cookies del cliente para omitir la validación de tarjeta
+      const isProdEnv = process.env.NODE_ENV === 'production'
       const isPendingActivation = request.cookies.get('new_club_pending_activation')?.value === 'true'
       const cookieHasCard = request.cookies.get('demo_has_card')?.value === 'true'
       const cookieCardLast4 = request.cookies.get('demo_card_last4')?.value
 
-      // Si la cookie explícitamente indica activación pendiente o falta de tarjeta
-      if (isPendingActivation || (!cookieHasCard || !cookieCardLast4)) {
+      // En desarrollo sin DB puede admitir cookies demo; en producción se verifica estrictamente la BD
+      const requiresCardCheck = isProdEnv || isPendingActivation || (!cookieHasCard || !cookieCardLast4)
+
+      if (requiresCardCheck) {
         // Consultar perfil para descartar superadmin y verificar metadatos de tarjeta
         const { data: profile } = await supabase
           .from('profiles')
@@ -242,7 +251,9 @@ export async function middleware(request: NextRequest) {
       .single()
 
     const tenantData = profile?.tenants as unknown as { subscription_status?: string; is_active?: boolean } | null
-    const tenantStatus = demoStatusOverride || tenantData?.subscription_status || 'ACTIVE'
+    const isProd = process.env.NODE_ENV === 'production'
+    // En producción la base de datos es la única fuente de verdad inmutable (impide bypass por query params o cookies manipuladas)
+    const tenantStatus = (isProd ? tenantData?.subscription_status : (demoStatusOverride || tenantData?.subscription_status)) || 'ACTIVE'
 
     // Inyectar estado en headers para consumo en Server Components
     response.headers.set('x-tenant-status', tenantStatus)

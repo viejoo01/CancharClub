@@ -969,6 +969,14 @@ export async function lookupPlayerBookings(query: {
     return { success: false, error: 'Por favor ingresá un código de reserva o un email.' }
   }
 
+  // Prevenir fuerza bruta y raspado de datos con entradas demasiado cortas
+  if (cleanCode && cleanCode.length < 6) {
+    return { success: false, error: 'El código de reserva debe tener al menos 6 caracteres.' }
+  }
+  if (normalizedEmail && (!normalizedEmail.includes('@') || normalizedEmail.length < 5)) {
+    return { success: false, error: 'Por favor ingresá una dirección de email válida.' }
+  }
+
   try {
     const results: PlayerBookingDetail[] = []
 
@@ -1004,15 +1012,15 @@ export async function lookupPlayerBookings(query: {
         `)
 
       if (cleanCode) {
-        // Buscar por id exacto o coincidencia en staff_notes o teléfono
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode)
         if (isUUID) {
           dbQuery = dbQuery.eq('id', cleanCode.toLowerCase())
         } else {
-          dbQuery = dbQuery.or(`id.ilike.%${cleanCode}%,staff_notes.ilike.%${cleanCode}%,customer_phone.ilike.%${cleanCode}%`)
+          // Búsqueda estricta por sufijo de ID o nota explícita, nunca comodín abierto sobre teléfonos
+          dbQuery = dbQuery.or(`id.ilike.%${cleanCode},staff_notes.ilike.%${cleanCode}%`)
         }
       } else if (normalizedEmail) {
-        dbQuery = dbQuery.ilike('customer_email', normalizedEmail)
+        dbQuery = dbQuery.eq('customer_email', normalizedEmail)
       }
 
       const { data: dbBookings } = await dbQuery.limit(10)
@@ -1363,13 +1371,31 @@ export async function cancelBookingByPlayer(
       return { success: false, error: 'Esta reserva ya fue cancelada previamente.' }
     }
 
-    // 2. Verificar que pertenezca al jugador si se provee identificador
-    if (cleanPlayer) {
-      const emailMatches = booking.customer_email?.toLowerCase().includes(cleanPlayer)
-      const phoneMatches = booking.customer_phone?.replace(/\D/g, '').includes(cleanPlayer.replace(/\D/g, ''))
-      if (!emailMatches && !phoneMatches) {
-        return { success: false, error: 'Los datos de verificación no coinciden con el titular de la reserva.' }
+    // 2. Verificar que pertenezca al jugador de forma obligatoria y estricta
+    if (!cleanPlayer || cleanPlayer.length < 6) {
+      return { 
+        success: false, 
+        error: 'Para cancelar el turno, debés ingresar el email o número de teléfono registrado en la reserva.' 
       }
+    }
+
+    const digitsOnly = cleanPlayer.replace(/\D/g, '')
+    const bookingPhoneDigits = (booking.customer_phone || '').replace(/\D/g, '')
+    
+    const emailMatches = Boolean(
+      booking.customer_email && 
+      cleanPlayer.includes('@') && 
+      booking.customer_email.toLowerCase().trim() === cleanPlayer
+    )
+    
+    const phoneMatches = Boolean(
+      digitsOnly.length >= 6 &&
+      bookingPhoneDigits.length >= 6 &&
+      (bookingPhoneDigits === digitsOnly || bookingPhoneDigits.endsWith(digitsOnly) || digitsOnly.endsWith(bookingPhoneDigits))
+    )
+
+    if (!emailMatches && !phoneMatches) {
+      return { success: false, error: 'Los datos de verificación (email o teléfono) no coinciden con el titular de la reserva.' }
     }
 
     // 3. Actualizar estado a CANCELLED_USER

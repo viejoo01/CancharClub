@@ -37,15 +37,28 @@ export async function toggleCourtLight(
   relayType: 'SHELLY' | 'SONOFF' | 'TASMOTA' = 'SHELLY',
   relayChannel: number = 0
 ): Promise<LightToggleResult> {
-  const auth = await assertTenantMember()
+  const supabase = await createServiceClient()
+  const { data: court } = await supabase
+    .from('courts')
+    .select('id, tenant_id')
+    .eq('id', courtId)
+    .maybeSingle()
+
+  if (!court) {
+    return { success: false, courtId, isOn: false, error: 'Cancha no encontrada' }
+  }
+
+  const auth = await assertTenantMember(court.tenant_id)
   if (!auth.authorized) {
-    return { success: false, courtId, isOn: false, error: auth.error || 'Sin permisos para controlar luces' }
+    return { success: false, courtId, isOn: false, error: auth.error || 'Sin permisos para controlar luces de esta cancha' }
   }
 
   const isOn = command === 'on' ? true : command === 'off' ? false : null
 
-  // Si no hay IP configurada, modo simulado
-  if (!relayIp || relayIp.startsWith('192.168') === false) {
+  // Sanitizar relayIp para mitigar SSRF y manipulación de peticiones internas
+  const cleanIp = relayIp ? relayIp.trim() : null
+  const isValidIpv4 = cleanIp ? /^192\.168\.\d{1,3}\.\d{1,3}$/.test(cleanIp) : false
+  if (!cleanIp || !isValidIpv4) {
     console.log(`[lights] Modo simulado — court ${courtId} → ${command}`)
     // Guardar estado en BD de todas formas
     await updateLightStateInDB(courtId, isOn ?? false)

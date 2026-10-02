@@ -61,6 +61,14 @@ function verifyMercadoPagoSignature(
     const ts = tsEntry.split('=')[1]
     const v1 = v1Entry.split('=')[1]
 
+    // 1. ESCUDO ANTI-REPLAY: Validar que el timestamp no tenga más de 10 minutos de antigüedad
+    const tsNumber = parseInt(ts, 10)
+    const tsMs = ts.length === 10 ? tsNumber * 1000 : tsNumber
+    if (isNaN(tsNumber) || Math.abs(Date.now() - tsMs) > 10 * 60 * 1000) {
+      console.warn('[MP Webhook] ALERTA: Timestamp expirado o posible ataque de repetición (replay attack):', ts)
+      return false
+    }
+
     // Parsear el id del data del body
     let dataId: string | undefined
     try {
@@ -175,7 +183,9 @@ export async function POST(request: NextRequest) {
 
   // ── Buscar el booking por external_reference (o id de ítem) ──────────────
   const externalRef = payment.external_reference
-  const bookingIdCandidate = externalRef || (payment as unknown as { additional_info?: { items?: Array<{ id?: string }> } })?.additional_info?.items?.[0]?.id
+  const rawCandidate = externalRef || (payment as unknown as { additional_info?: { items?: Array<{ id?: string }> } })?.additional_info?.items?.[0]?.id
+  // Extraer UUID eliminando de forma segura el prefijo oficial 'cancharclub_booking_'
+  const bookingIdCandidate = rawCandidate ? rawCandidate.replace(/^cancharclub_booking_/, '').trim() : ''
 
   let booking: {
     id: string
@@ -185,6 +195,7 @@ export async function POST(request: NextRequest) {
     staff_notes: string | null
     price_total_cents: number
     deposit_cents: number
+    staff_deposit_amount_cents?: number | null
     customer_name?: string | null
     customer_email?: string | null
     starts_at?: string | null
@@ -196,21 +207,12 @@ export async function POST(request: NextRequest) {
     if (isUUID) {
       const { data } = await supabase
         .from('bookings')
-        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, customer_name, customer_email, starts_at, court_id')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, staff_deposit_amount_cents, customer_name, customer_email, starts_at, court_id')
         .eq('id', bookingIdCandidate)
         .maybeSingle()
       booking = data
     } else {
-      const sanitizedCandidate = bookingIdCandidate.replace(/[^a-zA-Z0-9_-]/g, '').trim()
-      if (sanitizedCandidate.length >= 4) {
-        const { data } = await supabase
-          .from('bookings')
-          .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, customer_name, customer_email, starts_at, court_id')
-          .ilike('staff_notes', `%${sanitizedCandidate}%`)
-          .limit(1)
-          .maybeSingle()
-        booking = data
-      }
+      console.warn('[MP Webhook] Candidato de booking descartado: no es un UUID válido. Búsqueda wildcard rechazada por seguridad:', rawCandidate)
     }
   }
 
@@ -259,10 +261,23 @@ export async function POST(request: NextRequest) {
 
     if (newStatus === 'confirmed') {
       const depositCents = Math.round(Number(payment.transaction_amount || 0) * 100)
-      updatePayload.deposit_cents = depositCents
-      updatePayload.staff_deposit_amount_cents = depositCents
-      updatePayload.paid_at = depositPaidAt
-      updatePayload.payment_method = 'mercadopago'
+      const expectedDepositCents = Number(booking.staff_deposit_amount_cents || booking.deposit_cents || 0)
+
+      // Verificación de integridad financiera: el monto pagado debe cubrir la seña requerida
+      if (expectedDepositCents > 0 && depositCents < expectedDepositCents) {
+        console.error(
+          `[MP Webhook] FRAUDE O PAGO INSUFICIENTE: Pago $${payment.transaction_amount} ARS (${depositCents}¢) no cubre la seña requerida (${expectedDepositCents}¢) para booking ${booking.id}`
+        )
+        // No confirmar la reserva; marcarla en revisión de fraude / pago insuficiente
+        newStatus = 'payment_review'
+        updatePayload.status = 'payment_review'
+        updatePayload.staff_notes = `${booking.staff_notes || ''} | [ALERTA FRAUDE: Pago insuficiente de $${payment.transaction_amount} vs seña requerida $${expectedDepositCents / 100}]`
+      } else {
+        updatePayload.deposit_cents = depositCents
+        updatePayload.staff_deposit_amount_cents = depositCents
+        updatePayload.paid_at = depositPaidAt
+        updatePayload.payment_method = 'mercadopago'
+      }
     }
 
     const { error: updateError } = await supabase

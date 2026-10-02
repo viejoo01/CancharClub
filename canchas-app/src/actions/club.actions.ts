@@ -165,12 +165,24 @@ export async function updateCourt(courtId: string, payload: Partial<{
   is_indoor: boolean
   is_active: boolean
 }>) {
-  const auth = await assertTenantMember()
-  if (!auth.authorized) {
-    return { success: false, error: auth.error || 'Sin permisos para editar canchas.' }
+  const supabase = await createServiceClient()
+
+  // 1. Obtener la cancha y su tenant_id real de la base de datos
+  const { data: court, error: courtFetchErr } = await supabase
+    .from('courts')
+    .select('id, tenant_id')
+    .eq('id', courtId)
+    .maybeSingle()
+
+  if (courtFetchErr || !court) {
+    return { success: false, error: 'Cancha no encontrada.' }
   }
 
-  const supabase = await createServiceClient()
+  // 2. Validar que el usuario tenga permisos sobre este club específico
+  const auth = await assertTenantMember(court.tenant_id)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Sin permisos para editar canchas de este club.' }
+  }
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()
   }
@@ -239,12 +251,27 @@ export async function deleteCourt(
   tenantId: string,
   options?: { force?: boolean }
 ): Promise<{ success: boolean; hasActiveBookings?: boolean; activeCount?: number; error?: string }> {
-  const auth = await assertTenantAdmin(tenantId)
+  const supabase = await createServiceClient()
+
+  // 1. Validar que la cancha exista y pertenezca efectivamente a tenantId (anti-BOLA)
+  const { data: court, error: courtErr } = await supabase
+    .from('courts')
+    .select('id, tenant_id')
+    .eq('id', courtId)
+    .maybeSingle()
+
+  if (courtErr || !court) {
+    return { success: false, error: 'Cancha no encontrada.' }
+  }
+
+  if (court.tenant_id !== tenantId) {
+    return { success: false, error: 'Acceso denegado: la cancha no pertenece al club indicado.' }
+  }
+
+  const auth = await assertTenantAdmin(court.tenant_id)
   if (!auth.authorized) {
     return { success: false, error: auth.error || 'Requiere permisos de Administrador del Club.' }
   }
-
-  const supabase = await createServiceClient()
 
   try {
     // 1. Validar si existen reservas activas (no canceladas / no finalizadas)
@@ -369,6 +396,9 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    const auth = await assertTenantMember(effectiveTenantId)
+    if (!auth.authorized) return []
 
     const supabase = await createServiceClient()
     const startOfDay = new Date(`${dateIso}T00:00:00-03:00`).toISOString()
@@ -527,6 +557,9 @@ export async function getClubPriceRules(tenantId?: string | null) {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    const auth = await assertTenantMember(effectiveTenantId)
+    if (!auth.authorized) return []
 
     const supabase = await createServiceClient()
     const { data, error } = await supabase
@@ -814,6 +847,9 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return null
 
+    const authCheck = await assertTenantMember(effectiveTenantId)
+    if (!authCheck.authorized) return null
+
     const supabase = await createServiceClient()
 
     const startOfDay = new Date(`${dateStr}T00:00:00-03:00`).toISOString()
@@ -908,6 +944,9 @@ export async function getRecurringBookings(tenantId?: string | null) {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
 
+    const auth = await assertTenantMember(effectiveTenantId)
+    if (!auth.authorized) return []
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('recurring_bookings')
@@ -942,7 +981,25 @@ export async function createRecurringBooking(payload: {
     return { success: false, error: 'No se pudo determinar el club' }
   }
 
+  const auth = await assertTenantMember(effectiveTenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Sin permisos para crear turnos fijos en este club' }
+  }
+
   const supabase = await createServiceClient()
+
+  // Validar que la cancha pertenezca al club para evitar BOLA
+  const { data: court } = await supabase
+    .from('courts')
+    .select('id')
+    .eq('id', payload.court_id)
+    .eq('tenant_id', effectiveTenantId)
+    .maybeSingle()
+
+  if (!court) {
+    return { success: false, error: 'La cancha seleccionada no pertenece a este club' }
+  }
+
   const { data, error } = await supabase
     .from('recurring_bookings')
     .insert({
@@ -965,13 +1022,32 @@ export async function createRecurringBooking(payload: {
 
 export async function toggleRecurringBookingStatus(id: string, currentStatus: boolean) {
   const supabase = await createServiceClient()
+
+  // 1. Obtener tenant_id del registro para validar permisos
+  const { data: recBooking, error: fetchErr } = await supabase
+    .from('recurring_bookings')
+    .select('id, tenant_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (fetchErr || !recBooking) {
+    return { success: false, error: 'Turno recurrente no encontrado' }
+  }
+
+  const auth = await assertTenantMember(recBooking.tenant_id)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'Sin permisos para modificar este turno recurrente' }
+  }
+
   const { error } = await supabase
     .from('recurring_bookings')
     .update({ is_active: !currentStatus })
     .eq('id', id)
+    .eq('tenant_id', recBooking.tenant_id)
 
   if (error) {
     console.warn('[toggleRecurringBookingStatus] DB update fallback warning:', error.message)
+    return { success: false, error: error.message }
   }
 
   revalidatePath('/dashboard/fijos')

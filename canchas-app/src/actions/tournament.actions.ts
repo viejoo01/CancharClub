@@ -7,6 +7,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
+import { sanitizeText } from '@/lib/sanitize'
 import type { 
   Tournament, 
   TournamentCategory, 
@@ -157,15 +158,39 @@ export async function addTeamToCategory(payload: {
   phone: string
 }): Promise<{ success: boolean; team?: TournamentTeam; error?: string }> {
   try {
+    const cleanName = sanitizeText(payload.name || '', 60).trim()
+    const cleanP1 = sanitizeText(payload.player_1 || '', 60).trim()
+    const cleanP2 = payload.player_2 ? sanitizeText(payload.player_2, 60).trim() : null
+    const cleanPhone = (payload.phone || '').replace(/[^\d+]/g, '').trim()
+
+    if (cleanName.length < 2 || cleanP1.length < 2) {
+      return { success: false, error: 'Nombre de equipo y jugador requeridos' }
+    }
+    if (cleanPhone.length < 6) {
+      return { success: false, error: 'Teléfono de contacto inválido' }
+    }
+
     const supabase = await createServiceClient()
+
+    // Validar que la categoría exista
+    const { data: cat } = await supabase
+      .from('tournament_categories')
+      .select('id')
+      .eq('id', payload.category_id)
+      .maybeSingle()
+
+    if (!cat) {
+      return { success: false, error: 'Categoría no encontrada' }
+    }
+
     const { data: team, error } = await supabase
       .from('tournament_teams')
       .insert({
         category_id: payload.category_id,
-        name: payload.name,
-        player_1: payload.player_1,
-        player_2: payload.player_2 || null,
-        phone: payload.phone,
+        name: cleanName,
+        player_1: cleanP1,
+        player_2: cleanP2,
+        phone: cleanPhone,
       })
       .select()
       .single()
@@ -188,12 +213,24 @@ export async function generatePlayoffBracket(
   categoryId: string
 ): Promise<{ success: boolean; matchesCount?: number; error?: string }> {
   try {
-    const auth = await assertTenantMember()
-    if (!auth.authorized) {
-      return { success: false, error: auth.error || 'Sin permisos para armar cuadros de torneo' }
+    const supabase = await createServiceClient()
+
+    // 0. Validar permisos sobre el club propietario del torneo
+    const { data: category } = await supabase
+      .from('tournament_categories')
+      .select('id, tournament:tournaments(tenant_id)')
+      .eq('id', categoryId)
+      .maybeSingle()
+
+    const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    if (!resourceTenantId) {
+      return { success: false, error: 'Categoría o torneo no encontrado' }
     }
 
-    const supabase = await createServiceClient()
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para armar cuadros de este torneo' }
+    }
 
     // 1. Obtener equipos inscriptos
     const { data: teams, error: tErr } = await supabase
@@ -330,22 +367,26 @@ export async function updateMatchScore(payload: {
   status: 'PLAYING' | 'FINISHED'
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const auth = await assertTenantMember()
-    if (!auth.authorized) {
-      return { success: false, error: auth.error || 'Sin permisos para cargar resultados' }
-    }
-
     const supabase = await createServiceClient()
 
-    // 1. Obtener datos actuales del partido
+    // 1. Obtener datos actuales del partido junto a su categoría y torneo
     const { data: currentMatch, error: mErr } = await supabase
       .from('tournament_matches')
-      .select('*')
+      .select('*, category:tournament_categories(tournament:tournaments(tenant_id))')
       .eq('id', payload.matchId)
       .single()
 
     if (mErr || !currentMatch) {
       return { success: false, error: 'Partido no encontrado' }
+    }
+
+    const catObj = currentMatch.category as unknown as { tournament?: { tenant_id?: string } } | null
+    const resourceTenantId = catObj?.tournament?.tenant_id
+    if (resourceTenantId) {
+      const auth = await assertTenantMember(resourceTenantId)
+      if (!auth.authorized) {
+        return { success: false, error: auth.error || 'Sin permisos para cargar resultados de este torneo' }
+      }
     }
 
     // 2. Actualizar marcador del partido
@@ -431,12 +472,24 @@ export async function generateGroupStageAndPlayoffs(
   categoryId: string
 ): Promise<{ success: boolean; matchesCount?: number; error?: string }> {
   try {
-    const auth = await assertTenantMember()
-    if (!auth.authorized) {
-      return { success: false, error: auth.error || 'Sin permisos para generar fixture' }
+    const supabase = await createServiceClient()
+
+    // 0. Validar permisos sobre el club propietario del torneo
+    const { data: category } = await supabase
+      .from('tournament_categories')
+      .select('id, tournament:tournaments(tenant_id)')
+      .eq('id', categoryId)
+      .maybeSingle()
+
+    const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    if (!resourceTenantId) {
+      return { success: false, error: 'Categoría o torneo no encontrado' }
     }
 
-    const supabase = await createServiceClient()
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para generar fixture de este torneo' }
+    }
 
     // 1. Obtener equipos inscriptos
     const { data: teams, error: tErr } = await supabase

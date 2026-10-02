@@ -5,19 +5,29 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { verifyMpOAuthState } from '@/actions/mp-marketplace.actions'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  const tenantId = searchParams.get('state')
+  const rawState = searchParams.get('state')
   const error = searchParams.get('error')
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
 
-  if (error || !code || !tenantId) {
-    console.error('[MP OAuth Callback] Error or missing params:', { error, code, tenantId })
+  if (error || !code || !rawState) {
+    console.error('[MP OAuth Callback] Error or missing params:', { error, code, rawState })
     return NextResponse.redirect(`${appUrl}/dashboard/plan?mp_error=auth_failed`)
   }
+
+  // 1. BLINDAJE ANTI-CSRF / ANTI-ACCOUNT TAKEOVER: Validar firma criptográfica del state
+  const stateVerification = await verifyMpOAuthState(rawState)
+  if (!stateVerification.valid || !stateVerification.tenantId) {
+    console.error('[MP OAuth Callback] ALERTA DE SEGURIDAD: State inválido, expirado o manipulado:', rawState)
+    return NextResponse.redirect(`${appUrl}/dashboard/plan?mp_error=invalid_state`)
+  }
+
+  const tenantId = stateVerification.tenantId
 
   try {
     const clientId = process.env.MP_CLIENT_ID

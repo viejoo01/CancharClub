@@ -148,14 +148,17 @@ export async function getIssuedInvoices(): Promise<IssuedInvoice[]> {
 
 export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<EmitInvoiceResult> {
   try {
-    if (params.tenantId) {
-      const auth = await assertTenantMember(params.tenantId)
-      if (!auth.authorized) {
-        return { success: false, error: auth.error || 'Sin permisos para emitir facturas en este club' }
-      }
+    const effectiveTenantId = await resolveEffectiveTenantId(params.tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'No se pudo identificar el club emisor' }
     }
 
-    const config = await getAfipConfig(params.tenantId)
+    const auth = await assertTenantMember(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para emitir facturas en este club' }
+    }
+
+    const config = await getAfipConfig(effectiveTenantId)
     if (!config.cuit || !config.cuit.trim()) {
       return { 
         success: false, 

@@ -80,16 +80,10 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
 
   // 0. Resolver targetTenantId con máxima tolerancia y seguridad
   let targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
-  if (!targetTenantId) {
-    const cId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    if (cId && !cId.startsWith('demo-')) {
-      targetTenantId = cId
-    } else {
-      const slug = cookieTenantSlug
-      if (slug && slug !== 'mi-club') {
-        const { data: t } = await serviceClient.from('tenants').select('id').eq('slug', slug).maybeSingle()
-        if (t?.id) targetTenantId = t.id
-      }
+  if (targetTenantId) {
+    const auth = await assertTenantMember(targetTenantId)
+    if (!auth.authorized) {
+      targetTenantId = null
     }
   }
 
@@ -713,23 +707,14 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
   const cookieStore = await cookies()
   const demoStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
 
-  let targetTenantId = tenantIdParam
-
-  if (!targetTenantId) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data: profile } = await serviceClient
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-      targetTenantId = profile?.tenant_id
+  let defaultTenantId = await resolveEffectiveTenantId(tenantIdParam)
+  if (!defaultTenantId) {
+    if (process.env.NODE_ENV !== 'production') {
+      defaultTenantId = tenantIdParam || cookieStore.get('canchar_tenant_id')?.value || '00000000-0000-0000-0000-000000000001'
+    } else {
+      defaultTenantId = '00000000-0000-0000-0000-000000000001'
     }
   }
-
-  // Fallback demo si no hay sesión o tenant_id
-  const defaultTenantId = targetTenantId || '00000000-0000-0000-0000-000000000001'
 
   // Consultar tenant y última factura pendiente
   const { data: tenant } = await serviceClient
@@ -786,6 +771,11 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
  * Genera una preferencia de Mercado Pago Checkout Pro para saldar la factura SaaS del tenant.
  */
 export async function createTenantInvoicePreference(tenantId: string, invoiceId?: string) {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado para generar preferencia de pago' }
+  }
+
   const serviceClient = await createServiceClient()
   const dunning = await getTenantDunningDetails(tenantId)
   const invoice = dunning.invoice
@@ -1615,26 +1605,14 @@ export async function getClubReactivationDetails(tenantIdParam?: string, overrid
   const serviceClient = await createServiceClient()
   const cookieStore = await cookies()
 
-  let targetTenantId = tenantIdParam
-  if (!targetTenantId) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data: profile } = await serviceClient
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-      targetTenantId = profile?.tenant_id
+  let defaultTenantId = await resolveEffectiveTenantId(tenantIdParam)
+  if (!defaultTenantId) {
+    if (process.env.NODE_ENV !== 'production') {
+      defaultTenantId = tenantIdParam || cookieStore.get('canchar_tenant_id')?.value || '00000000-0000-0000-0000-000000000001'
+    } else {
+      defaultTenantId = '00000000-0000-0000-0000-000000000001'
     }
   }
-
-  const cookieTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-  if (!targetTenantId && cookieTenantId && !cookieTenantId.startsWith('demo-')) {
-    targetTenantId = cookieTenantId
-  }
-
-  const defaultTenantId = targetTenantId || '00000000-0000-0000-0000-000000000001'
 
   const { data: tenant } = await serviceClient
     .from('tenants')

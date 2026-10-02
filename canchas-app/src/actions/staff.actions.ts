@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { validatePasswordStrength, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 export type StaffRole = 'TENANT_ADMIN' | 'TENANT_STAFF'
 
@@ -17,7 +18,6 @@ export interface StaffMember {
   role: StaffRole
   created_at: string
   last_sign_in_at?: string | null
-  assigned_password?: string | null
 }
 
 /**
@@ -31,6 +31,11 @@ export async function getClubStaff(
   try {
     if (!tenantId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
       return { success: true, staff: [] }
+    }
+
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, staff: [], error: authCheck.error || 'Acceso no autorizado al equipo de este club' }
     }
 
     const supabase = await createServiceClient()
@@ -100,6 +105,11 @@ export async function inviteStaffMember(params: {
   try {
     if (!params.tenantId || !params.fullName.trim() || !params.email.trim()) {
       return { success: false, error: 'Por favor completá todos los campos requeridos.' }
+    }
+
+    const authCheck = await assertTenantAdmin(params.tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Acceso no autorizado: requiere rol de Administrador del Club.' }
     }
 
     const supabase = await createServiceClient()
@@ -195,6 +205,12 @@ export async function updateStaffRole(
     if (!tenantId) {
       return { success: false, error: 'tenant_id requerido para cambiar el rol.' }
     }
+
+    const authCheck = await assertTenantAdmin(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Acceso no autorizado: requiere rol de Administrador.' }
+    }
+
     const supabase = await createServiceClient()
     // Scope estricto al tenant del caller — evita IDOR
     const { error } = await supabase
@@ -226,12 +242,18 @@ export async function updateStaffPassword(params: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const cleanPwd = params.newPassword?.trim()
-    if (!cleanPwd || cleanPwd.length < 6) {
-      return { success: false, error: 'La nueva contraseña debe tener al menos 6 caracteres.' }
+    const pwdCheck = validatePasswordStrength(cleanPwd)
+    if (!pwdCheck.valid) {
+      return { success: false, error: pwdCheck.error }
     }
 
     if (!params.tenantId || !params.staffProfileId) {
       return { success: false, error: 'Parámetros incompletos.' }
+    }
+
+    const authCheck = await assertTenantAdmin(params.tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Acceso no autorizado: requiere rol de Administrador.' }
     }
 
     const supabase = await createServiceClient()
@@ -287,6 +309,15 @@ export async function removeStaffMember(
   try {
     if (!tenantId) {
       return { success: false, error: 'tenant_id requerido para eliminar un colaborador.' }
+    }
+
+    const authCheck = await assertTenantAdmin(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'Acceso no autorizado: requiere rol de Administrador.' }
+    }
+
+    if (authCheck.user?.id === profileId) {
+      return { success: false, error: 'No podés eliminar tu propia cuenta de administrador.' }
     }
 
     const supabase = await createServiceClient()

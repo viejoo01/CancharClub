@@ -42,6 +42,14 @@ function verifyMercadoPagoSignature(
     const ts = tsEntry.split('=')[1]
     const v1 = v1Entry.split('=')[1]
 
+    // 1. ESCUDO ANTI-REPLAY: Validar que el timestamp no tenga más de 10 minutos de antigüedad
+    const tsNumber = parseInt(ts, 10)
+    const tsMs = ts.length === 10 ? tsNumber * 1000 : tsNumber
+    if (isNaN(tsNumber) || Math.abs(Date.now() - tsMs) > 10 * 60 * 1000) {
+      console.warn('[Billing Webhook] ALERTA: Timestamp expirado o posible ataque de repetición (replay attack):', ts)
+      return false
+    }
+
     let dataId: string | undefined
     try {
       const body = JSON.parse(rawBody) as MercadoPagoWebhookNotification
@@ -110,6 +118,9 @@ export async function POST(request: NextRequest) {
         console.warn('[Billing Webhook] Firma X-Signature inválida — rechazando petición')
         return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
       }
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error('[Billing Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
+      return NextResponse.json({ error: 'Webhook secret no configurado' }, { status: 500 })
     }
 
     let notification: MercadoPagoWebhookNotification
@@ -171,17 +182,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fallback a primer tenant si no vino en external_reference
     const supabase = getSupabase()
-    if (!tenantId) {
-      const { data: t } = await supabase
-        .from('tenants')
-        .select('id')
-        .limit(1)
-        .maybeSingle()
-      tenantId = t?.id || '00000000-0000-0000-0000-000000000001'
+
+    // BLINDAJE MULTI-TENANT: Validar que el tenant_id sea un UUID legítimo y exista en el sistema
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId || '')
+    if (!tenantId || !isUUID) {
+      console.error('[Billing Webhook] Referencia externa inválida o tenant_id no especificado:', payment.external_reference)
+      return NextResponse.json({ received: true, error: 'invalid external reference or missing tenant' }, { status: 400 })
     }
-    const resolvedTenantId = tenantId || '00000000-0000-0000-0000-000000000001'
+
+    const { data: tenantRecord } = await supabase
+      .from('tenants')
+      .select('id, name, subscription_status')
+      .eq('id', tenantId)
+      .maybeSingle()
+
+    if (!tenantRecord) {
+      console.error('[Billing Webhook] Tenant ID no existe en la base de datos:', tenantId)
+      return NextResponse.json({ received: true, error: 'tenant not found' }, { status: 404 })
+    }
+
+    const resolvedTenantId = tenantRecord.id
 
     // 4. Si el cobro no se aprobó o falló -> Registrar alerta de intento fallido con mensaje exacto requerido
     if (payment.status !== 'approved') {

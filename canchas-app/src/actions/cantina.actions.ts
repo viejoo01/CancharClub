@@ -7,6 +7,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
+import { sanitizeText } from '@/lib/sanitize'
 import type { CantinaProduct } from '@/config/cantina-data'
 
 export type { CantinaProduct }
@@ -70,20 +71,26 @@ export async function createCourtOrder(
     const method = payload.payment_method || 'CASH'
     const statusPayment = payload.payment_status || (method === 'TRANSFER' ? 'PAID' : 'PENDING')
     
+    // Sanitizar entradas
+    const safeCustomerName = sanitizeText(payload.customer_name || 'Cliente', 60)
+    const safeCourtName = sanitizeText(payload.court_name || 'Cancha', 40)
+    const safeNotes = payload.notes ? sanitizeText(payload.notes, 200) : ''
+    const safeTotal = Math.max(0, Number(payload.total_ars) || 0)
+
     // Incluir tag en notas para compatibilidad retroactiva garantizada
     const paymentTag = `[PAGO: ${method}]`
-    const combinedNotes = payload.notes 
-      ? (payload.notes.includes('[PAGO:') ? payload.notes : `${paymentTag} ${payload.notes}`)
+    const combinedNotes = safeNotes 
+      ? (safeNotes.includes('[PAGO:') ? safeNotes : `${paymentTag} ${safeNotes}`)
       : paymentTag
 
     // Intentar insertar con columnas payment_method y payment_status
     const insertData: Record<string, unknown> = {
       tenant_id:     payload.tenant_id,
       court_id:      payload.court_id ?? null,
-      court_name:    payload.court_name,
-      customer_name: payload.customer_name,
+      court_name:    safeCourtName,
+      customer_name: safeCustomerName,
       items:         payload.items,
-      total_ars:     payload.total_ars,
+      total_ars:     safeTotal,
       status:        'PENDING',
       payment_method: method,
       payment_status: statusPayment,
@@ -180,12 +187,26 @@ export async function updateOrderStatus(
   status: OrderStatus
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const auth = await assertTenantMember()
-    if (!auth.authorized) {
-      return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos' }
-    }
-
     const supabase = await createServiceClient()
+
+    // 0. Validar permisos sobre el club correspondiente
+    const { data: order } = await supabase
+      .from('court_orders')
+      .select('id, tenant_id')
+      .eq('id', orderId)
+      .maybeSingle()
+
+    if (order?.tenant_id) {
+      const auth = await assertTenantMember(order.tenant_id)
+      if (!auth.authorized) {
+        return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos de este club' }
+      }
+    } else {
+      const auth = await assertTenantMember()
+      if (!auth.authorized) {
+        return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos' }
+      }
+    }
 
     const { error } = await supabase
       .from('court_orders')
@@ -234,6 +255,11 @@ export async function getDailyOrders(
   date?: string // 'YYYY-MM-DD', default = hoy
 ): Promise<CourtOrder[]> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return []
+    }
+
     const supabase = await createServiceClient()
     
     // Fecha en zona horaria local de Argentina (UTC-3)
@@ -308,6 +334,11 @@ export interface CantinaStats {
 
 export async function getCantinaStats(tenantId: string): Promise<CantinaStats> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { totalRevenue: 0, totalOrders: 0, avgTicket: 0, topProducts: [] }
+    }
+
     const supabase = await createServiceClient()
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
 
@@ -347,6 +378,11 @@ export async function getCantinaStats(tenantId: string): Promise<CantinaStats> {
 
 export async function getCantinaProducts(tenantId: string): Promise<CantinaProduct[]> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return []
+    }
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('audit_log')

@@ -9,6 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { buildWhatsAppLink, isSlotTimeInPast } from '@/lib/utils'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { assertTenantMember } from '@/lib/auth-security'
+import { sanitizeText } from '@/lib/sanitize'
 import type { WaitlistEntry } from '@/types/database'
 
 export interface WaitlistNotificationResult {
@@ -43,6 +44,16 @@ export async function addToWaitlist(payload: {
   customer_phone: string
 }): Promise<{ success: boolean; entry?: WaitlistEntry; error?: string }> {
   try {
+    const cleanName = sanitizeText(payload.customer_name || '', 60).trim()
+    const cleanPhone = (payload.customer_phone || '').replace(/[^\d+]/g, '').trim()
+
+    if (cleanName.length < 2) {
+      return { success: false, error: 'Por favor ingresá un nombre válido.' }
+    }
+    if (cleanPhone.length < 6) {
+      return { success: false, error: 'Por favor ingresá un número de WhatsApp válido.' }
+    }
+
     if (isSlotTimeInPast(payload.date, payload.time_slot)) {
       return {
         success: false,
@@ -58,8 +69,8 @@ export async function addToWaitlist(payload: {
         court_id: payload.court_id || null,
         date: payload.date,
         time_slot: payload.time_slot,
-        customer_name: payload.customer_name,
-        customer_phone: payload.customer_phone,
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
         status: 'WAITING',
       })
       .select()

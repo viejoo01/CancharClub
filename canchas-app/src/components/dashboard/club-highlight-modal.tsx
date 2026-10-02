@@ -87,28 +87,44 @@ export function ClubHighlightModal({
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
 
-  // Al abrir, cargar los datos actuales si no se pasaron completos
   useEffect(() => {
     if (!isOpen || !tenantId) return
 
+    let isMounted = true
+
     if (initialInfo && initialInfo.highlightText !== undefined) {
-      setHighlightText(initialInfo.highlightText)
-      setHighlightBadge(initialInfo.highlightBadge || '🔥 Promoción Especial')
-      setIsActive(initialInfo.isHighlightActive ?? true)
-      return
+      Promise.resolve().then(() => {
+        if (!isMounted) return
+        setHighlightText(initialInfo.highlightText || '')
+        setHighlightBadge(initialInfo.highlightBadge || '🔥 Promoción Especial')
+        setIsActive(initialInfo.isHighlightActive ?? true)
+      })
+      return () => {
+        isMounted = false
+      }
     }
 
-    setFetching(true)
-    getClubHighlightInfo(tenantId)
-      .then((data) => {
-        setHighlightText(data.highlightText)
-        setHighlightBadge(data.highlightBadge || '🔥 Promoción Especial')
-        setIsActive(data.isHighlightActive)
-      })
-      .catch((err) => {
-        console.error('[ClubHighlightModal] Error fetching highlight:', err)
-      })
-      .finally(() => setFetching(false))
+    Promise.resolve().then(() => {
+      if (!isMounted) return
+      setFetching(true)
+      getClubHighlightInfo(tenantId)
+        .then((data) => {
+          if (!isMounted) return
+          setHighlightText(data.highlightText)
+          setHighlightBadge(data.highlightBadge || '🔥 Promoción Especial')
+          setIsActive(data.isHighlightActive)
+        })
+        .catch((err) => {
+          console.error('[ClubHighlightModal] Error fetching highlight:', err)
+        })
+        .finally(() => {
+          if (isMounted) setFetching(false)
+        })
+    })
+
+    return () => {
+      isMounted = false
+    }
   }, [isOpen, tenantId, initialInfo])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,7 +175,7 @@ export function ClubHighlightModal({
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto bg-slate-950 border-slate-800 text-slate-100 p-6">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-amber-500/20 via-orange-500/10 to-emerald-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+            <div className="p-2.5 rounded-2xl bg-linear-to-tr from-amber-500/20 via-orange-500/10 to-emerald-500/20 text-amber-400 border border-amber-500/30 shrink-0">
               <Megaphone className="w-5 h-5 text-amber-400" />
             </div>
             <div>
@@ -214,7 +230,7 @@ export function ClubHighlightModal({
                   onChange={(e) => setIsActive(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
               </label>
             </div>
 
@@ -321,7 +337,7 @@ export function ClubHighlightModal({
               </div>
 
               {isActive && highlightText.trim() ? (
-                <div className="relative overflow-hidden rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/90 to-emerald-950/40 p-4 shadow-lg shadow-amber-950/20 backdrop-blur-sm">
+                <div className="relative overflow-hidden rounded-2xl border border-amber-500/40 bg-linear-to-r from-amber-950/40 via-slate-900/90 to-emerald-950/40 p-4 shadow-lg shadow-amber-950/20 backdrop-blur-sm">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
                   <div className="flex items-start gap-3">
                     <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">

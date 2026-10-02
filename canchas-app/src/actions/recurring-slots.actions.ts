@@ -14,6 +14,11 @@ import { assertTenantMember } from '@/lib/auth-security'
 /** Obtener todos los turnos fijos del club */
 export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot[]> {
   try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return []
+    }
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('recurring_slots')
@@ -140,7 +145,15 @@ export async function updateRecurringSlotStatus(
   newStatus: 'ACTIVE' | 'PAUSED' | 'CANCELLED'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const auth = await assertTenantMember()
+    const serviceClient = await createServiceClient()
+    const { data: slot } = await serviceClient
+      .from('recurring_slots')
+      .select('id, tenant_id')
+      .eq('id', slotId)
+      .maybeSingle()
+
+    const targetTenantId = slot?.tenant_id
+    const auth = await assertTenantMember(targetTenantId)
     if (!auth.authorized) {
       return { success: false, error: auth.error || 'Sin permisos para modificar turnos fijos.' }
     }
@@ -149,6 +162,7 @@ export async function updateRecurringSlotStatus(
       .from('recurring_slots')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq('id', slotId)
+      .eq('tenant_id', targetTenantId)
 
     if (error) {
       // Fallback audit_log
@@ -199,6 +213,11 @@ export async function generateMonthlyBookingsForSlot(
 
     if (slotErr || !slot) {
       return { success: false, generatedCount: 0, error: 'Turno fijo no encontrado' }
+    }
+
+    const auth = await assertTenantMember(slot.tenant_id)
+    if (!auth.authorized) {
+      return { success: false, generatedCount: 0, error: auth.error || 'Sin permisos para generar reservas' }
     }
 
     // Calcular los días del mes con ese día de la semana

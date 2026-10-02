@@ -3,7 +3,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
-import { assertSuperadmin } from '@/lib/auth-security'
+import { assertSuperadmin, validatePasswordStrength } from '@/lib/auth-security'
 
 export interface SuperadminTenantItem {
   id: string
@@ -484,19 +484,14 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
       return { success: false, data: [] }
     }
 
-    // Obtener emails y contraseñas guardadas en metadata desde auth.users (requiere service role)
+    // Obtener emails y teléfonos desde auth.users (requiere service role)
     const { data: authList } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
     const emailMap: Record<string, string> = {}
     const phoneMap: Record<string, string> = {}
-    const passwordMap: Record<string, string> = {}
     if (authList?.users) {
       authList.users.forEach(u => { 
         emailMap[u.id] = u.email || ''
         phoneMap[u.id] = (u.user_metadata?.phone as string) || ''
-        const pwd = (u.user_metadata?.assigned_password || u.user_metadata?.initial_password || '') as string
-        if (pwd) {
-          passwordMap[u.id] = pwd
-        }
       })
     }
 
@@ -512,7 +507,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
         tenant_name: t?.name || null,
         tenant_slug: t?.slug || null,
         created_at: p.created_at || '',
-        password: passwordMap[p.id] || '',
+        password: '',
       }
     })
 
@@ -530,7 +525,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
           tenant_name: (u.user_metadata?.full_name as string) || 'Sin club vinculado',
           tenant_slug: null,
           created_at: u.created_at || '',
-          password: passwordMap[u.id] || '',
+          password: '',
         })
       }
     }
@@ -553,6 +548,12 @@ export async function updateUserPasswordBySuperadmin(
   try {
     const auth = await assertSuperadmin()
     if (!auth.authorized) return { success: false, error: auth.error }
+
+    const cleanPwd = newPassword?.trim()
+    const pwdCheck = validatePasswordStrength(cleanPwd)
+    if (!pwdCheck.valid) {
+      return { success: false, error: pwdCheck.error }
+    }
 
     const supabase = await createServiceClient()
     const { data: userData, error: getUserErr } = await supabase.auth.admin.getUserById(userId)
@@ -596,6 +597,12 @@ export async function createUserBySuperadmin(payload: {
   try {
     const auth = await assertSuperadmin()
     if (!auth.authorized) return { success: false, error: auth.error }
+
+    const cleanPwd = payload.password?.trim()
+    const pwdCheck = validatePasswordStrength(cleanPwd)
+    if (!pwdCheck.valid) {
+      return { success: false, error: pwdCheck.error }
+    }
 
     const supabase = await createServiceClient()
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({

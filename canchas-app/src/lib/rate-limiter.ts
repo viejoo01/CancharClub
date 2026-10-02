@@ -24,6 +24,12 @@ if (
   } catch (err) {
     console.warn('[RateLimiter] Error initializing Redis client, using in-memory store:', err)
   }
+} else if (process.env.NODE_ENV === 'production') {
+  console.warn(
+    '[RateLimiter] ADVERTENCIA DE SEGURIDAD: Upstash Redis no está configurado en producción. ' +
+    'El rate limiting opera en memoria local por instancia. Para protección distribuida completa en serverless, ' +
+    'configurá UPSTASH_REDIS_REST_URL y UPSTASH_REDIS_REST_TOKEN en tu proveedor de hosting.'
+  )
 }
 
 // Almacén en memoria de fallback con auto-limpieza

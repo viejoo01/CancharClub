@@ -18,6 +18,15 @@ const ACTIVE_WALLETS: Record<string, PlayerWallet> = {}
 
 export async function getPlayerWalletBalance(rawPhone: string): Promise<PlayerWallet> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')
+  if (cleanPhone.length < 8) {
+    return {
+      phone: '',
+      balanceArs: 0,
+      lastUpdated: new Date().toISOString().split('T')[0],
+      history: []
+    }
+  }
+
   const wallet = ACTIVE_WALLETS[cleanPhone]
   if (wallet) {
     return wallet
@@ -36,13 +45,21 @@ export async function applyWalletCreditAction(
   amountToUse: number
 ): Promise<{ success: boolean; appliedAmount: number; remainingBalance: number; error?: string }> {
   const cleanPhone = (rawPhone || '').replace(/\D/g, '')
+  if (cleanPhone.length < 8) {
+    return { success: false, appliedAmount: 0, remainingBalance: 0, error: 'Número de teléfono inválido' }
+  }
+
+  if (typeof amountToUse !== 'number' || !Number.isFinite(amountToUse) || amountToUse <= 0) {
+    return { success: false, appliedAmount: 0, remainingBalance: 0, error: 'Monto a aplicar inválido' }
+  }
+
   const wallet = ACTIVE_WALLETS[cleanPhone]
 
   if (!wallet || wallet.balanceArs <= 0) {
     return { success: false, appliedAmount: 0, remainingBalance: 0, error: 'No disponés de saldo a favor' }
   }
 
-  const deduct = Math.min(wallet.balanceArs, amountToUse)
+  const deduct = Math.min(wallet.balanceArs, Math.round(amountToUse))
   wallet.balanceArs -= deduct
   wallet.history.push({
     id: `tx-${Date.now()}`,

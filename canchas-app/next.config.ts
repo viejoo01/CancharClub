@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
@@ -75,7 +77,7 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com",
+              `script-src 'self' ${isDev ? "'unsafe-eval'" : ''} 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com`.replace(/\s+/g, ' ').trim(),
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: blob: https:",

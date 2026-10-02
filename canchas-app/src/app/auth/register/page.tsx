@@ -83,6 +83,16 @@ function RegisterContent() {
       return
     }
 
+    if (password.length < 8) {
+      toast.error('La contraseña debe tener al menos 8 caracteres.')
+      return
+    }
+
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      toast.error('La contraseña debe contener al menos una letra y un número.')
+      return
+    }
+
     const fullEmail = `${cleanPrefix}@club.com`
 
     setLoading(true)
@@ -273,20 +283,26 @@ function RegisterContent() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="password">Contraseña *</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Contraseña *</Label>
+                  <span className="text-[11px] text-slate-400">Mínimo 8 caracteres</span>
+                </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Al menos 6 caracteres"
+                    placeholder="Mínimo 8 caracteres (letras y números)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-9 bg-slate-950 border-slate-800 text-white placeholder-slate-500"
-                    minLength={6}
+                    minLength={8}
                     required
                   />
                 </div>
+                {password.length > 0 && (password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) && (
+                  <p className="text-[11px] text-amber-400">Debe contener al menos 8 caracteres con letras y números.</p>
+                )}
               </div>
 
               <Button

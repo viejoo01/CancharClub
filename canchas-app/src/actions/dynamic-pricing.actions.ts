@@ -2,7 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { resolveEffectiveTenantId, assertTenantAdmin } from '@/lib/auth-security'
+import { resolveEffectiveTenantId, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
 
 export interface DynamicPricingConfig {
   enable_last_minute: boolean
@@ -88,18 +88,17 @@ export async function saveDynamicPricingSettings(
 export async function getOccupancyInsights(tenantIdParam?: string): Promise<OccupancyInsight[]> {
   try {
     const targetTenantId = await resolveEffectiveTenantId(tenantIdParam)
+    if (!targetTenantId) return []
+
+    const auth = await assertTenantMember(targetTenantId)
+    if (!auth.authorized) return []
 
     const supabase = await createServiceClient()
-    let query = supabase
+    const { data: bookings } = await supabase
       .from('bookings')
       .select('start_time, status, booking_date')
+      .eq('tenant_id', targetTenantId)
       .limit(200)
-
-    if (targetTenantId) {
-      query = query.eq('tenant_id', targetTenantId)
-    }
-
-    const { data: bookings } = await query
 
     const total = bookings?.length || 0
 

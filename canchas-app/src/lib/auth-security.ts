@@ -75,18 +75,9 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
       }
     }
 
-    // 0.1 Cookie demo_user_role con rol SUPERADMIN
-    const demoRole = cookieStore.get('demo_user_role')?.value
-    if (demoRole === 'SUPERADMIN') {
-      const demoName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
-      return {
-        id: 'superadmin-demo',
-        email: 'superadmin@canchar.club',
-        fullName: demoName,
-        role: 'SUPERADMIN',
-        tenantId: null,
-      }
-    }
+    // SEGURIDAD CRÍTICA: La sesión de Superadmin REQUIERE verificación criptográfica
+    // de sa_session con HMAC (implementada arriba) o un perfil verificado en Supabase Auth.
+    // NUNCA se otorga rol SUPERADMIN a partir de una cookie editable en cliente como demo_user_role.
 
     const supabase = await createClient()
     const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -120,17 +111,19 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
       }
     }
 
-    // 0.2 Sesión de club por cookie (Onboarding / Demo / Autenticación de club)
-    const demoTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    const tenantRole = cookieStore.get('demo_user_role')?.value as UserRole | undefined
-    if (demoTenantId && (tenantRole === 'TENANT_ADMIN' || tenantRole === 'TENANT_STAFF')) {
-      const demoName = cookieStore.get('demo_user_name')?.value || cookieStore.get('demo_tenant_name')?.value || 'Admin de Club'
-      return {
-        id: `tenant-user-${demoTenantId}`,
-        email: `${demoTenantId}@club.com`,
-        fullName: demoName,
-        role: tenantRole,
-        tenantId: demoTenantId,
+    // 0.2 Modo Sandbox / Demo local (ÚNICAMENTE en desarrollo para prefijos 'demo-')
+    if (process.env.NODE_ENV !== 'production') {
+      const demoTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+      const tenantRole = cookieStore.get('demo_user_role')?.value as UserRole | undefined
+      if (demoTenantId && demoTenantId.startsWith('demo-') && (tenantRole === 'TENANT_ADMIN' || tenantRole === 'TENANT_STAFF')) {
+        const demoName = cookieStore.get('demo_user_name')?.value || cookieStore.get('demo_tenant_name')?.value || 'Admin Demo'
+        return {
+          id: `tenant-user-${demoTenantId}`,
+          email: `${demoTenantId}@demo.local`,
+          fullName: demoName,
+          role: tenantRole,
+          tenantId: demoTenantId,
+        }
       }
     }
 
@@ -144,6 +137,43 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
 }
 
 /**
+ * Valida la robustez de una contraseña según estándares de seguridad:
+ * - Mínimo 8 caracteres (máximo 128)
+ * - Al menos una letra
+ * - Al menos un número o símbolo
+ * - No puede ser una contraseña común o predecible
+ */
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'La contraseña es requerida.' }
+  }
+
+  const clean = password.trim()
+
+  if (clean.length < 8) {
+    return { valid: false, error: 'La contraseña debe tener al menos 8 caracteres.' }
+  }
+
+  if (clean.length > 128) {
+    return { valid: false, error: 'La contraseña no puede exceder 128 caracteres.' }
+  }
+
+  const hasLetter = /[a-zA-Z]/.test(clean)
+  const hasDigit = /[0-9]/.test(clean)
+
+  if (!hasLetter || !hasDigit) {
+    return { valid: false, error: 'La contraseña debe contener al menos una letra y un número.' }
+  }
+
+  const commonWeak = ['12345678', 'password', 'password1', 'canchas123', 'admin123', 'qwerty123', 'canchero123']
+  if (commonWeak.includes(clean.toLowerCase())) {
+    return { valid: false, error: 'La contraseña elegida es demasiado común. Elegí una combinación más segura.' }
+  }
+
+  return { valid: true }
+}
+
+/**
  * Resuelve el ID del club (tenantId) de forma estricta y segura:
  * 1. Si el usuario es SUPERADMIN, puede acceder a un tenant explícito o a su propio tenant.
  * 2. Si el usuario es administrador o staff de un club, ÚNICAMENTE puede acceder a profile.tenantId.
@@ -153,11 +183,6 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
-    const cookieStore = await cookies()
-    const fallbackTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    if (fallbackTenantId && !fallbackTenantId.startsWith('demo-')) {
-      return fallbackTenantId
-    }
     return null
   }
 

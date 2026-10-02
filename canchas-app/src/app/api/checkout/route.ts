@@ -12,6 +12,8 @@ import { createClient } from '@/lib/supabase/server'
 import { siteConfig } from '@/config/site'
 import { checkCheckoutRateLimit, getClientIp } from '@/lib/rate-limiter'
 import { sanitizeText } from '@/lib/sanitize'
+import { assertTenantAdmin } from '@/lib/auth-security'
+import { getTenantDunningDetails } from '@/actions/saas-billing.actions'
 
 // Schema de validación para Checkout API
 const checkoutSchema = z.discriminatedUnion('type', [
@@ -76,26 +78,31 @@ export async function POST(req: NextRequest) {
     // Title: "Abono Mensual CancharClub - [Nombre del Club]"
     // --------------------------------------------------------------------------
     if (payload.type === 'monthly_subscription') {
-      const platformToken = process.env.MP_ACCESS_TOKEN
-
-      // Obtener el nombre del club si no fue provisto
-      let clubName = payload.club_name
-      if (!clubName) {
-        const { data: tenant } = await supabase
-          .from('tenants')
-          .select('name')
-          .eq('id', payload.tenant_id)
-          .single()
-        clubName = tenant?.name || 'Club Deportivo'
+      // 1. BLINDAJE DE AUTORIZACIÓN MULTI-TENANT: Validar que quien crea el pago sea admin del club o Superadmin
+      const auth = await assertTenantAdmin(payload.tenant_id)
+      if (!auth.authorized) {
+        return NextResponse.json(
+          { success: false, error: auth.error || 'No autorizado para generar pago de suscripción para este club' },
+          { status: 403 }
+        )
       }
 
+      // 2. BLINDAJE FINANCIERO: Calcular el importe real adeudado en la base de datos (NUNCA confiar en payload.amount del cliente)
+      const dunning = await getTenantDunningDetails(payload.tenant_id)
+      const officialAmount = dunning.reactivation?.totalAmount || 
+                             (dunning.invoice ? Number(dunning.invoice.amount) : dunning.pricing.monthlyFeeArs)
+      const enforcedAmount = officialAmount > 0 ? officialAmount : payload.amount
+
+      const platformToken = process.env.MP_ACCESS_TOKEN
+      const clubName = payload.club_name || dunning.tenantName || 'Club Deportivo'
       const itemTitle = `Abono Mensual CancharClub - ${clubName}`
-      const invoiceId = payload.invoice_id || `inv_${Date.now()}`
-      const externalRef = `cancharclub_saas_${payload.tenant_id}_${invoiceId}`
+      const invoiceId = payload.invoice_id || dunning.invoice?.id || `inv_${Date.now()}`
+      // Formato estricto para el webhook de billing: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
+      const externalRef = `saas_tenant_${payload.tenant_id}_inv_${invoiceId}_${Date.now()}`
 
       // Si no hay token de MP configurado, retornar modo simulación seguro
       if (!platformToken || platformToken.includes('MOCK') || platformToken.length < 10) {
-        const simulatedUrl = `${baseUrl}/billing/suspended?pay_simulated=true&tenant_id=${payload.tenant_id}&invoice_id=${invoiceId}&amount=${payload.amount}`
+        const simulatedUrl = `${baseUrl}/billing/suspended?pay_simulated=true&tenant_id=${payload.tenant_id}&invoice_id=${invoiceId}&amount=${enforcedAmount}`
         return NextResponse.json({
           success: true,
           preference_id: `sim_pref_${Date.now()}`,
@@ -115,7 +122,7 @@ export async function POST(req: NextRequest) {
               title: itemTitle,
               description: `Servicio SaaS de gestión de canchas deportivas CancharClub - ${clubName}`,
               quantity: 1,
-              unit_price: payload.amount,
+              unit_price: enforcedAmount,
               currency_id: 'ARS',
             },
           ],
@@ -152,7 +159,7 @@ export async function POST(req: NextRequest) {
       // 1. BLINDAJE FINANCIERO ANTI-FRAUDE: Consultar reserva real en la base de datos
       const { data: booking, error: bookingErr } = await supabase
         .from('bookings')
-        .select('id, tenant_id, deposit_amount, total_price, status')
+        .select('id, tenant_id, deposit_cents, staff_deposit_amount_cents, price_total_cents, status')
         .eq('id', payload.booking_id)
         .maybeSingle()
 
@@ -172,10 +179,20 @@ export async function POST(req: NextRequest) {
       }
 
       // El monto se determina estrictamente desde la base de datos (NUNCA confiando en el cliente)
-      const serverCalculatedDeposit = Number(booking.deposit_amount) || Number(booking.total_price)
-      const enforcedAmount = (serverCalculatedDeposit && serverCalculatedDeposit > 0)
-        ? serverCalculatedDeposit
-        : payload.amount
+      const depositCents = Number(booking.staff_deposit_amount_cents || booking.deposit_cents || 0)
+      const totalCents = Number(booking.price_total_cents || 0)
+      const serverCalculatedDeposit = depositCents > 0 
+        ? Math.round(depositCents / 100) 
+        : (totalCents > 0 ? Math.round(totalCents / 100) : 0)
+
+      if (serverCalculatedDeposit <= 0) {
+        return NextResponse.json(
+          { success: false, error: 'Error de liquidación: no se encontró un monto de seña válido registrado en la reserva' },
+          { status: 400 }
+        )
+      }
+
+      const enforcedAmount = serverCalculatedDeposit
 
       // Obtener el access_token del tenant (cuenta Mercado Pago del club)
       const { data: tenant } = await supabase

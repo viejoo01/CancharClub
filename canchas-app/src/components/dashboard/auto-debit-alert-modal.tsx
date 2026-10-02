@@ -9,18 +9,16 @@
 // Botón de cierre: "Entendido"
 // ==============================================================================
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
-  AlertTriangle, 
   CheckCircle2, 
   CreditCard, 
   Clock, 
   ArrowRight, 
   X, 
   ShieldAlert,
-  Sparkles,
   Layers
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -44,38 +42,40 @@ export function AutoDebitAlertModal({ tenantId }: AutoDebitAlertModalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isDismissing, setIsDismissing] = useState(false)
 
-  // Carga las alertas no descartadas desde la base de datos y filtra por localStorage
-  const loadAlerts = useCallback(async () => {
-    try {
-      const dbAlerts = await getAutoDebitAlertsAction(tenantId || undefined)
-      if (!Array.isArray(dbAlerts)) return
-
-      // Filtrar las que ya fueron descartadas en este navegador
-      const filtered = dbAlerts.filter(alert => {
-        if (alert.dismissed) return false
-        try {
-          const localAck = localStorage.getItem(`canchar_debit_ack_${alert.id}`)
-          if (localAck === 'true') return false
-        } catch {}
-        return true
-      })
-
-      setAlerts(filtered)
-      if (filtered.length > 0) {
-        setCurrentIndex(0)
-        setIsOpen(true)
-      } else {
-        setIsOpen(false)
-      }
-    } catch (err) {
-      console.error('Error al cargar alertas de débito automático:', err)
-    }
-  }, [tenantId])
-
   // Cargar al montar y al cambiar de página
   useEffect(() => {
-    void loadAlerts()
-  }, [loadAlerts, pathname])
+    let isMounted = true
+
+    getAutoDebitAlertsAction(tenantId || undefined)
+      .then(dbAlerts => {
+        if (!isMounted || !Array.isArray(dbAlerts)) return
+
+        // Filtrar las que ya fueron descartadas en este navegador
+        const filtered = dbAlerts.filter(alert => {
+          if (alert.dismissed) return false
+          try {
+            const localAck = localStorage.getItem(`canchar_debit_ack_${alert.id}`)
+            if (localAck === 'true') return false
+          } catch {}
+          return true
+        })
+
+        setAlerts(filtered)
+        if (filtered.length > 0) {
+          setCurrentIndex(0)
+          setIsOpen(true)
+        } else {
+          setIsOpen(false)
+        }
+      })
+      .catch(err => {
+        console.error('Error al cargar alertas de débito automático:', err)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [tenantId, pathname])
 
   // Escuchar eventos globales para disparar alertas en tiempo real o pruebas
   useEffect(() => {

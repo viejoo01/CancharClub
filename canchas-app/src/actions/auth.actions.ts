@@ -8,6 +8,7 @@ import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { formatClubEmail } from '@/lib/utils'
 import { sendSuperadminAlert } from '@/lib/superadmin-notifications'
+import { validatePasswordStrength } from '@/lib/auth-security'
 
 const STALE_AUTH_COOKIES = [
   'canchar_tenant_id',
@@ -80,41 +81,23 @@ export async function loginWithEmail(formData: FormData) {
       password,
     })
 
-    // Si hay error en el inicio de sesión, verificar auto-confirmación o auto-sincronización de credenciales
-    if (error) {
+    // Si hay error en el inicio de sesión por email no confirmado, confirmar y reintentar autenticación
+    if (error && (error.message?.toLowerCase().includes('confirm') || error.message?.toLowerCase().includes('email'))) {
       try {
         const serviceClient = await createServiceClient()
         const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
         const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === candidate)
 
-        if (existingUser) {
-          let shouldUpdate = false
-          const updatePayload: { email_confirm?: boolean; password?: string } = {}
-
-          if (!existingUser.email_confirmed_at) {
-            updatePayload.email_confirm = true
-            shouldUpdate = true
-          }
-
-          // Si la clave ingresada coincide con la asignada en metadatos, reparar hash desincronizado
-          const metaPwd = (existingUser.user_metadata?.assigned_password || existingUser.user_metadata?.initial_password) as string | undefined
-          if (metaPwd && (metaPwd.trim() === password || metaPwd === rawPassword)) {
-            updatePayload.password = password
-            updatePayload.email_confirm = true
-            shouldUpdate = true
-          }
-
-          if (shouldUpdate) {
-            await serviceClient.auth.admin.updateUserById(existingUser.id, updatePayload)
-            const retry = await supabase.auth.signInWithPassword({ email: candidate, password })
-            if (retry.data?.user) {
-              data = retry.data
-              error = null
-            }
+        if (existingUser && !existingUser.email_confirmed_at) {
+          await serviceClient.auth.admin.updateUserById(existingUser.id, { email_confirm: true })
+          const retry = await supabase.auth.signInWithPassword({ email: candidate, password })
+          if (retry.data?.user) {
+            data = retry.data
+            error = null
           }
         }
       } catch (adminErr) {
-        console.error('Error auto-syncing credentials:', adminErr)
+        console.error('Error auto-confirming credentials:', adminErr)
       }
     }
 
@@ -233,16 +216,21 @@ export async function loginWithEmail(formData: FormData) {
   }
 
   const isProd = process.env.NODE_ENV === 'production'
-  const cookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const }
+  // Cookies de sesión de club: HttpOnly y SameSite=Strict para mitigar XSS y ataques de canal lateral
+  const tenantCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: true }
+  // Metadatos de interfaz para renderizado en cliente
+  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: false }
 
-  cookieStore.set('canchar_tenant_id', profile.tenant_id, cookieOpts)
-  cookieStore.set('demo_tenant_id', profile.tenant_id, cookieOpts)
-  if (t?.name) cookieStore.set('demo_tenant_name', t.name, cookieOpts)
-  if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, cookieOpts)
-  if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, cookieOpts)
+  cookieStore.set('canchar_tenant_id', profile.tenant_id, tenantCookieOpts)
+  cookieStore.set('demo_tenant_id', profile.tenant_id, tenantCookieOpts)
+  if (t?.name) cookieStore.set('demo_tenant_name', t.name, uiCookieOpts)
+  if (t?.slug) cookieStore.set('demo_tenant_slug', t.slug, uiCookieOpts)
+  if (t?.subscription_status) cookieStore.set('demo_subscription_status', t.subscription_status, uiCookieOpts)
 
   const isActuallyActive = t?.is_active === true
-  cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', cookieOpts)
+  cookieStore.set('demo_is_active', isActuallyActive ? 'true' : 'false', uiCookieOpts)
+  cookieStore.set('demo_user_role', profile.role || 'TENANT_ADMIN', uiCookieOpts)
+  cookieStore.set('demo_user_name', profile.full_name || 'Admin de Club', uiCookieOpts)
 
   // Consultar canchas activas para resolver el plan exacto sin degradación
   const { data: userCourts } = await serviceClient
@@ -265,27 +253,27 @@ export async function loginWithEmail(formData: FormData) {
       resolvedLoginPlan = fromCourts
     }
   }
-  cookieStore.set('demo_plan_id', resolvedLoginPlan, cookieOpts)
+  cookieStore.set('demo_plan_id', resolvedLoginPlan, uiCookieOpts)
 
   if (hasCard) {
-    cookieStore.set('demo_has_card', 'true', cookieOpts)
+    cookieStore.set('demo_has_card', 'true', uiCookieOpts)
     cookieStore.delete('new_club_pending_activation')
-    if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, cookieOpts)
-    if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, cookieOpts)
+    if (cardLast4) cookieStore.set('demo_card_last4', cardLast4, uiCookieOpts)
+    if (cardBrand) cookieStore.set('demo_card_brand', cardBrand, uiCookieOpts)
   } else {
     cookieStore.delete('demo_has_card')
     cookieStore.delete('demo_card_last4')
     cookieStore.delete('demo_card_brand')
     cookieStore.delete('demo_card_holder')
-    cookieStore.set('new_club_pending_activation', 'true', cookieOpts)
+    cookieStore.set('new_club_pending_activation', 'true', uiCookieOpts)
   }
 
   if (profile?.role === 'TENANT_STAFF') {
-    cookieStore.set('demo_user_role', 'TENANT_STAFF', cookieOpts)
-    cookieStore.set('demo_user_name', profile.full_name || 'Encargado (Mostrador)', cookieOpts)
+    cookieStore.set('demo_user_role', 'TENANT_STAFF', uiCookieOpts)
+    cookieStore.set('demo_user_name', profile.full_name || 'Encargado (Mostrador)', uiCookieOpts)
   } else {
-    cookieStore.set('demo_user_role', 'TENANT_ADMIN', cookieOpts)
-    cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', cookieOpts)
+    cookieStore.set('demo_user_role', 'TENANT_ADMIN', uiCookieOpts)
+    cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', uiCookieOpts)
   }
 
   // SI EL CLUB AÚN NO VINCULÓ TARJETA, EXIGIRLA ANTES DE ENTRAR AL PANEL
@@ -306,6 +294,12 @@ export async function registerClub(formData: FormData) {
 
   if (!clubName || !password) {
     return { success: false, error: 'Completá todos los campos requeridos' }
+  }
+
+  // Validación de seguridad y robustez de contraseña
+  const pwdCheck = validatePasswordStrength(password)
+  if (!pwdCheck.valid) {
+    return { success: false, error: pwdCheck.error }
   }
 
   // REGLA: El email del club es siempre por defecto: <nombre_elegido>@club.com
@@ -542,16 +536,20 @@ export async function registerClub(formData: FormData) {
 
   // 6. Configurar cookies de sesión exigiendo vinculación de tarjeta
   const cookieStore = await cookies()
-  cookieStore.set('canchar_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_tenant_id', tenant.id, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_user_role', 'TENANT_ADMIN', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_user_name', clubName, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_tenant_name', clubName, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_tenant_slug', tenant.slug, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_subscription_status', 'TRIAL', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_plan_id', planId, { path: '/', maxAge: 86400 })
-  cookieStore.set('demo_trial_ends_at', trialEndsAt, { path: '/', maxAge: 86400 })
+  const isProd = process.env.NODE_ENV === 'production'
+  const secureTenantOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: true }
+  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: false }
+
+  cookieStore.set('canchar_tenant_id', tenant.id, secureTenantOpts)
+  cookieStore.set('demo_tenant_id', tenant.id, secureTenantOpts)
+  cookieStore.set('demo_user_role', 'TENANT_ADMIN', uiCookieOpts)
+  cookieStore.set('demo_user_name', clubName, uiCookieOpts)
+  cookieStore.set('demo_tenant_name', clubName, uiCookieOpts)
+  cookieStore.set('demo_tenant_slug', tenant.slug, uiCookieOpts)
+  cookieStore.set('demo_subscription_status', 'TRIAL', uiCookieOpts)
+  cookieStore.set('demo_is_active', 'true', uiCookieOpts)
+  cookieStore.set('demo_plan_id', planId, uiCookieOpts)
+  cookieStore.set('demo_trial_ends_at', trialEndsAt, uiCookieOpts)
   cookieStore.delete('new_club_pending_activation')
   cookieStore.delete('demo_terms_accepted_at')
   cookieStore.delete('demo_has_card')
@@ -599,8 +597,9 @@ export async function changeOwnPassword(payload: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const cleanNewPassword = payload.newPassword?.trim()
-    if (!cleanNewPassword || cleanNewPassword.length < 8) {
-      return { success: false, error: 'La nueva contraseña debe tener al menos 8 caracteres.' }
+    const pwdCheck = validatePasswordStrength(cleanNewPassword)
+    if (!pwdCheck.valid) {
+      return { success: false, error: pwdCheck.error }
     }
 
     const supabase = await createClient()

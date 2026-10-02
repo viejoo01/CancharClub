@@ -75,8 +75,11 @@ async function main() {
 
   // 2. Ping a la URL de producción de la Web App
   if (APP_URL && !APP_URL.includes('localhost')) {
+    const cronSecret = (env.CRON_SECRET || '').trim()
+    const cronHeaders = cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {}
+
     await pingEndpoint('Web App /api/health', `${APP_URL}/api/health`)
-    await pingEndpoint('Web App /api/cron', `${APP_URL}/api/cron/keep-alive`)
+    await pingEndpoint('Web App /api/cron', `${APP_URL}/api/cron/keep-alive`, { headers: cronHeaders })
   }
 
   console.log('\n════════════════════════════════════════════════════════════════')

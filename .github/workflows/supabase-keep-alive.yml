@@ -35,18 +35,19 @@ jobs:
 
       - name: ⚡ 2. Ping a Cron Endpoint (/api/cron/keep-alive)
         id: ping_cron
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           APP_URL="${{ vars.APP_URL || 'https://www.cancharclub.com.ar' }}"
-          CRON_SECRET="${{ secrets.CRON_SECRET }}"
           
-          AUTH_HEADER=""
           if [ -n "$CRON_SECRET" ]; then
-            AUTH_HEADER="-H \"Authorization: Bearer $CRON_SECRET\""
+            RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/keep-alive" \
+              -H "User-Agent: GitHub-Actions-KeepAlive/1.0" \
+              -H "Authorization: Bearer $CRON_SECRET" || true)
+          else
+            RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/keep-alive" \
+              -H "User-Agent: GitHub-Actions-KeepAlive/1.0" || true)
           fi
-          
-          RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/keep-alive" \
-            -H "User-Agent: GitHub-Actions-KeepAlive/1.0" \
-            ${AUTH_HEADER} || true)
           
           HTTP_BODY=$(echo "$RESPONSE" | head -n -2)
           HTTP_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)

@@ -20,11 +20,17 @@ async function handleKeepAlive(request: NextRequest) {
   const startTime = Date.now()
 
   // 1. Verificación opcional de seguridad con CRON_SECRET si está configurado en .env
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const authHeader = request.headers.get('authorization')
-    const querySecret = request.nextUrl.searchParams.get('secret')
-    const isValid = authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
+  // Trimear y remover comillas accidentales para evitar problemas al copiar desde paneles de configuración
+  const rawSecret = (process.env.CRON_SECRET ?? '').trim()
+  const cronSecret = rawSecret.replace(/^["']|["']$/g, '').trim()
+
+  if (cronSecret.length > 0) {
+    const rawAuth = request.headers.get('authorization')?.trim() ?? ''
+    const isBearer = rawAuth.toLowerCase().startsWith('bearer ')
+    const tokenFromHeader = (isBearer ? rawAuth.slice(7) : rawAuth).replace(/^["']|["']$/g, '').trim()
+    const querySecret = (request.nextUrl.searchParams.get('secret') ?? '').replace(/^["']|["']$/g, '').trim()
+
+    const isValid = tokenFromHeader === cronSecret || querySecret === cronSecret
     if (!isValid) {
       return NextResponse.json({ error: 'Unauthorized cron invocation' }, { status: 401 })
     }

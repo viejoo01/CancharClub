@@ -7,6 +7,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
 import { cleanNoteForDisplay } from '@/lib/utils'
+import { revalidatePath } from 'next/cache'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ export interface DailyCashEntry {
   customer_name: string
   court_name: string
   amount_ars: number
-  payment_type: 'DEPOSIT' | 'BALANCE'
+  payment_type: 'DEPOSIT' | 'BALANCE' | 'CANTINA'
   payment_method: string
   paid_at: string
   notes: string | null
@@ -69,7 +70,8 @@ export interface DailyCashReport {
 }
 
 /**
- * Obtiene todos los cobros del día (señas online por MP/Transferencia, pagos manuales y saldos pagados en mostrador).
+ * Obtiene todos los cobros del día (señas online por MP/Transferencia, pagos manuales, saldos pagados en mostrador
+ * y ventas de cantina / kiosco).
  * Separa de forma precisa:
  *   - EFECTIVO EN CAJA (CASH)
  *   - TRANSFERENCIAS (TRANSFER - alias / CBU / banco)
@@ -96,7 +98,7 @@ export async function getDailyCashReport(
   const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
   const dayEnd   = new Date(`${date}T23:59:59.999-03:00`).toISOString()
 
-  // Consultar todas las reservas vigentes del club
+  // 1. Consultar reservas del día
   const { data: bookingRows } = await supabase
     .from('bookings')
     .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
@@ -112,10 +114,9 @@ export async function getDailyCashReport(
     const totalPriceArs = Math.round((Number(row.price_total_cents) || 0) / 100)
     const notes = row.staff_notes || ''
 
-    // 1. Extraer cobros explícitos en mostrador (ej. "Cobro $10.000 (Transferencia) a las 10:46 hs [2026-09-30T...]")
+    // 1.1 Extraer cobros explícitos en mostrador (ej. "Cobro $10.000 (Transferencia)...")
     const cobroMatches = [...notes.matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)(?:[^\[\n]*\[([^\]]+)\])?/gi)]
     
-    // Auto-sanar si deposit_cents en BD estaba inflado por el bug de duplicación previa
     if (cobroMatches.length > 0) {
       const sumCobrosArs = cobroMatches.reduce((acc, m) => {
         const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
@@ -157,10 +158,9 @@ export async function getDailyCashReport(
       }
     }
 
-    // 2. Seña previa inicial (online o seña tomada al momento de reservar)
+    // 1.2 Seña previa inicial
     const initialDeposit = Math.max(0, totalDepositArs - cobrosTotal)
     if (initialDeposit > 0) {
-      // Fecha en que se cobró la seña inicial
       const señaIsoMatch = notes.match(/Seña verificada[^\[]*\[([^\]]+)\]/i)
       let initialPaidAt: string | null = señaIsoMatch ? señaIsoMatch[1] : null
 
@@ -213,6 +213,50 @@ export async function getDailyCashReport(
     }
   }
 
+  // 2. Consultar pedidos y ventas de Cantina del día
+  try {
+    const { data: cantinaOrders } = await supabase
+      .from('court_orders')
+      .select('id, court_name, customer_name, total_ars, payment_method, payment_status, status, created_at, notes, items')
+      .eq('tenant_id', effectiveTenantId)
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd)
+      .not('status', 'eq', 'CANCELLED')
+
+    for (const order of cantinaOrders ?? []) {
+      const orderTotal = Number(order.total_ars) || 0
+      if (orderTotal <= 0) continue
+
+      // Resolver método de pago de la orden
+      let method = 'CASH'
+      const rawMethod = String(order.payment_method || '').toUpperCase()
+      const rawNotes = String(order.notes || '').toUpperCase()
+      if (rawMethod.includes('TRANSFER') || rawNotes.includes('TRANSFER')) {
+        method = 'TRANSFER'
+      } else if (rawMethod.includes('QR') || rawMethod.includes('MERCADO') || rawMethod.includes('MP') || rawNotes.includes('MP')) {
+        method = 'MERCADOPAGO'
+      }
+
+      const courtLabel = order.court_name && order.court_name !== 'NONE'
+        ? `Cantina (${order.court_name})`
+        : 'Cantina Mostrador'
+
+      entries.push({
+        id: `cantina-${order.id}`,
+        customer_name: order.customer_name || 'Cliente Cantina',
+        court_name: courtLabel,
+        amount_ars: orderTotal,
+        payment_type: 'CANTINA',
+        payment_method: method,
+        paid_at: order.created_at,
+        notes: order.notes ? cleanNoteForDisplay(order.notes) : 'Venta de cantina / kiosco',
+        origin: 'cantina',
+      })
+    }
+  } catch (cantinaErr) {
+    console.warn('[getDailyCashReport] Cantina orders query notice:', cantinaErr)
+  }
+
   entries.sort((a, b) => (a.paid_at || '').localeCompare(b.paid_at || ''))
 
   const totalCash     = entries.filter(e => e.payment_method === 'CASH').reduce((s, e) => s + e.amount_ars, 0)
@@ -224,6 +268,91 @@ export async function getDailyCashReport(
   const totalGeneral  = totalCash + totalTransfer + totalMP + totalOther
 
   return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, entries }
+}
+
+export interface BlindAuditRecord {
+  id: string
+  cashier_name?: string
+  declared_cash: number
+  expected_cash: number
+  diff_cash: number
+  status: 'EXACT' | 'OVER' | 'SHORT'
+  notes?: string
+  closed_at: string
+}
+
+/**
+ * Guarda el arqueo ciego de caja en la base de datos (cash_shifts con fallback inmutable a audit_log).
+ */
+export async function saveBlindAuditAction(
+  tenantId: string,
+  payload: {
+    cashierName?: string
+    declaredCash: number
+    expectedCash: number
+    diffCash: number
+    status: 'EXACT' | 'OVER' | 'SHORT'
+    notes?: string
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
+    const auth = await assertTenantMember(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
+    }
+
+    const supabase = await createServiceClient()
+    const nowIso = new Date().toISOString()
+
+    // 1. Intentar persistir en tabla dedicada cash_shifts
+    const { error: shiftErr } = await supabase.from('cash_shifts').insert({
+      tenant_id: effectiveTenantId,
+      cashier_name: payload.cashierName || null,
+      declared_cash_cents: Math.round(payload.declaredCash * 100),
+      expected_cash_cents: Math.round(payload.expectedCash * 100),
+      diff_cash_cents: Math.round(payload.diffCash * 100),
+      status: payload.status,
+      notes: payload.notes || null,
+      closed_at: nowIso,
+    })
+
+    if (!shiftErr) {
+      revalidatePath('/dashboard/caja')
+      return { success: true }
+    }
+
+    // 2. Fallback inmutable a audit_log
+    const fallbackAudit = {
+      cashier_name: payload.cashierName || '',
+      declared_cash: payload.declaredCash,
+      expected_cash: payload.expectedCash,
+      diff_cash: payload.diffCash,
+      status: payload.status,
+      notes: payload.notes || '',
+      closed_at: nowIso,
+    }
+
+    const { error: auditErr } = await supabase.from('audit_log').insert({
+      tenant_id: effectiveTenantId,
+      action: 'CASH_SHIFT_AUDIT',
+      table_name: 'cash_shifts',
+      record_id: crypto.randomUUID(),
+      new_data: fallbackAudit,
+    })
+
+    if (auditErr) {
+      console.error('[saveBlindAuditAction] Fallback error:', auditErr.message)
+      return { success: false, error: auditErr.message }
+    }
+
+    revalidatePath('/dashboard/caja')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al guardar arqueo'
+    console.error('[saveBlindAuditAction] Exception:', msg)
+    return { success: false, error: msg }
+  }
 }
 
 // ─── Heatmap y Reportes de Ocupación ─────────────────────────────────────────
@@ -252,9 +381,7 @@ const SLOTS_MAP: {
 ]
 
 /**
- * Genera el heatmap de ocupación semanal.
- * Si hay ≥10 reservas en los últimos 30 días usa datos reales;
- * de lo contrario usa el perfil inteligente como fallback.
+ * Genera el reporte de ocupación semanal con datos 100% reales en huso horario de Argentina.
  */
 export async function getOccupancyReport(tenantId: string): Promise<OccupancyReportData> {
   try {
@@ -284,47 +411,43 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
 
     const supabase = await createServiceClient()
 
-    // Canchas activas → para calcular capacidad teórica
+    // Canchas activas del club
     const { data: courts } = await supabase
       .from('courts')
-      .select('id')
+      .select('id, slot_duration_minutes')
       .eq('tenant_id', effectiveTenantId)
       .eq('is_active', true)
 
-    const courtsCount = courts?.length || 2
+    const courtsCount = Math.max(1, courts?.length || 1)
 
     // Reservas de los últimos 30 días
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
     const { data: bookings } = await supabase
       .from('bookings')
-      .select('booked_at, price_total_cents')
+      .select('starts_at, booked_at, price_total_cents')
       .eq('tenant_id', effectiveTenantId)
       .not('status', 'in', '("cancelled")')
 
-    const totalRealBookings = bookings?.length ?? 0
-
-    // Construir matriz day×slot con conteos reales
+    // Construir matriz day x slot con conteos reales en huso horario Argentina (UTC-3)
     const bookingMatrix: Record<string, number> = {}
-    if (totalRealBookings >= 10 && bookings) {
-      for (const b of bookings) {
-        if (!b.booked_at) continue
-        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
-        if (!match || !match[1]) continue
-        const d = new Date(match[1])
-        if (d < new Date(thirtyDaysAgo)) continue
-        const dow  = d.getDay()
-        const hour = d.getHours()
-        const slot = SLOTS_MAP.find(s => hour >= s.startHour && hour < s.endHour)
-        if (slot) {
-          const key = `${dow}_${slot.key}`
-          bookingMatrix[key] = (bookingMatrix[key] ?? 0) + 1
-        }
-      }
-    }
 
-    // Perfil de fallback realista para canchas de pádel/fútbol en AR
-    const basePct: Record<string, number> = {
-      MANANA: 18, SIESTA: 22, TARDE: 68, NOCHE: 92,
+    for (const b of bookings ?? []) {
+      const rawDateStr = b.starts_at || (b.booked_at ? b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)?.[1] : null)
+      if (!rawDateStr) continue
+
+      const d = new Date(rawDateStr)
+      if (isNaN(d.getTime()) || d < new Date(thirtyDaysAgo)) continue
+
+      // Conversión estricta a huso horario de Argentina (UTC-3)
+      const argDate = new Date(d.getTime() - 3 * 60 * 60 * 1000)
+      const dow  = argDate.getUTCDay()
+      const hour = argDate.getUTCHours()
+
+      const slot = SLOTS_MAP.find(s => hour >= s.startHour && hour < s.endHour)
+      if (slot) {
+        const key = `${dow}_${slot.key}`
+        bookingMatrix[key] = (bookingMatrix[key] ?? 0) + 1
+      }
     }
 
     const heatmap: HeatmapCell[] = []
@@ -332,21 +455,13 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
 
     for (const day of DAYS_MAP) {
       for (const slot of SLOTS_MAP) {
-        const capacitySlots = 16 * courtsCount // 4 franjas × 4 semanas × canchas
+        // Capacidad teórica real: horas de la franja x 4 semanas en el mes x canchas
+        const hoursInSlot = slot.endHour - slot.startHour
+        const capacitySlots = Math.max(1, hoursInSlot * 4 * courtsCount)
 
-        let occupancyPct: number
-        let totalBookingsCell: number
-
-        if (totalRealBookings >= 10) {
-          const realCount = bookingMatrix[`${day.index}_${slot.key}`] ?? 0
-          occupancyPct = Math.min(100, Math.round((realCount / capacitySlots) * 100))
-          totalBookingsCell = realCount
-        } else {
-          const boost = (day.index === 5 || day.index === 6) ? 1.15 : day.index === 1 ? 0.85 : 1.0
-          const base  = basePct[slot.key] * boost
-          occupancyPct = Math.min(98, Math.max(8, Math.round(base + (day.index * 2) % 7)))
-          totalBookingsCell = Math.round((occupancyPct / 100) * capacitySlots)
-        }
+        const realCount = bookingMatrix[`${day.index}_${slot.key}`] ?? 0
+        const occupancyPct = Math.min(100, Math.round((realCount / capacitySlots) * 100))
+        const totalBookingsCell = realCount
 
         heatmap.push({
           dayIndex: day.index,
@@ -357,7 +472,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
           occupancyPct,
           totalBookings: totalBookingsCell,
           capacitySlots,
-          isDeadHour: occupancyPct < 28,
+          isDeadHour: occupancyPct < 25,
         })
         totalPctSum += occupancyPct
       }
@@ -366,9 +481,9 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     const weeklyAverage = Math.round(totalPctSum / heatmap.length)
     const deadCount = heatmap.filter(h => h.isDeadHour).length
     const peakCell  = heatmap.reduce((m, h) => h.occupancyPct > m.occupancyPct ? h : m, heatmap[0])
-    const peakSlot  = peakCell
+    const peakSlot  = (peakCell && peakCell.occupancyPct > 0)
       ? `${peakCell.slotLabel} (${peakCell.timeRange}) — ${peakCell.occupancyPct}% ocupación`
-      : 'Noche (20:00 - 00:00 hs)'
+      : 'Sin turnos registrados en este período'
 
     // Precio pico del club desde la columna real price_cents
     const { data: priceRules } = await supabase
@@ -378,11 +493,12 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       .eq('is_active', true)
       .order('price_cents', { ascending: false })
       .limit(1)
+
     const peakPrice = (priceRules?.[0]?.price_cents)
       ? Math.round(Number(priceRules[0].price_cents) / 100)
       : 25000
 
-    // Recomendaciones: una por hora muerta (máx. 3)
+    // Recomendaciones basadas en datos reales
     const deadHours = heatmap.filter(h => h.isDeadHour).slice(0, 3)
     const recommendations: PricingRecommendation[] = deadHours.length > 0
       ? deadHours.map((h, i) => ({
@@ -391,26 +507,13 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
           days: h.dayName,
           currentOccupancy: h.occupancyPct,
           standardPriceArs: peakPrice,
-          suggestedPriceArs: Math.round(peakPrice * 0.7),
-          discountPct: 30,
-          projectedWeeklyRevenueArs: Math.round(peakPrice * 0.7 * h.capacitySlots * 0.5),
-          rationale: `Ocupación de apenas ${h.occupancyPct}%. Una reducción del 30% puede duplicar la ocupación y recuperar ingresos ociosos.`,
-          suggestedPromoTitle: `Promo ${h.slotLabel}: 30% OFF el ${h.dayName} de ${h.timeRange}`,
+          suggestedPriceArs: Math.round(peakPrice * 0.75),
+          discountPct: 25,
+          projectedWeeklyRevenueArs: Math.round(peakPrice * 0.75 * Math.max(1, h.capacitySlots * 0.4)),
+          rationale: `Ocupación registrada de ${h.occupancyPct}%. Una promoción atractiva puede incentivar la reserva de esta franja horaria.`,
+          suggestedPromoTitle: `Promo ${h.slotLabel}: 25% OFF el ${h.dayName} de ${h.timeRange}`,
         }))
-      : [
-          {
-            id: 'rec_general',
-            slotLabel: 'Siesta (13:00 a 17:00)',
-            days: 'Lunes a Jueves',
-            currentOccupancy: 22,
-            standardPriceArs: peakPrice,
-            suggestedPriceArs: Math.round(peakPrice * 0.7),
-            discountPct: 30,
-            projectedWeeklyRevenueArs: Math.round(peakPrice * 0.7 * 16),
-            rationale: 'Franja siesta habitualmente baja. Una promo del 30% incentiva partidos en horario de almuerzo.',
-            suggestedPromoTitle: `Promo Siesta: 30% OFF de 13 a 17 hs`,
-          },
-        ]
+      : []
 
     const projectedRecovery = recommendations.reduce((s, r) => s + r.projectedWeeklyRevenueArs, 0)
 
@@ -425,10 +528,10 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
   } catch (err) {
     console.error('[getOccupancyReport] Error:', err)
     return {
-      weeklyAverageOccupancy: 52,
-      peakSlot: 'Noche (20:00 - 00:00 hs)',
-      deadHoursCount: 8,
-      projectedRevenueRecoveryArs: 210000,
+      weeklyAverageOccupancy: 0,
+      peakSlot: 'Sin datos',
+      deadHoursCount: 0,
+      projectedRevenueRecoveryArs: 0,
       heatmap: [],
       recommendations: [],
     }

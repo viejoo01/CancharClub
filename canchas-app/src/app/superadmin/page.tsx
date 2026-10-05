@@ -146,6 +146,9 @@ export default function SuperadminPage() {
       const clubsRes = await getSuperadminTenants()
       if (clubsRes.success) {
         setTenants(clubsRes.data)
+        if (clubsRes.data.length > 0) {
+          setNewUserTenantId(prev => (prev === 't1' ? clubsRes.data[0].id : prev))
+        }
       }
 
       const usersRes = await getSuperadminUsers()
@@ -159,7 +162,7 @@ export default function SuperadminPage() {
           tenantId: u.tenant_id || '',
           tenantName: u.tenant_name || 'Sin club',
           tenantSlug: u.tenant_slug || '',
-          password: u.password || 'Elite123',
+          password: u.password || '',
           status: 'ACTIVE' as const,
           createdAt: u.created_at?.split('T')[0] || '',
         }))
@@ -184,6 +187,9 @@ export default function SuperadminPage() {
         const clubsRes = await getSuperadminTenants()
         if (isMounted && clubsRes.success) {
           setTenants(clubsRes.data)
+          if (clubsRes.data.length > 0) {
+            setNewUserTenantId(prev => (prev === 't1' ? clubsRes.data[0].id : prev))
+          }
         }
 
         const usersRes = await getSuperadminUsers()
@@ -197,7 +203,7 @@ export default function SuperadminPage() {
             tenantId: u.tenant_id || '',
             tenantName: u.tenant_name || 'Sin club',
             tenantSlug: u.tenant_slug || '',
-            password: u.password || 'Elite123',
+            password: u.password || '',
             status: 'ACTIVE' as const,
             createdAt: u.created_at?.split('T')[0] || '',
           }))
@@ -725,7 +731,7 @@ export default function SuperadminPage() {
 Tu usuario para gestionar *${user.tenantName}* ya está activo:
 🔗 *Portal de Acceso:* https://cancharclub.com.ar/auth/login
 👤 *Email:* ${user.email}
-🔑 *Contraseña:* ${user.password}
+🔑 *Contraseña:* ${user.password || '(Sin clave guardada - asignar en panel)'}
 🛡️ *Rol asignado:* ${roleTitle}
 
 📌 *Tus funciones habilitadas:*
@@ -880,6 +886,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         const pwdRes = await updateUserPasswordBySuperadmin(editingUser.id, editingUser.password.trim())
         if (!pwdRes.success) {
           toast.error('Error al actualizar contraseña: ' + (pwdRes.error || ''))
+          return
         }
       }
 
@@ -2647,7 +2654,24 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <div>
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Contraseña</span>
                             <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px] text-slate-300">
-                              <span>{revealedPasswords[user.id] ? (user.password || 'Sin clave') : '••••••••'}</span>
+                              <span>
+                                {revealedPasswords[user.id] ? (
+                                  user.password ? (
+                                    user.password
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditUser(user)}
+                                      className="text-amber-400 hover:text-amber-300 underline underline-offset-2 text-[10px]"
+                                      title="Click para asignar una clave"
+                                    >
+                                      Asignar clave
+                                    </button>
+                                  )
+                                ) : (
+                                  '••••••••'
+                                )}
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => handleTogglePassword(user.id)}
@@ -2836,7 +2860,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <td className="p-4 text-center">
                             <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
                               <span>
-                                {revealedPasswords[user.id] ? (user.password || 'Sin clave') : '••••••••'}
+                                {revealedPasswords[user.id] ? (
+                                  user.password ? (
+                                    user.password
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditUser(user)}
+                                      className="text-amber-400 hover:text-amber-300 underline underline-offset-2 text-[10px]"
+                                      title="Click para asignar una clave a este club"
+                                    >
+                                      Asignar clave
+                                    </button>
+                                  )
+                                ) : (
+                                  '••••••••'
+                                )}
                               </span>
                               <button
                                 type="button"

@@ -17,6 +17,7 @@ canchas-app/.env*
 !canchas-app/.env.example
 
 # Temporary and local data
+backups/
 .temp/
 *.temp/
 supabase/.temp/

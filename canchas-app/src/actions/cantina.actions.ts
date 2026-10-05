@@ -8,7 +8,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
-import type { CantinaProduct } from '@/config/cantina-data'
+import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
 
 export type { CantinaProduct }
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
@@ -136,7 +136,27 @@ export async function createCourtOrder(
         return { success: false, error: auditRes.error.message }
       }
 
+      // Descontar inventario automáticamente
+      try {
+        const currentProducts = await getCantinaProducts(payload.tenant_id)
+        let stockChanged = false
+        const updatedProducts = currentProducts.map(p => {
+          const ordered = payload.items.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
+          if (ordered && ordered.quantity > 0) {
+            stockChanged = true
+            return { ...p, stock: Math.max(0, p.stock - ordered.quantity) }
+          }
+          return p
+        })
+        if (stockChanged) {
+          await saveCantinaProducts(payload.tenant_id, updatedProducts)
+        }
+      } catch (stockErr) {
+        console.warn('[createCourtOrder] Fallback stock deduction notice:', stockErr)
+      }
+
       revalidatePath('/dashboard/cantina')
+      revalidatePath('/dashboard/caja')
       return { success: true, order: fallbackOrder }
     }
 
@@ -172,7 +192,27 @@ export async function createCourtOrder(
       createdOrder.payment_status = statusPayment
     }
 
+    // Descontar inventario automáticamente del catálogo del club
+    try {
+      const currentProducts = await getCantinaProducts(payload.tenant_id)
+      let stockChanged = false
+      const updatedProducts = currentProducts.map(p => {
+        const ordered = payload.items.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
+        if (ordered && ordered.quantity > 0) {
+          stockChanged = true
+          return { ...p, stock: Math.max(0, p.stock - ordered.quantity) }
+        }
+        return p
+      })
+      if (stockChanged) {
+        await saveCantinaProducts(payload.tenant_id, updatedProducts)
+      }
+    } catch (stockErr) {
+      console.warn('[createCourtOrder] Stock deduction notice:', stockErr)
+    }
+
     revalidatePath('/dashboard/cantina')
+    revalidatePath('/dashboard/caja')
     return { success: true, order: createdOrder }
   } catch (err) {
     console.error('[createCourtOrder] Unexpected:', err)
@@ -190,14 +230,16 @@ export async function updateOrderStatus(
     const supabase = await createServiceClient()
 
     // 0. Validar permisos sobre el club correspondiente
+    // Obtener detalles de la orden para saber items y estado previo
     const { data: order } = await supabase
       .from('court_orders')
-      .select('id, tenant_id')
+      .select('id, tenant_id, status, items')
       .eq('id', orderId)
       .maybeSingle()
 
-    if (order?.tenant_id) {
-      const auth = await assertTenantMember(order.tenant_id)
+    const orderTenantId = order?.tenant_id
+    if (orderTenantId) {
+      const auth = await assertTenantMember(orderTenantId)
       if (!auth.authorized) {
         return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos de este club' }
       }
@@ -207,6 +249,8 @@ export async function updateOrderStatus(
         return { success: false, error: auth.error || 'Sin permisos para actualizar pedidos' }
       }
     }
+
+    const previousStatus = order?.status
 
     const { error } = await supabase
       .from('court_orders')
@@ -240,7 +284,32 @@ export async function updateOrderStatus(
       return { success: false, error: error.message }
     }
 
+    // Si se cancela un pedido que antes no estaba cancelado, reintegrar stock al inventario
+    if (status === 'CANCELLED' && previousStatus !== 'CANCELLED' && orderTenantId) {
+      try {
+        const orderItems = order?.items as OrderItem[] | undefined
+        if (Array.isArray(orderItems) && orderItems.length > 0) {
+          const currentProducts = await getCantinaProducts(orderTenantId)
+          let restored = false
+          const updatedProducts = currentProducts.map(p => {
+            const item = orderItems.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
+            if (item && item.quantity > 0) {
+              restored = true
+              return { ...p, stock: p.stock + item.quantity }
+            }
+            return p
+          })
+          if (restored) {
+            await saveCantinaProducts(orderTenantId, updatedProducts)
+          }
+        }
+      } catch (cancelErr) {
+        console.warn('[updateOrderStatus] Restoring stock notice:', cancelErr)
+      }
+    }
+
     revalidatePath('/dashboard/cantina')
+    revalidatePath('/dashboard/caja')
     return { success: true }
   } catch (err) {
     console.error('[updateOrderStatus] Unexpected:', err)
@@ -394,18 +463,18 @@ export async function getCantinaProducts(tenantId: string): Promise<CantinaProdu
       .limit(1)
 
     if (error || !data || data.length === 0 || !data[0].new_data) {
-      return []
+      return INITIAL_CANTINA_PRODUCTS
     }
 
     const catalog = data[0].new_data as { products: CantinaProduct[] }
-    if (Array.isArray(catalog.products)) {
+    if (Array.isArray(catalog.products) && catalog.products.length > 0) {
       return catalog.products
     }
 
-    return []
+    return INITIAL_CANTINA_PRODUCTS
   } catch (err) {
     console.error('[getCantinaProducts] Error:', err)
-    return []
+    return INITIAL_CANTINA_PRODUCTS
   }
 }
 

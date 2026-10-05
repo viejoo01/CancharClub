@@ -350,8 +350,11 @@ export async function registerClub(formData: FormData) {
       password,
       email_confirm: true,
       user_metadata: {
+        ...(existingAuthUser.user_metadata || {}),
         full_name: clubName,
         phone: phone || undefined,
+        assigned_password: password,
+        initial_password: password,
       },
     })
   } else {
@@ -362,6 +365,8 @@ export async function registerClub(formData: FormData) {
       user_metadata: {
         full_name: clubName,
         phone: phone || undefined,
+        assigned_password: password,
+        initial_password: password,
       },
     })
 
@@ -629,9 +634,11 @@ export async function changeOwnPassword(payload: {
     // Actualizar la contraseña con serviceClient (evita restricciones de sesión)
     const serviceClient = await createServiceClient()
     const { data: userData } = await serviceClient.auth.admin.getUserById(targetUserId)
-    const cleanMeta = { ...(userData?.user?.user_metadata || {}) }
-    delete cleanMeta.assigned_password
-    delete cleanMeta.initial_password
+    const cleanMeta = {
+      ...(userData?.user?.user_metadata || {}),
+      assigned_password: cleanNewPassword,
+      initial_password: cleanNewPassword,
+    }
 
     const { error: updateErr } = await serviceClient.auth.admin.updateUserById(targetUserId, {
       password: cleanNewPassword,

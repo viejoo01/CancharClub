@@ -230,15 +230,17 @@ export function getGoogleMapsEmbedUrl(location: {
  * Genera el enlace de navegación para abrir directamente en Google Maps
  */
 export function getGoogleMapsDirectUrl(location: { address?: string; city?: string; province?: string; google_maps_url?: string }): string {
+  const coords = extractCoordsFromGoogleMapsUrl(location.google_maps_url)
+  if (coords) {
+    return `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lon}`
+  }
+
   if (location.google_maps_url && location.google_maps_url.trim()) {
     const raw = location.google_maps_url.trim()
-    // Si era un iframe, extraer la URL o recurrir a la búsqueda
-    const cleanEmbed = extractGoogleMapsEmbedUrl(raw)
-    if (cleanEmbed) {
-      return cleanEmbed
+    if (!raw.includes('<iframe') && !raw.includes('/embed')) {
+      if (/^https?:\/\//i.test(raw)) return raw
+      return `https://${raw}`
     }
-    if (/^https?:\/\//i.test(raw)) return raw
-    return `https://${raw}`
   }
 
   const queryParts = [location.address, location.city, location.province || 'Argentina'].filter(Boolean)

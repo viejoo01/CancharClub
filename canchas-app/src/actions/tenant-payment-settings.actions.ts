@@ -58,13 +58,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       paymentMethods.push('MERCADOPAGO')
     }
 
-    let cleanWhatsapp = tenant.phone_whatsapp || ''
-    const stripped = cleanWhatsapp.replace(/\D/g, '')
-    if (stripped === '5493816839320' || stripped === '3816839320') {
-      cleanWhatsapp = ''
-      // Limpiar proactivamente en la base de datos para no arrastrar el número de prueba
-      void supabase.from('tenants').update({ phone_whatsapp: null }).eq('id', tenant.id)
-    }
+    const cleanWhatsapp = tenant.phone_whatsapp || ''
 
     return {
       tenantId: tenant.id,

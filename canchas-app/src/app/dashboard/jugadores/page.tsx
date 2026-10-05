@@ -11,6 +11,10 @@ import {
   TrendingUp,
   X,
   Loader2,
+  Ban,
+  UserCheck,
+  FileText,
+  Save,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +23,8 @@ import { formatARS } from '@/lib/utils'
 import {
   getPlayersReputation,
   getPlayerHistory,
+  toggleBlockPlayer,
+  savePlayerNotes,
   type PlayerSummary,
   type PlayerHistoryItem,
 } from '@/actions/players.actions'
@@ -39,12 +45,15 @@ export default function JugadoresPage() {
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [tierFilter, setTierFilter] = useState<'ALL' | 'EXEMPLARY' | 'RELIABLE' | 'HIGH_RISK'>('ALL')
+  const [tierFilter, setTierFilter] = useState<'ALL' | 'EXEMPLARY' | 'RELIABLE' | 'HIGH_RISK' | 'BLOCKED'>('ALL')
 
-  // Modal de Historial
+  // Modal de Historial y Notas
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerSummary | null>(null)
   const [history, setHistory] = useState<PlayerHistoryItem[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [playerNotes, setPlayerNotes] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [togglingBlock, setTogglingBlock] = useState(false)
 
   const loadData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
@@ -91,6 +100,7 @@ export default function JugadoresPage() {
 
   const openHistory = async (player: PlayerSummary) => {
     setSelectedPlayer(player)
+    setPlayerNotes(player.notes || '')
     setLoadingHistory(true)
     try {
       const res = await getPlayerHistory(tenantId!, player.phone)
@@ -106,8 +116,56 @@ export default function JugadoresPage() {
     }
   }
 
+  const handleToggleBlock = async (player: PlayerSummary) => {
+    if (!tenantId) return
+    const actionLabel = player.is_blocked ? 'desbloquear' : 'bloquear'
+    if (!confirm(`¿Estás seguro de que deseas ${actionLabel} a ${player.name}?`)) return
+
+    setTogglingBlock(true)
+    try {
+      const res = await toggleBlockPlayer(tenantId, player.phone)
+      if (res.success) {
+        toast.success(res.is_blocked ? 'Jugador bloqueado' : 'Jugador desbloqueado')
+        setPlayers((prev) =>
+          prev.map((p) => (p.phone === player.phone ? { ...p, is_blocked: res.is_blocked } : p))
+        )
+        if (selectedPlayer && selectedPlayer.phone === player.phone) {
+          setSelectedPlayer((prev) => (prev ? { ...prev, is_blocked: res.is_blocked } : null))
+        }
+      } else {
+        toast.error(res.error || 'Error al actualizar estado')
+      }
+    } catch {
+      toast.error('Error de red al actualizar estado')
+    } finally {
+      setTogglingBlock(false)
+    }
+  }
+
+  const handleSaveNotes = async () => {
+    if (!tenantId || !selectedPlayer) return
+    setSavingNotes(true)
+    try {
+      const res = await savePlayerNotes(tenantId, selectedPlayer.phone, playerNotes)
+      if (res.success) {
+        toast.success('Notas guardadas correctamente')
+        setPlayers((prev) =>
+          prev.map((p) => (p.phone === selectedPlayer.phone ? { ...p, notes: playerNotes } : p))
+        )
+        setSelectedPlayer((prev) => (prev ? { ...prev, notes: playerNotes } : null))
+      } else {
+        toast.error(res.error || 'Error al guardar notas')
+      }
+    } catch {
+      toast.error('Error de red al guardar notas')
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
   const filteredPlayers = players.filter((p) => {
     if (tierFilter === 'ALL') return true
+    if (tierFilter === 'BLOCKED') return p.is_blocked
     if (tierFilter === 'HIGH_RISK') return p.is_high_risk || p.tier === 'HIGH_RISK'
     return p.tier === tierFilter
   })
@@ -247,6 +305,16 @@ export default function JugadoresPage() {
         >
           ⚠️ En Riesgo ({players.filter((p) => p.is_high_risk || p.tier === 'HIGH_RISK').length})
         </button>
+        <button
+          onClick={() => setTierFilter('BLOCKED')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            tierFilter === 'BLOCKED'
+              ? 'bg-rose-600/30 text-rose-300 border border-rose-500/60'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+          }`}
+        >
+          🚫 Restringidos ({players.filter((p) => p.is_blocked).length})
+        </button>
       </div>
 
       {/* Tabla de Jugadores */}
@@ -335,6 +403,11 @@ export default function JugadoresPage() {
                                 ⚠️ Alto Riesgo ({player.score_percentage}%)
                               </Badge>
                             )}
+                            {player.is_blocked && (
+                              <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50">
+                                🚫 Bloqueado
+                              </Badge>
+                            )}
                           </div>
                         </td>
 
@@ -377,6 +450,25 @@ export default function JugadoresPage() {
                               Historial
                             </Button>
 
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleBlock(player)}
+                              disabled={togglingBlock}
+                              title={player.is_blocked ? 'Desbloquear jugador' : 'Bloquear jugador'}
+                              className={`h-8 w-8 p-0 border-slate-700 ${
+                                player.is_blocked
+                                  ? 'text-emerald-400 hover:bg-emerald-500/10'
+                                  : 'text-rose-400 hover:bg-rose-500/10'
+                              }`}
+                            >
+                              {player.is_blocked ? (
+                                <UserCheck className="w-3.5 h-3.5" />
+                              ) : (
+                                <Ban className="w-3.5 h-3.5" />
+                              )}
+                            </Button>
+
                             {waUrl && (
                               <a
                                 href={waUrl}
@@ -412,17 +504,47 @@ export default function JugadoresPage() {
                   <Badge variant="outline" className="text-xs">
                     {selectedPlayer.tier}
                   </Badge>
+                  {selectedPlayer.is_blocked && (
+                    <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50 text-xs">
+                      🚫 Bloqueado
+                    </Badge>
+                  )}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Teléfono: {selectedPlayer.phone} • {selectedPlayer.total_bookings} reservas en total
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedPlayer(null)}
-                className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleToggleBlock(selectedPlayer)}
+                  disabled={togglingBlock}
+                  className={`h-8 text-xs border ${
+                    selectedPlayer.is_blocked
+                      ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
+                      : 'border-rose-500/40 text-rose-400 hover:bg-rose-500/10'
+                  }`}
+                >
+                  {selectedPlayer.is_blocked ? (
+                    <>
+                      <UserCheck className="w-3.5 h-3.5 mr-1" />
+                      Desbloquear
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-3.5 h-3.5 mr-1" />
+                      Bloquear Jugador
+                    </>
+                  )}
+                </Button>
+                <button
+                  onClick={() => setSelectedPlayer(null)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Contenido del Modal */}
@@ -440,6 +562,33 @@ export default function JugadoresPage() {
                   <p className="text-[11px] text-slate-400">Total Gastado</p>
                   <p className="text-lg font-bold text-white font-mono">{formatARS(selectedPlayer.total_spent_ars)}</p>
                 </div>
+              </div>
+
+              {/* Notas Internas del Club */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                    <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Notas Internas del Club</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={savingNotes}
+                    onClick={handleSaveNotes}
+                    className="h-7 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 px-2"
+                  >
+                    {savingNotes ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                    Guardar Notas
+                  </Button>
+                </div>
+                <textarea
+                  value={playerNotes}
+                  onChange={(e) => setPlayerNotes(e.target.value)}
+                  placeholder="Notas privadas del club: puntualidad, acuerdos de pago, advertencias..."
+                  rows={2}
+                  className="w-full bg-slate-900 border border-slate-700/80 rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 resize-none"
+                />
               </div>
 
               <div>

@@ -30,7 +30,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { formatARS, cleanNoteForDisplay, paymentMethodLabel } from '@/lib/utils'
-import { getDailyCashReport, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
+import { getDailyCashReport, saveBlindAuditAction, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 
@@ -78,6 +78,7 @@ export default function CajaPage() {
   const [showBlindAuditModal, setShowBlindAuditModal] = useState(false)
   const [declaredCash, setDeclaredCash] = useState('')
   const [cashierName, setCashierName] = useState('')
+  const [savingAudit, setSavingAudit] = useState(false)
   const [auditResult, setAuditResult] = useState<{
     declared: number
     expected: number
@@ -151,7 +152,7 @@ export default function CajaPage() {
       e.id,
       '"' + e.customer_name + '"',
       '"' + e.court_name + '"',
-      e.payment_type === 'DEPOSIT' ? 'Seña' : 'Saldo',
+      e.payment_type === 'DEPOSIT' ? 'Seña' : e.payment_type === 'CANTINA' ? 'Cantina' : 'Saldo',
       methodLabel(e.payment_method),
       e.amount_ars,
       formatTime(e.paid_at),
@@ -314,6 +315,18 @@ export default function CajaPage() {
                           <span className="text-amber-400/80">Saldo restante</span>
                         </>
                       )}
+                      {e.payment_type === 'DEPOSIT' && (
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-400/80">Seña turno</span>
+                        </>
+                      )}
+                      {e.payment_type === 'CANTINA' && (
+                        <>
+                          <span>•</span>
+                          <span className="text-purple-400 font-semibold">Cantina / Kiosco</span>
+                        </>
+                      )}
                       {e.notes && cleanNoteForDisplay(e.notes) && (
                         <>
                           <span>•</span>
@@ -469,13 +482,34 @@ export default function CajaPage() {
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => {
-                    toast.success('Arqueo ciego archivado correctamente')
-                    setShowBlindAuditModal(false)
+                  disabled={savingAudit}
+                  onClick={async () => {
+                    if (!tenantId || !auditResult) return
+                    setSavingAudit(true)
+                    try {
+                      const res = await saveBlindAuditAction(tenantId, {
+                        cashierName: cashierName.trim() || undefined,
+                        declaredCash: auditResult.declared,
+                        expectedCash: auditResult.expected,
+                        diffCash: auditResult.diff,
+                        status: auditResult.status,
+                        notes: auditResult.notes,
+                      })
+                      if (res.success) {
+                        toast.success('¡Arqueo ciego archivado y registrado en auditoría!')
+                        setShowBlindAuditModal(false)
+                      } else {
+                        toast.error('Error al registrar arqueo: ' + res.error)
+                      }
+                    } catch {
+                      toast.error('Error al guardar el arqueo')
+                    } finally {
+                      setSavingAudit(false)
+                    }
                   }}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-5"
                 >
-                  Aceptar y Finalizar
+                  {savingAudit ? 'Archivando...' : 'Aceptar y Finalizar'}
                 </Button>
               </DialogFooter>
             </div>

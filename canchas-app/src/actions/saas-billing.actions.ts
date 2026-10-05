@@ -275,8 +275,27 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
 
       if (activeRules.length > 0) {
         const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
-        if (maxCents > 0) {
-          highestPriceArs = Math.round(maxCents / 100)
+        
+        // Antifraude High-Water Mark: evaluar el precio más alto del ciclo de facturación
+        let cycleMaxCents = maxCents
+        if (tenantDescription) {
+          try {
+            const descObj = JSON.parse(tenantDescription)
+            const savedHwm = Number(descObj.billing_cycle_max_price_cents) || 0
+            if (savedHwm > cycleMaxCents) {
+              cycleMaxCents = savedHwm
+            } else if (maxCents > savedHwm && targetTenantId) {
+              descObj.billing_cycle_max_price_cents = maxCents
+              void serviceClient
+                .from('tenants')
+                .update({ description: JSON.stringify(descObj) })
+                .eq('id', targetTenantId)
+            }
+          } catch {}
+        }
+
+        if (cycleMaxCents > 0) {
+          highestPriceArs = Math.round(cycleMaxCents / 100)
           hasPriceConfigured = true
         }
       }
@@ -429,7 +448,7 @@ export async function getClubBillingSummary(tenantId: string) {
   // 0. Obtener tenant para verificar plan fijado por Superadmin
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, base_slots_plan, subscription_status, created_at')
+    .select('id, name, slug, base_slots_plan, subscription_status, created_at, description')
     .eq('id', tenantId)
     .maybeSingle()
 
@@ -461,8 +480,16 @@ export async function getClubBillingSummary(tenantId: string) {
     const activeRules = priceRules.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
     if (activeRules.length > 0) {
       const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
-      if (maxCents > 0) {
-        highestPriceArs = Math.round(maxCents / 100)
+      let cycleMaxCents = maxCents
+      if (tenant?.description) {
+        try {
+          const desc = JSON.parse(tenant.description)
+          const hwm = Number(desc.billing_cycle_max_price_cents) || 0
+          if (hwm > cycleMaxCents) cycleMaxCents = hwm
+        } catch {}
+      }
+      if (cycleMaxCents > 0) {
+        highestPriceArs = Math.round(cycleMaxCents / 100)
         hasPriceConfigured = true
       }
     }

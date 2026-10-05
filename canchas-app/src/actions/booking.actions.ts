@@ -27,6 +27,7 @@ import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
 import { addVenueBooking, getVenueBookings } from '@/config/venues-data'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
+import { isPlayerBlocked } from './players.actions'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -110,6 +111,18 @@ export async function initiateOnlineCheckout(
         success: false,
         error: 'El horario seleccionado ya ha pasado. Por favor elegí un turno disponible posterior a la hora actual.',
         error_code: 'SLOT_IN_PAST',
+      }
+    }
+
+    // 0.2 VERIFICACIÓN DE JUGADOR BLOQUEADO / LISTA NEGRA
+    if (payload.customer_phone) {
+      const blocked = await isPlayerBlocked(payload.tenant_id, payload.customer_phone)
+      if (blocked) {
+        return {
+          success: false,
+          error: 'El número de teléfono ingresado se encuentra temporalmente restringido para reservas online. Por favor contactá a la administración del club.',
+          error_code: 'PLAYER_RESTRICTED',
+        }
       }
     }
 
@@ -484,6 +497,17 @@ export async function createManualBooking(
     const startsAtDate = parseArgentinaDate(payload.starts_at)
     const endsAtDate = new Date(startsAtDate.getTime() + durationMinutes * 60000)
     const bookingRange = `[${startsAtDate.toISOString()},${endsAtDate.toISOString()})`
+
+    // 1.05 Verificación de jugador en lista negra / bloqueo
+    if (payload.customer_phone) {
+      const blocked = await isPlayerBlocked(effectiveTenantId, payload.customer_phone)
+      if (blocked) {
+        return {
+          success: false,
+          error: 'Atención: Este jugador se encuentra registrado en la lista de bloqueo / restricción del club.',
+        }
+      }
+    }
 
     // 1.1 Prevenir colisión simultánea con reservas en memoria o checkouts online activos
     const dayStr = startsAtDate.toISOString().split('T')[0]

@@ -9,6 +9,27 @@ import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 
 export type LightCommand = 'on' | 'off' | 'toggle'
+export type RelayType = 'SHELLY' | 'SHELLY_CLOUD' | 'SONOFF' | 'TASMOTA' | 'WEBHOOK'
+
+export interface CloudLightConfig {
+  authKey?: string
+  deviceId?: string
+  server?: string
+  webhookUrl?: string
+}
+
+export interface CourtLightConfigData {
+  court_id: string
+  court_name: string
+  is_on: boolean
+  is_auto_mode: boolean
+  pre_turn_minutes: number
+  post_turn_minutes: number
+  relay_type: RelayType
+  relay_ip_or_id: string
+  cloud_config?: CloudLightConfig
+  last_state_change: string
+}
 
 export interface LightToggleResult {
   success: boolean
@@ -17,25 +38,25 @@ export interface LightToggleResult {
   deviceResponse?: unknown
   error?: string
   isMock?: boolean
+  providerUsed?: string
 }
 
 /**
  * Envía un comando de encendido/apagado al relé IoT de una cancha.
  *
  * Soporta:
- *   - Shelly Pro / Gen2: POST http://{ip}/rpc/Switch.Set   { id: 0, on: true/false }
- *   - Sonoff 4CH / NSPanel: POST http://{ip}/cm?cmnd=Power1%20{on|off}
- *   - Tasmota genérico: GET http://{ip}/cm?cmnd=Power+{on|off}
- *
- * Si el dispositivo no responde (timeout 4s), devuelve error sin crashear.
- * En entorno de desarrollo / sin IP configurada, simula la acción.
+ *   - Shelly Cloud REST API: POST https://{server}/device/relay/control
+ *   - Shelly Pro / Gen2 LAN: POST http://{ip}/rpc/Switch.Set { id: 0, on: true/false }
+ *   - Sonoff 4CH / Tasmota LAN: POST http://{ip}/cm?cmnd=Power1%20{on|off}
+ *   - Generic Webhook Cloud: POST {webhookUrl}
  */
 export async function toggleCourtLight(
   courtId: string,
   command: LightCommand,
   relayIp?: string | null,
-  relayType: 'SHELLY' | 'SONOFF' | 'TASMOTA' = 'SHELLY',
-  relayChannel: number = 0
+  relayType: RelayType = 'SHELLY',
+  relayChannel: number = 0,
+  cloudConfig?: CloudLightConfig
 ): Promise<LightToggleResult> {
   const supabase = await createServiceClient()
   const { data: court } = await supabase
@@ -55,46 +76,98 @@ export async function toggleCourtLight(
 
   const isOn = command === 'on' ? true : command === 'off' ? false : null
 
-  // Sanitizar relayIp para mitigar SSRF y manipulación de peticiones internas
+  // 1. Shelly Cloud REST API (100% cloud, sin depender de red local)
+  if (relayType === 'SHELLY_CLOUD' || (cloudConfig?.authKey && cloudConfig?.deviceId)) {
+    try {
+      const server = cloudConfig?.server || 'shelly-api.shelly.cloud'
+      const turnCmd = isOn !== null ? (isOn ? 'on' : 'off') : 'to_state'
+      const formData = new URLSearchParams()
+      formData.append('id', cloudConfig?.deviceId || '')
+      formData.append('auth_key', cloudConfig?.authKey || '')
+      formData.append('channel', String(relayChannel || 0))
+      formData.append('turn', turnCmd)
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 6000)
+
+      const res = await fetch(`https://${server}/device/relay/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+
+      const cloudData = await res.json().catch(() => ({}))
+      const resolvedIsOn = isOn ?? true
+      await updateLightStateInDB(courtId, resolvedIsOn)
+      revalidatePath('/dashboard/luces')
+      return { success: true, courtId, isOn: resolvedIsOn, deviceResponse: cloudData, providerUsed: 'Shelly Cloud' }
+    } catch (cloudErr) {
+      console.error('[toggleCourtLight] Shelly Cloud error:', cloudErr)
+      return { success: false, courtId, isOn: false, error: 'Error al contactar Shelly Cloud' }
+    }
+  }
+
+  // 2. Generic Webhook (Home Assistant, eWeLink, IFTTT)
+  if (relayType === 'WEBHOOK' && cloudConfig?.webhookUrl) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch(cloudConfig.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courtId, command, isOn, channel: relayChannel, timestamp: new Date().toISOString() }),
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+      const resolvedIsOn = isOn ?? true
+      await updateLightStateInDB(courtId, resolvedIsOn)
+      revalidatePath('/dashboard/luces')
+      return { success: res.ok, courtId, isOn: resolvedIsOn, providerUsed: 'Webhook Cloud' }
+    } catch (whErr) {
+      console.error('[toggleCourtLight] Webhook error:', whErr)
+      return { success: false, courtId, isOn: false, error: 'Webhook no respondió' }
+    }
+  }
+
+  // 3. Red Local LAN (Shelly Gen2, Sonoff, Tasmota)
   const cleanIp = relayIp ? relayIp.trim() : null
-  const isValidIpv4 = cleanIp ? /^192\.168\.\d{1,3}\.\d{1,3}$/.test(cleanIp) : false
+  const isValidIpv4 = cleanIp ? /^192\.168\.\d{1,3}\.\d{1,3}$/.test(cleanIp) || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanIp) : false
   if (!cleanIp || !isValidIpv4) {
-    console.log(`[lights] Modo simulado — court ${courtId} → ${command}`)
-    // Guardar estado en BD de todas formas
+    // Si no tiene IP de red local ni credenciales Cloud, guardar estado en BD de forma transparente
     await updateLightStateInDB(courtId, isOn ?? false)
-    return { success: true, courtId, isOn: isOn ?? false, isMock: true }
+    revalidatePath('/dashboard/luces')
+    return { success: true, courtId, isOn: isOn ?? false, isMock: true, providerUsed: 'Cloud Virtual' }
   }
 
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4000) // 4s timeout
+    const timeout = setTimeout(() => controller.abort(), 4000)
 
     let response: Response
 
     if (relayType === 'SHELLY') {
-      // Shelly Gen2+ RPC API
       const body = isOn !== null
         ? JSON.stringify({ id: relayChannel, on: isOn })
         : JSON.stringify({ id: relayChannel })
 
-      response = await fetch(`http://${relayIp}/rpc/Switch.Set`, {
+      response = await fetch(`http://${cleanIp}/rpc/Switch.Set`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
         signal: controller.signal,
       })
     } else if (relayType === 'SONOFF') {
-      // Sonoff eWeLink Local API (DIY mode / Tasmota)
       const cmd = isOn !== null
         ? `Power${relayChannel + 1}%20${isOn ? 'on' : 'off'}`
         : `Power${relayChannel + 1}%20toggle`
-      response = await fetch(`http://${relayIp}/cm?cmnd=${cmd}`, {
+      response = await fetch(`http://${cleanIp}/cm?cmnd=${cmd}`, {
         signal: controller.signal,
       })
     } else {
-      // Tasmota genérico
       const state = isOn !== null ? (isOn ? 'on' : 'off') : 'toggle'
-      response = await fetch(`http://${relayIp}/cm?cmnd=Power+${state}`, {
+      response = await fetch(`http://${cleanIp}/cm?cmnd=Power+${state}`, {
         signal: controller.signal,
       })
     }
@@ -111,13 +184,71 @@ export async function toggleCourtLight(
     await updateLightStateInDB(courtId, resolvedIsOn)
     revalidatePath('/dashboard/luces')
 
-    return { success: true, courtId, isOn: resolvedIsOn, deviceResponse }
+    return { success: true, courtId, isOn: resolvedIsOn, deviceResponse, providerUsed: 'LAN' }
   } catch (err: unknown) {
     const msg = err instanceof Error && err.name === 'AbortError'
       ? 'Dispositivo no responde (timeout)'
       : `Error de conexión: ${String(err)}`
     console.error(`[toggleCourtLight] court=${courtId}: ${msg}`)
     return { success: false, courtId, isOn: false, error: msg }
+  }
+}
+
+/**
+ * Obtener configuración de iluminación de las canchas del club.
+ */
+export async function getCourtLightConfigs(tenantId: string): Promise<Record<string, Partial<CourtLightConfigData>>> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) return {}
+
+    const supabase = await createServiceClient()
+    const { data } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'COURT_LIGHT_CONFIG')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (data && data.length > 0 && data[0].new_data) {
+      return (data[0].new_data as { configs: Record<string, Partial<CourtLightConfigData>> }).configs || {}
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Guardar configuración de dispositivo IoT de una cancha.
+ */
+export async function saveCourtLightConfig(
+  tenantId: string,
+  courtId: string,
+  config: Partial<CourtLightConfigData>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+
+    const supabase = await createServiceClient()
+    const current = await getCourtLightConfigs(tenantId)
+    current[courtId] = { ...(current[courtId] || {}), ...config }
+
+    await supabase.from('audit_log').insert({
+      tenant_id: tenantId,
+      action: 'COURT_LIGHT_CONFIG',
+      table_name: 'court_lights',
+      record_id: courtId,
+      new_data: { configs: current, updated_at: new Date().toISOString() },
+    })
+
+    revalidatePath('/dashboard/luces')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al guardar configuración'
+    return { success: false, error: msg }
   }
 }
 

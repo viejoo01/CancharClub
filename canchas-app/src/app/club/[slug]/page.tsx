@@ -35,6 +35,7 @@ import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/util
 import { WaitlistModal } from '@/components/public/waitlist-modal'
 import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 import { 
   getClubBySlug, 
   generateClubSlots, 
@@ -197,6 +198,28 @@ export default function ClubPublicPage({
       }
     } catch {}
 
+    // Suscripción Realtime en Supabase (WebSockets) para sincronización cruzada inmediata
+    const supabase = createClient()
+    const realtimeChannel = supabase
+      .channel(`public_club_${club.id}_bookings`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings',
+        },
+        (payload) => {
+          const newRec = payload.new as { tenant_id?: string } | null
+          const oldRec = payload.old as { tenant_id?: string } | null
+          if ((newRec?.tenant_id && newRec.tenant_id !== club.id) || (oldRec?.tenant_id && oldRec.tenant_id !== club.id)) {
+            return
+          }
+          fetchOccupied()
+        }
+      )
+      .subscribe()
+
     const onFocus = () => fetchOccupied()
     window.addEventListener('focus', onFocus)
 
@@ -204,6 +227,7 @@ export default function ClubPublicPage({
       active = false
       clearInterval(pollTimer)
       if (bc) bc.close()
+      void supabase.removeChannel(realtimeChannel)
       window.removeEventListener('focus', onFocus)
     }
   }, [club.id, selectedDate])

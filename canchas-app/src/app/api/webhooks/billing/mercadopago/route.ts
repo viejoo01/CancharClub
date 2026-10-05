@@ -130,11 +130,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Body JSON inválido' }, { status: 400 })
     }
 
-    // Filtrar por eventos de pago
+    // Filtrar por eventos de pago y cobros recurrentes de suscripción
     const isPaymentEvent =
       notification.type === 'payment' ||
+      notification.type === 'subscription_authorized_payment' ||
+      notification.type === 'subscription_preapproval' ||
       notification.action === 'payment.created' ||
-      notification.action === 'payment.updated'
+      notification.action === 'payment.updated' ||
+      notification.action === 'created' ||
+      notification.action === 'updated'
 
     if (!isPaymentEvent) {
       return NextResponse.json({ received: true, ignored: true, type: notification.type })
@@ -147,22 +151,27 @@ export async function POST(request: NextRequest) {
 
     // 2. Consultar el pago en Mercado Pago
     const platformAccessToken = process.env.MP_ACCESS_TOKEN
-    if (!platformAccessToken || platformAccessToken.startsWith('TEST-0000000000000000')) {
-      console.log(`[Billing Webhook] Modo mock/desarrollo activo para pago ${paymentId}`)
-    }
+    let payment: MercadoPagoPayment | null = null
 
-    const payment = platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')
-      ? await fetchSaaSPayment(paymentId, platformAccessToken)
-      : {
-          id: Number(paymentId) || 123456,
-          status: 'approved',
-          status_detail: 'accredited',
-          external_reference: 'saas_tenant_00000000-0000-0000-0000-000000000001_inv_demo_0',
-          transaction_amount: 45000,
-          date_approved: new Date().toISOString(),
-          payment_method_id: 'mercadopago',
-          payment_type_id: 'account_money',
-        } as MercadoPagoPayment
+    if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
+      payment = await fetchSaaSPayment(paymentId, platformAccessToken)
+    } else {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[Billing Webhook] MP_ACCESS_TOKEN no configurado en producción')
+        return NextResponse.json({ error: 'Gateway de pago no configurado' }, { status: 500 })
+      }
+      console.log(`[Billing Webhook] Modo mock/desarrollo activo para pago ${paymentId}`)
+      payment = {
+        id: Number(paymentId) || 123456,
+        status: 'approved',
+        status_detail: 'accredited',
+        external_reference: 'saas_tenant_00000000-0000-0000-0000-000000000001_inv_demo_0',
+        transaction_amount: 45000,
+        date_approved: new Date().toISOString(),
+        payment_method_id: 'mercadopago',
+        payment_type_id: 'account_money',
+      } as MercadoPagoPayment
+    }
 
     if (!payment) {
       return NextResponse.json({ error: 'No se pudo obtener el detalle del pago' }, { status: 404 })
@@ -203,6 +212,31 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedTenantId = tenantRecord.id
+
+    // 3.1 Validación antifraude de monto pagado contra la factura emitida
+    if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
+      const { data: dbInvoice } = await supabase
+        .from('tenant_invoices')
+        .select('amount, status')
+        .eq('id', invoiceId)
+        .maybeSingle()
+
+      if (dbInvoice) {
+        const paidAmount = Number(payment.transaction_amount) || 0
+        const expectedAmount = Number(dbInvoice.amount) || 0
+
+        if (expectedAmount > 0 && paidAmount < expectedAmount * 0.99) {
+          console.error(`[Billing Webhook] ALERTA DE FRAUDE: Monto abonado ($${paidAmount}) menor al de la factura ($${expectedAmount})`)
+          await recordAutoDebitAlertInternal(supabase, {
+            tenantId: resolvedTenantId,
+            type: 'FAILED',
+            timestamp: new Date().toISOString(),
+            detail: `Intento de pago insuficiente: Pagó $${paidAmount} pero la factura era de $${expectedAmount}`,
+          })
+          return NextResponse.json({ error: 'Monto pagado insuficiente' }, { status: 400 })
+        }
+      }
+    }
 
     // 4. Si el cobro no se aprobó o falló -> Registrar alerta de intento fallido con mensaje exacto requerido
     if (payment.status !== 'approved') {

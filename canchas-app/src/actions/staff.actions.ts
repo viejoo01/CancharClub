@@ -132,6 +132,8 @@ export async function inviteStaffMember(params: {
         user_metadata: {
           full_name: cleanName,
           phone: cleanPhone,
+          assigned_password: tempPassword,
+          initial_password: tempPassword,
         },
       })
 
@@ -176,6 +178,7 @@ export async function inviteStaffMember(params: {
     }
 
     revalidatePath('/dashboard/equipo')
+    revalidatePath('/superadmin')
     return {
       success: true,
       member: {
@@ -225,6 +228,7 @@ export async function updateStaffRole(
     }
 
     revalidatePath('/dashboard/equipo')
+    revalidatePath('/superadmin')
     return { success: true }
   } catch (err) {
     console.error('[updateStaffRole] Exception:', err)
@@ -276,9 +280,11 @@ export async function updateStaffPassword(params: {
       return { success: false, error: 'No se encontró la cuenta de autenticación del usuario.' }
     }
 
-    const cleanMeta = { ...(userData.user.user_metadata || {}) }
-    delete cleanMeta.assigned_password
-    delete cleanMeta.initial_password
+    const cleanMeta = {
+      ...(userData.user.user_metadata || {}),
+      assigned_password: cleanPwd,
+      initial_password: cleanPwd,
+    }
 
     // Actualizar la contraseña en Supabase Auth (asegurando confirmación de email)
     const { error: updateErr } = await supabase.auth.admin.updateUserById(params.staffProfileId, {
@@ -292,6 +298,7 @@ export async function updateStaffPassword(params: {
     }
 
     revalidatePath('/dashboard/equipo')
+    revalidatePath('/superadmin')
     return { success: true }
   } catch (err) {
     console.error('[updateStaffPassword] Exception:', err)
@@ -359,6 +366,7 @@ export async function removeStaffMember(
     } catch {}
 
     revalidatePath('/dashboard/equipo')
+    revalidatePath('/superadmin')
     return { success: true }
   } catch (err) {
     console.error('[removeStaffMember] Exception:', err)

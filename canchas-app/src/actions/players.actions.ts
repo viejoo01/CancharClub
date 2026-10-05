@@ -6,6 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { assertTenantMember } from '@/lib/auth-security'
+import { revalidatePath } from 'next/cache'
 
 export type ReputationTier = 'EXEMPLARY' | 'RELIABLE' | 'MODERATE' | 'HIGH_RISK'
 
@@ -22,6 +23,8 @@ export interface PlayerSummary {
   tier: ReputationTier
   is_high_risk: boolean
   is_blocked: boolean
+  block_reason?: string | null
+  notes?: string | null
 }
 
 export interface PlayerHistoryItem {
@@ -148,6 +151,46 @@ export async function getPlayersReputation(
       }
     }
 
+    // 2.5 Cargar datos de bloqueos y notas de jugadores para este tenant
+    const statusMap = new Map<string, { is_blocked: boolean; block_reason?: string | null; notes?: string | null }>()
+
+    const { data: dbPlayers, error: dbPlayersErr } = await supabase
+      .from('players')
+      .select('phone, is_blocked, internal_notes')
+      .eq('tenant_id', tenantId)
+
+    if (!dbPlayersErr && dbPlayers) {
+      for (const p of dbPlayers) {
+        if (p.phone) {
+          statusMap.set(p.phone.trim(), {
+            is_blocked: Boolean(p.is_blocked),
+            notes: p.internal_notes || null,
+          })
+        }
+      }
+    } else {
+      // Fallback audit_log para persistencia inmutable
+      const { data: auditPlayers } = await supabase
+        .from('audit_log')
+        .select('record_id, new_data')
+        .eq('tenant_id', tenantId)
+        .eq('action', 'PLAYER_STATUS')
+
+      if (auditPlayers) {
+        for (const a of auditPlayers) {
+          const d = (a.new_data || {}) as Record<string, unknown>
+          const phoneKey = String(a.record_id || d.phone || '').trim()
+          if (phoneKey) {
+            statusMap.set(phoneKey, {
+              is_blocked: Boolean(d.is_blocked),
+              block_reason: d.block_reason ? String(d.block_reason) : null,
+              notes: d.notes ? String(d.notes) : null,
+            })
+          }
+        }
+      }
+    }
+
     // 3. Procesar scores y tiers
     const players: PlayerSummary[] = []
     let totalScoreSum = 0
@@ -178,6 +221,13 @@ export async function getPlayersReputation(
       totalScoreSum += attendanceRate
       totalRevenue += item.spent
 
+      const cleanPhone = item.phone.trim()
+      const numericPhone = cleanPhone.replace(/\D/g, '')
+      const statusInfo = statusMap.get(cleanPhone) || (numericPhone ? statusMap.get(numericPhone) : undefined)
+      const isBlocked = statusInfo ? statusInfo.is_blocked : false
+      const blockReason = statusInfo ? statusInfo.block_reason : null
+      const notes = statusInfo ? statusInfo.notes : null
+
       players.push({
         phone: item.phone,
         name: item.name,
@@ -190,7 +240,9 @@ export async function getPlayersReputation(
         last_booking_date: item.lastDate,
         tier,
         is_high_risk: isHighRisk,
-        is_blocked: false, // Por defecto no bloqueado
+        is_blocked: isBlocked,
+        block_reason: blockReason,
+        notes: notes,
       })
     })
 
@@ -292,3 +344,157 @@ export async function getPlayerHistory(
     return { success: false, history: [], error: 'Error al consultar historial' }
   }
 }
+
+/**
+ * Verifica si un número de teléfono está en la lista negra / bloqueado para un club
+ */
+export async function isPlayerBlocked(tenantId: string, phone: string): Promise<boolean> {
+  if (!tenantId || !phone) return false
+  const cleanPhone = phone.trim()
+  const numericPhone = cleanPhone.replace(/\D/g, '')
+
+  try {
+    const supabase = await createServiceClient()
+
+    // 1. Intentar consultar tabla players
+    const { data: player, error } = await supabase
+      .from('players')
+      .select('is_blocked')
+      .eq('tenant_id', tenantId)
+      .in('phone', [cleanPhone, numericPhone].filter(Boolean))
+      .eq('is_blocked', true)
+      .limit(1)
+
+    if (!error && player && player.length > 0) {
+      return true
+    }
+
+    // 2. Fallback audit_log
+    const { data: auditData } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'PLAYER_STATUS')
+      .in('record_id', [cleanPhone, numericPhone].filter(Boolean))
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (auditData && auditData.length > 0) {
+      const d = auditData[0].new_data as Record<string, unknown>
+      return Boolean(d?.is_blocked)
+    }
+
+    return false
+  } catch (err) {
+    console.warn('[isPlayerBlocked] Warning:', err)
+    return false
+  }
+}
+
+/**
+ * Bloquear o desbloquear a un jugador en el club
+ */
+export async function toggleBlockPlayer(
+  tenantId: string,
+  phone: string,
+  reason?: string
+): Promise<{ success: boolean; is_blocked: boolean; error?: string }> {
+  try {
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, is_blocked: false, error: authCheck.error || 'No autorizado' }
+    }
+
+    const cleanPhone = phone.trim()
+    const numericPhone = cleanPhone.replace(/\D/g, '')
+    const targetPhone = numericPhone || cleanPhone
+
+    const currentlyBlocked = await isPlayerBlocked(tenantId, cleanPhone)
+    const newBlockedState = !currentlyBlocked
+
+    const supabase = await createServiceClient()
+
+    // 1. Intentar actualizar en players
+    await supabase
+      .from('players')
+      .upsert({
+        tenant_id: tenantId,
+        phone: targetPhone,
+        name: 'Jugador',
+        is_blocked: newBlockedState,
+        internal_notes: reason || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'tenant_id,phone' })
+
+    // 2. Siempre registrar en audit_log para persistencia inmutable
+    await supabase.from('audit_log').insert({
+      tenant_id: tenantId,
+      action: 'PLAYER_STATUS',
+      table_name: 'players',
+      record_id: targetPhone,
+      new_data: {
+        phone: targetPhone,
+        is_blocked: newBlockedState,
+        block_reason: reason || null,
+        updated_at: new Date().toISOString(),
+      },
+    })
+
+    revalidatePath('/dashboard/jugadores')
+    return { success: true, is_blocked: newBlockedState }
+  } catch (err) {
+    console.error('[toggleBlockPlayer] Error:', err)
+    return { success: false, is_blocked: false, error: 'Error al cambiar estado del jugador' }
+  }
+}
+
+/**
+ * Guardar notas internas sobre un jugador
+ */
+export async function savePlayerNotes(
+  tenantId: string,
+  phone: string,
+  notes: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const authCheck = await assertTenantMember(tenantId)
+    if (!authCheck.authorized) {
+      return { success: false, error: authCheck.error || 'No autorizado' }
+    }
+
+    const cleanPhone = phone.trim()
+    const numericPhone = cleanPhone.replace(/\D/g, '')
+    const targetPhone = numericPhone || cleanPhone
+
+    const supabase = await createServiceClient()
+
+    await supabase
+      .from('players')
+      .upsert({
+        tenant_id: tenantId,
+        phone: targetPhone,
+        name: 'Jugador',
+        internal_notes: notes.trim(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'tenant_id,phone' })
+
+    await supabase.from('audit_log').insert({
+      tenant_id: tenantId,
+      action: 'PLAYER_STATUS',
+      table_name: 'players',
+      record_id: targetPhone,
+      new_data: {
+        phone: targetPhone,
+        notes: notes.trim(),
+        updated_at: new Date().toISOString(),
+      },
+    })
+
+    revalidatePath('/dashboard/jugadores')
+    return { success: true }
+  } catch (err) {
+    console.error('[savePlayerNotes] Error:', err)
+    return { success: false, error: 'Error al guardar notas del jugador' }
+  }
+}
+

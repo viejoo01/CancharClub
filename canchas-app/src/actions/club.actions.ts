@@ -701,6 +701,45 @@ export async function createPriceRule(payload: {
     return { success: false, error: error.message }
   }
 
+  // Antifraude High-Water Mark: registrar el precio pico alcanzado en el ciclo
+  try {
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    let descObj: Record<string, unknown> = {}
+    try {
+      descObj = JSON.parse(tenantData?.description || '{}')
+    } catch {}
+
+    const currentMax = Number(descObj.billing_cycle_max_price_cents) || 0
+    const newMax = Math.max(currentMax, priceCents)
+    descObj.billing_cycle_max_price_cents = newMax
+    descObj.last_price_rule_modified_at = new Date().toISOString()
+
+    await supabase
+      .from('tenants')
+      .update({ description: JSON.stringify(descObj) })
+      .eq('id', effectiveTenantId)
+
+    await supabase.from('audit_log').insert({
+      tenant_id: effectiveTenantId,
+      action: 'PRICE_RULE_CREATE',
+      table_name: 'price_rules',
+      record_id: data?.[0]?.id || crypto.randomUUID(),
+      new_data: {
+        name: payload.name,
+        price_cents: priceCents,
+        high_water_mark_cents: newMax,
+        created_at: new Date().toISOString(),
+      }
+    })
+  } catch (hwmErr) {
+    console.warn('[createPriceRule] High-water mark notice:', hwmErr)
+  }
+
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard/plan')
   revalidatePath('/dashboard')
@@ -788,6 +827,45 @@ export async function updatePriceRule(payload: {
   if (error) {
     console.error('[updatePriceRule] Error updating price rule:', error.message)
     return { success: false, error: error.message }
+  }
+
+  // Antifraude High-Water Mark: registrar el precio pico alcanzado en el ciclo
+  try {
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    let descObj: Record<string, unknown> = {}
+    try {
+      descObj = JSON.parse(tenantData?.description || '{}')
+    } catch {}
+
+    const currentMax = Number(descObj.billing_cycle_max_price_cents) || 0
+    const newMax = Math.max(currentMax, priceCents)
+    descObj.billing_cycle_max_price_cents = newMax
+    descObj.last_price_rule_modified_at = new Date().toISOString()
+
+    await supabase
+      .from('tenants')
+      .update({ description: JSON.stringify(descObj) })
+      .eq('id', effectiveTenantId)
+
+    await supabase.from('audit_log').insert({
+      tenant_id: effectiveTenantId,
+      action: 'PRICE_RULE_UPDATE',
+      table_name: 'price_rules',
+      record_id: payload.id,
+      new_data: {
+        name: payload.name,
+        new_price_cents: priceCents,
+        high_water_mark_cents: newMax,
+        updated_at: new Date().toISOString(),
+      }
+    })
+  } catch (hwmErr) {
+    console.warn('[updatePriceRule] High-water mark notice:', hwmErr)
   }
 
   revalidatePath('/dashboard/precios')
@@ -944,21 +1022,9 @@ export async function getRecurringBookings(tenantId?: string | null) {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
 
-    const auth = await assertTenantMember(effectiveTenantId)
-    if (!auth.authorized) return []
-
-    const supabase = await createServiceClient()
-    const { data, error } = await supabase
-      .from('recurring_bookings')
-      .select('*, courts(name, sport)')
-      .eq('tenant_id', effectiveTenantId)
-      .order('day_of_week', { ascending: true })
-
-    if (error) {
-      return []
-    }
-
-    return data ?? []
+    const { getRecurringSlots } = await import('@/actions/recurring-slots.actions')
+    const slots = await getRecurringSlots(effectiveTenantId)
+    return slots
   } catch {
     return []
   }
@@ -981,78 +1047,28 @@ export async function createRecurringBooking(payload: {
     return { success: false, error: 'No se pudo determinar el club' }
   }
 
-  const auth = await assertTenantMember(effectiveTenantId)
-  if (!auth.authorized) {
-    return { success: false, error: auth.error || 'Sin permisos para crear turnos fijos en este club' }
-  }
+  const { createRecurringSlot } = await import('@/actions/recurring-slots.actions')
+  const res = await createRecurringSlot({
+    tenant_id: effectiveTenantId,
+    court_id: payload.court_id,
+    day_of_week: payload.day_of_week,
+    start_time: payload.start_time,
+    end_time: payload.end_time,
+    customer_name: payload.customer_name,
+    customer_phone: payload.customer_phone,
+    monthly_price: payload.total_amount_ars || payload.deposit_amount_ars || 0,
+    payment_due_day: 10,
+    notes: payload.notes,
+  })
 
-  const supabase = await createServiceClient()
-
-  // Validar que la cancha pertenezca al club para evitar BOLA
-  const { data: court } = await supabase
-    .from('courts')
-    .select('id')
-    .eq('id', payload.court_id)
-    .eq('tenant_id', effectiveTenantId)
-    .maybeSingle()
-
-  if (!court) {
-    return { success: false, error: 'La cancha seleccionada no pertenece a este club' }
-  }
-
-  const { data, error } = await supabase
-    .from('recurring_bookings')
-    .insert({
-      ...payload,
-      tenant_id: effectiveTenantId,
-      is_active: true,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.warn('[createRecurringBooking] DB insert error:', error.message)
-    return { success: false, error: error.message }
-  }
-
-  revalidatePath('/dashboard/fijos')
-  revalidatePath('/dashboard')
-  return { success: true, booking: data }
+  return { success: res.success, booking: res.slot, error: res.error }
 }
 
 export async function toggleRecurringBookingStatus(id: string, currentStatus: boolean) {
-  const supabase = await createServiceClient()
-
-  // 1. Obtener tenant_id del registro para validar permisos
-  const { data: recBooking, error: fetchErr } = await supabase
-    .from('recurring_bookings')
-    .select('id, tenant_id')
-    .eq('id', id)
-    .maybeSingle()
-
-  if (fetchErr || !recBooking) {
-    return { success: false, error: 'Turno recurrente no encontrado' }
-  }
-
-  const auth = await assertTenantMember(recBooking.tenant_id)
-  if (!auth.authorized) {
-    return { success: false, error: auth.error || 'Sin permisos para modificar este turno recurrente' }
-  }
-
-  const { error } = await supabase
-    .from('recurring_bookings')
-    .update({ is_active: !currentStatus })
-    .eq('id', id)
-    .eq('tenant_id', recBooking.tenant_id)
-
-  if (error) {
-    console.warn('[toggleRecurringBookingStatus] DB update fallback warning:', error.message)
-    return { success: false, error: error.message }
-  }
-
-  revalidatePath('/dashboard/fijos')
-  revalidatePath('/dashboard')
-  return { success: true }
+  const { updateRecurringSlotStatus } = await import('@/actions/recurring-slots.actions')
+  const newStatus = currentStatus ? 'PAUSED' : 'ACTIVE'
+  const res = await updateRecurringSlotStatus(id, newStatus)
+  return res
 }
 
 // ─── AJUSTE MASIVO POR INFLACIÓN (Mejora 3C) ──────────────────────────────────

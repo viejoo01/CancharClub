@@ -169,24 +169,27 @@ export async function getPlayersReputation(
         }
       }
     } else {
-      // Fallback audit_log para persistencia inmutable
+      // Fallback audit_log para persistencia inmutable.
+      // Se procesan en orden cronológico y se fusionan solo los campos presentes en cada
+      // registro, para que guardar una nota no pise el estado de bloqueo (y viceversa).
       const { data: auditPlayers } = await supabase
         .from('audit_log')
-        .select('record_id, new_data')
+        .select('record_id, new_data, created_at')
         .eq('tenant_id', tenantId)
         .eq('action', 'PLAYER_STATUS')
+        .order('created_at', { ascending: true })
 
       if (auditPlayers) {
         for (const a of auditPlayers) {
           const d = (a.new_data || {}) as Record<string, unknown>
           const phoneKey = String(a.record_id || d.phone || '').trim()
-          if (phoneKey) {
-            statusMap.set(phoneKey, {
-              is_blocked: Boolean(d.is_blocked),
-              block_reason: d.block_reason ? String(d.block_reason) : null,
-              notes: d.notes ? String(d.notes) : null,
-            })
-          }
+          if (!phoneKey) continue
+          const prev = statusMap.get(phoneKey) || { is_blocked: false, block_reason: null, notes: null }
+          statusMap.set(phoneKey, {
+            is_blocked: 'is_blocked' in d ? Boolean(d.is_blocked) : prev.is_blocked,
+            block_reason: 'block_reason' in d ? (d.block_reason ? String(d.block_reason) : null) : prev.block_reason,
+            notes: 'notes' in d ? (d.notes ? String(d.notes) : null) : prev.notes,
+          })
         }
       }
     }
@@ -369,7 +372,8 @@ export async function isPlayerBlocked(tenantId: string, phone: string): Promise<
       return true
     }
 
-    // 2. Fallback audit_log
+    // 2. Fallback audit_log: tomar el registro más reciente que efectivamente
+    //    defina el estado de bloqueo (ignorando registros que solo guardan notas)
     const { data: auditData } = await supabase
       .from('audit_log')
       .select('new_data')
@@ -377,11 +381,17 @@ export async function isPlayerBlocked(tenantId: string, phone: string): Promise<
       .eq('action', 'PLAYER_STATUS')
       .in('record_id', [cleanPhone, numericPhone].filter(Boolean))
       .order('created_at', { ascending: false })
-      .limit(1)
+      .limit(50)
 
     if (auditData && auditData.length > 0) {
-      const d = auditData[0].new_data as Record<string, unknown>
-      return Boolean(d?.is_blocked)
+      const latestBlockEntry = auditData.find((row) => {
+        const d = row.new_data as Record<string, unknown> | null
+        return d && 'is_blocked' in d
+      })
+      if (latestBlockEntry) {
+        const d = latestBlockEntry.new_data as Record<string, unknown>
+        return Boolean(d.is_blocked)
+      }
     }
 
     return false

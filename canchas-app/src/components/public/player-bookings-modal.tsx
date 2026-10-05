@@ -13,7 +13,9 @@ import {
   Loader2,
   ArrowLeft,
   MessageCircle,
-  Ticket
+  Ticket,
+  XCircle,
+  AlertTriangle
 } from 'lucide-react'
 import {
   Dialog,
@@ -21,10 +23,17 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { formatARS } from '@/lib/utils'
-import { lookupPlayerBookings, type PlayerBookingDetail } from '@/actions/booking.actions'
+import {
+  lookupPlayerBookings,
+  cancelBookingByPlayer,
+  type PlayerBookingDetail
+} from '@/actions/booking.actions'
 
 interface PlayerBookingsModalProps {
   open: boolean
@@ -37,23 +46,74 @@ export function PlayerBookingsModal({
   onOpenChange,
   initialCode = ''
 }: PlayerBookingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'code' | 'email'>('code')
+  const [activeTab, setActiveTab] = useState<'phone' | 'code' | 'email'>('phone')
   const [codeQuery, setCodeQuery] = useState(initialCode)
-  const [emailQuery, setEmailQuery] = useState('')
+  const [phoneQuery, setPhoneQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchas_player_phone') || ''
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  })
+  const [emailQuery, setEmailQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchas_player_email') || ''
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [bookings, setBookings] = useState<PlayerBookingDetail[] | null>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [cancellingBooking, setCancellingBooking] = useState<PlayerBookingDetail | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  const handleCancelBooking = async () => {
+    if (!cancellingBooking) return
+    setIsCancelling(true)
+    try {
+      const res = await cancelBookingByPlayer(
+        cancellingBooking.id,
+        phoneQuery || emailQuery || cancellingBooking.customerPhone || cancellingBooking.customerEmail || ''
+      )
+      if (res.success) {
+        toast.success(res.message || 'Tu reserva fue cancelada con éxito.')
+        setBookings(prev =>
+          prev ? prev.map(b => b.id === cancellingBooking.id ? { ...b, status: 'CANCELLED' } : b) : null
+        )
+        setCancellingBooking(null)
+      } else {
+        toast.error(res.error || 'No se pudo cancelar la reserva.')
+      }
+    } catch {
+      toast.error('Ocurrió un error inesperado al cancelar la reserva.')
+    } finally {
+      setIsCancelling(false)
+    }
+  }
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     setErrorMessage(null)
 
     const codeToSearch = activeTab === 'code' ? codeQuery.trim() : undefined
+    const phoneToSearch = activeTab === 'phone' ? phoneQuery.trim() : undefined
     const emailToSearch = activeTab === 'email' ? emailQuery.trim() : undefined
 
     if (activeTab === 'code' && !codeToSearch) {
       setErrorMessage('Ingresá el código de tu reserva (ej: PCL-123456).')
+      return
+    }
+
+    if (activeTab === 'phone' && !phoneToSearch) {
+      setErrorMessage('Ingresá el número de celular que usaste para reservar.')
       return
     }
 
@@ -66,6 +126,7 @@ export function PlayerBookingsModal({
     try {
       const res = await lookupPlayerBookings({
         code: codeToSearch,
+        phone: phoneToSearch,
         email: emailToSearch
       })
 
@@ -122,16 +183,30 @@ export function PlayerBookingsModal({
               <button
                 type="button"
                 onClick={() => {
+                  setActiveTab('phone')
+                  setErrorMessage(null)
+                }}
+                className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
+                  activeTab === 'phone'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                Celular
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   setActiveTab('code')
                   setErrorMessage(null)
                 }}
-                className={`flex-1 py-2 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 ${
+                className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
                   activeTab === 'code'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                Código de reserva
+                Código
               </button>
               <button
                 type="button"
@@ -139,7 +214,7 @@ export function PlayerBookingsModal({
                   setActiveTab('email')
                   setErrorMessage(null)
                 }}
-                className={`flex-1 py-2 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 ${
+                className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
                   activeTab === 'email'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -151,7 +226,9 @@ export function PlayerBookingsModal({
 
             {/* Subtítulo informativo */}
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-normal">
-              {activeTab === 'code'
+              {activeTab === 'phone'
+                ? 'Ingresá tu celular o WhatsApp usado al reservar.'
+                : activeTab === 'code'
                 ? 'Ingresá el código que recibiste al reservar.'
                 : 'Ingresá el email con el que registraste tu reserva.'}
             </p>
@@ -160,21 +237,35 @@ export function PlayerBookingsModal({
             <form onSubmit={handleSearch} className="space-y-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
-                  {activeTab === 'code' ? 'Código de reserva' : 'Email'}
+                  {activeTab === 'phone'
+                    ? 'Número de Celular'
+                    : activeTab === 'code'
+                    ? 'Código de reserva'
+                    : 'Email'}
                 </label>
                 <div className="relative">
                   <input
-                    type={activeTab === 'code' ? 'text' : 'email'}
+                    type={activeTab === 'phone' ? 'tel' : activeTab === 'code' ? 'text' : 'email'}
                     autoFocus
                     placeholder={
-                      activeTab === 'code' ? 'Ej: PCL-123456' : 'Ej: juan@ejemplo.com'
+                      activeTab === 'phone'
+                        ? 'Ej: 11 2345 6789'
+                        : activeTab === 'code'
+                        ? 'Ej: PCL-123456'
+                        : 'Ej: juan@ejemplo.com'
                     }
-                    value={activeTab === 'code' ? codeQuery : emailQuery}
-                    onChange={(e) =>
-                      activeTab === 'code'
-                        ? setCodeQuery(e.target.value)
-                        : setEmailQuery(e.target.value)
+                    value={
+                      activeTab === 'phone'
+                        ? phoneQuery
+                        : activeTab === 'code'
+                        ? codeQuery
+                        : emailQuery
                     }
+                    onChange={(e) => {
+                      if (activeTab === 'phone') setPhoneQuery(e.target.value)
+                      else if (activeTab === 'code') setCodeQuery(e.target.value)
+                      else setEmailQuery(e.target.value)
+                    }}
                     className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#68ba9c] focus:border-transparent transition-all"
                   />
                 </div>
@@ -188,7 +279,7 @@ export function PlayerBookingsModal({
                 </div>
               )}
 
-              {/* Botón Consultar (color menta suave según captura) */}
+              {/* Botón Consultar */}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -364,11 +455,23 @@ export function PlayerBookingsModal({
                         )}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-800"
+                        className="h-10 px-3 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-800"
                       >
                         <MessageCircle className="w-3.5 h-3.5 text-emerald-500" />
-                        WhatsApp Club
+                        WhatsApp
                       </a>
+                    )}
+
+                    {!isCancelled && (
+                      <button
+                        type="button"
+                        onClick={() => setCancellingBooking(booking)}
+                        className="h-10 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-rose-500/20 shrink-0 cursor-pointer"
+                        title="Cancelar mi reserva"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Cancelar</span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -377,6 +480,56 @@ export function PlayerBookingsModal({
           </div>
         )}
       </DialogContent>
+
+      {/* Modal de Confirmación de Cancelación de Reserva */}
+      <Dialog open={Boolean(cancellingBooking)} onOpenChange={(open) => !open && setCancellingBooking(null)}>
+        <DialogContent className="max-w-md bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-base">
+              <AlertTriangle className="w-5 h-5" />
+              ¿Cancelar esta reserva?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              Estás a punto de cancelar tu turno en <strong>{cancellingBooking?.clubName}</strong> para el <strong>{cancellingBooking?.dateFormatted}</strong> a las <strong>{cancellingBooking?.timeFormatted}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 space-y-1">
+            <p className="font-semibold">⚠️ Política de Cancelación:</p>
+            <p className="text-[11px] leading-relaxed">
+              El horario quedará liberado automáticamente para que otro jugador o la lista de espera pueda reservar.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCancellingBooking(null)}
+              disabled={isCancelling}
+              className="text-xs"
+            >
+              Mantener mi turno
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCancelBooking}
+              disabled={isCancelling}
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  Cancelando...
+                </>
+              ) : (
+                'Sí, cancelar turno'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

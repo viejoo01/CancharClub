@@ -158,6 +158,7 @@ export async function processWaitlistOnCancellation(params: {
   tenantId: string
   date: string
   timeSlot: string
+  courtId?: string | null
 }): Promise<WaitlistNotificationResult> {
   try {
     // Si el turno a cancelar ya ha pasado en el tiempo, no despachar lista de espera
@@ -167,14 +168,20 @@ export async function processWaitlistOnCancellation(params: {
 
     const supabase = await createServiceClient()
 
-    // 1. Buscar primer cliente en espera para esa fecha y horario
-    const { data: waitlistData, error } = await supabase
+    // 1. Buscar primer cliente en espera para esa fecha y horario (priorizando cancha específica o cualquiera)
+    let query = supabase
       .from('waitlists')
       .select('*')
       .eq('tenant_id', params.tenantId)
       .eq('date', params.date)
       .eq('time_slot', params.timeSlot)
       .eq('status', 'WAITING')
+
+    if (params.courtId) {
+      query = query.or(`court_id.eq.${params.courtId},court_id.is.null`)
+    }
+
+    const { data: waitlistData, error } = await query
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
@@ -182,7 +189,11 @@ export async function processWaitlistOnCancellation(params: {
     let waitlist: WaitlistEntry | undefined = waitlistData as WaitlistEntry | undefined
     if (error || !waitlist) {
       waitlist = memoryWaitlists.find(
-        w => w.tenant_id === params.tenantId && w.date === params.date && w.time_slot === params.timeSlot && w.status === 'WAITING'
+        w => w.tenant_id === params.tenantId &&
+          w.date === params.date &&
+          w.time_slot === params.timeSlot &&
+          w.status === 'WAITING' &&
+          (!params.courtId || !w.court_id || w.court_id === params.courtId)
       )
     }
 
@@ -221,9 +232,10 @@ export async function processWaitlistOnCancellation(params: {
     const clubName = tenant?.name || 'CancharClub'
     const clubSlug = tenant?.slug || 'club'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
-    const claimUrl = `${appUrl}/club/${clubSlug}?claim_slot=${waitlist.id}&time=${params.timeSlot}`
+    const courtParam = params.courtId || waitlist.court_id ? `&courtId=${params.courtId || waitlist.court_id}` : ''
+    const claimUrl = `${appUrl}/club/${clubSlug}?claim_slot=${waitlist.id}&time=${params.timeSlot}&date=${params.date}${courtParam}`
 
-    const messageText = `¡Buenas noticias ${waitlist.customer_name}! Se liberó un turno para hoy a las ${params.timeSlot} hs en ${clubName}. Tenés 10 minutos de prioridad exclusiva para confirmar tu reserva en este link: ${claimUrl}`
+    const messageText = `¡Buenas noticias ${waitlist.customer_name}! 🎾 Se liberó un turno para el día ${params.date} a las ${params.timeSlot} hs en ${clubName}. Tenés 10 minutos de prioridad exclusiva para confirmar tu reserva en este link antes de publicarlo a otros jugadores:\n${claimUrl}`
 
     const whatsAppUrl = buildWhatsAppLink(waitlist.customer_phone, messageText)
 
@@ -244,5 +256,141 @@ export async function processWaitlistOnCancellation(params: {
   } catch (err) {
     console.error('[processWaitlistOnCancellation] Error:', err)
     return { hasWaitlistMatch: false }
+  }
+}
+
+/**
+ * Verifica si un token claim_slot de lista de espera es válido, está activo y dentro de sus 10 min.
+ */
+export async function verifyWaitlistClaim(claimId: string): Promise<{
+  valid: boolean
+  entry?: WaitlistEntry
+  secondsRemaining?: number
+  error?: string
+}> {
+  try {
+    const cleanId = (claimId || '').trim()
+    if (!cleanId) return { valid: false, error: 'Identificador de reclamo inválido.' }
+
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('waitlists')
+      .select('*')
+      .eq('id', cleanId)
+      .maybeSingle()
+
+    let entry: WaitlistEntry | undefined = data as unknown as WaitlistEntry | undefined
+    if (error || !entry) {
+      entry = memoryWaitlists.find(w => w.id === cleanId)
+    }
+
+    if (!entry) {
+      return { valid: false, error: 'No se encontró la reserva de lista de espera.' }
+    }
+
+    if (entry.status === 'CLAIMED') {
+      return { valid: false, error: 'Este turno ya fue reservado.' }
+    }
+
+    const expTime = entry.priority_expires_at ? new Date(entry.priority_expires_at).getTime() : 0
+    const nowTime = Date.now()
+    const secondsRemaining = Math.max(0, Math.floor((expTime - nowTime) / 1000))
+
+    if (secondsRemaining <= 0) {
+      return {
+        valid: false,
+        error: 'Tu tiempo de prioridad exclusiva de 10 minutos ha expirado. El turno quedó abierto al público.',
+      }
+    }
+
+    return {
+      valid: true,
+      entry,
+      secondsRemaining,
+    }
+  } catch (err) {
+    console.error('[verifyWaitlistClaim] Error:', err)
+    return { valid: false, error: 'Error al verificar prioridad de lista de espera' }
+  }
+}
+
+/**
+ * Marca una entrada de lista de espera como reclamada / reservada con éxito
+ */
+export async function markWaitlistAsClaimed(claimId: string): Promise<boolean> {
+  try {
+    const cleanId = (claimId || '').trim()
+    if (!cleanId) return false
+
+    const supabase = await createServiceClient()
+    await supabase
+      .from('waitlists')
+      .update({ status: 'CLAIMED' })
+      .eq('id', cleanId)
+
+    const mem = memoryWaitlists.find(w => w.id === cleanId)
+    if (mem) mem.status = 'CLAIMED'
+
+    return true
+  } catch (err) {
+    console.warn('[markWaitlistAsClaimed] Error:', err)
+    return false
+  }
+}
+
+/**
+ * Obtiene turnos con prioridad activa de lista de espera para un club y fecha
+ */
+export async function getWaitlistActivePriorities(
+  tenantId: string,
+  date: string
+): Promise<Array<{ id: string; court_id: string | null; time_slot: string; expires_at: string }>> {
+  try {
+    const supabase = await createServiceClient()
+    const nowIso = new Date().toISOString()
+    const { data } = await supabase
+      .from('waitlists')
+      .select('id, court_id, time_slot, priority_expires_at')
+      .eq('tenant_id', tenantId)
+      .eq('date', date)
+      .eq('status', 'NOTIFIED')
+      .gt('priority_expires_at', nowIso)
+
+    const list: Array<{ id: string; court_id: string | null; time_slot: string; expires_at: string }> = []
+    if (data) {
+      for (const row of data) {
+        list.push({
+          id: row.id,
+          court_id: row.court_id,
+          time_slot: row.time_slot,
+          expires_at: row.priority_expires_at,
+        })
+      }
+    }
+
+    // Complementar con memoria si existe
+    const nowMs = Date.now()
+    for (const mem of memoryWaitlists) {
+      if (
+        mem.tenant_id === tenantId &&
+        mem.date === date &&
+        mem.status === 'NOTIFIED' &&
+        mem.priority_expires_at &&
+        new Date(mem.priority_expires_at).getTime() > nowMs &&
+        !list.some(l => l.id === mem.id)
+      ) {
+        list.push({
+          id: mem.id,
+          court_id: mem.court_id || null,
+          time_slot: mem.time_slot,
+          expires_at: mem.priority_expires_at,
+        })
+      }
+    }
+
+    return list
+  } catch (err) {
+    console.warn('[getWaitlistActivePriorities] Error:', err)
+    return []
   }
 }

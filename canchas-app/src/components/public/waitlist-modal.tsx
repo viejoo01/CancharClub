@@ -35,8 +35,22 @@ export function WaitlistModal({
   timeSlot,
   date,
 }: WaitlistModalProps) {
-  const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
+  const [customerName, setCustomerName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchar_player_name') || ''
+      } catch {}
+    }
+    return ''
+  })
+  const [customerPhone, setCustomerPhone] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchar_player_phone') || ''
+      } catch {}
+    }
+    return ''
+  })
   const [loading, setLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
 
@@ -60,6 +74,10 @@ export function WaitlistModal({
 
       if (res.success) {
         setIsSuccess(true)
+        try {
+          localStorage.setItem('canchar_player_name', customerName.trim())
+          localStorage.setItem('canchar_player_phone', customerPhone.trim())
+        } catch {}
         toast.success('¡Te anotaste en la lista de espera con éxito!')
       } else {
         toast.error(res.error || 'Error al anotarse')
@@ -73,8 +91,6 @@ export function WaitlistModal({
 
   const handleClose = () => {
     setIsSuccess(false)
-    setCustomerName('')
-    setCustomerPhone('')
     onClose()
   }
 

@@ -737,7 +737,14 @@ export async function cancelBooking(params: {
   booking_id: string
   reason?: string
   cancelled_by: 'USER' | 'CLUB'
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<{ 
+  success: boolean
+  error?: string
+  waitlistNotified?: boolean
+  waitlistCustomerName?: string
+  waitlistCustomerPhone?: string
+  waitlistWhatsAppUrl?: string
+}> {
   try {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
@@ -774,31 +781,53 @@ export async function cancelBooking(params: {
       await releaseBookingLock(booking.redis_lock_key, booking.id)
     }
 
-    // Trigger de Lista de Espera si corresponde
+    // Trigger de Lista de Espera con conversión horaria exacta a Argentina
+    let waitlistInfo: {
+      waitlistNotified?: boolean
+      waitlistCustomerName?: string
+      waitlistCustomerPhone?: string
+      waitlistWhatsAppUrl?: string
+    } = {}
+
     if (booking?.tenant_id && booking?.booked_at) {
       const match = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
-      if (match) {
-        const startsAt = match[1]
-        const bookingDate = new Date(startsAt).toISOString().split('T')[0]
-        const d = new Date(startsAt)
-        const hours = String(d.getHours()).padStart(2, '0')
-        const minutes = String(d.getMinutes()).padStart(2, '0')
-        const timeSlot = `${hours}:${minutes}`
-
-        try {
-          await processWaitlistOnCancellation({
-            tenantId: booking.tenant_id,
-            date: bookingDate,
-            timeSlot,
+      if (match && match[1]) {
+        const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+        const isoNormalized = rawStart.endsWith('+00') ? rawStart.replace('+00', 'Z') : rawStart
+        const d = new Date(isoNormalized)
+        if (!isNaN(d.getTime())) {
+          const bookingDate = d.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+          const timeSlot = d.toLocaleTimeString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
           })
-        } catch (err) {
-          console.warn('[cancelBooking] Error al procesar lista de espera:', err)
+
+          try {
+            const wlResult = await processWaitlistOnCancellation({
+              tenantId: booking.tenant_id,
+              courtId: booking.court_id,
+              date: bookingDate,
+              timeSlot,
+            })
+            if (wlResult.hasWaitlistMatch) {
+              waitlistInfo = {
+                waitlistNotified: true,
+                waitlistCustomerName: wlResult.notifiedEntry?.customer_name,
+                waitlistCustomerPhone: wlResult.notifiedEntry?.customer_phone,
+                waitlistWhatsAppUrl: wlResult.whatsAppUrl,
+              }
+            }
+          } catch (err) {
+            console.warn('[cancelBooking] Error al procesar lista de espera:', err)
+          }
         }
       }
     }
 
     revalidatePath('/dashboard')
-    return { success: true }
+    return { success: true, ...waitlistInfo }
   } catch (error) {
     console.error('[cancelBooking] Error:', error)
     return { success: false, error: 'Error interno del servidor al cancelar' }
@@ -981,6 +1010,7 @@ export interface PlayerBookingDetail {
 export async function lookupPlayerBookings(query: {
   code?: string
   email?: string
+  phone?: string
 }): Promise<{
   success: boolean
   data?: PlayerBookingDetail[]
@@ -988,9 +1018,10 @@ export async function lookupPlayerBookings(query: {
 }> {
   const cleanCode = (query.code || '').trim().toUpperCase().replace(/^#/, '')
   const normalizedEmail = (query.email || '').trim().toLowerCase()
+  const cleanPhone = (query.phone || '').replace(/\D/g, '').trim()
 
-  if (!cleanCode && !normalizedEmail) {
-    return { success: false, error: 'Por favor ingresá un código de reserva o un email.' }
+  if (!cleanCode && !normalizedEmail && !cleanPhone) {
+    return { success: false, error: 'Por favor ingresá un código de reserva, email o número de celular.' }
   }
 
   // Prevenir fuerza bruta y raspado de datos con entradas demasiado cortas
@@ -999,6 +1030,9 @@ export async function lookupPlayerBookings(query: {
   }
   if (normalizedEmail && (!normalizedEmail.includes('@') || normalizedEmail.length < 5)) {
     return { success: false, error: 'Por favor ingresá una dirección de email válida.' }
+  }
+  if (cleanPhone && cleanPhone.length < 6) {
+    return { success: false, error: 'El número de teléfono debe tener al menos 6 dígitos.' }
   }
 
   try {
@@ -1045,6 +1079,9 @@ export async function lookupPlayerBookings(query: {
         }
       } else if (normalizedEmail) {
         dbQuery = dbQuery.eq('customer_email', normalizedEmail)
+      } else if (cleanPhone) {
+        const suffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone
+        dbQuery = dbQuery.ilike('customer_phone', `%${suffix}%`)
       }
 
       const { data: dbBookings } = await dbQuery.limit(10)
@@ -1162,8 +1199,10 @@ export async function lookupPlayerBookings(query: {
       return {
         success: false,
         error: cleanCode
-          ? `No encontramos ninguna reserva con el código "${query.code}". Verificá que esté bien escrito o consultá por tu Email.`
-          : `No encontramos reservas asociadas al email "${normalizedEmail}".`
+          ? `No encontramos ninguna reserva con el código "${query.code}". Verificá que esté bien escrito o consultá por tu celular o email.`
+          : normalizedEmail
+          ? `No encontramos reservas asociadas al email "${normalizedEmail}".`
+          : `No encontramos reservas asociadas al número "${query.phone}".`
       }
     }
 
@@ -1383,7 +1422,7 @@ export async function cancelBookingByPlayer(
     // 1. Obtener la reserva actual
     const { data: booking, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, court_id, tenant_id, customer_email, customer_phone, booked_at, status')
+      .select('id, court_id, tenant_id, customer_email, customer_phone, booked_at, status, staff_notes')
       .eq('id', cleanId)
       .maybeSingle()
 
@@ -1422,33 +1461,48 @@ export async function cancelBookingByPlayer(
       return { success: false, error: 'Los datos de verificación (email o teléfono) no coinciden con el titular de la reserva.' }
     }
 
-    // 3. Actualizar estado a CANCELLED_USER
+    // 3. Actualizar estado a 'cancelled' (enum válido en base de datos)
+    const cancelNote = `Cancelado por el jugador (${cleanPlayer}) a las ${getArgentinaTimeStr()} hs`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${cancelNote}` : cancelNote
+
     const { error: updateErr } = await supabase
       .from('bookings')
       .update({
-        status: 'CANCELLED_USER',
+        status: 'cancelled',
+        staff_notes: updatedNotes,
         updated_at: new Date().toISOString()
       })
       .eq('id', cleanId)
 
     if (updateErr) {
+      console.error('[cancelBookingByPlayer] Update error:', updateErr.message)
       return { success: false, error: 'No se pudo cancelar la reserva en este momento.' }
     }
 
-    // 4. Liberar waitlist si hay interesados
+    // 4. Liberar waitlist con zona horaria oficial de Argentina
     try {
       if (booking.tenant_id && booking.booked_at) {
         let date = ''
         let timeSlot = ''
         const match = String(booking.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
-        if (match) {
-          const s = match[1]
-          date = s.slice(0, 10)
-          timeSlot = s.substring(11, 16)
+        if (match && match[1]) {
+          const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+          const isoNormalized = rawStart.endsWith('+00') ? rawStart.replace('+00', 'Z') : rawStart
+          const d = new Date(isoNormalized)
+          if (!isNaN(d.getTime())) {
+            date = d.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+            timeSlot = d.toLocaleTimeString('es-AR', {
+              timeZone: 'America/Argentina/Buenos_Aires',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            })
+          }
         }
         if (date && timeSlot) {
           await processWaitlistOnCancellation({
             tenantId: booking.tenant_id,
+            courtId: booking.court_id,
             date,
             timeSlot
           })

@@ -57,6 +57,7 @@ import {
   TikTokIcon,
 } from '@/components/icons/social-icons'
 import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo, geocodeClubAddress } from '@/actions/club.actions'
+import { verifyWaitlistClaim } from '@/actions/waitlist.actions'
 
 // Generador dinámico de los próximos 14 días para el carousel táctil móvil
 function getNextDays(count = 14) {
@@ -244,6 +245,77 @@ export default function ClubPublicPage({
   const [isReservasModalOpen, setIsReservasModalOpen] = useState(false)
   const [geocodedCoords, setGeocodedCoords] = useState<{ lat: number; lon: number } | null>(null)
 
+  // Reclamo de Lista de Espera con prioridad de 10 min (?claim_slot=...)
+  const claimSlotParam = searchParams.get('claim_slot')
+  const claimDateParam = searchParams.get('date')
+
+  const [activeClaim, setActiveClaim] = useState<{
+    claimId: string
+    timeSlot: string
+    date: string
+    courtId?: string | null
+    customerName: string
+    customerPhone: string
+    secondsRemaining: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!claimSlotParam) return
+    let active = true
+
+    verifyWaitlistClaim(claimSlotParam).then((res) => {
+      if (!active) return
+      if (res.valid && res.entry) {
+        const claimDate = res.entry.date || claimDateParam || getArgentinaTodayIso()
+        setSelectedDate(claimDate)
+        setActiveClaim({
+          claimId: res.entry.id,
+          timeSlot: res.entry.time_slot,
+          date: claimDate,
+          courtId: res.entry.court_id,
+          customerName: res.entry.customer_name,
+          customerPhone: res.entry.customer_phone,
+          secondsRemaining: res.secondsRemaining || 600,
+        })
+        toast.success('¡Turno prioritario disponible para vos!', {
+          description: `Tenés exclusividad por 10 minutos para las ${res.entry.time_slot} hs.`,
+          duration: 6000,
+        })
+      } else {
+        toast.error(res.error || 'La prioridad de lista de espera ha expirado o no es válida.')
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [claimSlotParam, claimDateParam])
+
+  useEffect(() => {
+    if (!activeClaim || activeClaim.secondsRemaining <= 0) return
+
+    const timer = setInterval(() => {
+      setActiveClaim((prev) => {
+        if (!prev) return null
+        if (prev.secondsRemaining <= 1) {
+          clearInterval(timer)
+          toast.error('Tu prioridad exclusiva de 10 minutos ha expirado.')
+          return null
+        }
+        return { ...prev, secondsRemaining: prev.secondsRemaining - 1 }
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [activeClaim])
+
+  const claimCountdownFormatted = useMemo(() => {
+    if (!activeClaim) return ''
+    const mins = Math.floor(activeClaim.secondsRemaining / 60)
+    const secs = activeClaim.secondsRemaining % 60
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }, [activeClaim])
+
   // Geocodificar automáticamente si no hay embed oficial de Google Maps
   useEffect(() => {
     if (extractGoogleMapsEmbedUrl(club.googleMapsUrl) || extractCoordsFromGoogleMapsUrl(club.googleMapsUrl)) {
@@ -321,17 +393,41 @@ export default function ClubPublicPage({
         return true
       })
       .map(slot => {
-        // 2. Comprobar si el turno ya está ocupado en memoria o base de datos
-        const isOccupied = occupiedSlots.some(occ => {
-          const matchCourt = occ.courtId === slot.courtId || (occ.courtName && slot.courtName && occ.courtName.toLowerCase() === slot.courtName.toLowerCase())
-          return matchCourt && occ.time === slot.time
-        })
+        // 2. Comprobar si el turno coincide con el reclamo activo de lista de espera del jugador
+        const isClaimMatch = Boolean(
+          activeClaim &&
+          activeClaim.timeSlot === slot.time &&
+          (!activeClaim.courtId || activeClaim.courtId === slot.courtId)
+        )
+
+        // 3. Comprobar si el turno ya está ocupado en memoria o base de datos
+        let isOccupied = false
+        let isWaitlistPriority = false
+
+        for (const occ of occupiedSlots) {
+          const matchCourt = occ.courtId === 'any' || occ.courtId === slot.courtId || (occ.courtName && slot.courtName && occ.courtName.toLowerCase() === slot.courtName.toLowerCase())
+          if (matchCourt && occ.time === slot.time) {
+            if (occ.isWaitlistPriority) {
+              isWaitlistPriority = true
+              // Si este jugador tiene el reclamo activo para este turno, ¡no está bloqueado para él!
+              if (isClaimMatch) {
+                isOccupied = false
+                break
+              }
+            }
+            isOccupied = true
+            break
+          }
+        }
+
         return {
           ...slot,
-          isAvailable: !isOccupied
+          isAvailable: isClaimMatch || !isOccupied,
+          isClaimMatch,
+          isWaitlistPriority,
         }
       })
-  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots, selectedSport, selectedFootballFormat, club.courts])
+  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots, selectedSport, selectedFootballFormat, club.courts, activeClaim])
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 
@@ -1020,6 +1116,36 @@ export default function ClubPublicPage({
             </Badge>
           </div>
 
+          {/* Banner de Prioridad Exclusiva de Lista de Espera si hay reclamo activo */}
+          {activeClaim && (
+            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-950 via-teal-950 to-emerald-900 border-2 border-emerald-500/70 shadow-xl shadow-emerald-950/40 text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Zap className="w-5 h-5 text-emerald-300 animate-pulse" />
+                </div>
+                <div>
+                  <div className="font-extrabold text-sm text-white flex items-center gap-2 flex-wrap">
+                    <span>¡Hola {activeClaim.customerName}! Turno liberado para vos</span>
+                    <Badge className="bg-emerald-500 text-slate-950 font-black text-[10px] px-2">
+                      PRIORIDAD 10 MIN
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-emerald-200/90 mt-0.5">
+                    Se liberó el turno de las <strong>{activeClaim.timeSlot} hs</strong> del {activeClaim.date}. Tenés exclusividad antes de que se publique a otros.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                <div className="text-right">
+                  <span className="text-[10px] text-emerald-300 block font-medium">Prioridad vence en:</span>
+                  <span className="font-mono font-black text-sm text-amber-300 bg-slate-950/60 px-2 py-0.5 rounded border border-amber-500/30">
+                    {claimCountdownFormatted}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {isPublicPaused ? (
             <div className="bg-gradient-to-b from-amber-950/40 to-slate-900 border border-amber-800/60 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center">
@@ -1080,92 +1206,121 @@ export default function ClubPublicPage({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredSlots.map((slot, index) => (
-                <Card
-                  key={`${slot.courtId}-${slot.time}-${index}`}
-                  className={`border-slate-800 transition-all rounded-2xl ${
-                    slot.isAvailable
-                      ? 'bg-slate-900/80 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-950/20 active:scale-[0.99]'
-                      : 'bg-slate-950/50 opacity-50 border-dashed cursor-not-allowed'
-                  }`}
-                >
-                  <CardContent className="p-3.5 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Pill de Hora Grande */}
-                      <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black shrink-0 border ${
-                        slot.isAvailable
-                          ? 'bg-slate-950 border-emerald-500/30 text-slate-100 shadow-sm'
-                          : 'bg-slate-950 border-slate-800 text-slate-400'
-                      }`}>
-                        <span className="text-[10px] font-bold text-emerald-400 tracking-wider">HS</span>
-                        <span className="text-base font-black leading-none">{slot.time}</span>
+              {filteredSlots.map((slot, index) => {
+                const checkoutUrl = slot.isClaimMatch && activeClaim
+                  ? `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}&claimId=${activeClaim.claimId}&name=${encodeURIComponent(activeClaim.customerName)}&phone=${encodeURIComponent(activeClaim.customerPhone)}`
+                  : `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`
+
+                return (
+                  <Card
+                    key={`${slot.courtId}-${slot.time}-${index}`}
+                    className={`transition-all rounded-2xl ${
+                      slot.isClaimMatch
+                        ? 'bg-emerald-950/40 border-2 border-emerald-400 shadow-xl shadow-emerald-950/60 ring-2 ring-emerald-500/30'
+                        : slot.isAvailable
+                        ? 'bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-950/20 active:scale-[0.99]'
+                        : 'bg-slate-900/40 border border-slate-800/70'
+                    }`}
+                  >
+                    <CardContent className="p-3.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Pill de Hora Grande */}
+                        <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black shrink-0 border ${
+                          slot.isClaimMatch
+                            ? 'bg-emerald-950 border-emerald-400 text-emerald-200 shadow-sm'
+                            : slot.isAvailable
+                            ? 'bg-slate-950 border-emerald-500/30 text-slate-100 shadow-sm'
+                            : 'bg-slate-950 border-slate-800 text-slate-400'
+                        }`}>
+                          <span className={`text-[10px] font-bold tracking-wider ${slot.isClaimMatch ? 'text-amber-300' : 'text-emerald-400'}`}>
+                            HS
+                          </span>
+                          <span className="text-base font-black leading-none">{slot.time}</span>
+                        </div>
+
+                        {/* Información de la Cancha y Precios */}
+                        <div className="min-w-0">
+                          <div className="font-bold text-sm text-slate-100 truncate flex items-center gap-1.5">
+                            <span>{slot.courtName}</span>
+                            {slot.isClaimMatch && (
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
+                                Tu Turno
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {/* Features chips */}
+                          {slot.features && slot.features.length > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {slot.features.slice(0, 2).map((feat, fIdx) => (
+                                <span key={fIdx} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 font-medium">
+                                  {feat}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="text-xs text-slate-400 mt-1">
+                            Total {formatARS(slot.totalPrice)} • <span className="text-emerald-400 font-extrabold">Seña {formatARS(slot.depositPrice)}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Información de la Cancha y Precios */}
-                      <div className="min-w-0">
-                        <div className="font-bold text-sm text-slate-100 truncate">
-                          {slot.courtName}
-                        </div>
-                        
-                        {/* Features chips */}
-                        {slot.features && slot.features.length > 0 && (
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {slot.features.slice(0, 2).map((feat, fIdx) => (
-                              <span key={fIdx} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 font-medium">
-                                {feat}
-                              </span>
-                            ))}
+                      {/* Botón de Acción Táctil */}
+                      <div className="shrink-0">
+                        {slot.isClaimMatch ? (
+                          <Link href={checkoutUrl}>
+                            <Button
+                              size="sm"
+                              className="h-10 px-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
+                            >
+                              <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                              <span>Reclamar</span>
+                            </Button>
+                          </Link>
+                        ) : slot.isAvailable ? (
+                          <Link href={checkoutUrl}>
+                            <Button
+                              size="sm"
+                              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95 transition-transform"
+                            >
+                              <span>Reservar</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </Link>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1.5">
+                            <Badge variant="secondary" className={`text-[10px] ${
+                              slot.isWaitlistPriority
+                                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {slot.isWaitlistPriority ? 'Prioridad 10 min' : 'Ocupado'}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setWaitlistSlot({
+                                  courtId: slot.courtId,
+                                  courtName: slot.courtName,
+                                  time: slot.time,
+                                  sport: slot.sport,
+                                })
+                                setIsWaitlistOpen(true)
+                              }}
+                              className="h-8 px-2.5 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-950/50 hover:text-amber-200 font-bold rounded-xl gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Bell className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Avisarme</span>
+                            </Button>
                           </div>
                         )}
-
-                        <div className="text-xs text-slate-400 mt-1">
-                          Total {formatARS(slot.totalPrice)} • <span className="text-emerald-400 font-extrabold">Seña {formatARS(slot.depositPrice)}</span>
-                        </div>
                       </div>
-                    </div>
-
-                    {/* Botón de Acción Táctil */}
-                    <div className="shrink-0">
-                      {slot.isAvailable ? (
-                        <Link
-                          href={`/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`}
-                        >
-                          <Button
-                            size="sm"
-                            className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95 transition-transform"
-                          >
-                            <span>Reservar</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Button>
-                        </Link>
-                      ) : (
-                        <div className="flex flex-col items-end gap-1">
-                          <Badge variant="secondary" className="text-[10px] bg-slate-800 text-slate-400">
-                            Ocupado
-                          </Badge>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setWaitlistSlot({
-                                courtId: slot.courtId,
-                                courtName: slot.courtName,
-                                time: slot.time,
-                                sport: slot.sport,
-                              })
-                              setIsWaitlistOpen(true)
-                            }}
-                            className="h-7 px-2 text-[10px] border-amber-500/40 text-amber-400 hover:bg-amber-950/40 hover:text-amber-300 font-medium rounded-lg"
-                          >
-                            <Bell className="w-2.5 h-2.5 mr-1" />
-                            Avisarme
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </section>

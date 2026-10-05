@@ -34,6 +34,7 @@ import { toast } from 'sonner'
 import type { SportType } from '@/types/database'
 import { getClubBySlug, getClubBankDetails, type ClubData } from '@/config/clubs-catalog'
 import { getClubPublicData } from '@/actions/club.actions'
+import { markWaitlistAsClaimed } from '@/actions/waitlist.actions'
 
 function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const router = useRouter()
@@ -49,6 +50,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const courtName = searchParams.get('courtName') || 'Cancha 1'
   const date = searchParams.get('date') || getArgentinaTodayIso()
   const time = searchParams.get('time') || '19:00'
+  const claimId = searchParams.get('claimId')
   const rawTotalParam = Number(searchParams.get('total'))
   const rawDepositParam = Number(searchParams.get('deposit'))
 
@@ -123,9 +125,15 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     }
   }, [slug])
 
-  const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
-  const [customerEmail, setCustomerEmail] = useState('')
+  const [customerName, setCustomerName] = useState(() => {
+    return searchParams.get('name') || (typeof window !== 'undefined' ? localStorage.getItem('canchar_player_name') || '' : '')
+  })
+  const [customerPhone, setCustomerPhone] = useState(() => {
+    return searchParams.get('phone') || (typeof window !== 'undefined' ? localStorage.getItem('canchar_player_phone') || '' : '')
+  })
+  const [customerEmail, setCustomerEmail] = useState(() => {
+    return searchParams.get('email') || (typeof window !== 'undefined' ? localStorage.getItem('canchar_player_email') || '' : '')
+  })
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [copiedAlias, setCopiedAlias] = useState(false)
@@ -303,6 +311,20 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         toast.error(res.error || 'Error al iniciar checkout')
         setLoading(false)
         return
+      }
+
+      // Guardar datos del jugador para futuras reservas
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('canchar_player_name', customerName.trim())
+          localStorage.setItem('canchar_player_phone', customerPhone.trim())
+          if (customerEmail.trim()) localStorage.setItem('canchar_player_email', customerEmail.trim())
+        }
+      } catch {}
+
+      // Si venía de reclamo de lista de espera, marcarlo como completado
+      if (claimId) {
+        markWaitlistAsClaimed(claimId).catch(() => {})
       }
 
       // Si el saldo a favor cubrió el 100% de la seña

@@ -34,9 +34,28 @@ import { formatARS } from '@/lib/utils'
 import { lookupPlayerBookings, cancelBookingByPlayer, type PlayerBookingDetail } from '@/actions/booking.actions'
 
 export default function MisReservasPage() {
-  const [activeTab, setActiveTab] = useState<'code' | 'email'>('code')
+  const [activeTab, setActiveTab] = useState<'phone' | 'code' | 'email'>('phone')
   const [codeQuery, setCodeQuery] = useState('')
-  const [emailQuery, setEmailQuery] = useState('')
+  const [phoneQuery, setPhoneQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchas_player_phone') || ''
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  })
+  const [emailQuery, setEmailQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('canchas_player_email') || ''
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [bookings, setBookings] = useState<PlayerBookingDetail[] | null>(null)
@@ -50,7 +69,7 @@ export default function MisReservasPage() {
     try {
       const res = await cancelBookingByPlayer(
         cancellingBooking.id,
-        emailQuery || cancellingBooking.customerEmail || cancellingBooking.customerPhone || ''
+        phoneQuery || emailQuery || cancellingBooking.customerPhone || cancellingBooking.customerEmail || ''
       )
       if (res.success) {
         toast.success(res.message || 'Tu reserva fue cancelada con éxito.')
@@ -73,10 +92,16 @@ export default function MisReservasPage() {
     setErrorMessage(null)
 
     const codeToSearch = activeTab === 'code' ? codeQuery.trim() : undefined
+    const phoneToSearch = activeTab === 'phone' ? phoneQuery.trim() : undefined
     const emailToSearch = activeTab === 'email' ? emailQuery.trim() : undefined
 
     if (activeTab === 'code' && !codeToSearch) {
       setErrorMessage('Ingresá el código de tu reserva (ej: PCL-123456).')
+      return
+    }
+
+    if (activeTab === 'phone' && !phoneToSearch) {
+      setErrorMessage('Ingresá el número de celular que usaste para reservar.')
       return
     }
 
@@ -89,6 +114,7 @@ export default function MisReservasPage() {
     try {
       const res = await lookupPlayerBookings({
         code: codeToSearch,
+        phone: phoneToSearch,
         email: emailToSearch
       })
 
@@ -145,21 +171,35 @@ export default function MisReservasPage() {
 
           {!bookings ? (
             <div className="space-y-5">
-              {/* Segmented Control */}
+              {/* Segmented Control de 3 pestañas */}
               <div className="p-1 bg-[#f4f5f6] dark:bg-slate-800/80 rounded-2xl flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('phone')
+                    setErrorMessage(null)
+                  }}
+                  className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
+                    activeTab === 'phone'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Celular
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('code')
                     setErrorMessage(null)
                   }}
-                  className={`flex-1 py-2 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 ${
+                  className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
                     activeTab === 'code'
                       ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
-                  Código de reserva
+                  Código
                 </button>
                 <button
                   type="button"
@@ -167,7 +207,7 @@ export default function MisReservasPage() {
                     setActiveTab('email')
                     setErrorMessage(null)
                   }}
-                  className={`flex-1 py-2 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 ${
+                  className={`flex-1 py-2 px-2 text-xs font-semibold rounded-xl transition-all duration-200 ${
                     activeTab === 'email'
                       ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
@@ -179,7 +219,9 @@ export default function MisReservasPage() {
 
               {/* Subtítulo */}
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                {activeTab === 'code'
+                {activeTab === 'phone'
+                  ? 'Ingresá tu número de celular o WhatsApp usado en la reserva.'
+                  : activeTab === 'code'
                   ? 'Ingresá el código que recibiste al reservar.'
                   : 'Ingresá el email con el que registraste tu reserva.'}
               </p>
@@ -188,20 +230,34 @@ export default function MisReservasPage() {
               <form onSubmit={handleSearch} className="space-y-4">
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
-                    {activeTab === 'code' ? 'Código de reserva' : 'Email'}
+                    {activeTab === 'phone'
+                      ? 'Número de Celular'
+                      : activeTab === 'code'
+                      ? 'Código de reserva'
+                      : 'Email'}
                   </label>
                   <input
-                    type={activeTab === 'code' ? 'text' : 'email'}
+                    type={activeTab === 'phone' ? 'tel' : activeTab === 'code' ? 'text' : 'email'}
                     autoFocus
                     placeholder={
-                      activeTab === 'code' ? 'Ej: PCL-123456' : 'Ej: juan@ejemplo.com'
+                      activeTab === 'phone'
+                        ? 'Ej: 11 2345 6789'
+                        : activeTab === 'code'
+                        ? 'Ej: PCL-123456'
+                        : 'Ej: juan@ejemplo.com'
                     }
-                    value={activeTab === 'code' ? codeQuery : emailQuery}
-                    onChange={(e) =>
-                      activeTab === 'code'
-                        ? setCodeQuery(e.target.value)
-                        : setEmailQuery(e.target.value)
+                    value={
+                      activeTab === 'phone'
+                        ? phoneQuery
+                        : activeTab === 'code'
+                        ? codeQuery
+                        : emailQuery
                     }
+                    onChange={(e) => {
+                      if (activeTab === 'phone') setPhoneQuery(e.target.value)
+                      else if (activeTab === 'code') setCodeQuery(e.target.value)
+                      else setEmailQuery(e.target.value)
+                    }}
                     className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#68ba9c] focus:border-transparent transition-all"
                   />
                 </div>

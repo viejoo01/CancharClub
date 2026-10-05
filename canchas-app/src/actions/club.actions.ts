@@ -1959,11 +1959,13 @@ export interface OccupiedSlotInfo {
   courtId: string
   courtName?: string
   time: string
+  isWaitlistPriority?: boolean
+  priorityExpiresAt?: string
 }
 
 /**
  * Consulta en tiempo real los turnos ya reservados para una fecha en un club.
- * Combina reservas en memoria (0ms) y base de datos PostgreSQL.
+ * Combina reservas en memoria (0ms), base de datos PostgreSQL y prioridades de lista de espera.
  */
 export async function getClubOccupiedSlots(
   tenantId: string,
@@ -1973,11 +1975,17 @@ export async function getClubOccupiedSlots(
     const occupied: OccupiedSlotInfo[] = []
     const seen = new Set<string>()
 
-    const addSlot = (courtId: string, courtName: string | undefined, time: string) => {
+    const addSlot = (
+      courtId: string,
+      courtName: string | undefined,
+      time: string,
+      isWaitlistPriority = false,
+      priorityExpiresAt?: string
+    ) => {
       const key = `${courtId || ''}_${courtName || ''}_${time}`
       if (!seen.has(key)) {
         seen.add(key)
-        occupied.push({ courtId, courtName, time })
+        occupied.push({ courtId, courtName, time, isWaitlistPriority, priorityExpiresAt })
       }
     }
 
@@ -2035,6 +2043,22 @@ export async function getClubOccupiedSlots(
               }
             }
           }
+        }
+      }
+
+      // 3. Consultar turnos con prioridad activa de Lista de Espera (10 min de exclusividad)
+      const nowIso = new Date().toISOString()
+      const { data: activeWl } = await supabase
+        .from('waitlists')
+        .select('id, court_id, time_slot, priority_expires_at')
+        .eq('tenant_id', tenantId)
+        .eq('date', dateIso)
+        .eq('status', 'NOTIFIED')
+        .gt('priority_expires_at', nowIso)
+
+      if (activeWl && activeWl.length > 0) {
+        for (const wl of activeWl) {
+          addSlot(wl.court_id || 'any', undefined, wl.time_slot, true, wl.priority_expires_at)
         }
       }
     }

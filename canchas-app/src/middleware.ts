@@ -149,10 +149,11 @@ export async function middleware(request: NextRequest) {
     // SI EL USUARIO NO ES SUPERADMIN: VERIFICAR QUE EL CLUB HAYA VINCULADO SU TARJETA
     if (!saSession && user) {
       const isFromMpReturn = request.nextUrl.searchParams.get('subscription_active') === 'true' ||
-                             request.nextUrl.searchParams.get('auto_debit_registered') === 'true'
+                             request.nextUrl.searchParams.get('auto_debit_registered') === 'true' ||
+                             request.nextUrl.searchParams.has('preapproval_id')
 
-      // Si regresa de Mercado Pago con la suscripción aprobada en /dashboard/plan, permitir procesar activación
-      if (isFromMpReturn && pathname.startsWith('/dashboard/plan')) {
+      // Si regresa de Mercado Pago con la suscripción aprobada en el dashboard, permitir procesar activación
+      if (isFromMpReturn && pathname.startsWith('/dashboard')) {
         return response
       }
 

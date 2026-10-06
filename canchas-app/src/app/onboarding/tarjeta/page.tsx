@@ -70,7 +70,7 @@ function OnboardingCardContent() {
         setPlanDetails(details)
 
         // Si el club ya tiene débito automático activo o tarjeta guardada, redirigir directo al dashboard
-        if (details.hasAutoDebit && details.cardInfo?.last4) {
+        if (details.hasAutoDebit) {
           router.replace('/dashboard')
           return
         }
@@ -78,7 +78,8 @@ function OnboardingCardContent() {
         // Si viene de retorno exitoso de Mercado Pago
         const isFromMp =
           searchParams.get('subscription_active') === 'true' ||
-          searchParams.get('auto_debit_registered') === 'true'
+          searchParams.get('auto_debit_registered') === 'true' ||
+          searchParams.has('preapproval_id')
 
         if (isFromMp) {
           setSubmitting(true)
@@ -202,6 +203,9 @@ function OnboardingCardContent() {
       const returnUrl = `${origin}/onboarding/tarjeta?subscription_active=true`
       const res = await setupMonthlySubscriptionPreapproval(planDetails.tenantId, returnUrl)
       if (res.success && res.initPoint) {
+        toast.info('Redirigiendo a Mercado Pago...', {
+          description: 'Cargá tu tarjeta en la pasarela oficial para habilitar tus 15 días gratis.',
+        })
         window.location.href = res.initPoint
       } else if (res.isSimulated) {
         toast.success('¡Modo de prueba activado!', {

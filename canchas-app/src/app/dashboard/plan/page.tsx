@@ -241,7 +241,7 @@ export default function ClubPlanPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true') {
+      if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true' || params.has('preapproval_id')) {
         const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
         confirmAndActivateSubscriptionWithCard(activeTenant).catch(() => {})
         toast.success('¡Débito Automático Adherido con Éxito!', {

@@ -91,7 +91,8 @@ export async function POST(req: NextRequest) {
       const dunning = await getTenantDunningDetails(payload.tenant_id)
       const officialAmount = dunning.reactivation?.totalAmount || 
                              (dunning.invoice ? Number(dunning.invoice.amount) : dunning.pricing.monthlyFeeArs)
-      const enforcedAmount = officialAmount > 0 ? officialAmount : payload.amount
+      const rawEnforced = officialAmount > 0 ? officialAmount : payload.amount
+      const enforcedAmount = Math.max(15, rawEnforced > 0 ? rawEnforced : Math.round(dunning.pricing.multiplier * 30000) || 30000)
 
       const platformToken = process.env.MP_ACCESS_TOKEN
       const clubName = payload.club_name || dunning.tenantName || 'Club Deportivo'

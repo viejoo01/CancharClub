@@ -806,7 +806,8 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
   const serviceClient = await createServiceClient()
   const dunning = await getTenantDunningDetails(tenantId)
   const invoice = dunning.invoice
-  const amountToPay = dunning.reactivation?.totalAmount || (invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs)
+  const rawAmount = dunning.reactivation?.totalAmount || (invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs)
+  const amountToPay = Math.max(15, rawAmount > 0 ? rawAmount : Math.round(dunning.pricing.multiplier * 30000) || 30000)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -1029,7 +1030,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
   // 1. Obtener datos del club
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('name, slug, email, created_at')
+    .select('name, slug, email, created_at, base_slots_plan, plan_id')
     .eq('id', tenantId)
     .maybeSingle()
 
@@ -1037,17 +1038,27 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
   const monthlyAmount = summary.pricing.monthlyFeeArs
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
 
+  // Si aún no configuró tarifas en el panel (monthlyFeeArs === 0),
+  // calcular la cuota estimada según el plan y canchas (referencia estándar $30.000 por turno * multiplicador).
+  // Mercado Pago Preapproval MLA exige un monto mayor o igual a $15.00 ARS.
+  const estimatedSlotPrice = 30000
+  const multiplier = summary.pricing?.multiplier || 1.5
+  const fallbackMonthlyFee = Math.round(multiplier * estimatedSlotPrice)
+  const effectiveMonthlyAmount = Math.max(15, (monthlyAmount && monthlyAmount > 0) ? monthlyAmount : fallbackMonthlyFee)
+
   const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
 
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
-    // Modo simulación seguro para desarrollo local sin credenciales
+    // Modo simulación seguro para desarrollo local sin credenciales:
+    // Activar inmediatamente el club para no dejarlo bloqueado en pantalla de onboarding
+    await confirmAndActivateSubscriptionWithCard(tenantId)
     return {
       success: true,
       initPoint: null,
       isSimulated: true,
-      monthlyAmount,
+      monthlyAmount: effectiveMonthlyAmount,
       tenantName: tenant?.name || 'Club Deportivo',
-      message: `Débito automático activado para ${tenant?.name || 'el club'} por ${monthlyAmount} ARS/mes.`
+      message: `Débito automático activado para ${tenant?.name || 'el club'} por ${effectiveMonthlyAmount} ARS/mes.`
     }
   }
 
@@ -1058,7 +1069,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
     // El email del pagador debe ser un correo válido registrado en Mercado Pago MLA
     const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
       ? tenant.email
-      : (tenant?.name ? `${tenant.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@gmail.com` : 'pagos@cancharclub.com.ar')
+      : 'cancharclub@gmail.com'
 
     // Regla de Cobro: 15 días de prueba gratuita.
     // El primer cobro se ejecuta al cumplirse los 15 días de prueba.
@@ -1066,36 +1077,69 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
     const firstBillingDate = calculateFirstBillingDate(null, tenant?.created_at)
     const startDate = firstBillingDate.toISOString()
 
-    const result = await preApprovalClient.create({
-      body: {
-        reason: 'CancharClub', // Nombre exacto solicitado para el resumen de tarjeta
-        auto_recurring: {
-          frequency: 1,
-          frequency_type: 'months',
-          transaction_amount: Math.max(1, monthlyAmount || 1),
-          currency_id: 'ARS',
-          start_date: startDate,
-        },
-        back_url: customBackUrl || `${appUrl}/dashboard/plan?subscription_active=true`,
-        payer_email: payerEmail,
-        status: 'pending',
+    let result
+    try {
+      result = await preApprovalClient.create({
+        body: {
+          reason: 'CancharClub', // Nombre exacto solicitado para el resumen de tarjeta
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: effectiveMonthlyAmount,
+            currency_id: 'ARS',
+            start_date: startDate,
+          },
+          back_url: customBackUrl || `${appUrl}/dashboard/plan?subscription_active=true`,
+          payer_email: payerEmail,
+          status: 'pending',
+        }
+      })
+    } catch (mpErr: unknown) {
+      const errStr = String((mpErr as Error)?.message || '')
+      // Si el correo del usuario no está vinculado a MLA o causa rechazo de site en MP,
+      // reintentar con el correo de fallback de la plataforma para permitir abrir la pasarela oficial
+      if (errStr.includes('different site') || errStr.includes('payer_email') || errStr.includes('payer')) {
+        console.warn('[setupMonthlySubscriptionPreapproval] Reintentando con email de fallback:', errStr)
+        result = await preApprovalClient.create({
+          body: {
+            reason: 'CancharClub',
+            auto_recurring: {
+              frequency: 1,
+              frequency_type: 'months',
+              transaction_amount: effectiveMonthlyAmount,
+              currency_id: 'ARS',
+              start_date: startDate,
+            },
+            back_url: customBackUrl || `${appUrl}/dashboard/plan?subscription_active=true`,
+            payer_email: 'cancharclub@gmail.com',
+            status: 'pending',
+          }
+        })
+      } else {
+        throw mpErr
       }
-    })
+    }
+
+    if (!result?.init_point) {
+      throw new Error('Mercado Pago no retornó URL de inicio (init_point)')
+    }
 
     return {
       success: true,
-      initPoint: result.init_point || null,
+      initPoint: result.init_point,
       preapprovalId: result.id,
       isSimulated: false,
-      monthlyAmount,
+      monthlyAmount: effectiveMonthlyAmount,
     }
   } catch (err: unknown) {
     console.error('Error creating MP preapproval:', err)
+    const errorMsg = (err as Error)?.message || 'No se pudo conectar con Mercado Pago'
     return {
-      success: true,
+      success: false,
       initPoint: null,
-      isSimulated: true,
-      monthlyAmount,
+      isSimulated: false,
+      error: errorMsg,
+      monthlyAmount: effectiveMonthlyAmount,
       tenantName: tenant?.name || 'Club Deportivo',
     }
   }
@@ -1774,7 +1818,7 @@ export async function createReactivationPreferenceAction(tenantId: string, overr
   }
 
   const details = await getClubReactivationDetails(tenantId, overrideDays)
-  const amountToPay = details.reactivation.totalAmount
+  const amountToPay = Math.max(15, details.reactivation.totalAmount || 15)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'

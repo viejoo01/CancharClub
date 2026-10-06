@@ -31,7 +31,8 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
-  setupMonthlySubscriptionPreapproval,
+  setupCardLinkingCheckoutPreference,
+  confirmCardSetupFromMercadoPagoPayment,
   confirmAndActivateSubscriptionWithCard,
   getClubPlanDetails,
   requestSubscriptionRevocationAction,
@@ -241,7 +242,25 @@ export default function ClubPlanPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true' || params.has('preapproval_id')) {
+      const isFromMpCheckout =
+        params.get('mp_card_connected') === 'true' ||
+        params.has('payment_id') ||
+        params.has('collection_id')
+
+      if (isFromMpCheckout) {
+        const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
+        const paymentId = params.get('payment_id') || params.get('collection_id') || undefined
+        confirmCardSetupFromMercadoPagoPayment(activeTenant, paymentId).then((res) => {
+          if (res.success) {
+            setHasAutoDebit(true)
+            toast.success('¡Tarjeta Vinculada con Éxito desde Mercado Pago!', {
+              description: `Tarjeta ${res.cardBrand} terminada en ${res.cardLast4} guardada para tu abono mensual.`,
+              duration: 6000,
+            })
+            loadPlanData(false)
+          }
+        }).catch(() => {})
+      } else if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true' || params.has('preapproval_id')) {
         const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
         confirmAndActivateSubscriptionWithCard(activeTenant).catch(() => {})
         toast.success('¡Débito Automático Adherido con Éxito!', {
@@ -255,18 +274,16 @@ export default function ClubPlanPage() {
     setSubscribing(true)
     try {
       const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const res = await setupMonthlySubscriptionPreapproval(activeTenant)
-      if (res.success) {
-        if (res.initPoint) {
-          toast.info('Abriendo portal oficial de Mercado Pago Subscriptions...', {
-            description: 'Completá los datos de tu tarjeta para el débito automático de CancharClub.'
-          })
-          window.location.assign(res.initPoint)
-        } else {
-          setShowSubscriptionModal(true)
-        }
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.cancharclub.com.ar'
+      const returnUrl = `${origin}/dashboard/plan`
+      const res = await setupCardLinkingCheckoutPreference(activeTenant, returnUrl)
+      if (res.success && res.initPoint) {
+        toast.info('Abriendo app de Mercado Pago...', {
+          description: 'Elegí una de tus tarjetas ya guardadas en Mercado Pago para tu abono mensual.'
+        })
+        window.location.assign(res.initPoint)
       } else {
-        toast.error('Error al generar suscripción con Mercado Pago')
+        setShowSubscriptionModal(true)
       }
     } catch {
       toast.error('Error al configurar débito automático')

@@ -539,4 +539,11 @@ export interface MercadoPagoPayment {
     email: string
     identification: { type: string; number: string }
   }
+  card?: {
+    last_four_digits?: string
+    cardholder?: {
+      name?: string
+      identification?: { number?: string; type?: string }
+    }
+  }
 }

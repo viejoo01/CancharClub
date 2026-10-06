@@ -1146,6 +1146,194 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
 }
 
 /**
+ * Crea una preferencia de Checkout Pro para vincular la tarjeta del club abriendo la app oficial de Mercado Pago.
+ * Al ser un checkout estándar, en celulares abre la app nativa de Mercado Pago (Universal Link)
+ * mostrando directamente las tarjetas ya cargadas en la cuenta del usuario ("como si fuera una compra").
+ */
+export async function setupCardLinkingCheckoutPreference(tenantId: string, customBackUrl?: string) {
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return {
+      success: false,
+      initPoint: null,
+      error: auth.error || 'No autorizado',
+    }
+  }
+
+  const serviceClient = await createServiceClient()
+  const { data: tenant } = await serviceClient
+    .from('tenants')
+    .select('name, slug, email')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    await confirmAndActivateSubscriptionWithCard(tenantId)
+    return {
+      success: true,
+      initPoint: null,
+      isSimulated: true,
+      message: 'Modo simulación: tarjeta vinculada automáticamente.',
+    }
+  }
+
+  try {
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+    const preferenceClient = new Preference(mpConfig)
+
+    const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
+      ? tenant.email
+      : 'cancharclub@gmail.com'
+
+    const returnUrl = customBackUrl || `${appUrl}/onboarding/tarjeta`
+    const separator = returnUrl.includes('?') ? '&' : '?'
+
+    const preference = await preferenceClient.create({
+      body: {
+        items: [
+          {
+            id: `card_link_${tenantId}`,
+            title: 'Vinculación de Tarjeta - CancharClub (15 días gratis)',
+            description: 'Vinculá tu tarjeta de Mercado Pago. Hoy $0 cuota mensual (15 días de prueba 100% bonificados).',
+            quantity: 1,
+            unit_price: 15, // Validación técnica mínima de Mercado Pago MLA
+            currency_id: 'ARS',
+          }
+        ],
+        payer: {
+          email: payerEmail,
+        },
+        external_reference: `card_link_${tenantId}_${Date.now()}`,
+        back_urls: {
+          success: `${returnUrl}${separator}mp_card_connected=true&tenant_id=${tenantId}`,
+          pending: `${returnUrl}${separator}mp_card_pending=true&tenant_id=${tenantId}`,
+          failure: `${returnUrl}${separator}mp_card_error=true&tenant_id=${tenantId}`,
+        },
+        auto_return: 'approved',
+        statement_descriptor: 'CANCHARCLUB',
+        binary_mode: true,
+        notification_url: `${appUrl}/api/webhooks/billing/mercadopago`,
+        payment_methods: {
+          excluded_payment_types: [
+            { id: 'ticket' },
+            { id: 'atm' },
+          ],
+          installments: 1,
+        }
+      }
+    })
+
+    if (!preference.init_point) {
+      throw new Error('No se pudo generar el enlace de pago de Mercado Pago')
+    }
+
+    return {
+      success: true,
+      initPoint: preference.init_point,
+      preferenceId: preference.id,
+      isSimulated: false,
+    }
+  } catch (err: unknown) {
+    console.error('Error creating card linking preference:', err)
+    const errorMsg = (err as Error)?.message || 'Error al conectar con Mercado Pago'
+    return {
+      success: false,
+      initPoint: null,
+      isSimulated: false,
+      error: errorMsg,
+    }
+  }
+}
+
+/**
+ * Confirma la vinculación de tarjeta tras el retorno del checkout de Mercado Pago,
+ * extrayendo la tarjeta utilizada desde la API de Mercado Pago y guardándola en el perfil del club.
+ */
+export async function confirmCardSetupFromMercadoPagoPayment(
+  tenantId: string, 
+  paymentIdParam?: string,
+  options?: { skipAuth?: boolean }
+) {
+  const serviceClient = await createServiceClient()
+
+  let cardBrand = 'MERCADO PAGO'
+  let cardLast4 = 'MP'
+  let cardHolder = 'Titular Mercado Pago'
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+
+  if (paymentIdParam && mpToken && !mpToken.startsWith('TEST-0000000000000000')) {
+    try {
+      const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentIdParam}`, {
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      })
+
+      if (response.ok) {
+        const paymentData = await response.json()
+        if (paymentData) {
+          if (paymentData.payment_method_id) {
+            const rawMethod = String(paymentData.payment_method_id).toUpperCase()
+            cardBrand = rawMethod.replace('DEB', '').replace('CRED', '').trim() || rawMethod
+          }
+          if (paymentData.card?.last_four_digits) {
+            cardLast4 = String(paymentData.card.last_four_digits)
+          }
+          if (paymentData.card?.cardholder?.name) {
+            cardHolder = String(paymentData.card.cardholder.name).toUpperCase()
+          } else if (paymentData.payer?.email) {
+            cardHolder = String(paymentData.payer.email)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching payment details from MP API:', err)
+    }
+  }
+
+  // Activar suscripción y guardar la tarjeta en el perfil del club
+  const activateRes = await confirmAndActivateSubscriptionWithCard(tenantId, {
+    cardBrand,
+    cardLast4,
+    cardHolder,
+  }, options)
+
+  // Reintegrar o bonificar los $15 ARS de validación técnica en el saldo del club para garantizar $0 costo total
+  try {
+    const { data: currentT } = await serviceClient
+      .from('tenants')
+      .select('current_balance')
+      .eq('id', tenantId)
+      .maybeSingle()
+    if (currentT) {
+      const currentBal = Number(currentT.current_balance ?? 0)
+      await serviceClient
+        .from('tenants')
+        .update({ current_balance: currentBal - 15 })
+        .eq('id', tenantId)
+    }
+  } catch {}
+
+  revalidatePath('/onboarding/tarjeta')
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
+
+  return {
+    success: activateRes.success,
+    error: activateRes.error,
+    cardBrand,
+    cardLast4,
+    cardHolder,
+  }
+}
+
+/**
  * Confirma la vinculación obligatoria de tarjeta de débito/crédito para el abono del club
  * y activa inmediatamente el club para que pueda comenzar a operar sus 15 días gratis.
  */
@@ -1155,6 +1343,9 @@ export async function confirmAndActivateSubscriptionWithCard(
     cardHolder?: string
     cardLast4?: string
     cardBrand?: string 
+  },
+  options?: {
+    skipAuth?: boolean
   }
 ) {
   const serviceClient = await createServiceClient()
@@ -1195,9 +1386,11 @@ export async function confirmAndActivateSubscriptionWithCard(
     return { success: false, error: 'No se pudo identificar el club' }
   }
 
-  const auth = await assertTenantAdmin(tenantId)
-  if (!auth.authorized) {
-    return { success: false, error: auth.error || 'No autorizado' }
+  if (!options?.skipAuth) {
+    const auth = await assertTenantAdmin(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
+    }
   }
 
   let savedPlanId: SaaSPlanId | undefined = undefined
@@ -1295,23 +1488,25 @@ export async function confirmAndActivateSubscriptionWithCard(
   }
 
   // 3. Actualizar cookies de sesión para reflejar estado activo inmediatamente
-  if (tenantId) {
-    cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
-    cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  }
-  cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  if (cardData?.cardLast4) {
-    cookieStore.set('demo_card_last4', cardData.cardLast4, { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  }
-  if (cardData?.cardBrand) {
-    cookieStore.set('demo_card_brand', cardData.cardBrand, { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  }
-  if (cardData?.cardHolder) {
-    cookieStore.set('demo_card_holder', encodeURIComponent(cardData.cardHolder), { path: '/', maxAge: 60 * 60 * 24 * 30 })
-  }
-  cookieStore.delete('new_club_pending_activation')
+  try {
+    if (tenantId) {
+      cookieStore.set('canchar_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+      cookieStore.set('demo_tenant_id', tenantId, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    }
+    cookieStore.set('demo_subscription_status', 'ACTIVE', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    cookieStore.set('demo_is_active', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    cookieStore.set('demo_has_card', 'true', { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    if (cardData?.cardLast4) {
+      cookieStore.set('demo_card_last4', cardData.cardLast4, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    }
+    if (cardData?.cardBrand) {
+      cookieStore.set('demo_card_brand', cardData.cardBrand, { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    }
+    if (cardData?.cardHolder) {
+      cookieStore.set('demo_card_holder', encodeURIComponent(cardData.cardHolder), { path: '/', maxAge: 60 * 60 * 24 * 30 })
+    }
+    cookieStore.delete('new_club_pending_activation')
+  } catch {}
 
   // Asegurar que la cookie demo_plan_id refleje el plan contratado o las canchas reales
   try {

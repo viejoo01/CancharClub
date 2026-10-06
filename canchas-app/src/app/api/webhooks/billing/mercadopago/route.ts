@@ -8,7 +8,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import type { MercadoPagoWebhookNotification, MercadoPagoPayment } from '@/types/database'
-import { recordAutoDebitAlertInternal } from '@/actions/saas-billing.actions'
+import { recordAutoDebitAlertInternal, confirmCardSetupFromMercadoPagoPayment } from '@/actions/saas-billing.actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -179,8 +179,10 @@ export async function POST(request: NextRequest) {
 
     // 3. Identificar Tenant e Invoice mediante external_reference
     // Formato generado: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
+    // O vinculación de tarjeta: `card_link_${tenantId}_${timestamp}`
     let tenantId: string | null = null
     let invoiceId: string | null = null
+    let isCardLink = false
 
     if (payment.external_reference?.startsWith('saas_tenant_')) {
       const parts = payment.external_reference.split('_')
@@ -188,6 +190,13 @@ export async function POST(request: NextRequest) {
       if (parts.length >= 5) {
         tenantId = parts[2]
         invoiceId = parts[4]
+      }
+    } else if (payment.external_reference?.startsWith('card_link_')) {
+      const parts = payment.external_reference.split('_')
+      // ['card', 'link', '{tenantId}', '{timestamp}']
+      if (parts.length >= 3) {
+        tenantId = parts[2]
+        isCardLink = true
       }
     }
 
@@ -212,6 +221,18 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedTenantId = tenantRecord.id
+
+    // 3.0 Si es una vinculación de tarjeta oficial desde la App de Mercado Pago
+    if (isCardLink) {
+      if (payment.status === 'approved') {
+        console.log(`[Billing Webhook] ✅ Vinculación de tarjeta para club ${resolvedTenantId} aprobada (Pago #${payment.id})`)
+        await confirmCardSetupFromMercadoPagoPayment(resolvedTenantId, String(payment.id), { skipAuth: true })
+        return NextResponse.json({ received: true, card_linked: true, tenant_id: resolvedTenantId })
+      } else {
+        console.log(`[Billing Webhook] Vinculación de tarjeta para club ${resolvedTenantId} en estado '${payment.status}'`)
+        return NextResponse.json({ received: true, card_linked: false, status: payment.status })
+      }
+    }
 
     // 3.1 Validación antifraude de monto pagado contra la factura emitida
     if (invoiceId && !invoiceId.startsWith('demo-inv-')) {

@@ -19,7 +19,8 @@ import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import {
   confirmAndActivateSubscriptionWithCard,
-  setupMonthlySubscriptionPreapproval,
+  setupCardLinkingCheckoutPreference,
+  confirmCardSetupFromMercadoPagoPayment,
   getClubPlanDetails,
   type ClubPlanDetails,
 } from '@/actions/saas-billing.actions'
@@ -69,28 +70,50 @@ function OnboardingCardContent() {
 
         setPlanDetails(details)
 
-        // Si el club ya tiene débito automático activo o tarjeta guardada, redirigir directo al dashboard
-        if (details.hasAutoDebit) {
-          router.replace('/dashboard')
-          return
-        }
+        // 1. Detección de retorno desde la app de Mercado Pago (Checkout Pro con tarjetas guardadas)
+        const isFromMpCheckout =
+          searchParams.get('mp_card_connected') === 'true' ||
+          searchParams.has('payment_id') ||
+          searchParams.has('collection_id')
 
-        // Si viene de retorno exitoso de Mercado Pago
-        const isFromMp =
+        // 2. Detección de retorno desde suscripción de Mercado Pago (Preapproval)
+        const isFromMpPreapproval =
           searchParams.get('subscription_active') === 'true' ||
           searchParams.get('auto_debit_registered') === 'true' ||
           searchParams.has('preapproval_id')
 
-        if (isFromMp) {
+        if (isFromMpCheckout) {
+          setSubmitting(true)
+          const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id') || undefined
+          const res = await confirmCardSetupFromMercadoPagoPayment(details.tenantId, paymentId)
+          if (res.success) {
+            toast.success('¡Tarjeta Vinculada con Éxito desde Mercado Pago!', {
+              description: `Tarjeta ${res.cardBrand} terminada en ${res.cardLast4} guardada para tu abono. Tu club cuenta con 15 días gratis ($0 hoy).`,
+              duration: 6000,
+            })
+            router.push('/dashboard')
+            return
+          } else {
+            toast.error('No se pudo confirmar la vinculación de tarjeta', {
+              description: res.error || 'Por favor ingresá los datos manualmente abajo.',
+            })
+            setSubmitting(false)
+          }
+        } else if (isFromMpPreapproval) {
           setSubmitting(true)
           const res = await confirmAndActivateSubscriptionWithCard(details.tenantId)
           if (res.success) {
             toast.success('¡Tarjeta Vinculada con Éxito!', {
               description: 'Tu abono a CancharClub está activo con 15 días gratis ($0 hoy).',
+              duration: 6000,
             })
             router.push('/dashboard')
             return
           }
+        } else if (details.hasAutoDebit) {
+          // Si el club ya tiene débito automático activo o tarjeta guardada, redirigir directo al dashboard
+          router.replace('/dashboard')
+          return
         }
       } catch (err) {
         console.error('Error cargando datos de suscripción:', err)
@@ -195,16 +218,17 @@ function OnboardingCardContent() {
     }
   }
 
-  const handleMercadoPagoPreapproval = async () => {
+  const handleMercadoPagoApp = async () => {
     if (!planDetails?.tenantId) return
     setMpLoading(true)
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.cancharclub.com.ar'
-      const returnUrl = `${origin}/onboarding/tarjeta?subscription_active=true`
-      const res = await setupMonthlySubscriptionPreapproval(planDetails.tenantId, returnUrl)
+      const returnUrl = `${origin}/onboarding/tarjeta`
+      // Generar preferencia de Checkout Pro para abrir la app oficial de Mercado Pago
+      const res = await setupCardLinkingCheckoutPreference(planDetails.tenantId, returnUrl)
       if (res.success && res.initPoint) {
-        toast.info('Redirigiendo a Mercado Pago...', {
-          description: 'Cargá tu tarjeta en la pasarela oficial para habilitar tus 15 días gratis.',
+        toast.info('Abriendo app de Mercado Pago...', {
+          description: 'Elegí una de tus tarjetas ya guardadas en Mercado Pago para activar tu club.',
         })
         window.location.href = res.initPoint
       } else if (res.isSimulated) {
@@ -213,13 +237,13 @@ function OnboardingCardContent() {
         })
         router.push('/dashboard')
       } else {
-        toast.error('No se pudo generar el checkout de Mercado Pago', {
+        toast.error('No se pudo abrir la app de Mercado Pago', {
           description: res.error || 'Probá ingresando tu tarjeta a continuación.'
         })
         setMpLoading(false)
       }
     } catch (err) {
-      console.error('Error in handleMercadoPagoPreapproval:', err)
+      console.error('Error in handleMercadoPagoApp:', err)
       toast.error('Ocurrió un error al conectar con Mercado Pago')
       setMpLoading(false)
     }
@@ -340,7 +364,7 @@ function OnboardingCardContent() {
           </div>
         </div>
 
-        {/* Opción 1: Adhesión Automática con Mercado Pago Oficial */}
+        {/* Opción 1: Adhesión Automática con Mercado Pago Oficial (Abre App nativa) */}
         <div className="w-full mb-6 p-5 sm:p-6 rounded-3xl bg-linear-to-r from-sky-950/60 via-slate-900 to-emerald-950/50 border-2 border-sky-500/40 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5">
@@ -349,28 +373,28 @@ function OnboardingCardContent() {
                   Recomendado
                 </span>
                 <span className="text-sm font-extrabold text-white">
-                  Débito Automático Oficial con Mercado Pago
+                  Vincular con tu App de Mercado Pago
                 </span>
               </div>
               <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
-                Vinculá tu tarjeta de débito o crédito directamente mediante el portal seguro de Mercado Pago MLA. <strong className="text-emerald-400">Hoy pagás $0</strong> y el primer débito se realiza recién tras tus 15 días gratis.
+                Abrí la app de Mercado Pago en tu celular y elegí una de tus tarjetas ya guardadas, como si fuera una compra. <strong className="text-emerald-400">Hoy pagás $0</strong> (15 días de prueba bonificados) y tu tarjeta queda registrada en tu perfil para los débitos mensuales.
               </p>
             </div>
 
             <Button
               type="button"
               disabled={mpLoading || submitting}
-              onClick={handleMercadoPagoPreapproval}
+              onClick={handleMercadoPagoApp}
               className="h-12 px-5 sm:px-6 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-sky-950/80 shrink-0 gap-2 cursor-pointer transition-all"
             >
               {mpLoading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                  <span>Conectando con Mercado Pago...</span>
+                  <span>Abriendo Mercado Pago...</span>
                 </>
               ) : (
                 <>
-                  <span>Suscribirme con Mercado Pago</span>
+                  <span>Abrir App de Mercado Pago</span>
                   <ExternalLink className="w-4 h-4 text-slate-950" />
                 </>
               )}

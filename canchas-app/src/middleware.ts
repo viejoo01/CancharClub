@@ -150,7 +150,10 @@ export async function middleware(request: NextRequest) {
     if (!saSession && user) {
       const isFromMpReturn = request.nextUrl.searchParams.get('subscription_active') === 'true' ||
                              request.nextUrl.searchParams.get('auto_debit_registered') === 'true' ||
-                             request.nextUrl.searchParams.has('preapproval_id')
+                             request.nextUrl.searchParams.get('mp_card_connected') === 'true' ||
+                             request.nextUrl.searchParams.has('preapproval_id') ||
+                             request.nextUrl.searchParams.has('payment_id') ||
+                             request.nextUrl.searchParams.has('collection_id')
 
       // Si regresa de Mercado Pago con la suscripción aprobada en el dashboard, permitir procesar activación
       if (isFromMpReturn && pathname.startsWith('/dashboard')) {

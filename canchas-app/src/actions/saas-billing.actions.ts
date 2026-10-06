@@ -1014,7 +1014,7 @@ function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: stri
 
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
 
-export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
+export async function setupMonthlySubscriptionPreapproval(tenantId: string, customBackUrl?: string) {
   const auth = await assertTenantAdmin(tenantId)
   if (!auth.authorized) {
     return {
@@ -1076,7 +1076,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string) {
           currency_id: 'ARS',
           start_date: startDate,
         },
-        back_url: `${appUrl}/dashboard/plan?subscription_active=true`,
+        back_url: customBackUrl || `${appUrl}/dashboard/plan?subscription_active=true`,
         payer_email: payerEmail,
         status: 'pending',
       }

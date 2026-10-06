@@ -11,6 +11,7 @@ import {
   RefreshCw,
   LogOut,
   Building2,
+  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -18,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import {
   confirmAndActivateSubscriptionWithCard,
+  setupMonthlySubscriptionPreapproval,
   getClubPlanDetails,
   type ClubPlanDetails,
 } from '@/actions/saas-billing.actions'
@@ -46,6 +48,7 @@ function OnboardingCardContent() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [mpLoading, setMpLoading] = useState(false)
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
 
   // Campos de la tarjeta
@@ -191,6 +194,33 @@ function OnboardingCardContent() {
     }
   }
 
+  const handleMercadoPagoPreapproval = async () => {
+    if (!planDetails?.tenantId) return
+    setMpLoading(true)
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.cancharclub.com.ar'
+      const returnUrl = `${origin}/onboarding/tarjeta?subscription_active=true`
+      const res = await setupMonthlySubscriptionPreapproval(planDetails.tenantId, returnUrl)
+      if (res.success && res.initPoint) {
+        window.location.href = res.initPoint
+      } else if (res.isSimulated) {
+        toast.success('¡Modo de prueba activado!', {
+          description: 'Tu club fue activado con 15 días gratis.'
+        })
+        router.push('/dashboard')
+      } else {
+        toast.error('No se pudo generar el checkout de Mercado Pago', {
+          description: res.error || 'Probá ingresando tu tarjeta a continuación.'
+        })
+        setMpLoading(false)
+      }
+    } catch (err) {
+      console.error('Error in handleMercadoPagoPreapproval:', err)
+      toast.error('Ocurrió un error al conectar con Mercado Pago')
+      setMpLoading(false)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
   }
@@ -303,6 +333,54 @@ function OnboardingCardContent() {
           <div className="flex items-center gap-1.5 text-xs text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl self-start sm:self-auto font-semibold">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>Hoy se cobra $0</span>
+          </div>
+        </div>
+
+        {/* Opción 1: Adhesión Automática con Mercado Pago Oficial */}
+        <div className="w-full mb-6 p-5 sm:p-6 rounded-3xl bg-linear-to-r from-sky-950/60 via-slate-900 to-emerald-950/50 border-2 border-sky-500/40 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-sky-300 bg-sky-500/20 border border-sky-500/40 px-2.5 py-0.5 rounded-full">
+                  Recomendado
+                </span>
+                <span className="text-sm font-extrabold text-white">
+                  Débito Automático Oficial con Mercado Pago
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
+                Vinculá tu tarjeta de débito o crédito directamente mediante el portal seguro de Mercado Pago MLA. <strong className="text-emerald-400">Hoy pagás $0</strong> y el primer débito se realiza recién tras tus 15 días gratis.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              disabled={mpLoading || submitting}
+              onClick={handleMercadoPagoPreapproval}
+              className="h-12 px-5 sm:px-6 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-sky-950/80 shrink-0 gap-2 cursor-pointer transition-all"
+            >
+              {mpLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>Conectando con Mercado Pago...</span>
+                </>
+              ) : (
+                <>
+                  <span>Suscribirme con Mercado Pago</span>
+                  <ExternalLink className="w-4 h-4 text-slate-950" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Separador de Opciones */}
+        <div className="relative w-full my-4 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-800" />
+          </div>
+          <div className="relative bg-slate-950 px-4 text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+            O cargá tu tarjeta directamente abajo
           </div>
         </div>
 

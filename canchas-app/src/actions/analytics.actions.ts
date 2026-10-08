@@ -38,7 +38,10 @@ export interface PricingRecommendation {
 
 export interface OccupancyReportData {
   weeklyAverageOccupancy: number
+  totalBookingsPeriod: number
   peakSlot: string
+  peakSlotLabel: string
+  peakSlotPct: number
   deadHoursCount: number
   projectedRevenueRecoveryArs: number
   heatmap: HeatmapCell[]
@@ -384,29 +387,27 @@ const SLOTS_MAP: {
  * Genera el reporte de ocupación semanal con datos 100% reales en huso horario de Argentina.
  */
 export async function getOccupancyReport(tenantId: string): Promise<OccupancyReportData> {
+  const emptyReport: OccupancyReportData = {
+    weeklyAverageOccupancy: 0,
+    totalBookingsPeriod: 0,
+    peakSlot: 'Sin turnos registrados en este período',
+    peakSlotLabel: 'Sin datos suficientes',
+    peakSlotPct: 0,
+    deadHoursCount: 0,
+    projectedRevenueRecoveryArs: 0,
+    heatmap: [],
+    recommendations: [],
+  }
+
   try {
     const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
     if (!effectiveTenantId) {
-      return {
-        weeklyAverageOccupancy: 0,
-        peakSlot: 'Sin datos',
-        deadHoursCount: 0,
-        projectedRevenueRecoveryArs: 0,
-        heatmap: [],
-        recommendations: [],
-      }
+      return emptyReport
     }
 
     const authCheck = await assertTenantMember(effectiveTenantId)
     if (!authCheck.authorized) {
-      return {
-        weeklyAverageOccupancy: 0,
-        peakSlot: 'Sin datos',
-        deadHoursCount: 0,
-        projectedRevenueRecoveryArs: 0,
-        heatmap: [],
-        recommendations: [],
-      }
+      return emptyReport
     }
 
     const supabase = await createServiceClient()
@@ -420,23 +421,37 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
 
     const courtsCount = Math.max(1, courts?.length || 1)
 
-    // Reservas de los últimos 30 días
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
-    const { data: bookings } = await supabase
+    // Reservas de los últimos 30 días (y próximas dentro de la ventana de 30 días)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
+    const futureLimit = new Date(Date.now() + 30 * 86400000)
+
+    const { data: bookings, error: bookingsErr } = await supabase
       .from('bookings')
-      .select('starts_at, booked_at, price_total_cents')
+      .select('booked_at, price_total_cents')
       .eq('tenant_id', effectiveTenantId)
       .not('status', 'in', '("cancelled")')
 
+    if (bookingsErr) {
+      console.error('[getOccupancyReport] Error fetching bookings:', bookingsErr)
+    }
+
     // Construir matriz day x slot con conteos reales en huso horario Argentina (UTC-3)
     const bookingMatrix: Record<string, number> = {}
+    let totalBookingsPeriod = 0
 
     for (const b of bookings ?? []) {
-      const rawDateStr = b.starts_at || (b.booked_at ? b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)?.[1] : null)
+      let rawDateStr = b.booked_at ? b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)?.[1] : null
       if (!rawDateStr) continue
 
+      if (rawDateStr.includes(' ') && !rawDateStr.includes('T')) {
+        rawDateStr = rawDateStr.replace(' ', 'T')
+      }
+      if (rawDateStr.endsWith('+00')) {
+        rawDateStr = rawDateStr.replace('+00', 'Z')
+      }
+
       const d = new Date(rawDateStr)
-      if (isNaN(d.getTime()) || d < new Date(thirtyDaysAgo)) continue
+      if (isNaN(d.getTime()) || d < thirtyDaysAgo || d > futureLimit) continue
 
       // Conversión estricta a huso horario de Argentina (UTC-3)
       const argDate = new Date(d.getTime() - 3 * 60 * 60 * 1000)
@@ -447,6 +462,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       if (slot) {
         const key = `${dow}_${slot.key}`
         bookingMatrix[key] = (bookingMatrix[key] ?? 0) + 1
+        totalBookingsPeriod++
       }
     }
 
@@ -462,6 +478,8 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
         const realCount = bookingMatrix[`${day.index}_${slot.key}`] ?? 0
         const occupancyPct = Math.min(100, Math.round((realCount / capacitySlots) * 100))
         const totalBookingsCell = realCount
+        // Solo considerar "horario muerto" si el club tiene actividad real (>= 5 reservas) y esa franja está bajo 25%
+        const isDeadHour = totalBookingsPeriod >= 5 && occupancyPct < 25
 
         heatmap.push({
           dayIndex: day.index,
@@ -472,54 +490,108 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
           occupancyPct,
           totalBookings: totalBookingsCell,
           capacitySlots,
-          isDeadHour: occupancyPct < 25,
+          isDeadHour,
         })
         totalPctSum += occupancyPct
       }
     }
 
-    const weeklyAverage = Math.round(totalPctSum / heatmap.length)
+    const weeklyAverage = heatmap.length > 0 ? Math.round(totalPctSum / heatmap.length) : 0
+
+    // Agrupar por franja horaria general para determinar con certeza el horario más demandado
+    const slotStats = SLOTS_MAP.map(slot => {
+      let slotBookings = 0
+      let slotCapacity = 0
+      for (const day of DAYS_MAP) {
+        const cell = heatmap.find(h => h.dayIndex === day.index && h.slotKey === slot.key)
+        if (cell) {
+          slotBookings += cell.totalBookings
+          slotCapacity += cell.capacitySlots
+        }
+      }
+      const avgPct = slotCapacity > 0 ? Math.round((slotBookings / slotCapacity) * 100) : 0
+      return {
+        ...slot,
+        totalBookings: slotBookings,
+        totalCapacity: slotCapacity,
+        avgPct,
+      }
+    })
+
+    let peakSlotLabel = 'Sin datos suficientes'
+    let peakSlotPct = 0
+    let peakSlot = 'Sin turnos registrados en este período'
+
+    if (totalBookingsPeriod > 0) {
+      // Priorizar el slot con mayor porcentaje de ocupación o mayor cantidad de turnos
+      const topSlot = slotStats.reduce((max, s) => {
+        if (s.avgPct > max.avgPct) return s
+        if (s.avgPct === max.avgPct && s.totalBookings > max.totalBookings) return s
+        return max
+      }, slotStats[0])
+
+      if (topSlot && topSlot.totalBookings > 0) {
+        const startFormatted = topSlot.startHour.toString().padStart(2, '0')
+        const endFormatted = topSlot.endHour === 24 ? '00' : topSlot.endHour.toString().padStart(2, '0')
+        peakSlotLabel = `${topSlot.label.replace(' (Pico)', '')} (${startFormatted} a ${endFormatted} hs)`
+        peakSlotPct = Math.max(1, topSlot.avgPct)
+        peakSlot = `${peakSlotLabel} — ${peakSlotPct}% de ocupación promedio (${topSlot.totalBookings} turnos)`
+      }
+    }
+
     const deadCount = heatmap.filter(h => h.isDeadHour).length
-    const peakCell  = heatmap.reduce((m, h) => h.occupancyPct > m.occupancyPct ? h : m, heatmap[0])
-    const peakSlot  = (peakCell && peakCell.occupancyPct > 0)
-      ? `${peakCell.slotLabel} (${peakCell.timeRange}) — ${peakCell.occupancyPct}% ocupación`
-      : 'Sin turnos registrados en este período'
 
-    // Precio pico del club desde la columna real price_cents
-    const { data: priceRules } = await supabase
-      .from('price_rules')
-      .select('price_cents')
-      .eq('tenant_id', effectiveTenantId)
-      .eq('is_active', true)
-      .order('price_cents', { ascending: false })
-      .limit(1)
+    // Precio pico del club desde la base de datos real
+    let peakPrice = 0
+    let recommendations: PricingRecommendation[] = []
+    let projectedRecovery = 0
 
-    const peakPrice = (priceRules?.[0]?.price_cents)
-      ? Math.round(Number(priceRules[0].price_cents) / 100)
-      : 25000
+    // Solo generar recomendaciones y cálculo de recuperación si hay al menos 5 reservas registradas
+    if (totalBookingsPeriod >= 5 && deadCount > 0) {
+      const { data: priceRules } = await supabase
+        .from('price_rules')
+        .select('price_cents')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('is_active', true)
+        .order('price_cents', { ascending: false })
+        .limit(1)
 
-    // Recomendaciones basadas en datos reales
-    const deadHours = heatmap.filter(h => h.isDeadHour).slice(0, 3)
-    const recommendations: PricingRecommendation[] = deadHours.length > 0
-      ? deadHours.map((h, i) => ({
+      if (priceRules?.[0]?.price_cents) {
+        peakPrice = Math.round(Number(priceRules[0].price_cents) / 100)
+      } else {
+        const prices = (bookings ?? [])
+          .map(b => Number(b.price_total_cents || 0) / 100)
+          .filter(p => p > 0)
+        if (prices.length > 0) {
+          peakPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length)
+        }
+      }
+
+      if (peakPrice > 0) {
+        const deadHours = heatmap.filter(h => h.isDeadHour).slice(0, 3)
+        recommendations = deadHours.map((h, i) => ({
           id: `rec_${i}`,
           slotLabel: `${h.slotLabel} — ${h.dayName} (${h.timeRange})`,
           days: h.dayName,
           currentOccupancy: h.occupancyPct,
           standardPriceArs: peakPrice,
-          suggestedPriceArs: Math.round(peakPrice * 0.75),
-          discountPct: 25,
-          projectedWeeklyRevenueArs: Math.round(peakPrice * 0.75 * Math.max(1, h.capacitySlots * 0.4)),
-          rationale: `Ocupación registrada de ${h.occupancyPct}%. Una promoción atractiva puede incentivar la reserva de esta franja horaria.`,
-          suggestedPromoTitle: `Promo ${h.slotLabel}: 25% OFF el ${h.dayName} de ${h.timeRange}`,
+          suggestedPriceArs: Math.round(peakPrice * 0.8),
+          discountPct: 20,
+          projectedWeeklyRevenueArs: Math.round(peakPrice * 0.8 * Math.max(1, Math.round(h.capacitySlots * 0.25))),
+          rationale: `Ocupación registrada de ${h.occupancyPct}% (${h.totalBookings} turnos). Una promoción atractiva del 20% OFF puede incentivar reservas en este horario.`,
+          suggestedPromoTitle: `Promo ${h.slotLabel}: 20% OFF el ${h.dayName} de ${h.timeRange}`,
         }))
-      : []
 
-    const projectedRecovery = recommendations.reduce((s, r) => s + r.projectedWeeklyRevenueArs, 0)
+        projectedRecovery = recommendations.reduce((s, r) => s + r.projectedWeeklyRevenueArs, 0)
+      }
+    }
 
     return {
       weeklyAverageOccupancy: weeklyAverage,
+      totalBookingsPeriod,
       peakSlot,
+      peakSlotLabel,
+      peakSlotPct,
       deadHoursCount: deadCount,
       projectedRevenueRecoveryArs: projectedRecovery,
       heatmap,
@@ -527,13 +599,6 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
     }
   } catch (err) {
     console.error('[getOccupancyReport] Error:', err)
-    return {
-      weeklyAverageOccupancy: 0,
-      peakSlot: 'Sin datos',
-      deadHoursCount: 0,
-      projectedRevenueRecoveryArs: 0,
-      heatmap: [],
-      recommendations: [],
-    }
+    return emptyReport
   }
 }

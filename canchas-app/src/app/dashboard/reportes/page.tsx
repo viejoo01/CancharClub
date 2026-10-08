@@ -142,10 +142,11 @@ export default function ReportesPage() {
   }
 
   const getCellColor = (pct: number) => {
-    if (pct >= 80) return 'bg-emerald-500/25 border-emerald-500/60 text-emerald-300'
+    if (pct >= 80) return 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
     if (pct >= 55) return 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
     if (pct >= 30) return 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-    return 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+    if (pct > 0) return 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+    return 'bg-slate-900/60 border-slate-800 text-slate-400'
   }
 
   const handleSharePromoWhatsApp = (rec: PricingRecommendation) => {
@@ -232,7 +233,9 @@ export default function ReportesPage() {
                 {data.weeklyAverageOccupancy}%
               </div>
               <p className="text-[11px] text-slate-400">
-                Basado en últimos 30 días de reservas
+                {data.totalBookingsPeriod > 0
+                  ? `${data.totalBookingsPeriod} reservas en últimos 30 días`
+                  : 'Sin reservas en últimos 30 días'}
               </p>
             </Card>
 
@@ -242,10 +245,12 @@ export default function ReportesPage() {
                 <Flame className="w-4 h-4 text-amber-400" />
               </div>
               <div className="text-lg font-black text-amber-300 truncate">
-                Noche (20 a 00 hs)
+                {data.totalBookingsPeriod > 0 ? data.peakSlotLabel : 'Sin datos suficientes'}
               </div>
-              <p className="text-[11px] text-emerald-400 font-semibold">
-                92% de ocupación promedio
+              <p className="text-[11px] text-emerald-400 font-semibold truncate">
+                {data.totalBookingsPeriod > 0 && data.peakSlotPct > 0
+                  ? `${data.peakSlotPct}% de ocupación promedio`
+                  : 'Sin turnos registrados en este período'}
               </p>
             </Card>
 
@@ -258,7 +263,9 @@ export default function ReportesPage() {
                 {data.deadHoursCount} franjas
               </div>
               <p className="text-[11px] text-slate-400">
-                Ocupación crítica menor al 28%
+                {data.totalBookingsPeriod >= 5
+                  ? 'Ocupación crítica menor al 25%'
+                  : 'Sin reservas suficientes para evaluar'}
               </p>
             </Card>
 
@@ -268,10 +275,14 @@ export default function ReportesPage() {
                 <DollarSign className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl font-black text-white">
-                +{formatARS(data.projectedRevenueRecoveryArs)}
+                {data.projectedRevenueRecoveryArs > 0
+                  ? `+${formatARS(data.projectedRevenueRecoveryArs)}`
+                  : '$ 0'}
               </div>
               <p className="text-[11px] text-emerald-300/80 font-medium">
-                Recuperación mensual estimada
+                {data.projectedRevenueRecoveryArs > 0
+                  ? 'Recuperación mensual estimada'
+                  : 'Se calculará al registrar reservas'}
               </p>
             </Card>
           </div>
@@ -292,8 +303,12 @@ export default function ReportesPage() {
               {/* Leyenda */}
               <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-300 overflow-x-auto pb-1">
                 <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-slate-800 border border-slate-700" />
+                  0% Sin turnos
+                </span>
+                <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded bg-rose-500/40 border border-rose-500/60" />
-                  &lt; 30% Muerto
+                  &lt; 30% Bajo
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded bg-amber-500/40 border border-amber-500/60" />
@@ -342,19 +357,23 @@ export default function ReportesPage() {
                         (h) => h.dayName === dayName && h.slotKey === slot.key
                       )
                       const pct = cell ? cell.occupancyPct : 0
+                      const count = cell ? cell.totalBookings : 0
                       const isDead = cell ? cell.isDeadHour : false
 
                       return (
                         <div
                           key={`${slot.key}-${dayName}`}
-                          className={`h-16 rounded-xl border p-2 flex flex-col items-center justify-center transition-all ${getCellColor(
+                          className={`min-h-[64px] rounded-xl border p-2 flex flex-col items-center justify-center transition-all ${getCellColor(
                             pct
                           )}`}
                         >
                           <span className="font-black text-sm">{pct}%</span>
+                          <span className="text-[10px] opacity-75 font-medium">
+                            {count} {count === 1 ? 'turno' : 'turnos'}
+                          </span>
                           {isDead && (
                             <span className="text-[9px] font-bold uppercase tracking-wider text-rose-400 mt-0.5">
-                              Muerto
+                              Baja Demanda
                             </span>
                           )}
                         </div>
@@ -375,61 +394,73 @@ export default function ReportesPage() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {data.recommendations.map((rec) => (
-                <Card
-                  key={rec.id}
-                  className="bg-slate-900/80 border-slate-800 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-lg"
-                >
-                  <CardHeader className="p-4 pb-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Badge className="bg-rose-500/15 border-rose-500/30 text-rose-300 text-[10px] font-bold">
-                        {rec.currentOccupancy}% Ocupación
-                      </Badge>
-                      <Badge className="bg-emerald-500/15 border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
-                        -{rec.discountPct}% Sugerido
-                      </Badge>
-                    </div>
-                    <CardTitle className="text-sm font-bold text-white pt-1">
-                      {rec.slotLabel}
-                    </CardTitle>
-                    <CardDescription className="text-xs text-amber-300/90 font-medium">
-                      {rec.days}
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      {rec.rationale}
-                    </p>
-
-                    <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-400">Tarifa Estándar:</span>
-                        <span className="line-through text-slate-500">{formatARS(rec.standardPriceArs)}</span>
+            {data.recommendations.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-8 text-center space-y-2">
+                <Lightbulb className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-sm font-semibold text-slate-300">
+                  Sin sugerencias requeridas en este período
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  A medida que se registren reservas en el club, nuestro algoritmo analizará automáticamente los patrones de demanda para sugerirte tarifas dinámicas y promociones estratégicas para optimizar tus ingresos.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {data.recommendations.map((rec) => (
+                  <Card
+                    key={rec.id}
+                    className="bg-slate-900/80 border-slate-800 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-lg"
+                  >
+                    <CardHeader className="p-4 pb-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Badge className="bg-rose-500/15 border-rose-500/30 text-rose-300 text-[10px] font-bold">
+                          {rec.currentOccupancy}% Ocupación
+                        </Badge>
+                        <Badge className="bg-emerald-500/15 border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+                          -{rec.discountPct}% Sugerido
+                        </Badge>
                       </div>
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-emerald-400">Tarifa Sugerida:</span>
-                        <span className="text-emerald-300 text-sm font-black">{formatARS(rec.suggestedPriceArs)}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/80 text-slate-400">
-                        <span>Recuperación Semanal:</span>
-                        <span className="text-white font-bold">+{formatARS(rec.projectedWeeklyRevenueArs)}</span>
-                      </div>
-                    </div>
+                      <CardTitle className="text-sm font-bold text-white pt-1">
+                        {rec.slotLabel}
+                      </CardTitle>
+                      <CardDescription className="text-xs text-amber-300/90 font-medium">
+                        {rec.days}
+                      </CardDescription>
+                    </CardHeader>
 
-                    <Button
-                      size="sm"
-                      onClick={() => handleSharePromoWhatsApp(rec)}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shadow-emerald-950/30"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      <span>Difundir Promo por WhatsApp</span>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    <CardContent className="p-4 pt-1 space-y-3 flex-1 flex flex-col justify-between">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {rec.rationale}
+                      </p>
+
+                      <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400">Tarifa Estándar:</span>
+                          <span className="line-through text-slate-500">{formatARS(rec.standardPriceArs)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-emerald-400">Tarifa Sugerida:</span>
+                          <span className="text-emerald-300 text-sm font-black">{formatARS(rec.suggestedPriceArs)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/80 text-slate-400">
+                          <span>Recuperación Semanal:</span>
+                          <span className="text-white font-bold">+{formatARS(rec.projectedWeeklyRevenueArs)}</span>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        onClick={() => handleSharePromoWhatsApp(rec)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shadow-emerald-950/30"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>Difundir Promo por WhatsApp</span>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

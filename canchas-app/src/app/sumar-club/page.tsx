@@ -239,14 +239,14 @@ export default function SumarClubLandingPage() {
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-12 text-left">
-            {/* 1. Mercado Pago */}
+            {/* 1. Transferencia */}
             <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:shadow-lg transition-all space-y-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <ShieldCheck className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-base text-white">Señas automáticas con Mercado Pago</h3>
+              <h3 className="font-bold text-base text-white">Señas automáticas por transferencia</h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                Cero clavadas y turnos vacíos. La seña ingresa directo a tu cuenta de Mercado Pago en tiempo real.
+                Evita los sobre turnos y los turnos vacíos. La seña ingresa directo a tu cuenta en tiempo real.
               </p>
             </div>
 
@@ -257,7 +257,7 @@ export default function SumarClubLandingPage() {
               </div>
               <h3 className="font-bold text-base text-white">Protocolo climático inteligente</h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                ¿Llovió o hay temporal? Cancelá turnos en 1 clic y acreditá automáticamente saldo a favor al jugador con aviso por WhatsApp.
+                ¿Llovió o hay temporal? Cancelá turnos en 1 clic
               </p>
             </div>
 

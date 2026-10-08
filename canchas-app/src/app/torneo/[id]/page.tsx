@@ -215,19 +215,22 @@ export default function PublicTournamentPage({
           {tournament.categories.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 pt-2">
               <span className="text-xs text-slate-400 font-medium mr-1">Categorías:</span>
-              {tournament.categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCatId(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    selectedCatId === cat.id
-                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/60'
-                  }`}
-                >
-                  {cat.name} ({cat.teams.length} parejas)
-                </button>
-              ))}
+              {tournament.categories.map((cat) => {
+                const isFoot = tournament.sport === 'FUTBOL_5' || tournament.sport === 'FUTBOL_7' || tournament.sport === 'FUTBOL_11'
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCatId(cat.id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                      selectedCatId === cat.id
+                        ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/60'
+                    }`}
+                  >
+                    {cat.name} ({cat.teams.length} {isFoot ? 'equipos' : 'parejas'})
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -334,7 +337,7 @@ export default function PublicTournamentPage({
             <span>Cuadro Eliminatorio (Playoffs)</span>
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+          <div className={`grid grid-cols-1 ${cuartos.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6 items-center`}>
             {/* Columna Cuartos */}
             {cuartos.length > 0 && (
               <div className="space-y-4">

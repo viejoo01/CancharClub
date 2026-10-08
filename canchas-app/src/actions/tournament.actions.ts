@@ -218,11 +218,14 @@ export async function generatePlayoffBracket(
     // 0. Validar permisos sobre el club propietario del torneo
     const { data: category } = await supabase
       .from('tournament_categories')
-      .select('id, tournament:tournaments(tenant_id)')
+      .select('id, tournament_id, tournament:tournaments(id, tenant_id)')
       .eq('id', categoryId)
       .maybeSingle()
 
-    const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    const tourObj = category?.tournament as unknown as { id?: string; tenant_id?: string } | null
+    const resourceTenantId = tourObj?.tenant_id
+    const tournamentId = category?.tournament_id || tourObj?.id
+
     if (!resourceTenantId) {
       return { success: false, error: 'Categoría o torneo no encontrado' }
     }
@@ -249,96 +252,159 @@ export async function generatePlayoffBracket(
     // 2. Limpiar partidos existentes de la categoría
     await supabase.from('tournament_matches').delete().eq('category_id', categoryId)
 
-    // Equipos padded a 8 si son menos
-    const t = [...teams]
-    while (t.length < 8) {
-      t.push(null as unknown as TournamentTeam)
+    // Actualizar formato del torneo a PLAYOFFS
+    if (tournamentId) {
+      await supabase.from('tournaments').update({ format: 'PLAYOFFS' }).eq('id', tournamentId)
     }
 
-    // 3. Crear 4 partidos de Cuartos de Final
-    // Cruces clásicos: 1 vs 8, 4 vs 5, 2 vs 7, 3 vs 6
-    const cuartosRows = [
-      {
-        category_id: categoryId,
-        round: 'CUARTOS',
-        match_number: 1,
-        team_a_id: t[0]?.id || null,
-        team_b_id: t[7]?.id || null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Viernes 18:00',
-        court_name: 'Cancha 1',
-      },
-      {
-        category_id: categoryId,
-        round: 'CUARTOS',
-        match_number: 2,
-        team_a_id: t[3]?.id || null,
-        team_b_id: t[4]?.id || null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Viernes 19:30',
-        court_name: 'Cancha 2',
-      },
-      {
-        category_id: categoryId,
-        round: 'CUARTOS',
-        match_number: 3,
-        team_a_id: t[1]?.id || null,
-        team_b_id: t[6]?.id || null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Viernes 21:00',
-        court_name: 'Cancha 1',
-      },
-      {
-        category_id: categoryId,
-        round: 'CUARTOS',
-        match_number: 4,
-        team_a_id: t[2]?.id || null,
-        team_b_id: t[5]?.id || null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Viernes 22:30',
-        court_name: 'Cancha 2',
-      },
-    ]
+    let allMatches: Array<{
+      category_id: string
+      round: string
+      match_number: number
+      team_a_id: string | null
+      team_b_id: string | null
+      status: string
+      scheduled_time: string
+      court_name: string
+    }> = []
 
-    // 4. Crear 2 partidos de Semifinal (esperando ganadores)
-    const semisRows = [
-      {
-        category_id: categoryId,
-        round: 'SEMIFINAL',
-        match_number: 1,
-        team_a_id: null,
-        team_b_id: null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Sábado 18:00',
-        court_name: 'Cancha 1',
-      },
-      {
-        category_id: categoryId,
-        round: 'SEMIFINAL',
-        match_number: 2,
-        team_a_id: null,
-        team_b_id: null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Sábado 19:30',
-        court_name: 'Cancha 2',
-      },
-    ]
+    if (teams.length === 2) {
+      // 2 equipos: Gran Final directa
+      allMatches = [
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: teams[0].id,
+          team_b_id: teams[1].id,
+          status: 'SCHEDULED',
+          scheduled_time: 'A definir',
+          court_name: 'Cancha Central',
+        },
+      ]
+    } else if (teams.length <= 4) {
+      // 3 ó 4 equipos: Semifinales directas y Gran Final
+      allMatches = [
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 1,
+          team_a_id: teams[0]?.id || null,
+          team_b_id: teams[3]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Semis 1 - 18:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 2,
+          team_a_id: teams[1]?.id || null,
+          team_b_id: teams[2]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Semis 2 - 19:30',
+          court_name: 'Cancha 2',
+        },
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Final - 21:00',
+          court_name: 'Cancha Central',
+        },
+      ]
+    } else {
+      // 5 a 8 equipos: Cuartos de Final clásicos -> Semis -> Final
+      const t = [...teams]
+      while (t.length < 8) {
+        t.push(null as unknown as TournamentTeam)
+      }
 
-    // 5. Crear 1 Gran Final
-    const finalRows = [
-      {
-        category_id: categoryId,
-        round: 'FINAL',
-        match_number: 1,
-        team_a_id: null,
-        team_b_id: null,
-        status: 'SCHEDULED',
-        scheduled_time: 'Domingo 20:00',
-        court_name: 'Cancha Central',
-      },
-    ]
+      const cuartosRows = [
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 1,
+          team_a_id: t[0]?.id || null,
+          team_b_id: t[7]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Viernes 18:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 2,
+          team_a_id: t[3]?.id || null,
+          team_b_id: t[4]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Viernes 19:30',
+          court_name: 'Cancha 2',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 3,
+          team_a_id: t[1]?.id || null,
+          team_b_id: t[6]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Viernes 21:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 4,
+          team_a_id: t[2]?.id || null,
+          team_b_id: t[5]?.id || null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Viernes 22:30',
+          court_name: 'Cancha 2',
+        },
+      ]
 
-    const allMatches = [...cuartosRows, ...semisRows, ...finalRows]
+      const semisRows = [
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 18:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 2,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 19:30',
+          court_name: 'Cancha 2',
+        },
+      ]
+
+      const finalRows = [
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 20:00',
+          court_name: 'Cancha Central',
+        },
+      ]
+
+      allMatches = [...cuartosRows, ...semisRows, ...finalRows]
+    }
+
     const { data: inserted, error: iErr } = await supabase
       .from('tournament_matches')
       .insert(allMatches)
@@ -477,11 +543,14 @@ export async function generateGroupStageAndPlayoffs(
     // 0. Validar permisos sobre el club propietario del torneo
     const { data: category } = await supabase
       .from('tournament_categories')
-      .select('id, tournament:tournaments(tenant_id)')
+      .select('id, tournament_id, tournament:tournaments(id, tenant_id)')
       .eq('id', categoryId)
       .maybeSingle()
 
-    const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    const tourObj = category?.tournament as unknown as { id?: string; tenant_id?: string } | null
+    const resourceTenantId = tourObj?.tenant_id
+    const tournamentId = category?.tournament_id || tourObj?.id
+
     if (!resourceTenantId) {
       return { success: false, error: 'Categoría o torneo no encontrado' }
     }
@@ -507,6 +576,11 @@ export async function generateGroupStageAndPlayoffs(
 
     // 2. Limpiar partidos existentes
     await supabase.from('tournament_matches').delete().eq('category_id', categoryId)
+
+    // Actualizar formato del torneo a GROUPS_AND_PLAYOFFS
+    if (tournamentId) {
+      await supabase.from('tournaments').update({ format: 'GROUPS_AND_PLAYOFFS' }).eq('id', tournamentId)
+    }
 
     // 3. Dividir en Grupo A y Grupo B
     const groupA = teams.filter((_, idx) => idx % 2 === 0)
@@ -595,6 +669,136 @@ export async function generateGroupStageAndPlayoffs(
   } catch (err) {
     console.error('[generateGroupStageAndPlayoffs] Error:', err)
     return { success: false, error: 'Error al generar formato de grupos' }
+  }
+}
+
+/**
+ * Modificar el formato de un torneo existente (Fase de grupos + Playoffs o Playoffs Directo)
+ */
+export async function updateTournamentFormat(
+  tournamentId: string,
+  format: 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: tour } = await supabase
+      .from('tournaments')
+      .select('tenant_id')
+      .eq('id', tournamentId)
+      .single()
+
+    if (!tour) return { success: false, error: 'Torneo no encontrado' }
+
+    const auth = await assertTenantMember(tour.tenant_id)
+    if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+
+    await supabase.from('tournaments').update({ format }).eq('id', tournamentId)
+
+    revalidatePath('/dashboard/torneos')
+    revalidatePath(`/torneo/${tournamentId}`)
+    return { success: true }
+  } catch (err) {
+    console.error('[updateTournamentFormat] Error:', err)
+    return { success: false, error: 'Error al actualizar formato' }
+  }
+}
+
+/**
+ * Clasificar los mejores de fase de grupos (Zonas A y B) a las Semifinales
+ */
+export async function advanceGroupWinnersToPlayoffs(
+  categoryId: string,
+  qualifiers: {
+    firstAId?: string | null
+    secondAId?: string | null
+    firstBId?: string | null
+    secondBId?: string | null
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: category } = await supabase
+      .from('tournament_categories')
+      .select('id, tournament:tournaments(tenant_id)')
+      .eq('id', categoryId)
+      .maybeSingle()
+
+    const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    if (!resourceTenantId) {
+      return { success: false, error: 'Categoría no encontrada' }
+    }
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos' }
+    }
+
+    // Semifinal 1: 1° Zona A vs 2° Zona B
+    if (qualifiers.firstAId !== undefined || qualifiers.secondBId !== undefined) {
+      await supabase
+        .from('tournament_matches')
+        .update({
+          team_a_id: qualifiers.firstAId || null,
+          team_b_id: qualifiers.secondBId || null,
+        })
+        .eq('category_id', categoryId)
+        .eq('round', 'SEMIFINAL')
+        .eq('match_number', 1)
+    }
+
+    // Semifinal 2: 1° Zona B vs 2° Zona A
+    if (qualifiers.firstBId !== undefined || qualifiers.secondAId !== undefined) {
+      await supabase
+        .from('tournament_matches')
+        .update({
+          team_a_id: qualifiers.firstBId || null,
+          team_b_id: qualifiers.secondAId || null,
+        })
+        .eq('category_id', categoryId)
+        .eq('round', 'SEMIFINAL')
+        .eq('match_number', 2)
+    }
+
+    revalidatePath('/dashboard/torneos')
+    return { success: true }
+  } catch (err) {
+    console.error('[advanceGroupWinnersToPlayoffs] Error:', err)
+    return { success: false, error: 'Error al clasificar equipos a semifinales' }
+  }
+}
+
+/**
+ * Eliminar un equipo o pareja inscripta
+ */
+export async function deleteTeam(teamId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: team } = await supabase
+      .from('tournament_teams')
+      .select('id, category_id, category:tournament_categories(tournament:tournaments(tenant_id))')
+      .eq('id', teamId)
+      .maybeSingle()
+
+    if (!team) return { success: false, error: 'Equipo no encontrado' }
+
+    const catObj = team.category as unknown as { tournament?: { tenant_id?: string } } | null
+    const resourceTenantId = catObj?.tournament?.tenant_id
+    if (resourceTenantId) {
+      const auth = await assertTenantMember(resourceTenantId)
+      if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+    }
+
+    // Desvincular de partidos donde figure
+    await supabase.from('tournament_matches').update({ team_a_id: null }).eq('team_a_id', teamId)
+    await supabase.from('tournament_matches').update({ team_b_id: null }).eq('team_b_id', teamId)
+    await supabase.from('tournament_matches').update({ winner_team_id: null }).eq('winner_team_id', teamId)
+
+    await supabase.from('tournament_teams').delete().eq('id', teamId)
+
+    revalidatePath('/dashboard/torneos')
+    return { success: true }
+  } catch (err) {
+    console.error('[deleteTeam] Error:', err)
+    return { success: false, error: 'Error al eliminar inscripción' }
   }
 }
 

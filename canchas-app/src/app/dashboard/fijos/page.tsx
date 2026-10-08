@@ -190,7 +190,11 @@ export default function TurnosFijosPage() {
     try {
       const res = await generateMonthlyBookingsForSlot(slotId)
       if (res.success) {
-        toast.success(`¡Se generaron/actualizaron ${res.generatedCount} reservas para este mes!`)
+        if (res.generatedCount > 0) {
+          toast.success(res.message || `¡Se generaron ${res.generatedCount} reservas para este mes!`)
+        } else {
+          toast.info(res.message || 'Los turnos para este mes ya estaban generados en la grilla.')
+        }
       } else {
         toast.error(res.error || 'Error al generar reservas')
       }
@@ -314,7 +318,7 @@ export default function TurnosFijosPage() {
                 <CardHeader className="pb-3 border-b border-slate-800/80 bg-slate-950/40">
                   <div className="flex items-center justify-between">
                     <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-xs font-bold">
-                      {DAYS_NAME[slot.day_of_week]}s
+                      {slot.day_of_week === 0 ? 'Domingos' : slot.day_of_week === 6 ? 'Sábados' : DAYS_NAME[slot.day_of_week]}
                     </Badge>
                     <button
                       onClick={() => handleToggleStatus(slot.id, slot.status)}

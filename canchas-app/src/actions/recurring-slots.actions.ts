@@ -200,18 +200,25 @@ export async function updateRecurringSlotStatus(
  */
 export async function generateMonthlyBookingsForSlot(
   slotId: string,
-  year: number = new Date().getFullYear(),
-  month: number = new Date().getMonth() + 1
-): Promise<{ success: boolean; generatedCount: number; error?: string }> {
+  year?: number,
+  month?: number
+): Promise<{ 
+  success: boolean; 
+  generatedCount: number; 
+  alreadyExistingCount?: number; 
+  message?: string; 
+  error?: string 
+}> {
   try {
     const supabase = await createServiceClient()
     const { data: slot, error: slotErr } = await supabase
       .from('recurring_slots')
-      .select('*, court:courts(id, name, slot_duration)')
+      .select('*, court:courts(id, name, sport, slot_duration_minutes)')
       .eq('id', slotId)
       .single()
 
     if (slotErr || !slot) {
+      console.error('[generateMonthlyBookingsForSlot] Error al obtener turno fijo:', slotErr)
       return { success: false, generatedCount: 0, error: 'Turno fijo no encontrado' }
     }
 
@@ -220,10 +227,14 @@ export async function generateMonthlyBookingsForSlot(
       return { success: false, generatedCount: 0, error: auth.error || 'Sin permisos para generar reservas' }
     }
 
+    const now = new Date()
+    const targetYear = year ?? now.getFullYear()
+    const targetMonth = month ?? (now.getMonth() + 1)
+
     // Calcular los días del mes con ese día de la semana
     const dates: Date[] = []
-    const firstDay = new Date(year, month - 1, 1)
-    const lastDay = new Date(year, month, 0)
+    const firstDay = new Date(targetYear, targetMonth - 1, 1)
+    const lastDay = new Date(targetYear, targetMonth, 0)
 
     for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
       if (d.getDay() === slot.day_of_week) {
@@ -232,8 +243,20 @@ export async function generateMonthlyBookingsForSlot(
     }
 
     let generatedCount = 0
-    const slotDuration = slot.court?.slot_duration || 'MIN_90'
-    const durationMinutes = slotDuration === 'MIN_60' ? 60 : slotDuration === 'MIN_120' ? 120 : 90
+    let alreadyExistingCount = 0
+
+    // Calcular duración exacta del turno según horario asignado o configuración de la cancha
+    let durationMinutes = 90
+    if (slot.start_time && slot.end_time) {
+      const [sh, sm] = slot.start_time.slice(0, 5).split(':').map(Number)
+      const [eh, em] = slot.end_time.slice(0, 5).split(':').map(Number)
+      let diff = (eh * 60 + em) - (sh * 60 + sm)
+      if (diff <= 0) diff += 24 * 60 // Por si cruza medianoche
+      if (diff > 0) durationMinutes = diff
+    } else if (slot.court?.slot_duration_minutes) {
+      durationMinutes = slot.court.slot_duration_minutes
+    }
+
     const pricePerTurn = Math.round(slot.monthly_price / (dates.length || 4))
     const priceTotalCents = Math.round(pricePerTurn * 100)
 
@@ -254,6 +277,22 @@ export async function generateMonthlyBookingsForSlot(
       const startsAtIso = slotStartDate.toISOString()
       const endsAtIso = new Date(slotStartDate.getTime() + durationMinutes * 60000).toISOString()
       const bookingRange = `[${startsAtIso},${endsAtIso})`
+
+      // Verificar si ya existe una reserva activa para este horario y cancha
+      const { data: existingBooking } = await supabase
+        .from('bookings')
+        .select('id, customer_name, status')
+        .eq('tenant_id', slot.tenant_id)
+        .eq('court_id', slot.court_id)
+        .eq('booked_at', bookingRange)
+        .not('status', 'eq', 'cancelled')
+        .maybeSingle()
+
+      if (existingBooking) {
+        alreadyExistingCount++
+        continue
+      }
+
       const bookingId = crypto.randomUUID()
       const staffNotes = `ABONO FIJO: ${slot.customer_name} (Mensualidad día ${slot.payment_due_day})`
 
@@ -265,7 +304,7 @@ export async function generateMonthlyBookingsForSlot(
           court_id: slot.court_id,
           booked_at: bookingRange,
           status: 'confirmed',
-          sport: (slot.court as { sport?: string } | null)?.sport || 'PADEL',
+          sport: (slot.court as { sport?: string } | null)?.sport || 'FUTBOL5',
           price_total_cents: priceTotalCents,
           deposit_cents: priceTotalCents, // Cubierto por abono mensual
           staff_deposit_amount_cents: priceTotalCents,
@@ -275,12 +314,14 @@ export async function generateMonthlyBookingsForSlot(
           customer_phone: slot.customer_phone,
           customer_email: slot.customer_email || null,
           staff_notes: staffNotes,
+          recurring_slot_id: slot.id,
         })
 
       if (insertErr) {
-        // Si hay conflicto de solapamiento (23P01), omitir este turno sin romper la generación de los demás
+        // Conflicto de solapamiento
         if (insertErr.code === '23P01') {
           console.warn(`[generateMonthlyBookingsForSlot] Conflicto de turno ya reservado para ${startsAtIso}, omitiendo...`)
+          alreadyExistingCount++
           continue
         }
         console.warn('[generateMonthlyBookingsForSlot] DB insert notice:', insertErr.message)
@@ -306,8 +347,8 @@ export async function generateMonthlyBookingsForSlot(
         internal_notes: staffNotes,
         courts: {
           name: slot.court?.name || 'Cancha',
-          sport: (slot.court as { sport?: string } | null)?.sport || 'PADEL',
-          slot_duration: slotDuration === 'MIN_60' ? 'MIN_60' : 'MIN_90',
+          sport: (slot.court as { sport?: string } | null)?.sport || 'FUTBOL5',
+          slot_duration: durationMinutes === 60 ? 'MIN_60' : durationMinutes === 120 ? 'MIN_120' : 'MIN_90',
         },
       })
     }
@@ -315,12 +356,31 @@ export async function generateMonthlyBookingsForSlot(
     // Marcar último mes generado
     await supabase
       .from('recurring_slots')
-      .update({ last_generated_month: `${year}-${String(month).padStart(2, '0')}` })
+      .update({ last_generated_month: `${targetYear}-${String(targetMonth).padStart(2, '0')}` })
       .eq('id', slotId)
 
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard')
-    return { success: true, generatedCount }
+    revalidatePath('/dashboard/canchas')
+
+    let message = ''
+    if (generatedCount > 0) {
+      message = `¡Se generaron ${generatedCount} reserva${generatedCount > 1 ? 's' : ''} en la grilla para este mes!`
+      if (alreadyExistingCount > 0) {
+        message += ` (${alreadyExistingCount} ya estaban agendadas)`
+      }
+    } else if (alreadyExistingCount > 0) {
+      message = `Los turnos de este mes ya estaban reservados en la grilla (${alreadyExistingCount} reservas).`
+    } else {
+      message = 'No quedan fechas futuras pendientes en este mes para generar.'
+    }
+
+    return { 
+      success: true, 
+      generatedCount, 
+      alreadyExistingCount,
+      message 
+    }
   } catch (err) {
     console.error('[generateMonthlyBookingsForSlot] Error:', err)
     return { success: false, generatedCount: 0, error: 'Error al generar reservas mensuales' }

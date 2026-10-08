@@ -21,7 +21,6 @@ import {
   Users,
   UserCheck,
   Receipt,
-  Monitor,
   KeyRound,
   Share2,
   Sparkles
@@ -166,13 +165,6 @@ export function Sidebar({
       href: '/dashboard/plan',
       icon: CreditCard,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
-    },
-    {
-      title: 'Tótem / Kiosco Mostrador',
-      href: '/totem',
-      icon: Monitor,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      staffVisible: true,
     },
   ]
 

@@ -312,6 +312,11 @@ export function CalendarGrid({
       if (Array.isArray(fresh)) {
         setLoadedBookings(fresh as CalendarBooking[])
         setOptimisticBookings([])
+        setSelectedBooking((prev) => {
+          if (!prev) return null
+          const updated = (fresh as CalendarBooking[]).find((b) => b.id === prev.id)
+          return updated || prev
+        })
       }
     } catch (err) {
       console.error('[CalendarGrid] Error fetching bookings:', err)
@@ -394,6 +399,12 @@ export function CalendarGrid({
             return fresh as CalendarBooking[]
           }
           return prev
+        })
+
+        setSelectedBooking((prev) => {
+          if (!prev) return null
+          const updated = (fresh as CalendarBooking[]).find((b) => b.id === prev.id)
+          return updated || prev
         })
       } catch (err) {
         console.warn('[silentSync] Error al sincronizar:', err)

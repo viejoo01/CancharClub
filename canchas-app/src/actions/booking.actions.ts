@@ -878,7 +878,7 @@ export async function markBookingNoShow(bookingId: string): Promise<{ success: b
 
 // ─── ACTION: Confirmar seña / Aprobar turno transferido ─────────────────────────
 
-export async function confirmBookingDeposit(bookingId: string): Promise<{ success: boolean; error?: string }> {
+export async function confirmBookingDeposit(bookingId: string): Promise<{ success: boolean; error?: string; updatedNotes?: string }> {
   try {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
@@ -907,6 +907,7 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
         paid_at: nowIso,
         staff_notes: updatedNotes,
         updated_at: nowIso,
+        staff_deposit_amount_cents: booking.deposit_cents || 0,
       })
       .eq('id', bookingId)
 
@@ -917,7 +918,7 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
-    return { success: true }
+    return { success: true, updatedNotes }
   } catch (error) {
     console.error('[confirmBookingDeposit] Error:', error)
     return { success: false, error: 'Error interno al confirmar seña' }

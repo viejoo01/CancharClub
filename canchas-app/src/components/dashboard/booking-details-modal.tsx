@@ -88,7 +88,8 @@ export function BookingDetailsModal({
   }, [tenantId])
 
   const [localStatus, setLocalStatus] = useState<string | null>(null)
-  const currentStatus = localStatus || booking?.status || 'confirmed'
+  const [localVerifiedDeposit, setLocalVerifiedDeposit] = useState(false)
+  const [localNotes, setLocalNotes] = useState<string | null>(null)
 
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO'>('CASH')
@@ -124,15 +125,61 @@ export function BookingDetailsModal({
   if (booking?.id !== prevBookingId) {
     setPrevBookingId(booking?.id)
     setLocalStatus(null)
+    setLocalVerifiedDeposit(false)
+    setLocalNotes(null)
     setShowPayForm(false)
     setPayAmount('')
   }
 
   if (!booking) return null
 
+  const currentStatus = localStatus || booking.status || 'confirmed'
+  const currentNotes = localNotes ?? booking.internal_notes ?? ''
+
+  const currentPaid = (localVerifiedDeposit && (booking.total_paid || 0) < (booking.deposit_amount_ars || 0))
+    ? booking.deposit_amount_ars
+    : (booking.total_paid || 0)
+
+  const currentBalance = (localVerifiedDeposit && (booking.total_paid || 0) < (booking.deposit_amount_ars || 0))
+    ? Math.max(0, (booking.total_amount_ars || 0) - (booking.deposit_amount_ars || 0))
+    : (booking.balance_due || 0)
+
+  const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
+  const hasPaidAny = currentPaid > 0
+  const isFullyPaid = currentBalance === 0 && (booking.total_amount_ars || 0) > 0
+
+  const isStaffDeskPaid = Boolean(
+    currentNotes.includes('Cobro $') ||
+    currentNotes.includes('en mostrador') ||
+    currentNotes.includes('Seña inicial') ||
+    booking.origin === 'STAFF_MANUAL'
+  )
+
+  const isTransfer = Boolean(
+    currentNotes.toUpperCase().includes('TRANSFER') ||
+    currentNotes.toUpperCase().includes('BANCO') ||
+    currentNotes.toUpperCase().includes('ALIAS') ||
+    currentStatus.toUpperCase() === 'PENDING_DEPOSIT'
+  )
+
+  const isAlreadyVerified = Boolean(
+    localVerifiedDeposit ||
+    currentNotes.includes('Seña verificada y aprobada') ||
+    currentNotes.includes('verificada y aprobada') ||
+    isStaffDeskPaid
+  )
+
+  const isPendingDeposit =
+    !isAlreadyVerified &&
+    !isStaffDeskPaid &&
+    hasDepositAmount &&
+    (currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
+      currentStatus.toUpperCase() === 'PENDING' ||
+      isTransfer)
+
   const handleRegisterPayment = async (e: React.FormEvent) => {
     e.preventDefault()
-    const amount = Number(payAmount) || booking.balance_due
+    const amount = Number(payAmount) || currentBalance
     if (amount <= 0) {
       toast.error('Ingresá un monto válido a cobrar')
       return
@@ -172,7 +219,7 @@ export function BookingDetailsModal({
 
   const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO', customAmount?: number) => {
     if (!booking) return
-    const amount = customAmount ?? booking.balance_due
+    const amount = customAmount ?? currentBalance
     if (amount <= 0) {
       toast.error('No hay saldo pendiente por cobrar')
       return
@@ -222,6 +269,9 @@ export function BookingDetailsModal({
           description: 'El turno quedó validado en el sistema.',
         })
         setLocalStatus('CONFIRMED')
+        setLocalVerifiedDeposit(true)
+        const noteAddition = res.updatedNotes || (currentNotes ? `${currentNotes} | Seña verificada y aprobada por el club` : 'Seña verificada y aprobada por el club')
+        setLocalNotes(noteAddition)
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('canchar_bookings')
@@ -309,43 +359,13 @@ export function BookingDetailsModal({
     `¡Hola ${booking.customer_name}! 👋 Te recordamos tu turno en *${clubName || 'CancharClub'}*:\n` +
     `🏟️ *Cancha:* ${courtDisplayName}\n` +
     `🕐 *Horario:* ${formattedTime}\n` +
-    ((booking.balance_due || 0) > 0 ? `💳 *Saldo pendiente a cancelar:* ${formatARS(booking.balance_due)}\n` : `✅ *Turno totalmente abonado*\n`) +
+    ((currentBalance || 0) > 0 ? `💳 *Saldo pendiente a cancelar:* ${formatARS(currentBalance)}\n` : `✅ *Turno totalmente abonado*\n`) +
     `📍 ¡Te recomendamos llegar 10 minutos antes!\n` +
     (clubSlug ? `👉 Ubicación y servicios: ${siteConfig.url}/club/${clubSlug}` : '')
 
   const reminderWaUrl = booking.customer_phone
     ? buildWhatsAppLink(booking.customer_phone, customReminderMessage)
     : null
-
-  const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
-  const hasPaidAny = (booking.total_paid || 0) > 0
-  const isFullyPaid = (booking.balance_due || 0) === 0 && (booking.total_amount_ars || 0) > 0
-
-  const isStaffDeskPaid = Boolean(
-    booking.internal_notes?.includes('Cobro $') ||
-    booking.internal_notes?.includes('en mostrador') ||
-    booking.internal_notes?.includes('Seña inicial') ||
-    booking.origin === 'STAFF_MANUAL'
-  )
-
-  const isTransfer = Boolean(
-    booking.internal_notes?.toUpperCase().includes('TRANSFER') ||
-    booking.internal_notes?.toUpperCase().includes('BANCO') ||
-    booking.internal_notes?.toUpperCase().includes('ALIAS') ||
-    currentStatus.toUpperCase() === 'PENDING_DEPOSIT'
-  )
-  const isAlreadyVerified = Boolean(
-    booking.internal_notes?.includes('Seña verificada y aprobada') ||
-    booking.internal_notes?.includes('verificada y aprobada') ||
-    isStaffDeskPaid
-  )
-
-  const isPendingDeposit =
-    (currentStatus.toUpperCase() === 'PENDING_DEPOSIT' ||
-      currentStatus.toUpperCase() === 'PENDING' ||
-      (isTransfer && !isAlreadyVerified)) &&
-    !isStaffDeskPaid &&
-    hasDepositAmount
 
   const getStatusBadge = (status: string) => {
     const s = String(status || '').toUpperCase()
@@ -496,13 +516,13 @@ export function BookingDetailsModal({
             <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
               <div className="text-[11px] text-emerald-400 font-medium uppercase">Abonado</div>
               <div className="text-sm font-bold text-emerald-400 mt-0.5">
-                {formatARS(booking.total_paid)}
+                {formatARS(currentPaid)}
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
               <div className="text-[11px] text-amber-400 font-medium uppercase">Resta Pagar</div>
               <div className="text-sm font-bold text-amber-400 mt-0.5">
-                {formatARS(booking.balance_due)}
+                {formatARS(currentBalance)}
               </div>
             </div>
           </div>
@@ -537,7 +557,7 @@ export function BookingDetailsModal({
               <div className="flex items-center justify-between text-xs text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Turno Pagado Totalmente ({formatARS(booking.total_paid || booking.total_amount_ars)})</span>
+                  <span>Turno Pagado Totalmente ({formatARS(currentPaid || booking.total_amount_ars)})</span>
                 </div>
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
                   SALDADO
@@ -552,14 +572,14 @@ export function BookingDetailsModal({
               <div className="flex items-center justify-between text-xs text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Turno Confirmado — Seña Abonada ({formatARS(booking.total_paid || booking.deposit_amount_ars)})</span>
+                  <span>Turno Confirmado — Seña Abonada ({formatARS(currentPaid || booking.deposit_amount_ars)})</span>
                 </div>
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
                   SEÑA PAGADA
                 </Badge>
               </div>
               <p className="text-[11px] text-slate-300 pl-6">
-                Seña acreditada. Resta cobrar <strong className="text-amber-300 font-bold">{formatARS(booking.balance_due)}</strong> al momento del partido.
+                Seña acreditada. Resta cobrar <strong className="text-amber-300 font-bold">{formatARS(currentBalance)}</strong> al momento del partido.
               </p>
             </div>
           ) : (
@@ -580,7 +600,7 @@ export function BookingDetailsModal({
           )}
 
           {/* Acción 2: Cobro rápido del saldo restante del turno */}
-          {booking.balance_due > 0 && (
+          {currentBalance > 0 && (
             <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 shadow-lg space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -592,12 +612,12 @@ export function BookingDetailsModal({
                       {hasPaidAny || hasDepositAmount ? 'Terminar de Cobrar Resto' : 'Cobrar Turno en Mostrador'}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      Resta abonar al club: <strong className="text-amber-400 font-bold">{formatARS(booking.balance_due)}</strong>
+                      Resta abonar al club: <strong className="text-amber-400 font-bold">{formatARS(currentBalance)}</strong>
                     </div>
                   </div>
                 </div>
                 <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-2 py-0.5 text-xs font-mono">
-                  {formatARS(booking.balance_due)}
+                  {formatARS(currentBalance)}
                 </Badge>
               </div>
 
@@ -610,7 +630,7 @@ export function BookingDetailsModal({
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95"
                 >
                   {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
-                  <span>Cobrar Efectivo ({formatARS(booking.balance_due)})</span>
+                  <span>Cobrar Efectivo ({formatARS(currentBalance)})</span>
                 </Button>
 
                 <Button
@@ -620,7 +640,7 @@ export function BookingDetailsModal({
                   className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-cyan-950/40 cursor-pointer transition-all active:scale-95"
                 >
                   {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>Cobrar Transferencia ({formatARS(booking.balance_due)})</span>
+                  <span>Cobrar Transferencia ({formatARS(currentBalance)})</span>
                 </Button>
               </div>
 
@@ -631,7 +651,7 @@ export function BookingDetailsModal({
                     type="button"
                     onClick={() => {
                       setShowPayForm(true)
-                      setPayAmount(booking.balance_due.toString())
+                      setPayAmount(currentBalance.toString())
                     }}
                     className="text-[11px] text-slate-400 hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
                   >
@@ -692,10 +712,10 @@ export function BookingDetailsModal({
           )}
 
           {/* Nota Interna con traducción y limpieza a español */}
-          {booking.internal_notes && cleanNoteForDisplay(booking.internal_notes) && (
+          {currentNotes && cleanNoteForDisplay(currentNotes) && (
             <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-start gap-1.5 leading-relaxed">
               <span className="font-semibold text-slate-300 shrink-0">Nota:</span>
-              <span>{cleanNoteForDisplay(booking.internal_notes)}</span>
+              <span>{cleanNoteForDisplay(currentNotes)}</span>
             </div>
           )}
         </div>
@@ -743,7 +763,7 @@ export function BookingDetailsModal({
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            {booking.balance_due > 0 && (
+            {currentBalance > 0 && (
               <Button
                 type="button"
                 onClick={() => handleQuickPay('CASH')}
@@ -751,7 +771,7 @@ export function BookingDetailsModal({
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-4 rounded-lg shadow-md gap-1.5 cursor-pointer flex-1 sm:flex-initial"
               >
                 {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
-                <span>Cobrar Resto ({formatARS(booking.balance_due)})</span>
+                <span>Cobrar Resto ({formatARS(currentBalance)})</span>
               </Button>
             )}
 
@@ -782,8 +802,8 @@ export function BookingDetailsModal({
               customerName: booking.customer_name,
               customerPhone: booking.customer_phone,
               totalAmount: booking.total_amount_ars,
-              depositPaid: booking.total_paid || booking.deposit_amount_ars,
-              balanceDue: booking.balance_due,
+              depositPaid: currentPaid || booking.deposit_amount_ars,
+              balanceDue: currentBalance,
               bookingId: booking.id,
             }}
           />

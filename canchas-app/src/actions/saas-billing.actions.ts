@@ -1904,11 +1904,45 @@ export async function validateAndRegisterCardWithMercadoPago(
 
   // 5. Reembolso inmediato de los $15 ARS de validación técnica
   if (payment && payment.id && payment.status === 'approved') {
+    let refundSuccess = false
+    // 1° intento: SDK oficial de Mercado Pago con total()
     try {
       const refundClient = new PaymentRefund(mpConfig)
-      await refundClient.create({ payment_id: String(payment.id) })
-    } catch (refErr) {
-      console.warn('No se pudo reembolsar automáticamente vía API, acreditando en balance:', refErr)
+      const refResponse = await refundClient.total({ payment_id: payment.id })
+      if (refResponse && (refResponse.status === 'approved' || refResponse.id)) {
+        refundSuccess = true
+        console.log(`[Validación Tarjeta] Reembolso inmediato de $15 ARS ejecutado vía SDK (Refund ID: ${refResponse.id})`)
+      }
+    } catch (sdkRefundErr: unknown) {
+      console.warn('[Validación Tarjeta] Reembolso SDK total falló, ejecutando fallback directo HTTP:', (sdkRefundErr as Error)?.message || sdkRefundErr)
+    }
+
+    // 2° intento: Llamada directa a REST API oficial de Mercado Pago
+    if (!refundSuccess) {
+      try {
+        const directResp = await fetch(`https://api.mercadopago.com/v1/payments/${payment.id}/refunds`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${mpToken}`,
+            'Content-Type': 'application/json',
+            'X-Idempotency-Key': `refund-${payment.id}-${Date.now()}`,
+          },
+          body: JSON.stringify({}),
+        })
+        const directJson = await directResp.json().catch(() => null)
+        if (directResp.ok && (directJson?.status === 'approved' || directJson?.id)) {
+          refundSuccess = true
+          console.log(`[Validación Tarjeta] Reembolso de $15 ARS aprobado vía REST API directo (Refund ID: ${directJson?.id})`)
+        } else {
+          console.warn('[Validación Tarjeta] Fallback REST falló con status:', directResp.status, directJson)
+        }
+      } catch (directErr) {
+        console.error('[Validación Tarjeta] Error de conexión en fallback REST refund:', directErr)
+      }
+    }
+
+    if (!refundSuccess) {
+      console.error(`[Validación Tarjeta] ALERTA: No se pudo emitir el reintegro de $15 para el pago ${payment.id}. Acreditando saldo a favor en cuenta.`)
       try {
         const { data: currentT } = await serviceClient
           .from('tenants')

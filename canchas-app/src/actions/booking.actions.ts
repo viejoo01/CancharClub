@@ -1074,17 +1074,26 @@ export async function lookupPlayerBookings(query: {
         if (isUUID) {
           dbQuery = dbQuery.eq('id', cleanCode.toLowerCase())
         } else {
-          // Búsqueda estricta por sufijo de ID o nota explícita, nunca comodín abierto sobre teléfonos
-          dbQuery = dbQuery.or(`id.ilike.%${cleanCode},staff_notes.ilike.%${cleanCode}%`)
+          // No usar ilike en columna UUID en Postgres (arroja error 42883).
+          // Se consulta reservas recientes y se filtra en memoria con exactitud de código.
+          dbQuery = dbQuery.order('created_at', { ascending: false }).limit(250)
         }
       } else if (normalizedEmail) {
         dbQuery = dbQuery.eq('customer_email', normalizedEmail)
       } else if (cleanPhone) {
-        const suffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone
-        dbQuery = dbQuery.ilike('customer_phone', `%${suffix}%`)
+        const digits = cleanPhone.replace(/\D/g, '')
+        let national = digits
+        if (national.startsWith('549')) national = national.slice(3)
+        else if (national.startsWith('54')) national = national.slice(2)
+        if (national.startsWith('0')) national = national.slice(1)
+
+        const last7 = digits.length >= 7 ? digits.slice(-7) : digits
+        const last8 = digits.length >= 8 ? digits.slice(-8) : digits
+
+        dbQuery = dbQuery.or(`customer_phone.ilike.%${last7}%,customer_phone.ilike.%${last8}%,customer_phone.ilike.%${national}%`)
       }
 
-      const { data: dbBookings } = await dbQuery.limit(10)
+      const { data: dbBookings } = await dbQuery.limit(50)
 
       if (dbBookings && dbBookings.length > 0) {
         for (const raw of dbBookings) {
@@ -1098,8 +1107,9 @@ export async function lookupPlayerBookings(query: {
           const total = (Number(b.price_total_cents) || 0) / 100
           const deposit = (Number(b.deposit_cents) || 0) / 100
           const rawId = String(b.id || '')
-          const shortCode = rawId.slice(0, 8).toUpperCase()
-          const assignedCode = `RES-${shortCode.slice(-6)}`
+          // El shortCode en todo CancharClub son los últimos 6 caracteres del UUID (ej: 987205)
+          const shortCode = rawId.slice(-6).toUpperCase()
+          const assignedCode = `RES-${shortCode}`
 
           // Parsear fechas desde el tstzrange booked_at
           let startsAt = ''
@@ -1132,16 +1142,34 @@ export async function lookupPlayerBookings(query: {
 
           // Si la búsqueda es por código, validar estrictamente que coincida con esta reserva
           if (cleanCode) {
-            const codeNoPrefix = assignedCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
-            const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+            const codeCore = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/i, '').replace(/^#/, '').trim().toUpperCase()
+            const rawUpper = rawId.toUpperCase()
             const matchesStrict =
+              shortCode === codeCore ||
               assignedCode === cleanCode ||
-              shortCode === cleanCode ||
-              rawId.toUpperCase() === cleanCode ||
-              (searchNoPrefix.length >= 4 && codeNoPrefix === searchNoPrefix) ||
-              (rawId.toUpperCase().endsWith(cleanCode) && cleanCode.length >= 6)
+              rawUpper === cleanCode ||
+              rawUpper.endsWith(codeCore) ||
+              rawUpper.startsWith(codeCore) ||
+              (b.staff_notes && String(b.staff_notes).toUpperCase().includes(codeCore))
 
             if (!matchesStrict) {
+              continue
+            }
+          }
+
+          // Si la búsqueda es por teléfono, validar coincidencia normalizada
+          if (cleanPhone) {
+            const phoneDigits = String(b.customer_phone || '').replace(/\D/g, '')
+            const searchDigits = cleanPhone.replace(/\D/g, '')
+            const searchLast7 = searchDigits.length >= 7 ? searchDigits.slice(-7) : searchDigits
+            const searchLast8 = searchDigits.length >= 8 ? searchDigits.slice(-8) : searchDigits
+            const matchPhone =
+              phoneDigits.includes(searchDigits) ||
+              searchDigits.includes(phoneDigits) ||
+              (searchLast7.length >= 6 && phoneDigits.endsWith(searchLast7)) ||
+              (searchLast8.length >= 7 && phoneDigits.endsWith(searchLast8))
+
+            if (!matchPhone) {
               continue
             }
           }
@@ -1183,14 +1211,15 @@ export async function lookupPlayerBookings(query: {
     // 3. Si la búsqueda fue por código, asegurar que los resultados contengan ESTRICTAMENTE ese código
     const filteredResults = cleanCode
       ? results.filter(r => {
+          const codeCore = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/i, '').replace(/^#/, '').trim().toUpperCase()
           const rCode = r.code.toUpperCase().replace(/^#/, '').trim()
-          const rCodeNoPrefix = rCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
-          const searchNoPrefix = cleanCode.replace(/^(PCL|RES|CAN|TEN)-/, '')
+          const rId = r.id.toUpperCase()
           return (
             rCode === cleanCode ||
-            (searchNoPrefix.length >= 4 && rCodeNoPrefix === searchNoPrefix) ||
-            r.id.toUpperCase() === cleanCode ||
-            (r.id.toUpperCase().endsWith(cleanCode) && cleanCode.length >= 6)
+            r.code.endsWith(codeCore) ||
+            rId === cleanCode ||
+            rId.endsWith(codeCore) ||
+            rId.startsWith(codeCore)
           )
         })
       : results

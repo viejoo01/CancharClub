@@ -51,7 +51,7 @@ export function PlayerBookingsModal({
   const [phoneQuery, setPhoneQuery] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        return localStorage.getItem('canchas_player_phone') || ''
+        return localStorage.getItem('canchar_player_phone') || localStorage.getItem('canchas_player_phone') || ''
       } catch {
         return ''
       }
@@ -61,7 +61,7 @@ export function PlayerBookingsModal({
   const [emailQuery, setEmailQuery] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        return localStorage.getItem('canchas_player_email') || ''
+        return localStorage.getItem('canchar_player_email') || localStorage.getItem('canchas_player_email') || ''
       } catch {
         return ''
       }

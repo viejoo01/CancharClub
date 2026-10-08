@@ -33,7 +33,8 @@ import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
   setupCardLinkingCheckoutPreference,
   confirmCardSetupFromMercadoPagoPayment,
-  confirmAndActivateSubscriptionWithCard,
+  confirmPreapprovalSubscriptionFromMercadoPago,
+  validateAndRegisterCardWithMercadoPago,
   getClubPlanDetails,
   requestSubscriptionRevocationAction,
   undoSubscriptionRevocationAction,
@@ -41,6 +42,14 @@ import {
   clearAutoDebitAlertsAction,
   type ClubPlanDetails
 } from '@/actions/saas-billing.actions'
+import {
+  isValidLuhn,
+  detectCardBrand,
+  isValidExpiry,
+  isValidCvv,
+  isValidDni,
+  isValidCardholder
+} from '@/lib/card-validation'
 import { toast } from 'sonner'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
 import { useTenantId } from '@/hooks/use-tenant-id'
@@ -251,21 +260,35 @@ export default function ClubPlanPage() {
         const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
         const paymentId = params.get('payment_id') || params.get('collection_id') || undefined
         confirmCardSetupFromMercadoPagoPayment(activeTenant, paymentId).then((res) => {
-          if (res.success) {
+          if (res.success && res.cardBrand && res.cardLast4) {
             setHasAutoDebit(true)
             toast.success('¡Tarjeta Vinculada con Éxito desde Mercado Pago!', {
               description: `Tarjeta ${res.cardBrand} terminada en ${res.cardLast4} guardada para tu abono mensual.`,
               duration: 6000,
             })
             loadPlanData(false)
+          } else {
+            toast.error('No se pudo verificar el pago en Mercado Pago', {
+              description: res.error || 'El estado de la operación no fue aprobado.'
+            })
           }
         }).catch(() => {})
-      } else if (params.get('subscription_active') === 'true' || params.get('auto_debit_registered') === 'true' || params.has('preapproval_id')) {
+      } else if (params.has('preapproval_id')) {
         const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-        confirmAndActivateSubscriptionWithCard(activeTenant).catch(() => {})
-        toast.success('¡Débito Automático Adherido con Éxito!', {
-          description: 'Tu suscripción mensual a CancharClub está activa con tarjeta. En tu resumen bancario aparecerá bajo el concepto "CancharClub".'
-        })
+        const preapprovalId = params.get('preapproval_id')!
+        confirmPreapprovalSubscriptionFromMercadoPago(activeTenant, preapprovalId).then((res) => {
+          if (res.success) {
+            setHasAutoDebit(true)
+            toast.success('¡Débito Automático Adherido con Éxito!', {
+              description: 'Tu suscripción mensual a CancharClub está activa y verificada con Mercado Pago.'
+            })
+            loadPlanData(false)
+          } else {
+            toast.error('Suscripción no autorizada en Mercado Pago', {
+              description: res.error || 'No pudimos validar la autorización del débito automático.'
+            })
+          }
+        }).catch(() => {})
       }
     }
   }, [tenantId, planDetails?.tenantId])
@@ -294,40 +317,86 @@ export default function ClubPlanPage() {
 
   const handleConfirmCardSubscription = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv) {
-      toast.error('Por favor completá los datos de la tarjeta')
+    if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !cardDni) {
+      toast.error('Por favor completá todos los datos de la tarjeta y DNI')
       return
     }
+
+    const cleanNum = cardNumber.replace(/\D/g, '')
+    if (!isValidLuhn(cleanNum)) {
+      toast.error('Número de tarjeta inválido', {
+        description: 'El número ingresado no superó la verificación bancaria. Verificá los 16 dígitos.'
+      })
+      return
+    }
+
+    const brandInfo = detectCardBrand(cleanNum)
+    if (!brandInfo) {
+      toast.error('Emisor no reconocido', {
+        description: 'Ingresá una tarjeta Visa, Mastercard, American Express o Cabal válida.'
+      })
+      return
+    }
+
+    if (!isValidExpiry(cardExpiry)) {
+      toast.error('Fecha de vencimiento inválida o tarjeta vencida', {
+        description: 'Ingresá el mes (01-12) y año en formato MM/AA vigente.'
+      })
+      return
+    }
+
+    if (!isValidCvv(cardCvv, brandInfo.brand)) {
+      toast.error('Código de seguridad (CVV) inválido', {
+        description: brandInfo.brand === 'AMEX' ? 'American Express requiere 4 dígitos.' : 'El código de seguridad debe tener 3 dígitos.'
+      })
+      return
+    }
+
+    if (!isValidDni(cardDni)) {
+      toast.error('DNI inválido', {
+        description: 'Ingresá un DNI argentino válido de 7 u 8 dígitos.'
+      })
+      return
+    }
+
+    if (!isValidCardholder(cardHolder)) {
+      toast.error('Nombre de titular incompleto', {
+        description: 'Ingresá nombre y apellido completos tal como figuran en el plástico.'
+      })
+      return
+    }
+
     setSavingCard(true)
     try {
       const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const cleanNum = cardNumber.replace(/\D/g, '')
-      const detectedBrand = cleanNum.startsWith('4')
-        ? 'VISA'
-        : cleanNum.startsWith('5')
-        ? 'MASTERCARD'
-        : cleanNum.startsWith('3')
-        ? 'AMEX'
-        : cleanNum.startsWith('6')
-        ? 'CABAL'
-        : 'TARJETA'
-      const cardLast4 = cleanNum.slice(-4)
 
-      await confirmAndActivateSubscriptionWithCard(activeTenant, {
-        cardHolder: cardHolder.toUpperCase(),
-        cardLast4,
-        cardBrand: detectedBrand,
+      const res = await validateAndRegisterCardWithMercadoPago({
+        tenantId: activeTenant,
+        cardNumber: cleanNum,
+        cardHolder: cardHolder.toUpperCase().trim(),
+        cardExpiry,
+        cardCvv,
+        cardDni: cardDni.trim(),
       })
+
+      if (!res.success) {
+        toast.error('Tarjeta rechazada por la red bancaria', {
+          description: res.error || 'No pudimos verificar la tarjeta con Mercado Pago. Probá con otra tarjeta de débito o crédito.'
+        })
+        return
+      }
+
       setHasAutoDebit(true)
       setShowSubscriptionModal(false)
-      toast.success('¡Débito Automático Adherido con Éxito!', {
-        description: hasPriceConfigured
-          ? `Tu suscripción a CancharClub (${formatARS(pricing.monthlyFeeArs)}/mes) fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
-          : `Tu suscripción a CancharClub fue vinculada con Mercado Pago. En tu resumen bancario aparecerá como "CancharClub".`
+      toast.success('¡Tarjeta Verificada y Débito Adherido!', {
+        description: `Tarjeta ${res.cardBrand || 'Bancaria'} terminada en ${res.cardLast4 || 'XXXX'} validada por Mercado Pago. Hoy se cobró $0 (15 días gratis).`
       })
       loadPlanData(false)
-    } catch {
-      toast.error('Error al registrar la tarjeta')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Ocurrió un error inesperado al conectar con Mercado Pago.'
+      toast.error('Error al registrar la tarjeta', {
+        description: msg
+      })
     } finally {
       setSavingCard(false)
     }

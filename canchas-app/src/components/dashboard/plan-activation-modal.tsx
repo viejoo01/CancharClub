@@ -19,9 +19,17 @@ import {
 } from 'lucide-react'
 import { SAAS_PLANS, type SaaSPlanId } from '@/config/saas-plans'
 import { 
-  confirmAndActivateSubscriptionWithCard,
+  validateAndRegisterCardWithMercadoPago,
   setupMonthlySubscriptionPreapproval 
 } from '@/actions/saas-billing.actions'
+import {
+  isValidLuhn,
+  detectCardBrand,
+  isValidExpiry,
+  isValidCvv,
+  isValidDni,
+  isValidCardholder,
+} from '@/lib/card-validation'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -63,15 +71,8 @@ export function PlanActivationModal({
 
   // Detección de marca de tarjeta
   const cleanCardNumber = cardNumber.replace(/\D/g, '')
-  const cardBrand = cleanCardNumber.startsWith('4')
-    ? 'VISA'
-    : cleanCardNumber.startsWith('5')
-    ? 'MASTERCARD'
-    : cleanCardNumber.startsWith('3')
-    ? 'AMEX'
-    : cleanCardNumber.startsWith('6')
-    ? 'CABAL'
-    : 'TARJETA'
+  const detectedBrand = detectCardBrand(cleanCardNumber)
+  const cardBrand = detectedBrand ? detectedBrand.brand : 'TARJETA'
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 16)
@@ -91,62 +92,90 @@ export function PlanActivationModal({
     e.preventDefault()
 
     const rawNum = cardNumber.replace(/\D/g, '')
-    if (rawNum.length < 15) {
+    if (rawNum.length < 15 || rawNum.length > 16) {
       toast.error('Número de tarjeta incompleto', {
-        description: 'Por favor ingresá los 16 dígitos de tu tarjeta de crédito o débito.'
+        description: 'Por favor ingresá los 15 o 16 dígitos de tu tarjeta de crédito o débito.'
       })
       return
     }
 
-    if (!cardHolder.trim() || cardHolder.trim().length < 4) {
+    if (!isValidLuhn(rawNum)) {
+      toast.error('Número de tarjeta inválido', {
+        description: 'La tarjeta no supera el algoritmo de validación bancaria internacional (Luhn). Verificá los 16 dígitos de tu plástico.'
+      })
+      return
+    }
+
+    const detected = detectCardBrand(rawNum)
+    if (!detected) {
+      toast.error('Entidad emisora no válida', {
+        description: 'Ingresá una tarjeta Visa, Mastercard, American Express, Cabal o Naranja oficial.'
+      })
+      return
+    }
+
+    if (!isValidCardholder(cardHolder)) {
       toast.error('Titular de la tarjeta requerido', {
-        description: 'Ingresá el nombre y apellido tal como figura impreso en el plástico.'
+        description: 'Ingresá el nombre y apellido completo tal como figura impreso en el plástico.'
       })
       return
     }
 
-    if (cardExpiry.length < 5) {
-      toast.error('Fecha de vencimiento requerida', {
-        description: 'Ingresá el mes y año de vencimiento en formato MM/AA.'
+    const expCheck = isValidExpiry(cardExpiry)
+    if (!expCheck.valid) {
+      toast.error('Fecha de vencimiento inválida', {
+        description: expCheck.error || 'Ingresá el mes y año de vencimiento en formato MM/AA.'
       })
       return
     }
 
-    if (cardCvv.length < 3) {
+    if (!isValidCvv(cardCvv, detected.brand)) {
       toast.error('Código de seguridad (CVV) requerido', {
-        description: 'Ingresá el código de 3 o 4 dígitos al dorso de la tarjeta.'
+        description: 'Ingresá el código de 3 dígitos (o 4 dígitos en Amex) al dorso de la tarjeta.'
+      })
+      return
+    }
+
+    if (!isValidDni(cardDni)) {
+      toast.error('DNI del titular requerido', {
+        description: 'Ingresá el número de documento de 7 u 8 dígitos del titular.'
       })
       return
     }
 
     setIsSubmitting(true)
     try {
-      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
-      const cardLast4 = rawNum.slice(-4)
+      const activeTenant = tenantId || undefined
 
-      const res = await confirmAndActivateSubscriptionWithCard(activeTenant, {
+      const res = await validateAndRegisterCardWithMercadoPago({
+        tenantId: activeTenant,
+        cardNumber: rawNum,
         cardHolder: cardHolder.trim().toUpperCase(),
-        cardLast4,
-        cardBrand,
+        cardExpiry,
+        cardCvv,
+        cardDni,
       })
 
       if (res.success) {
-        toast.success('¡Tarjeta Vinculada con Éxito!', {
-          description: `Tu abono a CancharClub está activo con 15 días gratis ($0 hoy). Primer cobro automático recién en el día 16.`,
+        const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : detected.brand
+        const last4 = ('cardLast4' in res && res.cardLast4) ? res.cardLast4 : rawNum.slice(-4)
+        toast.success('¡Tarjeta Verificada con Éxito!', {
+          description: `Tarjeta ${brand} terminada en ${last4} verificada y vinculada para tu abono a CancharClub.`,
           duration: 5000,
         })
         onOpenChange(false)
         router.refresh()
-        // Recargar suavemente para que todo el dashboard y los layouts reconozcan el estado activo
         setTimeout(() => {
           window.location.reload()
         }, 600)
       } else {
-        toast.error('Error al procesar la vinculación de la tarjeta')
+        toast.error('Tarjeta rechazada o inválida', {
+          description: res.error || 'Por favor verificá los datos de tu tarjeta o probá con otra.',
+        })
       }
     } catch (err) {
       console.error('Error activating with card:', err)
-      toast.error('Ocurrió un error al vincular la tarjeta')
+      toast.error('Ocurrió un error al verificar la tarjeta con Mercado Pago')
     } finally {
       setIsSubmitting(false)
     }
@@ -258,7 +287,7 @@ export function PlanActivationModal({
           <div className="flex items-center justify-between text-[11px] pt-1">
             <div>
               <span className="text-[8px] block text-slate-400 uppercase font-sans">Titular</span>
-              <span className="font-bold tracking-wider truncate max-w-[200px] block">
+              <span className="font-bold tracking-wider truncate max-w-50 block">
                 {cardHolder || 'NOMBRE Y APELLIDO'}
               </span>
             </div>

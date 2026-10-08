@@ -13,9 +13,18 @@ import {
 } from '@/lib/saas-pricing'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
-import { MercadoPagoConfig, Preference, PreApproval } from 'mercadopago'
+import { MercadoPagoConfig, Preference, PreApproval, CardToken, Payment, PaymentRefund } from 'mercadopago'
 import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/types/database'
 import { formatAutoDebitAlertDate } from '@/lib/utils'
+import {
+  isValidLuhn,
+  detectCardBrand,
+  isValidExpiry,
+  isValidCvv,
+  isValidDni,
+  isValidCardholder,
+  mapMpRejectionDetail,
+} from '@/lib/card-validation'
 
 import { getPlanByCourtsCount, SAAS_PLANS, getHigherPlan, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
 import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
@@ -1051,7 +1060,10 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
     // Modo simulación seguro para desarrollo local sin credenciales:
     // Activar inmediatamente el club para no dejarlo bloqueado en pantalla de onboarding
-    await confirmAndActivateSubscriptionWithCard(tenantId)
+    await confirmAndActivateSubscriptionWithCard(tenantId, undefined, {
+      verifiedGateway: 'PREAPPROVAL',
+      verificationId: 'simulated_dev_preapproval',
+    })
     return {
       success: true,
       initPoint: null,
@@ -1171,7 +1183,10 @@ export async function setupCardLinkingCheckoutPreference(tenantId: string, custo
   const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
 
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
-    await confirmAndActivateSubscriptionWithCard(tenantId)
+    await confirmAndActivateSubscriptionWithCard(tenantId, undefined, {
+      verifiedGateway: 'MERCADO_PAGO',
+      verificationId: 'simulated_dev_checkout',
+    })
     return {
       success: true,
       initPoint: null,
@@ -1250,75 +1265,157 @@ export async function setupCardLinkingCheckoutPreference(tenantId: string, custo
 
 /**
  * Confirma la vinculación de tarjeta tras el retorno del checkout de Mercado Pago,
- * extrayendo la tarjeta utilizada desde la API de Mercado Pago y guardándola en el perfil del club.
+ * comprobando estrictamente que el pago fue APROBADO en la API oficial de Mercado Pago
+ * y guardando la tarjeta real utilizada en el perfil del club.
  */
 export async function confirmCardSetupFromMercadoPagoPayment(
   tenantId: string, 
   paymentIdParam?: string,
   options?: { skipAuth?: boolean }
-) {
+): Promise<{
+  success: boolean
+  error?: string
+  cardBrand?: string
+  cardLast4?: string
+  cardHolder?: string
+}> {
   const serviceClient = await createServiceClient()
+
+  if (!paymentIdParam) {
+    return {
+      success: false,
+      error: 'No se recibió identificador de transacción de Mercado Pago.',
+    }
+  }
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    const actRes = await confirmAndActivateSubscriptionWithCard(
+      tenantId,
+      {
+        cardBrand: 'VISA',
+        cardLast4: '4242',
+        cardHolder: 'Titular Prueba',
+      },
+      {
+        ...options,
+        verifiedGateway: 'MERCADO_PAGO',
+        verificationId: 'simulated_mp',
+      }
+    )
+    return {
+      success: actRes.success,
+      error: actRes.error,
+      cardBrand: 'VISA',
+      cardLast4: '4242',
+      cardHolder: 'Titular Prueba',
+    }
+  }
 
   let cardBrand = 'MERCADO PAGO'
   let cardLast4 = 'MP'
   let cardHolder = 'Titular Mercado Pago'
+  let paymentApproved = false
 
-  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  try {
+    const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentIdParam}`, {
+      headers: {
+        Authorization: `Bearer ${mpToken}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
 
-  if (paymentIdParam && mpToken && !mpToken.startsWith('TEST-0000000000000000')) {
-    try {
-      const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentIdParam}`, {
-        headers: {
-          Authorization: `Bearer ${mpToken}`,
-          'Content-Type': 'application/json',
-        },
-        cache: 'no-store',
-      })
-
-      if (response.ok) {
-        const paymentData = await response.json()
-        if (paymentData) {
-          if (paymentData.payment_method_id) {
-            const rawMethod = String(paymentData.payment_method_id).toUpperCase()
-            cardBrand = rawMethod.replace('DEB', '').replace('CRED', '').trim() || rawMethod
-          }
-          if (paymentData.card?.last_four_digits) {
-            cardLast4 = String(paymentData.card.last_four_digits)
-          }
-          if (paymentData.card?.cardholder?.name) {
-            cardHolder = String(paymentData.card.cardholder.name).toUpperCase()
-          } else if (paymentData.payer?.email) {
-            cardHolder = String(paymentData.payer.email)
-          }
-        }
+    if (!response.ok) {
+      return {
+        success: false,
+        error: 'No se pudo verificar el pago en Mercado Pago.',
       }
-    } catch (err) {
-      console.warn('Error fetching payment details from MP API:', err)
+    }
+
+    const paymentData = await response.json()
+    if (!paymentData || paymentData.status !== 'approved') {
+      const detail = mapMpRejectionDetail(paymentData?.status_detail) || paymentData?.status || 'no aprobado'
+      return {
+        success: false,
+        error: `La operación no fue aprobada por tu banco o Mercado Pago (${detail}). Por favor verificá los fondos o probá con otra tarjeta.`,
+      }
+    }
+
+    // Verificar external_reference para garantizar pertenencia al club
+    if (paymentData.external_reference && !paymentData.external_reference.includes(tenantId)) {
+      return {
+        success: false,
+        error: 'El identificador de pago no corresponde a este club.',
+      }
+    }
+
+    paymentApproved = true
+
+    if (paymentData.payment_method_id) {
+      const rawMethod = String(paymentData.payment_method_id).toUpperCase()
+      cardBrand = rawMethod.replace('DEB', '').replace('CRED', '').trim() || rawMethod
+    }
+    if (paymentData.card?.last_four_digits) {
+      cardLast4 = String(paymentData.card.last_four_digits)
+    }
+    if (paymentData.card?.cardholder?.name) {
+      cardHolder = String(paymentData.card.cardholder.name).toUpperCase()
+    } else if (paymentData.payer?.email) {
+      cardHolder = String(paymentData.payer.email)
+    }
+  } catch (err) {
+    console.error('Error fetching payment details from MP API:', err)
+    return {
+      success: false,
+      error: 'Error al contactar la pasarela de Mercado Pago.',
     }
   }
 
-  // Activar suscripción y guardar la tarjeta en el perfil del club
-  const activateRes = await confirmAndActivateSubscriptionWithCard(tenantId, {
-    cardBrand,
-    cardLast4,
-    cardHolder,
-  }, options)
-
-  // Reintegrar o bonificar los $15 ARS de validación técnica en el saldo del club para garantizar $0 costo total
-  try {
-    const { data: currentT } = await serviceClient
-      .from('tenants')
-      .select('current_balance')
-      .eq('id', tenantId)
-      .maybeSingle()
-    if (currentT) {
-      const currentBal = Number(currentT.current_balance ?? 0)
-      await serviceClient
-        .from('tenants')
-        .update({ current_balance: currentBal - 15 })
-        .eq('id', tenantId)
+  if (!paymentApproved) {
+    return {
+      success: false,
+      error: 'La tarjeta no fue aprobada por la entidad bancaria en Mercado Pago.',
     }
-  } catch {}
+  }
+
+  // Reembolsar los $15 ARS de validación técnica al club
+  try {
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+    const refundClient = new PaymentRefund(mpConfig)
+    await refundClient.create({ payment_id: paymentIdParam })
+  } catch (refErr) {
+    console.warn('Could not auto-refund payment, crediting tenant balance instead:', refErr)
+    try {
+      const { data: currentT } = await serviceClient
+        .from('tenants')
+        .select('current_balance')
+        .eq('id', tenantId)
+        .maybeSingle()
+      if (currentT) {
+        const currentBal = Number(currentT.current_balance ?? 0)
+        await serviceClient
+          .from('tenants')
+          .update({ current_balance: currentBal - 15 })
+          .eq('id', tenantId)
+      }
+    } catch {}
+  }
+
+  // Activar suscripción y guardar la tarjeta verificada en el perfil del club
+  const activateRes = await confirmAndActivateSubscriptionWithCard(
+    tenantId,
+    {
+      cardBrand,
+      cardLast4,
+      cardHolder,
+    },
+    {
+      ...options,
+      verifiedGateway: 'MERCADO_PAGO',
+      verificationId: paymentIdParam,
+    }
+  )
 
   revalidatePath('/onboarding/tarjeta')
   revalidatePath('/dashboard')
@@ -1334,8 +1431,424 @@ export async function confirmCardSetupFromMercadoPagoPayment(
 }
 
 /**
+ * Confirma la vinculación de tarjeta tras el retorno del portal de Preapproval (suscripciones recurrentes) de Mercado Pago.
+ */
+export async function confirmPreapprovalSubscriptionFromMercadoPago(
+  tenantId: string,
+  preapprovalIdParam?: string,
+  options?: { skipAuth?: boolean }
+): Promise<{
+  success: boolean
+  error?: string
+  cardBrand?: string
+  cardLast4?: string
+  cardHolder?: string
+}> {
+  if (!preapprovalIdParam) {
+    return {
+      success: false,
+      error: 'No se recibió identificador de suscripción de Mercado Pago.',
+    }
+  }
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    const actRes = await confirmAndActivateSubscriptionWithCard(
+      tenantId,
+      {
+        cardBrand: 'MERCADO PAGO',
+        cardLast4: 'MP',
+        cardHolder: 'Titular Débito Automático',
+      },
+      {
+        ...options,
+        verifiedGateway: 'PREAPPROVAL',
+        verificationId: 'simulated_preapproval',
+      }
+    )
+    return {
+      success: actRes.success,
+      error: actRes.error,
+      cardBrand: 'MERCADO PAGO',
+      cardLast4: 'MP',
+      cardHolder: 'Titular Débito Automático',
+    }
+  }
+
+  try {
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+    const preApprovalClient = new PreApproval(mpConfig)
+    const sub = await preApprovalClient.get({ id: preapprovalIdParam })
+
+    if (!sub || (sub.status !== 'authorized' && sub.status !== 'pending')) {
+      return {
+        success: false,
+        error: `La suscripción en Mercado Pago no está activa (estado: ${sub?.status || 'desconocido'}).`,
+      }
+    }
+
+    let cardBrand = 'MERCADO PAGO'
+    const cardLast4 = 'MP'
+    const cardHolder = sub.payer_email || 'Titular Mercado Pago'
+
+    if (sub.payment_method_id) {
+      cardBrand = String(sub.payment_method_id).toUpperCase()
+    }
+
+    const activateRes = await confirmAndActivateSubscriptionWithCard(
+      tenantId,
+      {
+        cardBrand,
+        cardLast4,
+        cardHolder,
+      },
+      {
+        ...options,
+        verifiedGateway: 'PREAPPROVAL',
+        verificationId: preapprovalIdParam,
+      }
+    )
+
+    revalidatePath('/onboarding/tarjeta')
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/plan')
+
+    return {
+      success: activateRes.success,
+      error: activateRes.error,
+      cardBrand,
+      cardLast4,
+      cardHolder,
+    }
+  } catch (err: unknown) {
+    console.error('Error verifying MP Preapproval:', err)
+    return {
+      success: false,
+      error: (err as Error)?.message || 'No se pudo verificar la suscripción en Mercado Pago.',
+    }
+  }
+}
+
+/**
+ * Valida de forma estricta y vincula una tarjeta de débito o crédito a través de Mercado Pago.
+ * BLINDAJE CONTRA TARJETAS FALSAS:
+ * 1. Algoritmo de Luhn (Módulo 10 internacional).
+ * 2. Validación de prefijo BIN de red bancaria (Visa, Master, Amex, Cabal, etc.).
+ * 3. Validación de expiración, CVV, DNI y titular.
+ * 4. Tokenización oficial con Mercado Pago (CardToken).
+ * 5. Autorización técnica bancaria ($15 ARS) para verificar fondos y estado real en el banco emisor.
+ * 6. Reembolso inmediato del importe de prueba ($15 ARS) para costo $0 neto.
+ * 7. Activación del club únicamente con tarjeta 100% aprobada por el banco.
+ */
+export async function validateAndRegisterCardWithMercadoPago(
+  data: {
+    tenantId?: string
+    cardNumber: string
+    cardHolder: string
+    cardExpiry: string
+    cardCvv: string
+    cardDni: string
+  },
+  options?: { skipAuth?: boolean }
+): Promise<{
+  success: boolean
+  error?: string
+  cardBrand?: string
+  cardLast4?: string
+  cardHolder?: string
+}> {
+  // 1. Limpieza y validación de formato estricto
+  const cleanNumber = (data.cardNumber || '').replace(/\D/g, '')
+  const cleanHolder = (data.cardHolder || '').trim().toUpperCase()
+  const cleanExpiry = (data.cardExpiry || '').trim()
+  const cleanCvv = (data.cardCvv || '').replace(/\D/g, '')
+  const cleanDni = (data.cardDni || '').replace(/\D/g, '')
+
+  if (cleanNumber.length < 15 || cleanNumber.length > 16) {
+    return {
+      success: false,
+      error: 'El número de tarjeta debe tener 15 o 16 dígitos.',
+    }
+  }
+
+  // Validación de algoritmo de Luhn (Módulo 10)
+  if (!isValidLuhn(cleanNumber)) {
+    return {
+      success: false,
+      error: 'Número de tarjeta inválido. No supera el algoritmo de validación bancaria (Luhn). Verificá los 16 dígitos de tu plástico.',
+    }
+  }
+
+  // Detección de emisor bancario
+  const detectedBrand = detectCardBrand(cleanNumber)
+  if (!detectedBrand) {
+    return {
+      success: false,
+      error: 'Entidad emisora no válida. Ingresá una tarjeta Visa, Mastercard, American Express, Cabal o Naranja.',
+    }
+  }
+
+  // Validación de fecha de vencimiento
+  const expCheck = isValidExpiry(cleanExpiry)
+  if (!expCheck.valid) {
+    return {
+      success: false,
+      error: expCheck.error || 'Fecha de vencimiento inválida.',
+    }
+  }
+
+  // Validación de CVV
+  if (!isValidCvv(cleanCvv, detectedBrand.brand)) {
+    return {
+      success: false,
+      error: 'Código de seguridad (CVV) inválido. Debe tener 3 dígitos (o 4 dígitos en Amex).',
+    }
+  }
+
+  // Validación de DNI
+  if (!isValidDni(cleanDni)) {
+    return {
+      success: false,
+      error: 'El DNI del titular debe tener 7 u 8 dígitos numéricos.',
+    }
+  }
+
+  // Validación de titular
+  if (!isValidCardholder(cleanHolder)) {
+    return {
+      success: false,
+      error: 'Ingresá el nombre y apellido completo del titular como figura en el plástico.',
+    }
+  }
+
+  // 2. Resolver el tenant
+  const serviceClient = await createServiceClient()
+  const cookieStore = await cookies()
+  let tenantId = data.tenantId
+
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001' || tenantId.startsWith('demo-')) {
+    const cId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    if (cId && !cId.startsWith('demo-')) {
+      tenantId = cId
+    } else {
+      const slug = cookieStore.get('demo_tenant_slug')?.value
+      if (slug && slug !== 'mi-club') {
+        const { data: t } = await serviceClient.from('tenants').select('id').eq('slug', slug).maybeSingle()
+        if (t?.id) tenantId = t.id
+      }
+    }
+  }
+
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001') {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await serviceClient
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profile?.tenant_id) {
+        tenantId = profile.tenant_id
+      }
+    }
+  }
+
+  if (!tenantId || tenantId === '00000000-0000-0000-0000-000000000001') {
+    return { success: false, error: 'No se pudo identificar el club' }
+  }
+
+  if (!options?.skipAuth) {
+    const auth = await assertTenantAdmin(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'No autorizado' }
+    }
+  }
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  const isSimulation = !mpToken || mpToken.startsWith('TEST-0000000000000000')
+
+  if (isSimulation) {
+    const actRes = await confirmAndActivateSubscriptionWithCard(
+      tenantId,
+      {
+        cardBrand: detectedBrand.brand,
+        cardLast4: cleanNumber.slice(-4),
+        cardHolder: cleanHolder,
+      },
+      {
+        skipAuth: options?.skipAuth,
+        verifiedGateway: 'MERCADO_PAGO',
+        verificationId: 'simulated_local',
+      }
+    )
+    return {
+      success: actRes.success,
+      error: actRes.error,
+      cardBrand: detectedBrand.brand,
+      cardLast4: cleanNumber.slice(-4),
+      cardHolder: cleanHolder,
+    }
+  }
+
+  // 3. Tokenización bancaria con Mercado Pago
+  const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+  const cardTokenClient = new CardToken(mpConfig)
+
+  let cardToken
+  try {
+    cardToken = await cardTokenClient.create({
+      body: {
+        card_number: cleanNumber,
+        expiration_month: String(expCheck.month),
+        expiration_year: String(expCheck.year),
+        security_code: cleanCvv,
+      },
+    })
+  } catch (err: unknown) {
+    console.error('Error tokenizing card in Mercado Pago:', err)
+    return {
+      success: false,
+      error: 'Mercado Pago no pudo validar esta tarjeta. Verificá que los números correspondan a una tarjeta emitida por un banco.',
+    }
+  }
+
+  if (!cardToken || !cardToken.id) {
+    return {
+      success: false,
+      error: 'No se pudo generar la credencial segura para la tarjeta.',
+    }
+  }
+
+  if (cardToken.luhn_validation === false) {
+    return {
+      success: false,
+      error: 'Mercado Pago detectó que la tarjeta no es válida.',
+    }
+  }
+
+  // 4. Autorización técnica de $15 ARS para forzar validación con la entidad bancaria
+  const { data: tenant } = await serviceClient
+    .from('tenants')
+    .select('email, name')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
+    ? tenant.email
+    : 'cancharclub@gmail.com'
+
+  const paymentClient = new Payment(mpConfig)
+  let payment
+  let lastRejectReason = 'Tarjeta rechazada por la entidad bancaria.'
+
+  const methodsToTry = [detectedBrand.methodId]
+  if (detectedBrand.altMethodId) methodsToTry.push(detectedBrand.altMethodId)
+
+  for (const methodId of methodsToTry) {
+    try {
+      payment = await paymentClient.create({
+        body: {
+          transaction_amount: 15, // Validación técnica mínima MLA
+          token: cardToken.id,
+          description: 'Validación de Tarjeta - CancharClub (15 días gratis)',
+          installments: 1,
+          payment_method_id: methodId,
+          payer: {
+            email: payerEmail,
+            identification: {
+              type: 'DNI',
+              number: cleanDni,
+            },
+          },
+          statement_descriptor: 'CANCHARCLUB',
+          binary_mode: true,
+        },
+      })
+
+      if (payment && payment.status === 'approved') {
+        break
+      } else if (payment && payment.status === 'rejected') {
+        lastRejectReason = mapMpRejectionDetail(payment.status_detail)
+      }
+    } catch (payErr: unknown) {
+      const errMsg = (payErr as Error)?.message || ''
+      console.warn(`Intento de cobro con método ${methodId} falló:`, errMsg)
+      if (errMsg.includes('bin_not_found')) {
+        lastRejectReason = 'Entidad bancaria no encontrada o tarjeta inexistente (BIN inválido).'
+      } else {
+        lastRejectReason = errMsg || lastRejectReason
+      }
+    }
+  }
+
+  if (!payment || payment.status !== 'approved') {
+    return {
+      success: false,
+      error: `Tarjeta rechazada por tu banco: ${lastRejectReason} Por favor ingresá una tarjeta real y activa con fondos disponibles.`,
+    }
+  }
+
+  // 5. Reembolso inmediato de los $15 ARS de validación técnica
+  try {
+    const refundClient = new PaymentRefund(mpConfig)
+    if (payment.id) {
+      await refundClient.create({ payment_id: String(payment.id) })
+    }
+  } catch (refErr) {
+    console.warn('No se pudo reembolsar automáticamente vía API, acreditando en balance:', refErr)
+    try {
+      const { data: currentT } = await serviceClient
+        .from('tenants')
+        .select('current_balance')
+        .eq('id', tenantId)
+        .maybeSingle()
+      if (currentT) {
+        const currentBal = Number(currentT.current_balance ?? 0)
+        await serviceClient
+          .from('tenants')
+          .update({ current_balance: currentBal - 15 })
+          .eq('id', tenantId)
+      }
+    } catch {}
+  }
+
+  // 6. Activar el club con tarjeta 100% verificada
+  const verifiedBrand = payment.payment_method_id?.toUpperCase() || detectedBrand.brand
+  const verifiedLast4 = payment.card?.last_four_digits || cleanNumber.slice(-4)
+  const verifiedHolder = payment.card?.cardholder?.name || cleanHolder
+
+  const activateRes = await confirmAndActivateSubscriptionWithCard(
+    tenantId,
+    {
+      cardBrand: verifiedBrand,
+      cardLast4: verifiedLast4,
+      cardHolder: verifiedHolder,
+    },
+    {
+      ...options,
+      verifiedGateway: 'MERCADO_PAGO',
+      verificationId: String(payment.id),
+    }
+  )
+
+  revalidatePath('/onboarding/tarjeta')
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/plan')
+
+  return {
+    success: activateRes.success,
+    error: activateRes.error,
+    cardBrand: verifiedBrand,
+    cardLast4: verifiedLast4,
+    cardHolder: verifiedHolder,
+  }
+}
+
+/**
  * Confirma la vinculación obligatoria de tarjeta de débito/crédito para el abono del club
  * y activa inmediatamente el club para que pueda comenzar a operar sus 15 días gratis.
+ * REQUIERE que la tarjeta haya sido validada previamente por Mercado Pago.
  */
 export async function confirmAndActivateSubscriptionWithCard(
   tenantIdParam?: string, 
@@ -1346,8 +1859,21 @@ export async function confirmAndActivateSubscriptionWithCard(
   },
   options?: {
     skipAuth?: boolean
+    verifiedGateway?: 'MERCADO_PAGO' | 'PREAPPROVAL'
+    verificationId?: string
   }
 ) {
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  const isSimulation = !mpToken || mpToken.startsWith('TEST-0000000000000000')
+
+  // Blindaje de seguridad: no permitir activación sin pasarela bancaria oficial
+  if (!isSimulation && !options?.verifiedGateway) {
+    return {
+      success: false,
+      error: 'La activación del club requiere que la tarjeta sea validada previamente por Mercado Pago.',
+    }
+  }
+
   const serviceClient = await createServiceClient()
   const cookieStore = await cookies()
 

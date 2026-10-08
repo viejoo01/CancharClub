@@ -18,12 +18,21 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import {
-  confirmAndActivateSubscriptionWithCard,
   setupCardLinkingCheckoutPreference,
   confirmCardSetupFromMercadoPagoPayment,
+  confirmPreapprovalSubscriptionFromMercadoPago,
+  validateAndRegisterCardWithMercadoPago,
   getClubPlanDetails,
   type ClubPlanDetails,
 } from '@/actions/saas-billing.actions'
+import {
+  isValidLuhn,
+  detectCardBrand,
+  isValidExpiry,
+  isValidCvv,
+  isValidDni,
+  isValidCardholder,
+} from '@/lib/card-validation'
 import { logout } from '@/actions/auth.actions'
 import { SAAS_PLANS } from '@/config/saas-plans'
 import { formatARS } from '@/lib/utils'
@@ -71,24 +80,25 @@ function OnboardingCardContent() {
         setPlanDetails(details)
 
         // 1. Detección de retorno desde la app de Mercado Pago (Checkout Pro con tarjetas guardadas)
+        const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id') || undefined
         const isFromMpCheckout =
-          searchParams.get('mp_card_connected') === 'true' ||
-          searchParams.has('payment_id') ||
-          searchParams.has('collection_id')
+          (searchParams.get('mp_card_connected') === 'true' || searchParams.has('payment_id') || searchParams.has('collection_id')) &&
+          Boolean(paymentId)
 
         // 2. Detección de retorno desde suscripción de Mercado Pago (Preapproval)
+        const preapprovalId = searchParams.get('preapproval_id') || undefined
         const isFromMpPreapproval =
-          searchParams.get('subscription_active') === 'true' ||
-          searchParams.get('auto_debit_registered') === 'true' ||
-          searchParams.has('preapproval_id')
+          (searchParams.get('subscription_active') === 'true' || searchParams.get('auto_debit_registered') === 'true' || searchParams.has('preapproval_id')) &&
+          Boolean(preapprovalId)
 
-        if (isFromMpCheckout) {
+        if (isFromMpCheckout && paymentId) {
           setSubmitting(true)
-          const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id') || undefined
           const res = await confirmCardSetupFromMercadoPagoPayment(details.tenantId, paymentId)
           if (res.success) {
+            const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : 'Bancaria'
+            const last4 = ('cardLast4' in res && res.cardLast4) ? res.cardLast4 : 'MP'
             toast.success('¡Tarjeta Vinculada con Éxito desde Mercado Pago!', {
-              description: `Tarjeta ${res.cardBrand} terminada en ${res.cardLast4} guardada para tu abono. Tu club cuenta con 15 días gratis ($0 hoy).`,
+              description: `Tarjeta ${brand} terminada en ${last4} guardada para tu abono. Tu club cuenta con 15 días gratis ($0 hoy).`,
               duration: 6000,
             })
             router.push('/dashboard')
@@ -99,16 +109,21 @@ function OnboardingCardContent() {
             })
             setSubmitting(false)
           }
-        } else if (isFromMpPreapproval) {
+        } else if (isFromMpPreapproval && preapprovalId) {
           setSubmitting(true)
-          const res = await confirmAndActivateSubscriptionWithCard(details.tenantId)
+          const res = await confirmPreapprovalSubscriptionFromMercadoPago(details.tenantId, preapprovalId)
           if (res.success) {
-            toast.success('¡Tarjeta Vinculada con Éxito!', {
+            toast.success('¡Suscripción Vinculada con Éxito!', {
               description: 'Tu abono a CancharClub está activo con 15 días gratis ($0 hoy).',
               duration: 6000,
             })
             router.push('/dashboard')
             return
+          } else {
+            toast.error('No se pudo verificar la suscripción de Mercado Pago', {
+              description: res.error || 'Por favor ingresá los datos de tu tarjeta abajo.',
+            })
+            setSubmitting(false)
           }
         } else if (details.hasAutoDebit) {
           // Si el club ya tiene débito automático activo o tarjeta guardada, redirigir directo al dashboard
@@ -131,15 +146,8 @@ function OnboardingCardContent() {
 
   // Detección en vivo de la marca de tarjeta
   const cleanCardNumber = cardNumber.replace(/\D/g, '')
-  const cardBrand = cleanCardNumber.startsWith('4')
-    ? 'VISA'
-    : cleanCardNumber.startsWith('5')
-    ? 'MASTERCARD'
-    : cleanCardNumber.startsWith('3')
-    ? 'AMEX'
-    : cleanCardNumber.startsWith('6')
-    ? 'CABAL'
-    : 'TARJETA'
+  const detectedLive = detectCardBrand(cleanCardNumber)
+  const cardBrand = detectedLive ? detectedLive.brand : 'TARJETA'
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 16)
@@ -159,30 +167,53 @@ function OnboardingCardContent() {
     e.preventDefault()
 
     const rawNum = cardNumber.replace(/\D/g, '')
-    if (rawNum.length < 15) {
+    if (rawNum.length < 15 || rawNum.length > 16) {
       toast.error('Número de tarjeta incompleto', {
-        description: 'Por favor ingresá los 16 dígitos de tu tarjeta de crédito o débito.',
+        description: 'Por favor ingresá los 15 o 16 dígitos de tu tarjeta de crédito o débito.',
       })
       return
     }
 
-    if (!cardHolder.trim() || cardHolder.trim().length < 4) {
+    if (!isValidLuhn(rawNum)) {
+      toast.error('Número de tarjeta inválido', {
+        description: 'La tarjeta no supera el algoritmo de validación bancaria internacional (Luhn). Verificá los 16 dígitos de tu plástico.',
+      })
+      return
+    }
+
+    const detected = detectCardBrand(rawNum)
+    if (!detected) {
+      toast.error('Entidad emisora no válida', {
+        description: 'Ingresá una tarjeta Visa, Mastercard, American Express, Cabal o Naranja oficial.',
+      })
+      return
+    }
+
+    if (!isValidCardholder(cardHolder)) {
       toast.error('Titular de la tarjeta requerido', {
-        description: 'Ingresá el nombre y apellido tal como figura impreso en el plástico.',
+        description: 'Ingresá el nombre y apellido completo tal como figura impreso en el plástico.',
       })
       return
     }
 
-    if (cardExpiry.length < 5) {
-      toast.error('Fecha de vencimiento requerida', {
-        description: 'Ingresá el mes y año de vencimiento en formato MM/AA.',
+    const expCheck = isValidExpiry(cardExpiry)
+    if (!expCheck.valid) {
+      toast.error('Fecha de vencimiento inválida', {
+        description: expCheck.error || 'Ingresá el mes y año de vencimiento en formato MM/AA.',
       })
       return
     }
 
-    if (cardCvv.length < 3) {
+    if (!isValidCvv(cardCvv, detected.brand)) {
       toast.error('Código de seguridad (CVV) requerido', {
-        description: 'Ingresá el código de 3 o 4 dígitos al dorso de la tarjeta.',
+        description: 'Ingresá el código de 3 dígitos (o 4 dígitos en Amex) al dorso de la tarjeta.',
+      })
+      return
+    }
+
+    if (!isValidDni(cardDni)) {
+      toast.error('DNI del titular requerido', {
+        description: 'Ingresá el número de documento de 7 u 8 dígitos del titular.',
       })
       return
     }
@@ -190,30 +221,34 @@ function OnboardingCardContent() {
     setSubmitting(true)
     try {
       const activeTenant = planDetails?.tenantId || undefined
-      const cardLast4 = rawNum.slice(-4)
 
-      const res = await confirmAndActivateSubscriptionWithCard(activeTenant, {
+      const res = await validateAndRegisterCardWithMercadoPago({
+        tenantId: activeTenant,
+        cardNumber: rawNum,
         cardHolder: cardHolder.trim().toUpperCase(),
-        cardLast4,
-        cardBrand,
+        cardExpiry,
+        cardCvv,
+        cardDni,
       })
 
       if (res.success) {
-        toast.success('¡Tarjeta Vinculada con Éxito!', {
+        const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : detected.brand
+        const last4 = ('cardLast4' in res && res.cardLast4) ? res.cardLast4 : rawNum.slice(-4)
+        toast.success('¡Tarjeta Verificada y Vinculada con Éxito!', {
           description:
-            'Tu abono a CancharClub está activo con 15 días gratis ($0 hoy). Primer cobro automático recién en el día 16.',
-          duration: 5000,
+            `Tarjeta ${brand} terminada en ${last4} verificada con Mercado Pago. Tu abono está activo con 15 días gratis ($0 hoy).`,
+          duration: 6000,
         })
         router.push('/dashboard')
       } else {
-        toast.error('Error al procesar la vinculación de la tarjeta', {
-          description: res.error || 'Por favor verificá los datos ingresados.',
+        toast.error('Tarjeta rechazada o inválida', {
+          description: res.error || 'Por favor verificá los datos de tu tarjeta o probá con otra.',
         })
         setSubmitting(false)
       }
     } catch (err) {
       console.error('Error activating with card:', err)
-      toast.error('Ocurrió un error al vincular la tarjeta')
+      toast.error('Ocurrió un error al verificar la tarjeta con Mercado Pago')
       setSubmitting(false)
     }
   }

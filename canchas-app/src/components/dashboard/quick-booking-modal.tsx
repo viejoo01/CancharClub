@@ -114,29 +114,19 @@ export function QuickBookingModal({
   const [courtId, setCourtId] = useState(preselectedCourtId || courts[0]?.id || '')
   const [date, setDate] = useState(preselectedDate)
   const [time, setTime] = useState(preselectedTime)
-  const selectedCourt = courts.find((c) => c.id === (courtId || preselectedCourtId || courts[0]?.id))
-  const getCourtDefaultMins = (c?: { slot_duration?: string; sport?: string }) => {
-    if (c?.slot_duration === 'MIN_60') return 60
-    if (c?.slot_duration === 'MIN_120') return 120
-    if (c?.sport?.toUpperCase().includes('FUTBOL')) return 60
-    return 90
-  }
-  const [durationMinutes, setDurationMinutes] = useState<number>(() => getCourtDefaultMins(selectedCourt))
+  const [durationMinutes, setDurationMinutes] = useState<number>(60)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [internalRules, setInternalRules] = useState<QuickBookingPriceRule[]>(priceRules || [])
-  const [totalAmount, setTotalAmount] = useState(() =>
-    String(
-      computeSlotPrice(
-        preselectedCourtId || courts[0]?.id || '',
-        preselectedDate,
-        preselectedTime,
-        priceRules || []
-      )
-    )
+  const initialCalculatedTotal = computeSlotPrice(
+    preselectedCourtId || courts[0]?.id || '',
+    preselectedDate,
+    preselectedTime,
+    priceRules || []
   )
-  const [depositAmount, setDepositAmount] = useState('0')
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'TRANSFER' | 'NONE'>('NONE')
+  const [totalAmount, setTotalAmount] = useState(() => String(initialCalculatedTotal))
+  const [depositAmount, setDepositAmount] = useState(() => String(Math.round(initialCalculatedTotal / 2)))
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'TRANSFER' | 'NONE'>('TRANSFER')
   const [notes, setNotes] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -149,10 +139,10 @@ export function QuickBookingModal({
       getClubPriceRules(tenantId).then((rules) => {
         if (isMounted && rules && rules.length > 0) {
           setInternalRules(rules as QuickBookingPriceRule[])
-          setTotalAmount((prev) => {
-            const calculated = String(computeSlotPrice(courtId, date, time, rules as QuickBookingPriceRule[]))
-            return prev === '25000' || prev === '12000' ? calculated : prev
-          })
+          const calculated = String(computeSlotPrice(courtId, date, time, rules as QuickBookingPriceRule[]))
+          const numCalc = Number(calculated) || 0
+          setTotalAmount(calculated)
+          setDepositAmount(String(Math.round(numCalc / 2)))
         }
       })
       return () => {
@@ -165,6 +155,7 @@ export function QuickBookingModal({
     (cId: string, d: string, t: string) => {
       const p = computeSlotPrice(cId, d, t, internalRules)
       setTotalAmount(String(p))
+      setDepositAmount(String(Math.round(p / 2)))
     },
     [internalRules]
   )
@@ -290,10 +281,6 @@ export function QuickBookingModal({
               onChange={(e) => {
                 const newCourt = e.target.value
                 setCourtId(newCourt)
-                const c = courts.find((court) => court.id === newCourt)
-                if (c) {
-                  setDurationMinutes(getCourtDefaultMins(c))
-                }
                 recalculatePrice(newCourt, date, time)
               }}
               className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -388,7 +375,12 @@ export function QuickBookingModal({
                   id="totalAmount"
                   type="number"
                   value={totalAmount}
-                  onChange={(e) => setTotalAmount(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setTotalAmount(val)
+                    const num = Number(val) || 0
+                    setDepositAmount(String(Math.round(num / 2)))
+                  }}
                   disabled={!isOwner}
                   className={`h-11 font-mono font-bold ${
                     !isOwner ? 'bg-slate-900/80 text-slate-300 border-slate-700/60 cursor-not-allowed opacity-90 pr-8' : ''
@@ -440,7 +432,7 @@ export function QuickBookingModal({
                 onClick={() => {
                   const tot = Number(totalAmount) || 0
                   setDepositAmount(String(tot))
-                  if (paymentMethod === 'NONE') setPaymentMethod('CASH')
+                  if (paymentMethod === 'NONE') setPaymentMethod('TRANSFER')
                 }}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
                   Number(depositAmount) > 0 && Number(depositAmount) === Number(totalAmount)
@@ -456,7 +448,7 @@ export function QuickBookingModal({
                   const tot = Number(totalAmount) || 0
                   const half = Math.round(tot / 2)
                   setDepositAmount(String(half))
-                  if (paymentMethod === 'NONE') setPaymentMethod('CASH')
+                  if (paymentMethod === 'NONE') setPaymentMethod('TRANSFER')
                 }}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
                   Number(depositAmount) > 0 &&
@@ -502,12 +494,12 @@ export function QuickBookingModal({
               <Label htmlFor="paymentMethod">Medio de Pago de la Seña / Total</Label>
               <select
                 id="paymentMethod"
-                value={paymentMethod === 'NONE' ? 'CASH' : paymentMethod}
+                value={paymentMethod === 'NONE' ? 'TRANSFER' : paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as 'CASH' | 'TRANSFER')}
                 className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="CASH">Efectivo en mostrador</option>
                 <option value="TRANSFER">Transferencia bancaria / alias</option>
+                <option value="CASH">Efectivo en mostrador</option>
               </select>
             </div>
           )}

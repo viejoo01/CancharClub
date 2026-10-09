@@ -208,13 +208,30 @@ export async function generateMonthlyBookingsForSlot(
 }> {
   try {
     const supabase = await createServiceClient()
-    const { data: slot, error: slotErr } = await supabase
+    let slot = null
+    const { data: dbSlot, error: slotErr } = await supabase
       .from('recurring_slots')
       .select('*, court:courts(id, name, sport, slot_duration_minutes)')
       .eq('id', slotId)
-      .single()
+      .maybeSingle()
 
-    if (slotErr || !slot) {
+    if (dbSlot) {
+      slot = dbSlot
+    } else {
+      // Fallback: buscar en audit_log si el slot fue registrado allí
+      const { data: auditRow } = await supabase
+        .from('audit_log')
+        .select('new_data')
+        .eq('action', 'RECURRING_SLOT')
+        .eq('record_id', slotId)
+        .maybeSingle()
+
+      if (auditRow?.new_data) {
+        slot = auditRow.new_data as typeof dbSlot
+      }
+    }
+
+    if (!slot) {
       console.error('[generateMonthlyBookingsForSlot] Error al obtener turno fijo:', slotErr)
       return { success: false, generatedCount: 0, error: 'Turno fijo no encontrado' }
     }

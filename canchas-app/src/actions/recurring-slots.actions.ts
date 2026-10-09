@@ -4,7 +4,7 @@
 // SERVER ACTIONS — Gestión de Turnos Fijos Recurrentes (Abonados Semanales)
 // ==============================================================================
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { parseArgentinaDate } from '@/lib/utils'
 import { addVenueBooking } from '@/config/venues-data'
@@ -19,8 +19,8 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
       return []
     }
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
+    const serviceClient = await createServiceClient()
+    const { data, error } = await serviceClient
       .from('recurring_slots')
       .select('*, court:courts(id, name, sport, slot_duration_minutes)')
       .eq('tenant_id', tenantId)
@@ -31,7 +31,6 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
     }
 
     // Si la tabla no existe o está vacía, consultar audit_log para este tenant_id
-    const serviceClient = await createServiceClient()
     const { data: auditData } = await serviceClient
       .from('audit_log')
       .select('new_data')
@@ -77,8 +76,8 @@ export async function createRecurringSlot(payload: {
       }
     }
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
+    const serviceClient = await createServiceClient()
+    const { data, error } = await serviceClient
       .from('recurring_slots')
       .insert({
         ...payload,
@@ -109,7 +108,6 @@ export async function createRecurringSlot(payload: {
       }
 
       try {
-        const serviceClient = await createServiceClient()
         await serviceClient.from('audit_log').insert({
           tenant_id: payload.tenant_id,
           action: 'RECURRING_SLOT',
@@ -157,8 +155,8 @@ export async function updateRecurringSlotStatus(
     if (!auth.authorized) {
       return { success: false, error: auth.error || 'Sin permisos para modificar turnos fijos.' }
     }
-    const supabase = await createClient()
-    const { error } = await supabase
+
+    const { error } = await serviceClient
       .from('recurring_slots')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq('id', slotId)
@@ -166,7 +164,6 @@ export async function updateRecurringSlotStatus(
 
     if (error) {
       // Fallback audit_log
-      const serviceClient = await createServiceClient()
       const { data } = await serviceClient
         .from('audit_log')
         .select('id, new_data')

@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Consultar el pago en Mercado Pago
-    const platformAccessToken = process.env.MP_ACCESS_TOKEN
+    const platformAccessToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
     let payment: MercadoPagoPayment | null = null
 
     if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
@@ -224,7 +224,13 @@ export async function POST(request: NextRequest) {
 
     // 3.0 Si es una vinculación de tarjeta oficial desde la App de Mercado Pago
     if (isCardLink) {
-      if (payment.status === 'approved') {
+      const isCardLinkApproved =
+        payment.status === 'approved' ||
+        payment.status === 'refunded' ||
+        payment.status_detail === 'refunded' ||
+        payment.status_detail === 'accredited'
+
+      if (isCardLinkApproved) {
         console.log(`[Billing Webhook] ✅ Vinculación de tarjeta para club ${resolvedTenantId} aprobada (Pago #${payment.id})`)
         await confirmCardSetupFromMercadoPagoPayment(resolvedTenantId, String(payment.id), { skipAuth: true })
         return NextResponse.json({ received: true, card_linked: true, tenant_id: resolvedTenantId })

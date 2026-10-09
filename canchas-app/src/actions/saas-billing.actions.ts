@@ -1152,6 +1152,21 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
       throw new Error('Mercado Pago no retornó URL de inicio (init_point)')
     }
 
+    if (result?.id) {
+      try {
+        const { data: currT } = await serviceClient.from('tenants').select('description').eq('id', tenantId).maybeSingle()
+        let currMeta: Record<string, unknown> = {}
+        if (currT?.description) {
+          try { currMeta = JSON.parse(currT.description) } catch {}
+        }
+        currMeta.mp_preapproval_id = result.id
+        currMeta.preapproval_id = result.id
+        await serviceClient.from('tenants').update({ description: JSON.stringify(currMeta) }).eq('id', tenantId)
+      } catch (saveErr) {
+        console.warn('No se pudo persistir preapprovalId preliminar:', saveErr)
+      }
+    }
+
     return {
       success: true,
       initPoint: result.init_point,
@@ -2193,6 +2208,10 @@ export async function confirmAndActivateSubscriptionWithCard(
     if (cardData?.cardLast4) meta.card_last4 = cardData.cardLast4
     if (cardData?.cardBrand) meta.card_brand = cardData.cardBrand
     if (cardData?.cardHolder) meta.card_holder = cardData.cardHolder
+    if (options?.verificationId) {
+      meta.mp_preapproval_id = options.verificationId
+      meta.preapproval_id = options.verificationId
+    }
     delete meta.pending_card
     delete meta.pending_card_onboarding
 

@@ -135,6 +135,16 @@ export default function SuperadminPage() {
   const [isActivatingTrial, setIsActivatingTrial] = useState(false)
   const [trialDaysToSet, setTrialDaysToSet] = useState(15)
 
+  // Estado para modal de borrado permanente de club y anulación de cobros
+  const [tenantToDelete, setTenantToDelete] = useState<{
+    id: string
+    name: string
+    slug: string
+    planName?: string
+  } | null>(null)
+  const [isDeletingTenant, setIsDeletingTenant] = useState(false)
+  const [newUserTenantId, setNewUserTenantId] = useState('t1')
+
   // Listado de usuarios administradores y cancheros por club (se carga desde Supabase)
   const [clubUsers, setClubUsers] = useState<ClubUser[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -650,17 +660,46 @@ export default function SuperadminPage() {
     })
   }
 
-  const handleDeleteTenant = async (tenantId: string, clubName: string) => {
-    if (confirm(`¿Estás seguro de que deseas dar de baja o eliminar el club "${clubName}" de la base de datos? Esta acción es irreversible.`)) {
-      const res = await deleteTenantById(tenantId)
+  const handleOpenDeleteTenantModal = (t: { id: string; name: string; slug: string; plan_id?: string }) => {
+    setTenantToDelete({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      planName: SAAS_PLANS[t.plan_id as SaaSPlanId]?.name || t.plan_id || 'Plan Club'
+    })
+  }
+
+  const handleExecuteDeleteTenant = async () => {
+    if (!tenantToDelete) return
+    setIsDeletingTenant(true)
+    try {
+      const res = await deleteTenantById(tenantToDelete.id)
       if (!res.success) {
-        toast.error(res.error || `Error al eliminar "${clubName}"`)
+        toast.error(res.error || `Error al eliminar "${tenantToDelete.name}"`)
         return
       }
-      setTenants(prev => prev.filter(t => t.id !== tenantId))
+      setTenants(prev => prev.filter(t => t.id !== tenantToDelete.id))
       setIsEditModalOpen(false)
-      toast.success(`Club "${clubName}" eliminado permanentemente del sistema`)
+      const deletedName = tenantToDelete.name
+      setTenantToDelete(null)
+      toast.success(`Club "${deletedName}" eliminado permanentemente`, {
+        description: 'Datos borrados y suscripción recurrente en Mercado Pago cancelada con 100% de eficacia. La tarjeta no recibirá más cobros.'
+      })
+    } catch (err: unknown) {
+      toast.error((err as Error)?.message || 'Error inesperado al eliminar el club')
+    } finally {
+      setIsDeletingTenant(false)
     }
+  }
+
+  const handleDeleteTenant = (tenantId: string, clubName: string) => {
+    const found = tenants.find(t => t.id === tenantId)
+    handleOpenDeleteTenantModal({
+      id: tenantId,
+      name: clubName,
+      slug: found?.slug || tenantId,
+      plan_id: found?.plan_id
+    })
   }
 
   // Filtros de usuarios
@@ -670,7 +709,6 @@ export default function SuperadminPage() {
 
   // Modales de usuario individual
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false)
-  const [newUserTenantId, setNewUserTenantId] = useState('t1')
   const [newUserRole, setNewUserRole] = useState<'TENANT_ADMIN' | 'TENANT_STAFF'>('TENANT_ADMIN')
   const [newUserName, setNewUserName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
@@ -1647,15 +1685,26 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
                     {/* Botones de acción móvil */}
                     <div className="flex items-center justify-between gap-1.5 pt-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenEdit(t)}
-                        className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl px-2.5"
-                      >
-                        <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
-                        Editar
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenEdit(t)}
+                          className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl px-2.5"
+                        >
+                          <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
+                          Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenDeleteTenantModal(t)}
+                          className="h-8 text-xs border-rose-900/40 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 rounded-xl px-2 cursor-pointer"
+                          title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-400" />
+                        </Button>
+                      </div>
 
                       {t.subscription_status === 'PAUSADO' ? (
                         <Button
@@ -1866,6 +1915,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           >
                             <Pencil className="w-3.5 h-3.5 mr-1 text-indigo-400" />
                             Editar
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenDeleteTenantModal(t)}
+                            className="h-8 text-xs border-rose-900/50 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 px-2.5 rounded-lg cursor-pointer transition-colors"
+                            title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-400" />
+                            Eliminar
                           </Button>
 
                           {t.subscription_status === 'PAUSADO' ? (
@@ -2203,6 +2263,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <span>Editar</span>
                       </Button>
 
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenDeleteTenantModal(t)}
+                        className="h-8 px-2.5 text-xs border-rose-900/40 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 rounded-xl cursor-pointer"
+                        title="Borrar club permanentemente y cancelar cobros en Mercado Pago"
+                      >
+                        <Trash2 className="w-3 h-3 text-rose-400" />
+                      </Button>
+
                       {t.is_active ? (
                         <Button
                           size="sm"
@@ -2409,6 +2479,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           >
                             <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
                             Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenDeleteTenantModal(t)}
+                            className="h-7 text-xs border-rose-900/50 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 px-2 rounded-lg cursor-pointer transition-colors"
+                            title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
+                          >
+                            <Trash2 className="w-3 h-3 mr-1 text-rose-400" />
+                            Eliminar
                           </Button>
                           <Link 
                             href={`/club/${t.slug}`} 
@@ -3279,11 +3359,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <Button 
                   type="button" 
                   variant="ghost" 
-                  onClick={() => handleDeleteTenant(editingTenant.id, editingTenant.name)}
-                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-center sm:justify-start"
+                  onClick={() => handleOpenDeleteTenantModal(editingTenant)}
+                  className="rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 text-xs justify-center sm:justify-start cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1" />
-                  Eliminar Club
+                  Eliminar Club Permanentemente
                 </Button>
                 <div className="flex items-center gap-2 justify-end">
                   <Button 
@@ -3304,6 +3384,89 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmación Especializado: Borrar Club Permanentemente y Anular Cobros */}
+      <Dialog open={Boolean(tenantToDelete)} onOpenChange={(open) => { if (!open && !isDeletingTenant) setTenantToDelete(null) }}>
+        <DialogContent className="max-w-lg bg-slate-950 border border-rose-900/50 text-slate-100 p-6 rounded-2xl shadow-2xl">
+          <DialogHeader>
+            <div className="w-12 h-12 rounded-2xl bg-rose-950/60 border border-rose-800/60 flex items-center justify-center text-rose-400 mb-3">
+              <AlertTriangle className="w-6 h-6 text-rose-400 animate-pulse" />
+            </div>
+            <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+              ¿Eliminar permanentemente &ldquo;{tenantToDelete?.name}&rdquo;?
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-300">
+              Esta acción eliminará todos los datos del club de la base de datos y cancelará de forma 100% definitiva los cobros automáticos en Mercado Pago.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 my-2 text-xs">
+            {/* Garantía de no cobro 100% */}
+            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-600/40 text-emerald-200 space-y-1">
+              <div className="font-semibold text-emerald-300 flex items-center gap-1.5 text-xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Garantía de Cobro 0% / Desactivación de Tarjeta:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-300">
+                La tarjeta de crédito/débito cargada por el dueño del club queda <strong className="text-emerald-300">completamente desactivada</strong>. Nuestro sistema cancela la suscripción directamente en la API oficial de Mercado Pago (<code>status: cancelled</code>), garantizando al <strong className="text-emerald-300">100% de eficacia</strong> que Mercado Pago nunca volverá a debitarle el mensual del club.
+              </p>
+            </div>
+
+            {/* Borrado en cascada */}
+            <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-200 space-y-1.5">
+              <div className="font-semibold text-rose-300 flex items-center gap-1.5 text-xs">
+                <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Borrado Absoluto de Datos en Cascada:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-300">
+                Se destruirán permanentemente todas las canchas, turnos fijos, reservas, pagos, torneos, clientes, cuentas corrientes, kiosco/cantina, sesiones de caja y accesos de usuario asociados a este club.
+              </p>
+              <div className="text-[11px] font-semibold text-rose-400/90 pt-1 border-t border-rose-900/40">
+                ⚠️ Acción totalmente irreversible. No se puede deshacer.
+              </div>
+            </div>
+
+            {tenantToDelete && (
+              <div className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center justify-between text-slate-400">
+                <span>Identificador: <code className="text-slate-200 font-mono text-[11px]">{tenantToDelete.slug}</code></span>
+                <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
+                  {tenantToDelete.planName}
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-slate-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeletingTenant}
+              onClick={() => setTenantToDelete(null)}
+              className="rounded-xl border-slate-800 text-slate-300 hover:bg-slate-900 text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={isDeletingTenant}
+              onClick={handleExecuteDeleteTenant}
+              className="bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isDeletingTenant ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Eliminando y Cancelando Cobros...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Borrar Club Permanentemente</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

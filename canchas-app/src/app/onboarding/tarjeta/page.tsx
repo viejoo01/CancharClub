@@ -12,6 +12,7 @@ import {
   LogOut,
   Building2,
   ExternalLink,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -417,6 +418,12 @@ function OnboardingCardContent() {
               <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
                 Abrí la app de Mercado Pago en tu celular y elegí una de tus tarjetas ya guardadas, como si fuera una compra. <strong className="text-emerald-400">Hoy pagás $0</strong> (15 días de prueba bonificados) y tu tarjeta queda registrada en tu perfil para los débitos mensuales.
               </p>
+              <div className="pt-2 flex items-start gap-2 text-[11px] sm:text-xs text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5 max-w-lg">
+                <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="text-amber-300">Nota:</strong> Se cobrarán <strong>$15 (quince pesos argentinos)</strong>, que es el pago mínimo propuesto por Mercado Pago para poder vincular la tarjeta, pero esos <strong>$15 (quince pesos argentinos) serán reintegrados de inmediato</strong> a tu cuenta.
+                </span>
+              </div>
             </div>
 
             <Button

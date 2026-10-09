@@ -25,6 +25,7 @@ import type {
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
+import { sendAutomatedBookingConfirmation } from './whatsapp-bot.actions'
 import { addVenueBooking, getVenueBookings } from '@/config/venues-data'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { isPlayerBlocked } from './players.actions'
@@ -915,6 +916,11 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
       console.error('[confirmBookingDeposit] Error:', upErr.message)
       return { success: false, error: upErr.message }
     }
+
+    // Despacho de WhatsApp Bot automático en segundo plano
+    sendAutomatedBookingConfirmation(bookingId).catch((waErr) => {
+      console.warn('[confirmBookingDeposit] WhatsApp bot dispatch warning:', waErr)
+    })
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')

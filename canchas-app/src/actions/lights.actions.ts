@@ -317,3 +317,67 @@ export async function toggleAllLights(
     return { success: false, results: [] }
   }
 }
+
+/**
+ * Prueba de conexión física de relé IoT (Pulso de prueba de 5 segundos)
+ * Enciende el relé, espera 5 segundos y lo vuelve a apagar para verificar
+ * que el circuito del contactor responde físicamente en el predio.
+ */
+export async function testPhysicalRelayPulse(
+  courtId: string,
+  tenantId: string
+): Promise<{ success: boolean; latencyMs: number; provider: string; message: string; error?: string }> {
+  const start = Date.now()
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, latencyMs: 0, provider: 'NONE', message: '', error: 'Sin permisos sobre este club' }
+    }
+
+    const configs = await getCourtLightConfigs(tenantId)
+    const config = configs[courtId]
+    const relayType = config?.relay_type || 'SHELLY_CLOUD'
+    const relayIp = config?.relay_ip_or_id
+    const cloudConfig = config?.cloud_config
+
+    // 1. Enviar pulso ON
+    const onRes = await toggleCourtLight(courtId, 'on', relayIp, relayType, 0, cloudConfig)
+    if (!onRes.success) {
+      return {
+        success: false,
+        latencyMs: Date.now() - start,
+        provider: onRes.providerUsed || relayType,
+        message: 'No se pudo comunicar con el relé físico',
+        error: onRes.error || 'Dispositivo offline o inaccesible'
+      }
+    }
+
+    // 2. Esperar 4 segundos
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+
+    // 3. Enviar pulso OFF
+    await toggleCourtLight(courtId, 'off', relayIp, relayType, 0, cloudConfig)
+    const latency = Date.now() - start
+
+    return {
+      success: true,
+      latencyMs: latency,
+      provider: onRes.providerUsed || relayType,
+      message: `¡Circuito físico verificado! El relé respondió en ${latency} ms y activó la bobina del contactor.`,
+    }
+  } catch (err: unknown) {
+    return {
+      success: false,
+      latencyMs: Date.now() - start,
+      provider: 'ERROR',
+      message: 'Excepción al probar pulso físico',
+      error: err instanceof Error ? err.message : 'Error de comunicación'
+    }
+  }
+}
+
+/** Obtiene la URL de webhook única para conectar dispositivos IoT locales o microcontroladores */
+export async function getCourtPhysicalWebhookUrl(tenantId: string, courtId: string): Promise<string> {
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.cancharclub.com.ar'
+  return `${baseUrl}/api/iot/lights?tenantId=${tenantId}&courtId=${courtId}`
+}

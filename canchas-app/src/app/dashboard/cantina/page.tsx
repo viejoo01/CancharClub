@@ -25,7 +25,10 @@ import {
   Edit3,
   Layers,
   DollarSign,
-  Lock
+  Lock,
+  Wallet,
+  Users,
+  History
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,6 +61,13 @@ import {
   type OrderStatus,
   type CantinaPaymentMethod,
 } from '@/actions/cantina.actions'
+import {
+  getCustomerAccounts,
+  chargeCustomerAccount,
+  payCustomerAccount,
+  type CustomerAccount,
+} from '@/actions/cuenta-corriente.actions'
+import { buildDebtWhatsAppReminder } from '@/lib/cuenta-corriente-utils'
 import type { CantinaProduct } from '@/config/cantina-data'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
@@ -122,10 +132,40 @@ function playOrderChime() {
 export default function CantinaPage() {
   const tenantId = useTenantId()
   const { isOwner } = useUserRole()
-  const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY'>('POS')
+  const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY' | 'CUENTA_CORRIENTE'>('POS')
   const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
+
+  // Estados para Cuentas Corrientes & Fiados
+  const [accounts, setAccounts] = useState<CustomerAccount[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [accountSearch, setAccountSearch] = useState('')
+  const [payAccountModalOpen, setPayAccountModalOpen] = useState(false)
+  const [selectedPayAccount, setSelectedPayAccount] = useState<CustomerAccount | null>(null)
+  const [payAccountAmount, setPayAccountAmount] = useState<string>('')
+  const [payAccountMethod, setPayAccountMethod] = useState<'CASH' | 'TRANSFER'>('CASH')
+  const [submittingAccountPayment, setSubmittingAccountPayment] = useState(false)
+
+  // Venta A Cuenta en Mostrador
+  const [cuentaCorrienteName, setCuentaCorrienteName] = useState('')
+  const [cuentaCorrientePhone, setCuentaCorrientePhone] = useState('')
+
+  // Nuevo Cargo Manual
+  const [newChargeModalOpen, setNewChargeModalOpen] = useState(false)
+  const [newChargeName, setNewChargeName] = useState('')
+  const [newChargePhone, setNewChargePhone] = useState('')
+  const [newChargeAmount, setNewChargeAmount] = useState('')
+  const [newChargeReason, setNewChargeReason] = useState('')
+  const [submittingNewCharge, setSubmittingNewCharge] = useState(false)
+
+  // Detalle de Movimientos
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+  const [selectedHistoryAccount, setSelectedHistoryAccount] = useState<CustomerAccount | null>(null)
+
+  // Datos del club para recordatorio de WhatsApp
+  const [clubName, setClubName] = useState('CancharClub')
+  const [bankAlias, setBankAlias] = useState('')
 
   // Catálogo de Productos y Estado de Inventario
   const [products, setProducts] = useState<CantinaProduct[]>([])
@@ -160,6 +200,104 @@ export default function CantinaPage() {
     const lowStockCount = products.filter(p => (p.stock || 0) < 10).length
     return { totalProducts, totalUnits, totalValuation, lowStockCount }
   }, [products])
+
+  // Carga de Cuentas Corrientes
+  const loadAccounts = useCallback(async () => {
+    if (!tenantId) return
+    setAccountsLoading(true)
+    try {
+      const data = await getCustomerAccounts(tenantId)
+      setAccounts(data || [])
+    } catch (err) {
+      console.warn('[loadAccounts] Error:', err)
+      setAccounts([])
+    } finally {
+      setAccountsLoading(false)
+    }
+  }, [tenantId])
+
+  const handleConfirmAccountPayment = async () => {
+    if (!selectedPayAccount || !tenantId) return
+    const amount = Number(payAccountAmount) || 0
+    if (amount <= 0) {
+      toast.error('Ingresá un monto válido mayor a 0')
+      return
+    }
+    setSubmittingAccountPayment(true)
+    try {
+      const res = await payCustomerAccount({
+        tenantId,
+        accountId: selectedPayAccount.id,
+        amount,
+        paymentMethod: payAccountMethod,
+      })
+      if (res.success) {
+        toast.success(`¡Cobro de ${formatARS(amount)} registrado! Ingresó a Caja Diaria.`)
+        setPayAccountModalOpen(false)
+        setSelectedPayAccount(null)
+        loadAccounts()
+      } else {
+        toast.error('Error al registrar cobro: ' + res.error)
+      }
+    } catch {
+      toast.error('Error al registrar cobro')
+    } finally {
+      setSubmittingAccountPayment(false)
+    }
+  }
+
+  const handleCreateNewCharge = async () => {
+    if (!tenantId || !newChargeName.trim()) {
+      toast.error('Ingresá el nombre del cliente')
+      return
+    }
+    const amount = Number(newChargeAmount) || 0
+    if (amount <= 0) {
+      toast.error('Ingresá un monto válido mayor a 0')
+      return
+    }
+    setSubmittingNewCharge(true)
+    try {
+      const res = await chargeCustomerAccount({
+        tenantId,
+        customerName: newChargeName.trim(),
+        customerPhone: newChargePhone.trim(),
+        amount,
+        description: newChargeReason.trim() || 'Cargo manual en cuenta corriente',
+      })
+      if (res.success) {
+        toast.success(`¡Cargo de ${formatARS(amount)} registrado para ${newChargeName}!`)
+        setNewChargeModalOpen(false)
+        setNewChargeName('')
+        setNewChargePhone('')
+        setNewChargeAmount('')
+        setNewChargeReason('')
+        loadAccounts()
+      } else {
+        toast.error('Error al registrar cargo: ' + res.error)
+      }
+    } catch {
+      toast.error('Error al registrar cargo')
+    } finally {
+      setSubmittingNewCharge(false)
+    }
+  }
+
+  const filteredAccounts = useMemo(() => {
+    return accounts.filter(acc => {
+      if (!accountSearch.trim()) return true
+      const q = accountSearch.toLowerCase()
+      return acc.customer_name.toLowerCase().includes(q) || acc.customer_phone.includes(q)
+    })
+  }, [accounts, accountSearch])
+
+  const totalOutstandingDebt = useMemo(() => {
+    return accounts.reduce((acc, a) => acc + (a.balance > 0 ? a.balance : 0), 0)
+  }, [accounts])
+
+  const debtorsCount = useMemo(() => {
+    return accounts.filter(a => a.balance > 0).length
+  }, [accounts])
 
   // Carga de Productos desde Supabase
   const loadProducts = useCallback(async () => {
@@ -421,6 +559,7 @@ export default function CantinaPage() {
     const initTimer = setTimeout(() => {
       loadOrders(true)
       loadProducts()
+      loadAccounts()
       if (tenantId) {
         const supabase = createClient()
         supabase
@@ -434,11 +573,13 @@ export default function CantinaPage() {
           })
         supabase
           .from('tenants')
-          .select('slug')
+          .select('name, slug, bank_cbu_alias')
           .eq('id', tenantId)
           .maybeSingle()
           .then(({ data }) => {
+            if (data?.name) setClubName(data.name)
             if (data?.slug) setClubSlug(data.slug)
+            if (data?.bank_cbu_alias) setBankAlias(data.bank_cbu_alias)
           })
       }
     }, 0)
@@ -534,7 +675,7 @@ export default function CantinaPage() {
         createClient().removeChannel(supabaseChannel)
       }
     }
-  }, [loadOrders, loadOrderIntoCart, loadProducts, tenantId])
+  }, [loadOrders, loadOrderIntoCart, loadProducts, loadAccounts, tenantId])
 
   // Datos para Alerta Predictiva de Stock memoizados (calculado sobre productos reales con bajo stock)
   const weekendPredictions = useMemo(() => {
@@ -622,10 +763,20 @@ export default function CantinaPage() {
   // Registro de venta fluida con impresión térmica automática
   const handleRegisterSale = async () => {
     if (cart.length === 0) return
+
+    if (paymentMethod === 'CUENTA_CORRIENTE' && assignToCourt === 'NONE' && !cuentaCorrienteName.trim()) {
+      toast.error('Por favor ingresá el nombre del cliente para anotar a Cuenta Corriente')
+      return
+    }
+
     setCheckoutLoading(true)
     try {
       let completedOrder: CourtOrder | null = activeLinkedOrder
       const effectiveTotal = cartTotal
+      const isCuentaCorriente = paymentMethod === 'CUENTA_CORRIENTE'
+      const clientName = isCuentaCorriente 
+        ? (cuentaCorrienteName.trim() || 'Cliente en Cuenta')
+        : 'Cliente Mostrador'
 
       if (activeLinkedOrder) {
         // 1. Registrar venta interna actualizando estado a DELIVERED
@@ -633,7 +784,7 @@ export default function CantinaPage() {
         completedOrder = { 
           ...activeLinkedOrder, 
           status: 'DELIVERED',
-          payment_status: 'PAID'
+          payment_status: isCuentaCorriente ? 'PENDING' : 'PAID'
         }
       } else {
         // Registrar venta de mostrador
@@ -646,12 +797,13 @@ export default function CantinaPage() {
         }))
         const res = await createCourtOrder({
           tenant_id: tenantId!,
-          court_name: assignToCourt !== 'NONE' ? assignToCourt : 'Venta Mostrador',
-          customer_name: 'Cliente Mostrador',
+          court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta Mostrador'),
+          customer_name: clientName,
           items,
           total_ars: effectiveTotal,
           payment_method: paymentMethod,
-          payment_status: 'PAID',
+          payment_status: isCuentaCorriente ? 'PENDING' : 'PAID',
+          notes: isCuentaCorriente && cuentaCorrientePhone ? `WhatsApp: ${cuentaCorrientePhone}` : undefined,
         })
         if (res.success && res.order) {
           completedOrder = res.order
@@ -662,16 +814,32 @@ export default function CantinaPage() {
             court_id: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            court_name: assignToCourt !== 'NONE' ? assignToCourt : 'Venta Mostrador',
-            customer_name: 'Cliente Mostrador',
+            court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta Mostrador'),
+            customer_name: clientName,
             items,
             total_ars: effectiveTotal,
             status: 'DELIVERED',
             payment_method: paymentMethod,
-            payment_status: 'PAID',
-            notes: null,
+            payment_status: isCuentaCorriente ? 'PENDING' : 'PAID',
+            notes: isCuentaCorriente && cuentaCorrientePhone ? `WhatsApp: ${cuentaCorrientePhone}` : null,
           }
         }
+      }
+
+      // Si es Cuenta Corriente, impactar en la cuenta del cliente
+      if (isCuentaCorriente && tenantId) {
+        const desc = `Cantina: ${cart.map(c => `${c.quantity}x ${c.product.name}`).join(', ')}`
+        await chargeCustomerAccount({
+          tenantId,
+          customerName: clientName,
+          customerPhone: cuentaCorrientePhone,
+          amount: effectiveTotal,
+          description: desc,
+          orderId: completedOrder?.id,
+        })
+        loadAccounts()
+        setCuentaCorrienteName('')
+        setCuentaCorrientePhone('')
       }
 
       // Descontar automáticamente el stock de los productos vendidos y persistir en Supabase
@@ -688,9 +856,12 @@ export default function CantinaPage() {
       })
 
       // 2. Notificar éxito interno
-      toast.success('¡Venta registrada con éxito!', {
-        description: `Total: ${formatARS(effectiveTotal)}`
-      })
+      toast.success(
+        isCuentaCorriente 
+          ? `¡Venta de ${formatARS(effectiveTotal)} anotada a la cuenta de ${clientName}!`
+          : '¡Venta registrada con éxito!', 
+        { description: `Total: ${formatARS(effectiveTotal)}` }
+      )
 
       // 3. Abrir automáticamente modal con impresión térmica instantánea
       if (completedOrder) {
@@ -885,6 +1056,23 @@ export default function CantinaPage() {
           {inventoryStats.lowStockCount > 0 && (
             <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-extrabold text-[10px]">
               {inventoryStats.lowStockCount} por reponer
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('CUENTA_CORRIENTE')}
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 relative shrink-0 min-h-10 ${
+            activeTab === 'CUENTA_CORRIENTE'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <Wallet className="w-4 h-4 text-emerald-400" />
+          <span>Cuentas Corrientes</span>
+          {debtorsCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-extrabold text-[10px]">
+              {debtorsCount} con saldo
             </span>
           )}
         </button>
@@ -1313,6 +1501,226 @@ export default function CantinaPage() {
             </div>
           )}
         </div>
+      ) : activeTab === 'CUENTA_CORRIENTE' ? (
+        /* VISTA 4: CUENTAS CORRIENTES Y FIADOS */
+        <div className="space-y-6">
+          {/* Header con Métricas de Cuenta Corriente */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <Card className="p-4 rounded-2xl bg-slate-900/80 border-slate-800 backdrop-blur-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total en la Calle (Adeudado)</span>
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <Wallet className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="text-2xl font-black text-amber-400 font-mono">
+                  {formatARS(totalOutstandingDebt)}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">Saldo pendiente acumulado de clientes</p>
+            </Card>
+
+            <Card className="p-4 rounded-2xl bg-slate-900/80 border-slate-800 backdrop-blur-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Clientes con Saldo Deudor</span>
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                  <Users className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-black text-white">{debtorsCount}</span>
+                <span className="text-xs text-slate-500 font-medium">personas</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">De un total de {accounts.length} cuentas registradas</p>
+            </Card>
+
+            <Card className="p-4 rounded-2xl bg-slate-900/80 border-slate-800 backdrop-blur-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Cobro a Caja Diaria</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-sm font-bold text-emerald-300">Integración Automática</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Cada saldo cobrado ingresa en vivo al arqueo de caja</p>
+            </Card>
+          </div>
+
+          {/* Barra de Filtros y Acciones */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+            <div className="relative flex-1 sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <Input
+                placeholder="Buscar por cliente o teléfono..."
+                value={accountSearch}
+                onChange={(e) => setAccountSearch(e.target.value)}
+                className="pl-8 h-9 text-xs bg-slate-950 border-slate-800 rounded-xl"
+              />
+            </div>
+
+            <Button
+              onClick={() => setNewChargeModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0 shadow-md shadow-emerald-950/40"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Cargo / Cliente</span>
+            </Button>
+          </div>
+
+          {/* Tabla de Clientes con Cuenta Corriente */}
+          {accountsLoading ? (
+            <div className="p-12 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+              <span>Cargando cuentas corrientes...</span>
+            </div>
+          ) : filteredAccounts.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/40 border border-slate-800/80 max-w-lg mx-auto space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-400">
+                <Wallet className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">No hay cuentas corrientes registradas</h3>
+              <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                Podés anotar ventas fiadas desde el Punto de Venta seleccionando &quot;A Cuenta&quot;, o crear una cuenta manualmente.
+              </p>
+              <Button
+                onClick={() => setNewChargeModalOpen(true)}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Crear Primer Cargo</span>
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden backdrop-blur-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="p-3.5 pl-4">Cliente</th>
+                      <th className="p-3.5">Saldo Adeudado</th>
+                      <th className="p-3.5">Límite</th>
+                      <th className="p-3.5">Último Movimiento</th>
+                      <th className="p-3.5 text-right pr-4">Acciones de Cobro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredAccounts.map((acc) => {
+                      const hasDebt = acc.balance > 0
+                      const lastMov = acc.movements?.[0]
+                      const waUrl = buildDebtWhatsAppReminder(acc, clubName || 'CancharClub', bankAlias)
+                      return (
+                        <tr key={acc.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="p-3.5 pl-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs shrink-0">
+                                {acc.customer_name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-100 text-xs">{acc.customer_name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {acc.customer_phone || 'Sin WhatsApp guardado'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
+                                hasDebt 
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              }`}>
+                                {formatARS(acc.balance)}
+                              </span>
+                              {hasDebt ? (
+                                <span className="text-[10px] text-amber-400 font-bold">Debe</span>
+                              ) : (
+                                <span className="text-[10px] text-emerald-400 font-semibold">Al día</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="p-3.5 text-slate-400 font-mono text-xs">
+                            {formatARS(acc.credit_limit || 50000)}
+                          </td>
+
+                          <td className="p-3.5 text-slate-300 text-[11px]">
+                            {lastMov ? (
+                              <div>
+                                <div className="font-medium text-slate-200 truncate max-w-48">
+                                  {lastMov.description}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {new Date(lastMov.date).toLocaleDateString('es-AR')} {new Date(lastMov.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500">Sin movimientos</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5 text-right pr-4">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Botón Cobrar Saldo */}
+                              {hasDebt && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedPayAccount(acc)
+                                    setPayAccountAmount(acc.balance.toString())
+                                    setPayAccountMethod('CASH')
+                                    setPayAccountModalOpen(true)
+                                  }}
+                                  className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-1 shadow-xs"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  <span>Cobrar</span>
+                                </Button>
+                              )}
+
+                              {/* Botón Enviar WhatsApp */}
+                              {hasDebt && acc.customer_phone && (
+                                <a
+                                  href={waUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="h-8 px-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 text-xs font-semibold flex items-center gap-1 transition-colors"
+                                  title="Enviar detalle de saldo por WhatsApp"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">WhatsApp</span>
+                                </a>
+                              )}
+
+                              {/* Botón Ver Historial */}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedHistoryAccount(acc)
+                                  setHistoryModalOpen(true)
+                                }}
+                                className="h-8 px-2 text-slate-400 hover:text-white rounded-xl"
+                                title="Ver historial de cargos y pagos"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         /* VISTA 2: PUNTO DE VENTA (MOSTRADOR) */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -1512,11 +1920,11 @@ export default function CantinaPage() {
                     {assignToCourt === 'NONE' && (
                       <div className="space-y-2 text-xs">
                         <label className="text-slate-400 font-semibold block">Medio de Cobro:</label>
-                        <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-4 gap-1">
                           <button
                             type="button"
                             onClick={() => setPaymentMethod('CASH')}
-                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                            className={`p-1.5 sm:p-2 rounded-xl text-center border text-[10px] sm:text-[11px] font-semibold transition-all ${
                               paymentMethod === 'CASH'
                                 ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
                                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -1527,7 +1935,7 @@ export default function CantinaPage() {
                           <button
                             type="button"
                             onClick={() => setPaymentMethod('QR_MP')}
-                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                            className={`p-1.5 sm:p-2 rounded-xl text-center border text-[10px] sm:text-[11px] font-semibold transition-all ${
                               paymentMethod === 'QR_MP'
                                 ? 'bg-sky-600/20 border-sky-500 text-sky-400'
                                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -1538,7 +1946,7 @@ export default function CantinaPage() {
                           <button
                             type="button"
                             onClick={() => setPaymentMethod('TRANSFER')}
-                            className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all ${
+                            className={`p-1.5 sm:p-2 rounded-xl text-center border text-[10px] sm:text-[11px] font-semibold transition-all ${
                               paymentMethod === 'TRANSFER'
                                 ? 'bg-purple-600/20 border-purple-500 text-purple-400'
                                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
@@ -1546,7 +1954,45 @@ export default function CantinaPage() {
                           >
                             Transf.
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('CUENTA_CORRIENTE')}
+                            className={`p-1.5 sm:p-2 rounded-xl text-center border text-[10px] sm:text-[11px] font-semibold transition-all ${
+                              paymentMethod === 'CUENTA_CORRIENTE'
+                                ? 'bg-amber-600/25 border-amber-500 text-amber-300 shadow-xs'
+                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            A Cuenta
+                          </button>
                         </div>
+
+                        {paymentMethod === 'CUENTA_CORRIENTE' && (
+                          <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2 mt-2">
+                            <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[11px]">
+                              <Wallet className="w-3.5 h-3.5" />
+                              <span>Fiado / A Cuenta Corriente</span>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">Nombre del Cliente *:</label>
+                              <Input
+                                placeholder="Ej: Lucas Rossi"
+                                value={cuentaCorrienteName}
+                                onChange={(e) => setCuentaCorrienteName(e.target.value)}
+                                className="h-8 text-xs bg-slate-950 border-slate-700 rounded-lg text-slate-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 block mb-1">Teléfono WhatsApp (opcional):</label>
+                              <Input
+                                placeholder="Ej: 11 5566 7788"
+                                value={cuentaCorrientePhone}
+                                onChange={(e) => setCuentaCorrientePhone(e.target.value)}
+                                className="h-8 text-xs bg-slate-950 border-slate-700 rounded-lg text-slate-100"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -1884,6 +2330,299 @@ export default function CantinaPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Cobrar Deuda / Pago a Cuenta */}
+      <Dialog open={payAccountModalOpen} onOpenChange={setPayAccountModalOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-emerald-400" />
+              <span>Cobrar Saldo Fiado / Pago a Cuenta</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Registrá el pago del cliente. Este monto ingresará automáticamente a la Caja Diaria del club.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPayAccount && (
+            <div className="space-y-4 py-2">
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-white">{selectedPayAccount.customer_name}</h4>
+                  <span className="text-xs text-slate-400">{selectedPayAccount.customer_phone || 'Sin WhatsApp'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Deuda Pendiente</span>
+                  <span className="font-extrabold text-base text-rose-400 font-mono">
+                    {formatARS(selectedPayAccount.balance)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 block">Monto a Cobrar ($ ARS) *</label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    value={payAccountAmount}
+                    onChange={(e) => setPayAccountAmount(e.target.value)}
+                    className="bg-slate-950 border-slate-800 text-white text-sm rounded-xl h-10 font-mono"
+                    placeholder="Monto a pagar..."
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPayAccountAmount(String(selectedPayAccount.balance))}
+                    className="text-[10px] px-2 py-1 rounded-md bg-slate-800 text-slate-300 hover:text-white"
+                  >
+                    Pagar Total ({formatARS(selectedPayAccount.balance)})
+                  </button>
+                  {selectedPayAccount.balance > 2000 && (
+                    <button
+                      type="button"
+                      onClick={() => setPayAccountAmount(String(Math.round(selectedPayAccount.balance / 2)))}
+                      className="text-[10px] px-2 py-1 rounded-md bg-slate-800 text-slate-300 hover:text-white"
+                    >
+                      Pagar 50% ({formatARS(Math.round(selectedPayAccount.balance / 2))})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 block">Medio de Cobro *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'CASH', label: 'Efectivo', icon: Banknote },
+                    { id: 'TRANSFER', label: 'Transferencia', icon: Wallet },
+                  ].map((m) => {
+                    const Icon = m.icon
+                    const isSelected = payAccountMethod === m.id
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setPayAccountMethod(m.id as 'CASH' | 'TRANSFER')}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 text-xs font-semibold transition-all ${
+                          isSelected
+                            ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400 shadow-md shadow-emerald-950/40'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{m.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-xs flex items-center justify-between text-slate-200">
+                <span className="text-slate-300">Saldo restante estimado:</span>
+                <span className="font-extrabold text-sm text-emerald-400 font-mono">
+                  {formatARS(Math.max(0, selectedPayAccount.balance - (Number(payAccountAmount) || 0)))}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setPayAccountModalOpen(false)}
+              className="text-xs text-slate-400 hover:text-white rounded-xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={submittingAccountPayment || !payAccountAmount || Number(payAccountAmount) <= 0}
+              onClick={handleConfirmAccountPayment}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-2 h-10 shadow-lg shadow-emerald-600/20"
+            >
+              {submittingAccountPayment ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirmar Cobro e Ingresar a Caja</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Nuevo Cargo Manual a Cuenta Corriente */}
+      <Dialog open={newChargeModalOpen} onOpenChange={setNewChargeModalOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Plus className="w-5 h-5 text-emerald-400" />
+              <span>Registrar Cargo Manual &ldquo;A Cuenta&rdquo;</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Anotá un consumo o saldo fiado a nombre de un cliente frecuente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">Nombre del Cliente *</label>
+              <Input
+                placeholder="Ej: Marcos Alvarez"
+                value={newChargeName}
+                onChange={(e) => setNewChargeName(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">Teléfono / WhatsApp (opcional)</label>
+              <Input
+                placeholder="Ej: 11 4455 6677"
+                value={newChargePhone}
+                onChange={(e) => setNewChargePhone(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">Monto a Cargar ($ ARS) *</label>
+              <Input
+                type="number"
+                min="1"
+                placeholder="Ej: 3500"
+                value={newChargeAmount}
+                onChange={(e) => setNewChargeAmount(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">Concepto o Detalle (opcional)</label>
+              <Input
+                placeholder="Ej: 2 Gatorades y 1 paquete de galletitas"
+                value={newChargeReason}
+                onChange={(e) => setNewChargeReason(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setNewChargeModalOpen(false)}
+              className="text-xs text-slate-400 hover:text-white rounded-xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={submittingNewCharge || !newChargeName.trim() || !newChargeAmount || Number(newChargeAmount) <= 0}
+              onClick={handleCreateNewCharge}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-2 h-10 shadow-lg shadow-emerald-600/20"
+            >
+              {submittingNewCharge ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Anotar Cargo en Cuenta</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Historial de Movimientos de Cuenta Corriente */}
+      <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
+        <DialogContent className="max-w-lg bg-slate-900 border-slate-800 text-slate-100 rounded-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-emerald-400" />
+                <span>Historial de Movimientos</span>
+              </div>
+              {selectedHistoryAccount && (
+                <Badge className={selectedHistoryAccount.balance > 0 ? "bg-rose-500/20 text-rose-300 border-rose-500/30" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"}>
+                  Saldo: {formatARS(selectedHistoryAccount.balance)}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              {selectedHistoryAccount ? `Detalle de compras y pagos de ${selectedHistoryAccount.customer_name}` : 'Movimientos registrados'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-2 space-y-2 pr-1">
+            {selectedHistoryAccount?.movements && selectedHistoryAccount.movements.length > 0 ? (
+              selectedHistoryAccount.movements.map((mov) => {
+                const isCharge = mov.type === 'CHARGE'
+                return (
+                  <div
+                    key={mov.id}
+                    className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={isCharge ? "text-[10px] bg-rose-500/10 text-rose-400 border-rose-500/30" : "text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30"}
+                        >
+                          {isCharge ? 'Fiado / Cargo' : 'Pago / Cobro'}
+                        </Badge>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(mov.date).toLocaleDateString('es-AR', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-200 font-medium">
+                        {mov.description || (isCharge ? 'Consumo en Cantina' : 'Cobro de saldo')}
+                      </p>
+                      {mov.payment_method && (
+                        <span className="text-[10px] text-slate-500">
+                          Medio: {mov.payment_method === 'CASH' ? 'Efectivo' : mov.payment_method === 'TRANSFER' ? 'Transferencia' : mov.payment_method}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-sm font-extrabold font-mono ${isCharge ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {isCharge ? `+${formatARS(mov.amount)}` : `-${formatARS(mov.amount)}`}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <div className="text-center py-8 text-xs text-slate-500">
+                No hay movimientos registrados en esta cuenta.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setHistoryModalOpen(false)}
+              className="text-xs text-slate-300 border-slate-800 hover:bg-slate-800 rounded-xl"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       </div>

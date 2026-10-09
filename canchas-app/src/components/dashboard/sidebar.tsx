@@ -23,7 +23,8 @@ import {
   Receipt,
   KeyRound,
   Share2,
-  Sparkles
+  Sparkles,
+  MessageSquare
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -135,11 +136,17 @@ export function Sidebar({
       requiredFeature: 'mercadopago_deposits',
     },
     {
-      title: 'Facturación AFIP',
+      title: 'Facturación AFIP / ARCA',
       href: '/dashboard/facturacion',
       icon: Receipt,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
       requiredFeature: 'facturacion_afip',
+    },
+    {
+      title: 'Bot WhatsApp',
+      href: '/dashboard/whatsapp',
+      icon: MessageSquare,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
     },
     {
       title: 'Canchas',

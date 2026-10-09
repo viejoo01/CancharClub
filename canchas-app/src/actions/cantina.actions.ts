@@ -12,7 +12,7 @@ import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-
 
 export type { CantinaProduct }
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
-export type CantinaPaymentMethod = 'TRANSFER' | 'CASH' | 'QR_MP'
+export type CantinaPaymentMethod = 'TRANSFER' | 'CASH' | 'QR_MP' | 'CUENTA_CORRIENTE'
 export type CantinaPaymentStatus = 'PAID' | 'PENDING'
 
 export interface OrderItem {
@@ -52,10 +52,11 @@ export interface CreateOrderPayload {
 }
 
 function extractPaymentMethod(order: { notes?: string | null; payment_method?: string }): CantinaPaymentMethod {
-  if (order.payment_method === 'TRANSFER' || order.payment_method === 'CASH' || order.payment_method === 'QR_MP') {
+  if (order.payment_method === 'TRANSFER' || order.payment_method === 'CASH' || order.payment_method === 'QR_MP' || order.payment_method === 'CUENTA_CORRIENTE') {
     return order.payment_method
   }
   const notes = order.notes || ''
+  if (notes.includes('CUENTA_CORRIENTE') || notes.toLowerCase().includes('cuenta corriente') || notes.toLowerCase().includes('fiado')) return 'CUENTA_CORRIENTE'
   if (notes.includes('TRANSFER') || notes.toLowerCase().includes('transferencia')) return 'TRANSFER'
   if (notes.includes('QR_MP') || notes.toLowerCase().includes('mp') || notes.toLowerCase().includes('mercado pago')) return 'QR_MP'
   return 'CASH'

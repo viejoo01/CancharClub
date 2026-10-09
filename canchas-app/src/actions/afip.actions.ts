@@ -142,11 +142,33 @@ export async function saveAfipConfig(
   }
 }
 
-export async function getIssuedInvoices(): Promise<IssuedInvoice[]> {
-  return mockInvoices
+export async function getIssuedInvoices(tenantId?: string): Promise<IssuedInvoice[]> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return mockInvoices
+
+    const supabase = await createServiceClient()
+    const { data } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('action', 'AFIP_INVOICE_ISSUED')
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (data && data.length > 0) {
+      const persisted = data.map(d => d.new_data as IssuedInvoice).filter(Boolean)
+      const merged = [...persisted, ...mockInvoices.filter(m => !persisted.some(p => p.id === m.id))]
+      return merged
+    }
+
+    return mockInvoices
+  } catch {
+    return mockInvoices
+  }
 }
 
-export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<EmitInvoiceResult> {
+export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<EmitInvoiceResult & { invoice?: IssuedInvoice }> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(params.tenantId)
     if (!effectiveTenantId) {
@@ -162,7 +184,7 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
     if (!config.cuit || !config.cuit.trim()) {
       return { 
         success: false, 
-        error: 'Debés configurar tu CUIT emisor de AFIP antes de emitir comprobantes.' 
+        error: 'Debés configurar tu CUIT emisor de AFIP / ARCA antes de emitir comprobantes.' 
       }
     }
 
@@ -188,8 +210,24 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
       }
 
       mockInvoices = [newInv, ...mockInvoices]
+
+      // Persistir de forma inmutable en audit_log
+      const supabase = await createServiceClient()
+      await supabase.from('audit_log').insert({
+        tenant_id: effectiveTenantId,
+        action: 'AFIP_INVOICE_ISSUED',
+        table_name: 'afip_invoices',
+        record_id: newInv.id,
+        new_data: newInv,
+      })
+
       revalidatePath('/dashboard/facturacion')
       revalidatePath('/dashboard/caja')
+
+      return {
+        ...result,
+        invoice: newInv,
+      }
     }
 
     return result
@@ -198,5 +236,46 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
       success: false,
       error: err instanceof Error ? err.message : 'Error al procesar facturación'
     }
+  }
+}
+
+/** Emite factura electrónica oficial ARCA/AFIP para un turno registrado */
+export async function emitQuickInvoiceForBooking(
+  bookingId: string
+): Promise<EmitInvoiceResult & { invoice?: IssuedInvoice }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, customer_name, total_amount_ars, price_total_cents, courts(name)')
+      .eq('id', bookingId)
+      .maybeSingle()
+
+    if (bErr || !booking) {
+      return { success: false, error: 'Reserva no encontrada' }
+    }
+
+    const courtObj = Array.isArray(booking.courts) ? booking.courts[0] : booking.courts
+    const courtName = courtObj?.name || 'Cancha'
+    const totalArs = booking.total_amount_ars || Math.round(Number(booking.price_total_cents || 0) / 100) || 15000
+
+    return await emitInvoiceAction({
+      tenantId: booking.tenant_id,
+      nombreCliente: booking.customer_name || 'Consumidor Final',
+      tipoComprobante: 11, // Factura C (estándar monotributo clubes)
+      tipoDocRec: 99,       // Consumidor Final
+      items: [
+        {
+          description: `Alquiler de Cancha Deportiva - ${courtName}`,
+          quantity: 1,
+          unitPrice: totalArs,
+          total: totalArs,
+        }
+      ],
+      bookingId: booking.id,
+    })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al emitir factura para el turno'
+    return { success: false, error: msg }
   }
 }

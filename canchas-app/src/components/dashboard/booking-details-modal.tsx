@@ -20,6 +20,7 @@ import {
   getPlayerReputation,
   confirmBookingDeposit 
 } from '@/actions/booking.actions'
+import { emitQuickInvoiceForBooking } from '@/actions/afip.actions'
 import { formatARS, formatTime, buildWhatsAppLink, cleanNoteForDisplay } from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
@@ -33,7 +34,8 @@ import {
   Star,
   Printer,
   CheckCircle2,
-  Clock
+  Clock,
+  Receipt
 } from 'lucide-react'
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
@@ -97,6 +99,7 @@ export function BookingDetailsModal({
   const [loadingCancel, setLoadingCancel] = useState(false)
   const [loadingNoShow, setLoadingNoShow] = useState(false)
   const [loadingConfirm, setLoadingConfirm] = useState(false)
+  const [loadingInvoice, setLoadingInvoice] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const [reputation, setReputation] = useState<{
@@ -342,6 +345,32 @@ export function BookingDetailsModal({
       toast.error('Error al actualizar turno')
     } finally {
       setLoadingNoShow(false)
+    }
+  }
+
+  const handleEmitAfipInvoice = async () => {
+    if (!booking?.id) return
+    setLoadingInvoice(true)
+    try {
+      const res = await emitQuickInvoiceForBooking(booking.id)
+      if (res.success && res.invoice) {
+        toast.success(
+          `Factura ${res.invoice.comprobanteTipo} N° ${res.invoice.numeroCompleto} emitida (CAE: ${res.invoice.cae})`,
+          {
+            description: `Vence CAE: ${res.invoice.caeVto}`,
+            action: res.invoice.qrUrl ? {
+              label: 'Ver QR AFIP',
+              onClick: () => window.open(res.invoice!.qrUrl, '_blank')
+            } : undefined
+          }
+        )
+      } else {
+        toast.error('Error al emitir comprobante: ' + (res.error || 'Verifique CUIT en Configuración AFIP'))
+      }
+    } catch {
+      toast.error('Error al conectar con el servicio de facturación ARCA')
+    } finally {
+      setLoadingInvoice(false)
     }
   }
 
@@ -722,17 +751,31 @@ export function BookingDetailsModal({
 
         {/* Footer con botones alineados prolijamente */}
         <DialogFooter className="w-full border-t border-slate-800/80 pt-3 mt-2 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
             {/* Botón Imprimir Ticket Térmico */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setIsReceiptOpen(true)}
-              className="h-10 px-3.5 gap-1.5 border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800 hover:text-white text-xs font-medium rounded-lg"
+              className="h-10 px-3 gap-1.5 border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800 hover:text-white text-xs font-medium rounded-lg"
             >
               <Printer className="w-3.5 h-3.5 text-emerald-400" />
               <span>Ticket</span>
+            </Button>
+
+            {/* Botón Factura AFIP / ARCA */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loadingInvoice}
+              onClick={handleEmitAfipInvoice}
+              className="h-10 px-3 gap-1.5 border-blue-900/40 bg-blue-950/20 text-blue-300 hover:bg-blue-950/40 hover:text-white text-xs font-medium rounded-lg"
+              title="Emitir Comprobante Electrónico AFIP / ARCA con CAE"
+            >
+              {loadingInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Receipt className="w-3.5 h-3.5 text-blue-400" />}
+              <span>Factura ARCA</span>
             </Button>
 
             {/* Botón Marcar No Asistió */}
@@ -742,7 +785,7 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingNoShow || currentStatus === 'NO_SHOW'}
               onClick={handleMarkNoShow}
-              className="h-10 px-3.5 gap-1.5 border-amber-900/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/40 text-xs font-medium rounded-lg"
+              className="h-10 px-3 gap-1.5 border-amber-900/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/40 text-xs font-medium rounded-lg"
             >
               {loadingNoShow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
               <span>No Asistió</span>
@@ -755,7 +798,7 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingCancel}
               onClick={handleCancelBooking}
-              className="h-10 px-3.5 gap-1.5 border-red-900/40 bg-red-950/20 text-red-400 hover:bg-red-950/50 hover:text-red-300 text-xs font-medium rounded-lg"
+              className="h-10 px-3 gap-1.5 border-red-900/40 bg-red-950/20 text-red-400 hover:bg-red-950/50 hover:text-red-300 text-xs font-medium rounded-lg"
             >
               {loadingCancel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
               <span>Cancelar</span>

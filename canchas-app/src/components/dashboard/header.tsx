@@ -6,6 +6,7 @@ import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
+import { PushNotificationsToggle } from './push-notifications-toggle'
 import { VenueSwitcher } from './venue-switcher'
 import { useUserRole } from '@/hooks/use-tenant-id'
 
@@ -145,6 +146,8 @@ export function Header({
             <span>Nuevo Turno</span>
           </Button>
         )}
+
+        <PushNotificationsToggle />
 
         <ThemeToggle />
 

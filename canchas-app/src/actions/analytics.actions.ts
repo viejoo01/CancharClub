@@ -260,6 +260,47 @@ export async function getDailyCashReport(
     console.warn('[getDailyCashReport] Cantina orders query notice:', cantinaErr)
   }
 
+  // 3. Consultar cobros de Cuentas Corrientes registrados en el día
+  try {
+    const { data: auditPayments } = await supabase
+      .from('audit_log')
+      .select('id, new_data, created_at')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('action', 'PAYMENT_RECEIVED')
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd)
+
+    for (const ap of auditPayments ?? []) {
+      const pData = ap.new_data as {
+        type?: string
+        amount?: number
+        payment_method?: string
+        customer_name?: string
+        notes?: string
+      } | null
+
+      const amt = Number(pData?.amount) || 0
+      if (amt <= 0) continue
+
+      const pMethod = String(pData?.payment_method || '').toUpperCase()
+      const resolvedMethod = pMethod === 'TRANSFER' ? 'TRANSFER' : 'CASH'
+
+      entries.push({
+        id: `pay-audit-${ap.id}`,
+        customer_name: pData?.customer_name || 'Cliente Cuenta Corriente',
+        court_name: 'Cuenta Corriente (Cobro)',
+        amount_ars: amt,
+        payment_type: 'BALANCE',
+        payment_method: resolvedMethod,
+        paid_at: ap.created_at,
+        notes: pData?.notes || 'Cobro de saldo adeudado',
+        origin: 'cuenta_corriente',
+      })
+    }
+  } catch (auditErr) {
+    console.warn('[getDailyCashReport] Audit payments query notice:', auditErr)
+  }
+
   entries.sort((a, b) => (a.paid_at || '').localeCompare(b.paid_at || ''))
 
   const totalCash     = entries.filter(e => e.payment_method === 'CASH').reduce((s, e) => s + e.amount_ars, 0)

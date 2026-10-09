@@ -16,6 +16,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { releaseBookingLock } from '@/lib/redis'
 import { sendBookingConfirmationToPlayer, sendNewBookingAlertToClub } from '@/lib/notifications/email.service'
+import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
 import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
@@ -379,6 +380,11 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.warn('[MP Webhook] No se pudo enviar email de notificación:', err)
       }
+
+      // Despachar confirmación automática por WhatsApp Bot (no bloqueante)
+      sendAutomatedBookingConfirmation(booking.id).catch((waErr) => {
+        console.warn('[MP Webhook] WhatsApp bot dispatch warning:', waErr)
+      })
     }
   }
 

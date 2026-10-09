@@ -77,6 +77,18 @@ export function WaitlistModal({
         try {
           localStorage.setItem('canchar_player_name', customerName.trim())
           localStorage.setItem('canchar_player_phone', customerPhone.trim())
+          if (res.entry?.id) {
+            localStorage.setItem('canchar_active_waitlist', JSON.stringify({
+              id: res.entry.id,
+              tenantId,
+              courtId,
+              date,
+              timeSlot,
+              customerName: customerName.trim(),
+              customerPhone: customerPhone.trim(),
+              createdAt: new Date().toISOString()
+            }))
+          }
         } catch {}
         toast.success('¡Te anotaste en la lista de espera con éxito!')
       } else {

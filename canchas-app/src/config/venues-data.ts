@@ -76,6 +76,13 @@ export function addVenueBooking(booking: CalendarBooking) {
   }
 }
 
+export function cancelVenueBooking(bookingId: string) {
+  const existingIdx = IN_MEMORY_VENUE_BOOKINGS.findIndex((b) => b.id === bookingId)
+  if (existingIdx >= 0) {
+    IN_MEMORY_VENUE_BOOKINGS[existingIdx].status = 'CANCELLED_CLUB'
+  }
+}
+
 export function getInMemoryBookings(): CalendarBooking[] {
   return IN_MEMORY_VENUE_BOOKINGS
 }
@@ -85,6 +92,7 @@ export function getVenueBookings(venueId: string, dateStr: string): CalendarBook
 
   // Reservas dinámicas en memoria para la fecha seleccionada (0ms latencia)
   const dynamicForDay = IN_MEMORY_VENUE_BOOKINGS.filter((b) => {
+    if (String(b.status).toUpperCase().includes('CANCEL')) return false
     const d = b.starts_at?.includes('T') ? b.starts_at.split('T')[0] : b.starts_at?.split(' ')[0]
     return d === today
   })

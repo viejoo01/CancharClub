@@ -2054,6 +2054,20 @@ export async function getClubOccupiedSlots(
 
       // 3. Consultar turnos con prioridad activa de Lista de Espera (10 min de exclusividad)
       const nowIso = new Date().toISOString()
+
+      // Limpieza y auto-expiración no-bloqueante de prioridades vencidas
+      try {
+        await supabase
+          .from('waitlists')
+          .update({ status: 'EXPIRED' })
+          .eq('tenant_id', tenantId)
+          .eq('date', dateIso)
+          .eq('status', 'NOTIFIED')
+          .lte('priority_expires_at', nowIso)
+      } catch {
+        // Silencioso en caso de contingencia
+      }
+
       const { data: activeWl } = await supabase
         .from('waitlists')
         .select('id, court_id, time_slot, priority_expires_at')

@@ -159,11 +159,13 @@ export default function ClubPublicPage({
 
   // Reloj reactivo para invalidar en tiempo real los turnos que ya pasaron durante el día (Zona Argentina)
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getArgentinaTimeStr())
+  const [currentNowMs, setCurrentNowMs] = useState<number>(() => Date.now())
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlotInfo[]>([])
 
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTimeStr(getArgentinaTimeStr())
+      setCurrentNowMs(Date.now())
     }, 15000)
     return () => clearInterval(interval)
   }, [])
@@ -199,16 +201,32 @@ export default function ClubPublicPage({
       }
     } catch {}
 
-    // Suscripción Realtime en Supabase (WebSockets) para sincronización cruzada inmediata
+    // Suscripción Realtime en Supabase (WebSockets) para sincronización cruzada inmediata (bookings + waitlists)
     const supabase = createClient()
     const realtimeChannel = supabase
-      .channel(`public_club_${club.id}_bookings`)
+      .channel(`public_club_${club.id}_sync`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'bookings',
+        },
+        (payload) => {
+          const newRec = payload.new as { tenant_id?: string } | null
+          const oldRec = payload.old as { tenant_id?: string } | null
+          if ((newRec?.tenant_id && newRec.tenant_id !== club.id) || (oldRec?.tenant_id && oldRec.tenant_id !== club.id)) {
+            return
+          }
+          fetchOccupied()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'waitlists',
         },
         (payload) => {
           const newRec = payload.new as { tenant_id?: string } | null
@@ -260,13 +278,28 @@ export default function ClubPublicPage({
   } | null>(null)
 
   useEffect(() => {
-    if (!claimSlotParam) return
+    let claimIdToVerify = claimSlotParam
+
+    // Auto-detección: si el jugador no vino con ?claim_slot en el link, chequear si tiene una espera activa en su navegador
+    if (!claimIdToVerify && typeof window !== 'undefined') {
+      try {
+        const rawSaved = localStorage.getItem('canchar_active_waitlist')
+        if (rawSaved) {
+          const saved = JSON.parse(rawSaved)
+          if (saved?.id && saved.tenantId === club.id && saved.date === selectedDate) {
+            claimIdToVerify = saved.id
+          }
+        }
+      } catch {}
+    }
+
+    if (!claimIdToVerify) return
     let active = true
 
-    verifyWaitlistClaim(claimSlotParam).then((res) => {
+    verifyWaitlistClaim(claimIdToVerify).then((res) => {
       if (!active) return
       if (res.valid && res.entry) {
-        const claimDate = res.entry.date || claimDateParam || getArgentinaTodayIso()
+        const claimDate = res.entry.date || claimDateParam || selectedDate
         setSelectedDate(claimDate)
         setActiveClaim({
           claimId: res.entry.id,
@@ -282,14 +315,19 @@ export default function ClubPublicPage({
           duration: 6000,
         })
       } else {
-        toast.error(res.error || 'La prioridad de lista de espera ha expirado o no es válida.')
+        if (claimSlotParam) {
+          toast.error(res.error || 'La prioridad de lista de espera ha expirado o no es válida.')
+        }
+        try {
+          localStorage.removeItem('canchar_active_waitlist')
+        } catch {}
       }
     })
 
     return () => {
       active = false
     }
-  }, [claimSlotParam, claimDateParam])
+  }, [claimSlotParam, claimDateParam, club.id, selectedDate])
 
   useEffect(() => {
     if (!activeClaim || activeClaim.secondsRemaining <= 0) return
@@ -300,6 +338,10 @@ export default function ClubPublicPage({
         if (prev.secondsRemaining <= 1) {
           clearInterval(timer)
           toast.error('Tu prioridad exclusiva de 10 minutos ha expirado.')
+          try {
+            localStorage.removeItem('canchar_active_waitlist')
+          } catch {}
+          getClubOccupiedSlots(club.id, selectedDate).then(setOccupiedSlots)
           return null
         }
         return { ...prev, secondsRemaining: prev.secondsRemaining - 1 }
@@ -307,7 +349,7 @@ export default function ClubPublicPage({
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [activeClaim])
+  }, [activeClaim, club.id, selectedDate])
 
   const claimCountdownFormatted = useMemo(() => {
     if (!activeClaim) return ''
@@ -408,6 +450,10 @@ export default function ClubPublicPage({
           const matchCourt = occ.courtId === 'any' || occ.courtId === slot.courtId || (occ.courtName && slot.courtName && occ.courtName.toLowerCase() === slot.courtName.toLowerCase())
           if (matchCourt && occ.time === slot.time) {
             if (occ.isWaitlistPriority) {
+              // Si la prioridad de 10 min ya venció según el reloj actual, ignorar y dejar disponible
+              if (occ.priorityExpiresAt && new Date(occ.priorityExpiresAt).getTime() <= currentNowMs) {
+                continue
+              }
               isWaitlistPriority = true
               // Si este jugador tiene el reclamo activo para este turno, ¡no está bloqueado para él!
               if (isClaimMatch) {
@@ -427,7 +473,7 @@ export default function ClubPublicPage({
           isWaitlistPriority,
         }
       })
-  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, occupiedSlots, selectedSport, selectedFootballFormat, club.courts, activeClaim])
+  }, [slots, selectedCourtFilter, timeFilter, selectedDate, currentTimeStr, currentNowMs, occupiedSlots, selectedSport, selectedFootballFormat, club.courts, activeClaim])
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 

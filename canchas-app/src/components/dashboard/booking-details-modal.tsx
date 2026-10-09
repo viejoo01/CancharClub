@@ -316,6 +316,26 @@ export function BookingDetailsModal({
         toast.error(res.error || 'Error al cancelar')
       } else {
         toast.success('Reserva cancelada correctamente')
+
+        // Si un cliente en lista de espera fue asignado al turno con prioridad
+        if (res.waitlistNotified && res.waitlistWhatsAppUrl) {
+          try {
+            window.open(res.waitlistWhatsAppUrl, '_blank')
+          } catch {}
+
+          toast.success(
+            `¡Turno asignado a ${res.waitlistCustomerName || 'cliente en espera'}!`,
+            {
+              description: 'Se abrió WhatsApp para enviarle la alerta con sus 10 min de prioridad exclusiva.',
+              action: {
+                label: 'Reabrir WhatsApp',
+                onClick: () => window.open(res.waitlistWhatsAppUrl, '_blank'),
+              },
+              duration: 15000,
+            }
+          )
+        }
+
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('canchar_bookings')

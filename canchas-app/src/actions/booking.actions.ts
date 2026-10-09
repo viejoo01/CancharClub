@@ -26,7 +26,7 @@ import type {
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { processWaitlistOnCancellation } from './waitlist.actions'
 import { sendAutomatedBookingConfirmation } from './whatsapp-bot.actions'
-import { addVenueBooking, getVenueBookings } from '@/config/venues-data'
+import { addVenueBooking, getVenueBookings, cancelVenueBooking } from '@/config/venues-data'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { isPlayerBlocked } from './players.actions'
 
@@ -789,6 +789,9 @@ export async function cancelBooking(params: {
       console.error('[cancelBooking] Error cancelling booking:', error.message)
       return { success: false, error: error.message }
     }
+
+    // Si la reserva estaba en memoria, marcarla como cancelada para sincronización inmediata
+    cancelVenueBooking(params.booking_id)
 
     // Si había un lock de Redis activo, liberarlo
     if (booking?.redis_lock_key) {
@@ -1577,7 +1580,17 @@ export async function cancelBookingByPlayer(
       return { success: false, error: 'No se pudo cancelar la reserva en este momento.' }
     }
 
+    // Liberar reserva de memoria en vivo para consistencia instantánea
+    cancelVenueBooking(cleanId)
+
     // 4. Liberar waitlist con zona horaria oficial de Argentina
+    let waitlistInfo: {
+      waitlistNotified?: boolean
+      waitlistCustomerName?: string
+      waitlistCustomerPhone?: string
+      waitlistWhatsAppUrl?: string
+    } = {}
+
     try {
       if (booking.tenant_id && booking.booked_at) {
         let date = ''
@@ -1598,12 +1611,20 @@ export async function cancelBookingByPlayer(
           }
         }
         if (date && timeSlot) {
-          await processWaitlistOnCancellation({
+          const wlResult = await processWaitlistOnCancellation({
             tenantId: booking.tenant_id,
             courtId: booking.court_id,
             date,
             timeSlot
           })
+          if (wlResult.hasWaitlistMatch) {
+            waitlistInfo = {
+              waitlistNotified: true,
+              waitlistCustomerName: wlResult.notifiedEntry?.customer_name,
+              waitlistCustomerPhone: wlResult.notifiedEntry?.customer_phone,
+              waitlistWhatsAppUrl: wlResult.whatsAppUrl,
+            }
+          }
         }
       }
     } catch (waitlistErr) {
@@ -1615,7 +1636,8 @@ export async function cancelBookingByPlayer(
 
     return { 
       success: true, 
-      message: 'Tu reserva fue cancelada con éxito. El horario quedó disponible para otros jugadores.' 
+      message: 'Tu reserva fue cancelada con éxito. El horario quedó disponible para otros jugadores.',
+      ...waitlistInfo,
     }
   } catch (err) {
     console.error('[cancelBookingByPlayer] Error:', err)

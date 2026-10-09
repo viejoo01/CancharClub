@@ -74,10 +74,13 @@ function OnboardingCardContent() {
 
     async function init() {
       try {
-        const details = await getClubPlanDetails()
+        const urlTenantId = searchParams.get('tenant_id') || undefined
+        const details = await getClubPlanDetails(urlTenantId)
         if (!isMounted) return
 
         setPlanDetails(details)
+
+        const targetTenantId = details.tenantId || urlTenantId || ''
 
         // 1. Detección de retorno desde la app de Mercado Pago (Checkout Pro con tarjetas guardadas)
         const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id') || undefined
@@ -93,7 +96,7 @@ function OnboardingCardContent() {
 
         if (isFromMpCheckout && paymentId) {
           setSubmitting(true)
-          const res = await confirmCardSetupFromMercadoPagoPayment(details.tenantId, paymentId)
+          const res = await confirmCardSetupFromMercadoPagoPayment(targetTenantId, paymentId)
           if (res.success) {
             const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : 'Bancaria'
             const last4 = ('cardLast4' in res && res.cardLast4) ? res.cardLast4 : 'MP'
@@ -111,7 +114,7 @@ function OnboardingCardContent() {
           }
         } else if (isFromMpPreapproval && preapprovalId) {
           setSubmitting(true)
-          const res = await confirmPreapprovalSubscriptionFromMercadoPago(details.tenantId, preapprovalId)
+          const res = await confirmPreapprovalSubscriptionFromMercadoPago(targetTenantId, preapprovalId)
           if (res.success) {
             toast.success('¡Suscripción Vinculada con Éxito!', {
               description: 'Tu abono a CancharClub está activo con 15 días gratis ($0 hoy).',

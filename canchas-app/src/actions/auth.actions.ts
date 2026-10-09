@@ -216,10 +216,10 @@ export async function loginWithEmail(formData: FormData) {
   }
 
   const isProd = process.env.NODE_ENV === 'production'
-  // Cookies de sesión de club: HttpOnly y SameSite=Strict para mitigar XSS y ataques de canal lateral
-  const tenantCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: true }
+  // Cookies de sesión de club: HttpOnly y SameSite=Lax para soportar redirecciones seguras desde pasarelas externas como Mercado Pago
+  const tenantCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const, httpOnly: true }
   // Metadatos de interfaz para renderizado en cliente
-  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: false }
+  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const, httpOnly: false }
 
   cookieStore.set('canchar_tenant_id', profile.tenant_id, tenantCookieOpts)
   cookieStore.set('demo_tenant_id', profile.tenant_id, tenantCookieOpts)
@@ -542,8 +542,8 @@ export async function registerClub(formData: FormData) {
   // 6. Configurar cookies de sesión exigiendo vinculación de tarjeta
   const cookieStore = await cookies()
   const isProd = process.env.NODE_ENV === 'production'
-  const secureTenantOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: true }
-  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'strict' as const, httpOnly: false }
+  const secureTenantOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const, httpOnly: true }
+  const uiCookieOpts = { path: '/', maxAge: 86400, secure: isProd, sameSite: 'lax' as const, httpOnly: false }
 
   cookieStore.set('canchar_tenant_id', tenant.id, secureTenantOpts)
   cookieStore.set('demo_tenant_id', tenant.id, secureTenantOpts)

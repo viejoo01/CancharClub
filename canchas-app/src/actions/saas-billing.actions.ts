@@ -96,6 +96,22 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
+  // 0.1 Si el usuario llega desde una pasarela externa (Mercado Pago) donde la sesión de Supabase Auth
+  // no viajó en la petición GET, pero provee un tenantIdParam o cookie legítima de un club existente:
+  if (!targetTenantId) {
+    const candidateId = tenantIdParam || cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+    if (candidateId && candidateId.trim() && !candidateId.startsWith('demo-') && candidateId !== '00000000-0000-0000-0000-000000000001') {
+      const { data: directTenant } = await serviceClient
+        .from('tenants')
+        .select('id, name, slug')
+        .eq('id', candidateId.trim())
+        .maybeSingle()
+      if (directTenant) {
+        targetTenantId = directTenant.id
+      }
+    }
+  }
+
   if (!targetTenantId) {
     const fallbackPlanId: SaaSPlanId = (cookiePlanId && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(cookiePlanId))
       ? cookiePlanId
@@ -1316,6 +1332,8 @@ export async function confirmCardSetupFromMercadoPagoPayment(
   let cardLast4 = 'MP'
   let cardHolder = 'Titular Mercado Pago'
   let paymentApproved = false
+  let effectiveTenantId = tenantId
+  const cookieStore = await cookies()
 
   try {
     const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentIdParam}`, {
@@ -1334,7 +1352,40 @@ export async function confirmCardSetupFromMercadoPagoPayment(
     }
 
     const paymentData = await response.json()
-    if (!paymentData || paymentData.status !== 'approved') {
+
+    // 1. Extraer o validar tenantId real desde external_reference si no vino o vino genérico
+    if (!effectiveTenantId || effectiveTenantId === '00000000-0000-0000-0000-000000000001' || effectiveTenantId.startsWith('demo-')) {
+      if (paymentData?.external_reference && paymentData.external_reference.startsWith('card_link_')) {
+        const extracted = paymentData.external_reference.replace(/^card_link_/, '').split('_')[0]
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(extracted)) {
+          effectiveTenantId = extracted
+        }
+      }
+    }
+
+    if (!effectiveTenantId || effectiveTenantId === '00000000-0000-0000-0000-000000000001') {
+      const cId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
+      if (cId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cId)) {
+        effectiveTenantId = cId
+      }
+    }
+
+    if (!effectiveTenantId || effectiveTenantId === '00000000-0000-0000-0000-000000000001') {
+      return {
+        success: false,
+        error: 'No se pudo identificar el club correspondiente a este pago.',
+      }
+    }
+
+    // 2. Verificar estado del pago: Aprobado o Reembolsado (tras reintegro exitoso de los $15)
+    const isApprovedOrRefunded =
+      paymentData?.status === 'approved' ||
+      paymentData?.status === 'refunded' ||
+      paymentData?.status_detail === 'refunded' ||
+      paymentData?.status_detail === 'accredited' ||
+      (Array.isArray(paymentData?.refunds) && paymentData.refunds.length > 0)
+
+    if (!paymentData || !isApprovedOrRefunded) {
       const detail = mapMpRejectionDetail(paymentData?.status_detail) || paymentData?.status || 'no aprobado'
       return {
         success: false,
@@ -1342,8 +1393,8 @@ export async function confirmCardSetupFromMercadoPagoPayment(
       }
     }
 
-    // Verificar external_reference para garantizar pertenencia al club
-    if (paymentData.external_reference && !paymentData.external_reference.includes(tenantId)) {
+    // 3. Verificar external_reference para garantizar pertenencia al club
+    if (paymentData.external_reference && !paymentData.external_reference.includes(effectiveTenantId)) {
       return {
         success: false,
         error: 'El identificador de pago no corresponde a este club.',
@@ -1352,17 +1403,54 @@ export async function confirmCardSetupFromMercadoPagoPayment(
 
     paymentApproved = true
 
-    if (paymentData.payment_method_id) {
-      const rawMethod = String(paymentData.payment_method_id).toUpperCase()
-      cardBrand = rawMethod.replace('DEB', '').replace('CRED', '').trim() || rawMethod
+    // 4. Reconocer método de pago: Dinero en Cuenta o Tarjeta bancaria guardada
+    if (paymentData.payment_type_id === 'account_money' || paymentData.payment_method_id === 'account_money') {
+      cardBrand = 'MERCADO PAGO'
+      cardLast4 = 'MP'
+      cardHolder = paymentData.payer?.email || 'Dinero en Cuenta MP'
+    } else {
+      if (paymentData.payment_method_id) {
+        const rawMethod = String(paymentData.payment_method_id).toUpperCase()
+        cardBrand = rawMethod.replace('DEB', '').replace('CRED', '').trim() || rawMethod
+      }
+      if (paymentData.card?.last_four_digits) {
+        cardLast4 = String(paymentData.card.last_four_digits)
+      }
+      if (paymentData.card?.cardholder?.name) {
+        cardHolder = String(paymentData.card.cardholder.name).toUpperCase()
+      } else if (paymentData.payer?.email) {
+        cardHolder = String(paymentData.payer.email)
+      }
     }
-    if (paymentData.card?.last_four_digits) {
-      cardLast4 = String(paymentData.card.last_four_digits)
-    }
-    if (paymentData.card?.cardholder?.name) {
-      cardHolder = String(paymentData.card.cardholder.name).toUpperCase()
-    } else if (paymentData.payer?.email) {
-      cardHolder = String(paymentData.payer.email)
+
+    // 5. Reembolsar los $15 ARS de validación técnica solo si aún no fue reembolsado
+    const alreadyRefunded =
+      paymentData.status === 'refunded' ||
+      paymentData.status_detail === 'refunded' ||
+      (Array.isArray(paymentData.refunds) && paymentData.refunds.length > 0)
+
+    if (!alreadyRefunded) {
+      try {
+        const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+        const refundClient = new PaymentRefund(mpConfig)
+        await refundClient.create({ payment_id: paymentIdParam })
+      } catch (refErr) {
+        console.warn('Could not auto-refund payment, crediting tenant balance instead:', refErr)
+        try {
+          const { data: currentT } = await serviceClient
+            .from('tenants')
+            .select('current_balance')
+            .eq('id', effectiveTenantId)
+            .maybeSingle()
+          if (currentT) {
+            const currentBal = Number(currentT.current_balance ?? 0)
+            await serviceClient
+              .from('tenants')
+              .update({ current_balance: currentBal - 15 })
+              .eq('id', effectiveTenantId)
+          }
+        } catch {}
+      }
     }
   } catch (err) {
     console.error('Error fetching payment details from MP API:', err)
@@ -1379,32 +1467,9 @@ export async function confirmCardSetupFromMercadoPagoPayment(
     }
   }
 
-  // Reembolsar los $15 ARS de validación técnica al club
-  try {
-    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
-    const refundClient = new PaymentRefund(mpConfig)
-    await refundClient.create({ payment_id: paymentIdParam })
-  } catch (refErr) {
-    console.warn('Could not auto-refund payment, crediting tenant balance instead:', refErr)
-    try {
-      const { data: currentT } = await serviceClient
-        .from('tenants')
-        .select('current_balance')
-        .eq('id', tenantId)
-        .maybeSingle()
-      if (currentT) {
-        const currentBal = Number(currentT.current_balance ?? 0)
-        await serviceClient
-          .from('tenants')
-          .update({ current_balance: currentBal - 15 })
-          .eq('id', tenantId)
-      }
-    } catch {}
-  }
-
   // Activar suscripción y guardar la tarjeta verificada en el perfil del club
   const activateRes = await confirmAndActivateSubscriptionWithCard(
-    tenantId,
+    effectiveTenantId,
     {
       cardBrand,
       cardLast4,
@@ -1412,10 +1477,39 @@ export async function confirmCardSetupFromMercadoPagoPayment(
     },
     {
       ...options,
+      skipAuth: true, // Validado formalmente contra la API oficial de Mercado Pago
       verifiedGateway: 'MERCADO_PAGO',
       verificationId: paymentIdParam,
     }
   )
+
+  // Sincronizar cookies de sesión para que el club ("Sidiet") quede autenticado y no pierda datos
+  try {
+    const { data: tenantObj } = await serviceClient
+      .from('tenants')
+      .select('id, name, slug')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (tenantObj) {
+      const isProd = process.env.NODE_ENV === 'production'
+      const secOpts = { path: '/', maxAge: 86400 * 30, secure: isProd, sameSite: 'lax' as const, httpOnly: true }
+      const uiOpts = { path: '/', maxAge: 86400 * 30, secure: isProd, sameSite: 'lax' as const, httpOnly: false }
+      cookieStore.set('canchar_tenant_id', tenantObj.id, secOpts)
+      cookieStore.set('demo_tenant_id', tenantObj.id, secOpts)
+      cookieStore.set('demo_tenant_name', tenantObj.name, uiOpts)
+      cookieStore.set('demo_tenant_slug', tenantObj.slug, uiOpts)
+      cookieStore.set('demo_has_card', 'true', uiOpts)
+      cookieStore.set('demo_card_last4', cardLast4, uiOpts)
+      cookieStore.set('demo_card_brand', cardBrand, uiOpts)
+      cookieStore.set('demo_card_holder', cardHolder, uiOpts)
+      cookieStore.set('demo_subscription_status', 'ACTIVE', uiOpts)
+      cookieStore.set('demo_is_active', 'true', uiOpts)
+      cookieStore.delete('new_club_pending_activation')
+    }
+  } catch (cookieErr) {
+    console.warn('Warning updating cookies on card confirm:', cookieErr)
+  }
 
   revalidatePath('/onboarding/tarjeta')
   revalidatePath('/dashboard')

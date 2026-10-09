@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -101,6 +101,7 @@ export function BookingDetailsModal({
   const [loadingInvoice, setLoadingInvoice] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
+  const isSubmittingPayRef = useRef(false)
   const [reputation, setReputation] = useState<{
     reputationScore: number
     noShowCount: number
@@ -181,12 +182,14 @@ export function BookingDetailsModal({
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmittingPayRef.current || loadingPay) return
     const amount = Number(payAmount) || currentBalance
     if (amount <= 0) {
       toast.error('Ingresá un monto válido a cobrar')
       return
     }
 
+    isSubmittingPayRef.current = true
     setLoadingPay(true)
     try {
       const res = await registerCashPayment({
@@ -200,6 +203,7 @@ export function BookingDetailsModal({
         toast.error(res.error || 'Error al registrar cobro')
       } else {
         toast.success(`¡Cobro de ${formatARS(amount)} registrado!`)
+        setLocalStatus('confirmed_cash')
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('canchar_bookings')
@@ -215,11 +219,13 @@ export function BookingDetailsModal({
     } catch {
       toast.error('Error al procesar el pago')
     } finally {
+      isSubmittingPayRef.current = false
       setLoadingPay(false)
     }
   }
 
   const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO', customAmount?: number) => {
+    if (isSubmittingPayRef.current || loadingPay) return
     if (!booking) return
     const amount = customAmount ?? currentBalance
     if (amount <= 0) {
@@ -227,6 +233,7 @@ export function BookingDetailsModal({
       return
     }
 
+    isSubmittingPayRef.current = true
     setLoadingPay(true)
     try {
       const res = await registerCashPayment({
@@ -243,6 +250,7 @@ export function BookingDetailsModal({
         toast.success(`¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado!`, {
           description: 'El turno quedó completamente saldado.',
         })
+        setLocalStatus('confirmed_cash')
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('canchar_bookings')
@@ -258,6 +266,7 @@ export function BookingDetailsModal({
     } catch {
       toast.error('Error al procesar el cobro')
     } finally {
+      isSubmittingPayRef.current = false
       setLoadingPay(false)
     }
   }
@@ -653,7 +662,7 @@ export function BookingDetailsModal({
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
-                  disabled={loadingPay}
+                  disabled={loadingPay || currentBalance <= 0}
                   onClick={() => handleQuickPay('CASH')}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95"
                 >
@@ -663,7 +672,7 @@ export function BookingDetailsModal({
 
                 <Button
                   type="button"
-                  disabled={loadingPay}
+                  disabled={loadingPay || currentBalance <= 0}
                   onClick={() => handleQuickPay('TRANSFER')}
                   className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-cyan-950/40 cursor-pointer transition-all active:scale-95"
                 >

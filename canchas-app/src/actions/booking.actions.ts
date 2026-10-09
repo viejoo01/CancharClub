@@ -661,23 +661,38 @@ export async function registerCashPayment(params: {
     }
 
     const amountCents = Math.round(params.amount_ars * 100)
-    let currentDeposit = Number(booking.deposit_cents) || 0
+    const currentDeposit = Number(booking.deposit_cents) || 0
     const totalPriceCents = Number(booking.price_total_cents) || 0
+    const pendingBalanceCents = Math.max(0, totalPriceCents - currentDeposit)
 
-    // Auto-sanar si deposit_cents en BD estaba inflado por el bug de duplicación previa
-    const cobroMatches = [...(booking.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)/gi)]
-    if (cobroMatches.length > 0) {
-      const sumCobros = cobroMatches.reduce((acc, m) => {
-        const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
-        return acc + (Math.round(Number(clean)) || 0)
-      }, 0)
-      const sumCobrosCents = Math.round(sumCobros * 100)
-      if (sumCobrosCents > 0 && sumCobrosCents < currentDeposit && currentDeposit >= totalPriceCents) {
-        currentDeposit = sumCobrosCents
+    if (pendingBalanceCents <= 0) {
+      return {
+        success: false,
+        error: 'El turno ya se encuentra totalmente saldado ($0 pendiente).',
       }
     }
 
-    const newDepositCents = currentDeposit + amountCents
+    // Topar el monto a cobrar al saldo restante pendiente
+    const effectiveAmountCents = Math.min(amountCents, pendingBalanceCents)
+
+    // Protección anti-doble clic / concurrencia: si en los últimos 45 segundos ya se registró un cobro idéntico
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const recentCobroMatches = [...(booking.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)[^\[]*\[([^\]]+)\]/gi)]
+    const isRecentDuplicate = recentCobroMatches.some((m) => {
+      const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+      const mAmountCents = Math.round(Number(clean) * 100)
+      const mDate = new Date(m[2])
+      const diffMs = now.getTime() - mDate.getTime()
+      return mAmountCents === effectiveAmountCents && diffMs >= 0 && diffMs < 45000
+    })
+
+    if (isRecentDuplicate) {
+      console.warn('[registerCashPayment] Cobro duplicado bloqueado por ventana de seguridad de 45s para booking:', params.booking_id)
+      return { success: true }
+    }
+
+    const newDepositCents = currentDeposit + effectiveAmountCents
 
     const methodStr = String(params.payment_method).toUpperCase()
     const methodEnum = methodStr.includes('TRANSFER') ? 'bank_transfer'
@@ -687,13 +702,11 @@ export async function registerCashPayment(params: {
     const isFullyPaid = newDepositCents >= totalPriceCents
     const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
 
-    const now = new Date()
-    const nowIso = now.toISOString()
     const timeStr = getArgentinaTimeStr(now)
     const methodSpanish = methodStr.includes('TRANSFER') ? 'Transferencia'
       : (methodStr.includes('MERCADO') || methodStr.includes('MP')) ? 'Mercado Pago'
       : 'Efectivo'
-    const formattedAmount = Number(params.amount_ars).toLocaleString('es-AR')
+    const formattedAmount = (effectiveAmountCents / 100).toLocaleString('es-AR')
     const noteEntry = `Cobro $${formattedAmount} (${methodSpanish}) a las ${timeStr} hs [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
     const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
 

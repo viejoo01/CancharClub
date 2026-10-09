@@ -118,15 +118,44 @@ export async function getDailyCashReport(
     const notes = row.staff_notes || ''
 
     // 1.1 Extraer cobros explícitos en mostrador (ej. "Cobro $10.000 (Transferencia)...")
-    const cobroMatches = [...notes.matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)(?:[^\[\n]*\[([^\]]+)\])?/gi)]
-    
-    if (cobroMatches.length > 0) {
-      const sumCobrosArs = cobroMatches.reduce((acc, m) => {
-        const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
-        return acc + (Math.round(Number(clean)) || 0)
-      }, 0)
-      if (sumCobrosArs > 0 && sumCobrosArs < totalDepositArs && totalDepositArs >= totalPriceArs) {
-        totalDepositArs = sumCobrosArs
+    const hasSaldoRestante = Boolean(notes.toLowerCase().includes('saldo restante'))
+    const hasOnlineBooking = Boolean(notes.toLowerCase().includes('reserva online') || notes.toLowerCase().includes('seña verificada'))
+    const allCobroMatches = [...notes.matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)(?:[^\[\n]*\[([^\]]+)\])?/gi)]
+
+    // Deduplicar cobros idénticos accidentales (ej. doble clic o colisión de red en el mismo minuto)
+    const cobroMatches: typeof allCobroMatches = []
+    for (const match of allCobroMatches) {
+      const cleanAmt = match[1].replace(/\./g, '').replace(/,/g, '.')
+      const amt = Math.round(Number(cleanAmt)) || 0
+      const rawMeth = match[2].toUpperCase().trim()
+      const isoTime = match[3]
+
+      const isDup = cobroMatches.some((existing) => {
+        const existAmt = Math.round(Number(existing[1].replace(/\./g, '').replace(/,/g, '.'))) || 0
+        const existMeth = existing[2].toUpperCase().trim()
+        const existIso = existing[3]
+        if (amt !== existAmt || rawMeth !== existMeth) return false
+        if (isoTime && existIso) {
+          const diffMs = Math.abs(new Date(isoTime).getTime() - new Date(existIso).getTime())
+          return diffMs < 120000 // Menos de 2 min de diferencia con mismo monto y método = doble registro accidental
+        }
+        return true
+      })
+      if (!isDup) {
+        cobroMatches.push(match)
+      }
+    }
+
+    if (!hasSaldoRestante && !hasOnlineBooking && cobroMatches.length > 0) {
+      const isOnlyInitial = notes.toLowerCase().includes('seña inicial')
+      if (isOnlyInitial) {
+        const sumCobrosArs = cobroMatches.reduce((acc, m) => {
+          const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+          return acc + (Math.round(Number(clean)) || 0)
+        }, 0)
+        if (sumCobrosArs > 0 && sumCobrosArs < totalDepositArs && totalDepositArs >= totalPriceArs) {
+          totalDepositArs = sumCobrosArs
+        }
       }
     }
 
@@ -146,13 +175,17 @@ export async function getDailyCashReport(
         else if (rawMeth.includes('MERCADO') || rawMeth.includes('MP') || rawMeth.includes('QR')) method = 'MERCADOPAGO'
         else if (rawMeth.includes('CASH') || rawMeth.includes('EFECTIVO')) method = 'CASH'
 
-        const isDeposit = (notes.toLowerCase().includes('seña') && idx === 0)
+        const fullMatchText = m[0].toLowerCase()
+        const isSaldoRestante = fullMatchText.includes('saldo restante') || notes.toLowerCase().includes('saldo restante')
+        const isExplicitDeposit = fullMatchText.includes('seña inicial') || (!hasOnlineBooking && !isSaldoRestante && idx === 0)
+        const paymentType = isExplicitDeposit ? 'DEPOSIT' : 'BALANCE'
+
         entries.push({
           id: `cobro-${row.id}-${idx}`,
           customer_name: row.customer_name || 'Cliente',
           court_name: courtName,
           amount_ars: amt,
-          payment_type: isDeposit ? 'DEPOSIT' : 'BALANCE',
+          payment_type: paymentType,
           payment_method: method,
           paid_at: isoTimestamp,
           notes: cleanNoteForDisplay(notes),

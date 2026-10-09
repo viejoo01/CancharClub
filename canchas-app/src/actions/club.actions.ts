@@ -490,17 +490,23 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         ? Math.round(Number(b.deposit_cents) / 100)
         : 0
 
-      // Auto-detección y corrección de doble registro previo:
-      // Si el turno tiene en notas un cobro registrado explícito (ej. "Cobro $10.000... - Seña inicial...")
-      // y deposit_cents en BD quedó inflado igual al total del turno, corregir al monto real cobrado.
+      // Auto-detección y corrección de registro inconsistente en turnos manuales antiguos:
+      // Solo en caso de que sea un turno manual sin seña previa donde la nota indique explícitamente "Seña inicial"
+      // y NO se haya cobrado el saldo restante, ni provenga de reserva online.
+      const hasSaldoRestante = Boolean(b.staff_notes?.toLowerCase().includes('saldo restante'))
+      const hasOnlineBooking = Boolean(b.staff_notes?.toLowerCase().includes('reserva online') || b.staff_notes?.toLowerCase().includes('seña verificada'))
       const cobroMatches = [...(b.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)/gi)]
-      if (cobroMatches.length > 0) {
-        const sumCobros = cobroMatches.reduce((acc, m) => {
-          const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
-          return acc + (Math.round(Number(clean)) || 0)
-        }, 0)
-        if (sumCobros > 0 && sumCobros < totalArs && depositArs >= totalArs) {
-          depositArs = sumCobros
+
+      if (!hasSaldoRestante && !hasOnlineBooking && cobroMatches.length > 0) {
+        const isOnlyInitialDeposit = Boolean(b.staff_notes?.toLowerCase().includes('seña inicial'))
+        if (isOnlyInitialDeposit) {
+          const sumCobros = cobroMatches.reduce((acc, m) => {
+            const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
+            return acc + (Math.round(Number(clean)) || 0)
+          }, 0)
+          if (sumCobros > 0 && sumCobros < totalArs && depositArs >= totalArs) {
+            depositArs = sumCobros
+          }
         }
       }
 

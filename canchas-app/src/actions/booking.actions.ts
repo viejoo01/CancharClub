@@ -1261,6 +1261,7 @@ export interface PublicBookingReceipt {
   clubSlug: string
   clubPhone: string
   clubAddress: string
+  googleMapsUrl?: string
   courtName: string
   sport: string
   date: string
@@ -1308,10 +1309,12 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           name,
           address,
           city,
+          province,
           phone_whatsapp,
           slug,
           bank_alias,
-          bank_name
+          bank_name,
+          google_maps_url
         )
       `)
 
@@ -1337,23 +1340,37 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
       const shortCode = rawId.slice(-6).toUpperCase()
 
       let dateIso = new Date().toISOString().split('T')[0]
-      let dateFormatted = 'Fecha confirmada'
+      let dateFormatted = ''
       let timeFormatted = '19:00'
 
       if (b.booked_at) {
         const match = String(b.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
         if (match) {
-          const startsAt = match[1]
+          let startsAt = match[1].trim().replace(/^"/, '').replace(/"$/, '')
           try {
-            const d = new Date(startsAt.includes(' ') ? startsAt.replace(' ', 'T') : startsAt)
+            // Normalizar offset horario para compatibilidad total con ISO-8601 en V8 (+00 -> +00:00)
+            if (/[+-]\d{2}$/.test(startsAt)) {
+              startsAt = startsAt + ':00'
+            } else if (!startsAt.includes('Z') && !/[+-]\d{2}:\d{2}$/.test(startsAt)) {
+              startsAt = startsAt + 'Z'
+            }
+            if (startsAt.includes(' ')) {
+              startsAt = startsAt.replace(' ', 'T')
+            }
+            const d = new Date(startsAt)
             if (!isNaN(d.getTime())) {
               dateIso = d.toISOString().split('T')[0]
-              dateFormatted = d.toLocaleDateString('es-AR', {
+              let df = d.toLocaleDateString('es-AR', {
                 timeZone: 'America/Argentina/Buenos_Aires',
                 weekday: 'long',
                 day: 'numeric',
-                month: 'long'
+                month: 'long',
+                year: 'numeric'
               })
+              if (df) {
+                df = df.charAt(0).toUpperCase() + df.slice(1)
+              }
+              dateFormatted = df
               timeFormatted = d.toLocaleTimeString('es-AR', {
                 timeZone: 'America/Argentina/Buenos_Aires',
                 hour: '2-digit',
@@ -1365,6 +1382,36 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
         }
       }
 
+      if (!dateFormatted) {
+        const now = new Date()
+        const df = now.toLocaleDateString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        })
+        dateFormatted = df ? df.charAt(0).toUpperCase() + df.slice(1) : 'Fecha confirmada'
+      }
+
+      // Composición limpia de dirección sin leyendas genéricas
+      const addrParts: string[] = []
+      if (tenant?.address && tenant.address.trim()) {
+        addrParts.push(tenant.address.trim())
+      }
+      if (tenant?.city && tenant.city.trim()) {
+        addrParts.push(tenant.city.trim())
+      }
+      if (tenant?.province && tenant.province.trim() && !tenant.city?.toLowerCase().includes(tenant.province.toLowerCase())) {
+        addrParts.push(tenant.province.trim())
+      }
+
+      const clubAddress = addrParts.length > 0
+        ? addrParts.join(', ')
+        : (tenant?.name ? `${tenant.name}, Tucumán` : 'San Miguel de Tucumán')
+
+      const googleMapsUrl = tenant?.google_maps_url || undefined
+
       return {
         success: true,
         data: {
@@ -1373,7 +1420,8 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           clubName: String(tenant?.name || 'Club Deportivo'),
           clubSlug: String(tenant?.slug || ''),
           clubPhone: String(tenant?.phone_whatsapp || ''),
-          clubAddress: `${tenant?.address || 'Dirección registrada'}${tenant?.city ? `, ${tenant.city}` : ''}`,
+          clubAddress,
+          googleMapsUrl,
           courtName: String(court?.name || 'Cancha Principal'),
           sport: String(court?.sport || 'Pádel'),
           date: dateIso,
@@ -1418,10 +1466,11 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           clubSlug: 'padel-norte',
           clubPhone: '+5493814112233',
           clubAddress: 'Av. Aconquija 2100, Yerba Buena',
+          googleMapsUrl: 'https://maps.google.com/?q=Av.+Aconquija+2100,+Yerba+Buena',
           courtName,
           sport: 'Pádel',
           date: foundVenue.starts_at ? foundVenue.starts_at.split('T')[0] : new Date().toISOString().split('T')[0],
-          dateFormatted: foundVenue.starts_at ? new Date(foundVenue.starts_at).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Hoy',
+          dateFormatted: foundVenue.starts_at ? new Date(foundVenue.starts_at).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'Hoy',
           time: foundVenue.starts_at ? foundVenue.starts_at.substring(11, 16) : '19:00',
           customerName: foundVenue.customer_name || 'Jugador',
           totalAmount: total,

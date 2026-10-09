@@ -23,6 +23,53 @@ import { buildGoogleCalendarLink, downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import { getBookingPublicReceipt, type PublicBookingReceipt } from '@/actions/booking.actions'
 
+function formatFriendlyDate(rawDate?: string | null): string {
+  if (!rawDate) return ''
+  const trimmed = rawDate.trim()
+  if (!trimmed) return ''
+  // Si ya viene formateado legiblemente (ej: "Jueves, 8 de octubre de 2026")
+  if (trimmed.includes(' de ') && !trimmed.toLowerCase().includes('confirmad')) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  }
+  // Si dice "Fecha confirmada", descartar para buscar la fecha real
+  if (trimmed.toLowerCase().includes('confirmad')) {
+    return ''
+  }
+  // Si es formato YYYY-MM-DD
+  const parts = trimmed.split('-')
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10)
+    const m = parseInt(parts[1], 10) - 1
+    const d = parseInt(parts[2], 10)
+    const dateObj = new Date(y, m, d, 12, 0, 0)
+    if (!isNaN(dateObj.getTime())) {
+      const f = dateObj.toLocaleDateString('es-AR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      })
+      if (f) return f.charAt(0).toUpperCase() + f.slice(1)
+    }
+  }
+  // Intentar parsear ISO directo
+  try {
+    const d = new Date(trimmed)
+    if (!isNaN(d.getTime())) {
+      const f = d.toLocaleDateString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      })
+      if (f) return f.charAt(0).toUpperCase() + f.slice(1)
+    }
+  } catch {}
+
+  return trimmed
+}
+
 function ConfirmationContent({ bookingId }: { bookingId: string }) {
   const searchParams = useSearchParams()
   const [receipt, setReceipt] = useState<PublicBookingReceipt | null>(null)
@@ -45,8 +92,18 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
 
   const clubName = receipt?.clubName || searchParams.get('club') || 'Club Deportivo'
   const courtName = receipt?.courtName || searchParams.get('court') || 'Cancha'
-  const date = receipt?.dateFormatted || searchParams.get('date') || new Date().toISOString().split('T')[0]
-  const time = receipt?.time || searchParams.get('time') || '19:00'
+  
+  const rawDateParam = searchParams.get('date')
+  const dateFromReceipt = formatFriendlyDate(receipt?.dateFormatted)
+  const dateFromParam = formatFriendlyDate(rawDateParam)
+  const todayFallback = formatFriendlyDate(new Date().toISOString().split('T')[0])
+  const date = dateFromReceipt || dateFromParam || todayFallback
+
+  const rawTimeParam = searchParams.get('time')
+  const time = (receipt?.time && receipt.time !== '19:00')
+    ? receipt.time
+    : (rawTimeParam || receipt?.time || '19:00')
+
   const customerName = receipt?.customerName || searchParams.get('name') || 'Jugador'
   const total = receipt?.totalAmount ?? (Number(searchParams.get('total')) || 14000)
   const deposit = receipt?.depositAmount ?? (Number(searchParams.get('deposit')) || 7000)
@@ -54,7 +111,22 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
   const phoneClub = receipt?.clubPhone || searchParams.get('phoneClub') || ''
   const method = receipt?.paymentMethod || searchParams.get('method') || 'TRANSFER'
   const alias = receipt?.bankAlias || searchParams.get('alias') || ''
-  const clubAddress = receipt?.clubAddress || 'Dirección registrada del club'
+
+  const rawAddressParam = searchParams.get('address')
+  const rawMapsParam = searchParams.get('maps') || searchParams.get('mapsUrl')
+
+  let clubAddress = ''
+  if (receipt?.clubAddress && !receipt.clubAddress.includes('Dirección registrada')) {
+    clubAddress = receipt.clubAddress
+  } else if (rawAddressParam && !rawAddressParam.includes('Dirección registrada')) {
+    clubAddress = rawAddressParam
+  } else if (clubName && clubName !== 'Club Deportivo') {
+    clubAddress = `${clubName}, San Miguel de Tucumán`
+  } else {
+    clubAddress = 'San Miguel de Tucumán'
+  }
+
+  const googleMapsUrl = receipt?.googleMapsUrl || rawMapsParam || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clubAddress)}`
 
   const [copiedAlias, setCopiedAlias] = useState(false)
   const shortCode = bookingId.slice(-6).toUpperCase()
@@ -72,8 +144,9 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
     `📍 *Cancha:* ${courtName}\n` +
     `📅 *Fecha:* ${date}\n` +
     `🕐 *Horario:* ${time} hs\n` +
-    `🗺️ *Dirección:* ${clubAddress}\n\n` +
-    `👉 *Comprobante y cómo llegar:* ${typeof window !== 'undefined' ? window.location.href : ''}\n\n` +
+    `🗺️ *Dirección:* ${clubAddress}\n` +
+    (googleMapsUrl ? `📍 *Cómo llegar (Google Maps):* ${googleMapsUrl}\n` : '') +
+    `\n👉 *Comprobante y detalles:* ${typeof window !== 'undefined' ? window.location.href : ''}\n\n` +
     `¡Avisen quién va y quién falta!`
   const teamWaUrl = `https://wa.me/?text=${encodeURIComponent(teamMessage)}`
 
@@ -81,7 +154,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
     if (navigator.share) {
       navigator.share({
         title: `Reserva en ${clubName}`,
-        text: `Tengo reserva en ${courtName} para el ${date} a las ${time} hs.`,
+        text: `Tengo reserva en ${courtName} para el ${date} a las ${time} hs en ${clubAddress}.`,
         url: window.location.href,
       }).catch(() => {})
     } else {
@@ -135,17 +208,23 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
 
           <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
-              <CalendarIcon className="w-4 h-4 text-emerald-400" />
+              <CalendarIcon className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>Fecha: <strong className="text-white">{date}</strong></span>
             </div>
             <div className="flex items-center gap-2 text-slate-300">
-              <Clock className="w-4 h-4 text-emerald-400" />
+              <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>Horario: <strong className="text-white">{time} hs</strong></span>
             </div>
-            <div className="flex items-center gap-2 text-slate-300">
-              <MapPin className="w-4 h-4 text-emerald-400" />
-              <span className="truncate">{clubAddress}</span>
-            </div>
+            <a 
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-slate-300 hover:text-emerald-400 transition-colors group"
+              title="Abrir en Google Maps"
+            >
+              <MapPin className="w-4 h-4 text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="truncate underline decoration-dotted decoration-slate-600 group-hover:decoration-emerald-400">{clubAddress}</span>
+            </a>
           </div>
 
           {/* Desglose de Saldos */}

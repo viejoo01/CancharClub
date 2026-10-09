@@ -18,6 +18,46 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import { getBookingPublicReceipt, type PublicBookingReceipt } from '@/actions/booking.actions'
 
+function formatFriendlyDate(rawDate?: string | null): string {
+  if (!rawDate) return ''
+  const trimmed = rawDate.trim()
+  if (!trimmed) return ''
+  if (trimmed.includes(' de ') && !trimmed.toLowerCase().includes('confirmad')) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  }
+  if (trimmed.toLowerCase().includes('confirmad')) return ''
+  const parts = trimmed.split('-')
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10)
+    const m = parseInt(parts[1], 10) - 1
+    const d = parseInt(parts[2], 10)
+    const dateObj = new Date(y, m, d, 12, 0, 0)
+    if (!isNaN(dateObj.getTime())) {
+      const f = dateObj.toLocaleDateString('es-AR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      })
+      if (f) return f.charAt(0).toUpperCase() + f.slice(1)
+    }
+  }
+  try {
+    const d = new Date(trimmed)
+    if (!isNaN(d.getTime())) {
+      const f = d.toLocaleDateString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      })
+      if (f) return f.charAt(0).toUpperCase() + f.slice(1)
+    }
+  } catch {}
+  return trimmed
+}
+
 function PendingContent({ bookingId }: { bookingId: string }) {
   const searchParams = useSearchParams()
   const [receipt, setReceipt] = useState<PublicBookingReceipt | null>(null)
@@ -54,13 +94,34 @@ function PendingContent({ bookingId }: { bookingId: string }) {
 
   const clubName = receipt?.clubName || searchParams.get('club') || 'Club Deportivo'
   const courtName = receipt?.courtName || searchParams.get('court') || 'Cancha'
-  const date = receipt?.dateFormatted || searchParams.get('date') || new Date().toISOString().split('T')[0]
-  const time = receipt?.time || searchParams.get('time') || '19:00'
+
+  const rawDateParam = searchParams.get('date')
+  const dateFromReceipt = formatFriendlyDate(receipt?.dateFormatted)
+  const dateFromParam = formatFriendlyDate(rawDateParam)
+  const todayFallback = formatFriendlyDate(new Date().toISOString().split('T')[0])
+  const date = dateFromReceipt || dateFromParam || todayFallback
+
+  const rawTimeParam = searchParams.get('time')
+  const time = (receipt?.time && receipt.time !== '19:00')
+    ? receipt.time
+    : (rawTimeParam || receipt?.time || '19:00')
+
   const customerName = receipt?.customerName || searchParams.get('name') || 'Jugador'
   const deposit = receipt?.depositAmount ?? (Number(searchParams.get('deposit')) || 0)
   const clubSlug = receipt?.clubSlug || searchParams.get('slug') || ''
   const phoneClub = receipt?.clubPhone || searchParams.get('phoneClub') || ''
-  const clubAddress = receipt?.clubAddress || 'Dirección registrada del club'
+
+  const rawAddressParam = searchParams.get('address')
+  let clubAddress = ''
+  if (receipt?.clubAddress && !receipt.clubAddress.includes('Dirección registrada')) {
+    clubAddress = receipt.clubAddress
+  } else if (rawAddressParam && !rawAddressParam.includes('Dirección registrada')) {
+    clubAddress = rawAddressParam
+  } else if (clubName && clubName !== 'Club Deportivo') {
+    clubAddress = `${clubName}, San Miguel de Tucumán`
+  } else {
+    clubAddress = 'San Miguel de Tucumán'
+  }
 
   const shortCode = bookingId.slice(-6).toUpperCase()
 

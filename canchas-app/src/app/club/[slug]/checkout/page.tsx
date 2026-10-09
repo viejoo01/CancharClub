@@ -327,12 +327,31 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         markWaitlistAsClaimed(claimId).catch(() => {})
       }
 
+      const buildConfirmedUrl = (chosenMethod: string, depAmount: number) => {
+        const fullAddr = [club.address, club.city, club.province].filter(Boolean).join(', ')
+        const q = new URLSearchParams({
+          club: club.name,
+          court: courtName,
+          date,
+          time,
+          name: customerName,
+          phone: customerPhone,
+          total: String(effectiveTotal),
+          deposit: String(depAmount),
+          slug: club.slug,
+          phoneClub: club.whatsappPhone,
+          method: chosenMethod,
+          alias: clubBank?.alias || '',
+        })
+        if (fullAddr) q.set('address', fullAddr)
+        if (club.googleMapsUrl) q.set('mapsUrl', club.googleMapsUrl)
+        return `/reserva/${res.booking_id}/confirmado?${q.toString()}`
+      }
+
       // Si el saldo a favor cubrió el 100% de la seña
       if (payableDeposit === 0) {
         toast.success('¡Turno confirmado 100% con tu Saldo a Favor!')
-        router.push(
-          `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=0&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=WALLET&alias=${encodeURIComponent(clubBank?.alias || '')}`
-        )
+        router.push(buildConfirmedUrl('WALLET', 0))
         return
       }
 
@@ -375,9 +394,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
       // Flujo de Transferencia Bancaria Directa al Club:
       toast.success('¡Turno reservado y cerrado en el sistema!')
-      router.push(
-        `/reserva/${res.booking_id}/confirmado?club=${encodeURIComponent(club.name)}&court=${encodeURIComponent(courtName)}&date=${date}&time=${time}&name=${encodeURIComponent(customerName)}&phone=${encodeURIComponent(customerPhone)}&total=${effectiveTotal}&deposit=${payableDeposit}&slug=${club.slug}&phoneClub=${club.whatsappPhone}&method=TRANSFER&alias=${encodeURIComponent(clubBank?.alias || '')}`
-      )
+      router.push(buildConfirmedUrl('TRANSFER', payableDeposit))
     } catch {
       toast.error('Error inesperado al procesar la reserva')
       setLoading(false)

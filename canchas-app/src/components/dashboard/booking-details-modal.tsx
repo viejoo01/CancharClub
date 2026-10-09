@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -449,7 +448,7 @@ export function BookingDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[540px] max-h-[92dvh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[620px] max-h-[92dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between pr-4">
             <DialogTitle className="text-xl font-bold text-slate-100">{courtDisplayName}</DialogTitle>
@@ -749,18 +748,20 @@ export function BookingDetailsModal({
           )}
         </div>
 
-        {/* Footer con botones alineados prolijamente */}
-        <DialogFooter className="w-full border-t border-slate-800/80 pt-3 mt-2 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
+        {/* Footer con botones alineados prolijamente y sin solapamiento */}
+        <div className="w-full border-t border-slate-800/80 pt-4 mt-2 space-y-3">
+          {/* Fila 1: Botones de gestión operativa del turno (Ticket, Factura ARCA, Inasistencia, Cancelar) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
             {/* Botón Imprimir Ticket Térmico */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setIsReceiptOpen(true)}
-              className="h-10 px-3 gap-1.5 border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800 hover:text-white text-xs font-medium rounded-lg"
+              className="h-10 px-2.5 gap-2 border-slate-800 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
+              title="Imprimir ticket térmico para el cliente"
             >
-              <Printer className="w-3.5 h-3.5 text-emerald-400" />
+              <Printer className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>Ticket</span>
             </Button>
 
@@ -771,10 +772,14 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingInvoice}
               onClick={handleEmitAfipInvoice}
-              className="h-10 px-3 gap-1.5 border-blue-900/40 bg-blue-950/20 text-blue-300 hover:bg-blue-950/40 hover:text-white text-xs font-medium rounded-lg"
+              className="h-10 px-2.5 gap-2 border-blue-900/50 bg-blue-950/30 hover:bg-blue-900/40 text-blue-300 hover:text-blue-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
               title="Emitir Comprobante Electrónico AFIP / ARCA con CAE"
             >
-              {loadingInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Receipt className="w-3.5 h-3.5 text-blue-400" />}
+              {loadingInvoice ? (
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              ) : (
+                <Receipt className="w-4 h-4 text-blue-400 shrink-0" />
+              )}
               <span>Factura ARCA</span>
             </Button>
 
@@ -785,9 +790,14 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingNoShow || currentStatus === 'NO_SHOW'}
               onClick={handleMarkNoShow}
-              className="h-10 px-3 gap-1.5 border-amber-900/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/40 text-xs font-medium rounded-lg"
+              className="h-10 px-2.5 gap-2 border-amber-900/50 bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 hover:text-amber-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+              title="Marcar inasistencia del cliente (No Asistió)"
             >
-              {loadingNoShow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+              {loadingNoShow ? (
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              ) : (
+                <UserX className="w-4 h-4 text-amber-400 shrink-0" />
+              )}
               <span>No Asistió</span>
             </Button>
 
@@ -798,37 +808,52 @@ export function BookingDetailsModal({
               size="sm"
               disabled={loadingCancel}
               onClick={handleCancelBooking}
-              className="h-10 px-3 gap-1.5 border-red-900/40 bg-red-950/20 text-red-400 hover:bg-red-950/50 hover:text-red-300 text-xs font-medium rounded-lg"
+              className="h-10 px-2.5 gap-2 border-rose-900/50 bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 hover:text-rose-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+              title="Cancelar esta reserva y liberar la cancha"
             >
-              {loadingCancel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+              {loadingCancel ? (
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              ) : (
+                <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              )}
               <span>Cancelar</span>
             </Button>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            {currentBalance > 0 && (
-              <Button
-                type="button"
-                onClick={() => handleQuickPay('CASH')}
-                disabled={loadingPay}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-4 rounded-lg shadow-md gap-1.5 cursor-pointer flex-1 sm:flex-initial"
-              >
-                {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
-                <span>Cobrar Resto ({formatARS(currentBalance)})</span>
-              </Button>
-            )}
-
+          {/* Fila 2: Acción principal (Cobrar resto) y Cierre */}
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="h-10 px-4 text-slate-400 hover:text-slate-100 hover:bg-slate-800 text-xs font-medium rounded-lg w-full sm:w-auto"
+              className="h-10 px-4 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 text-xs font-medium rounded-xl cursor-pointer"
             >
               Cerrar
             </Button>
+
+            {currentBalance > 0 ? (
+              <Button
+                type="button"
+                onClick={() => handleQuickPay('CASH')}
+                disabled={loadingPay}
+                className="h-10 px-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/50 gap-2 cursor-pointer transition-all flex items-center justify-center flex-1 sm:flex-initial"
+              >
+                {loadingPay ? (
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                ) : (
+                  <DollarSign className="w-4 h-4 shrink-0" />
+                )}
+                <span>Cobrar Resto ({formatARS(currentBalance)})</span>
+              </Button>
+            ) : (
+              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-400 px-3 py-2 bg-emerald-950/30 border border-emerald-800/40 rounded-xl">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Turno Totalmente Abonado</span>
+              </div>
+            )}
           </div>
-        </DialogFooter>
+        </div>
 
         {/* Modal de Impresión Térmica */}
         {isReceiptOpen && (

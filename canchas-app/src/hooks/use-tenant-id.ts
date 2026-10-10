@@ -6,10 +6,13 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   useTenantContext,
+  useTenantSlugContext,
   useUserRoleContext,
   useTenantPlanContext,
   getGlobalCachedTenantId,
   setGlobalCachedTenantId,
+  getGlobalCachedTenantSlug,
+  setGlobalCachedTenantSlug,
   TenantProvider,
 } from '@/providers/tenant-provider'
 import {
@@ -61,6 +64,19 @@ export function useTenantId(): string | null {
   }, [])
 
   return contextTenantId || fallbackTenantId
+}
+
+export function useTenantSlug(): string | null {
+  const contextSlug = useTenantSlugContext()
+  const [fallbackSlug] = useState<string | null>(() => getGlobalCachedTenantSlug())
+
+  useEffect(() => {
+    if (contextSlug) {
+      setGlobalCachedTenantSlug(contextSlug)
+    }
+  }, [contextSlug])
+
+  return contextSlug || fallbackSlug
 }
 
 export function useUserRole(): { role: string; isOwner: boolean } {

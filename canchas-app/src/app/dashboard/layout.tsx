@@ -392,7 +392,7 @@ export default async function DashboardLayout({
       trialDueDate={pricing.nextDueDate}
       trialForfeited={trialForfeited}
     >
-      <TenantProvider value={tenantId} role={userRole} planId={planId}>
+      <TenantProvider value={tenantId} role={userRole} planId={planId} slug={tenantSlug}>
         {children}
       </TenantProvider>
     </DashboardLayoutClient>

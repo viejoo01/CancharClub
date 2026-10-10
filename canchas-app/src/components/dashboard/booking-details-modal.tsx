@@ -71,7 +71,15 @@ export function BookingDetailsModal({
   onSuccess,
 }: BookingDetailsModalProps) {
   const tenantId = useTenantId()
-  const [clubName, setClubName] = useState('Club')
+  const [clubName, setClubName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('canchar_active_venue_name')
+        if (stored && stored !== 'Sede Principal') return stored
+      } catch {}
+    }
+    return ''
+  })
   const [clubSlug, setClubSlug] = useState('')
 
   useEffect(() => {
@@ -405,7 +413,9 @@ export function BookingDetailsModal({
   const courtDisplayName =
     (Array.isArray(booking.courts) ? booking.courts[0]?.name : booking.courts?.name) || 'Cancha'
 
-  const waMessage = `Hola ${booking.customer_name}, te escribimos de ${courtDisplayName} respecto a tu turno de las ${booking.starts_at ? formatTime(booking.starts_at) : ''} hs.`
+  const effectiveClubName = (clubName && clubName !== 'Club') ? clubName : 'CancharClub'
+  const bookingTimeStr = booking.starts_at ? formatTime(booking.starts_at) : ''
+  const waMessage = `Hola ${booking.customer_name}, te escribo desde el club ${effectiveClubName} para confirmar el alquiler de la ${courtDisplayName} en el turno de las ${bookingTimeStr} hs.`
   const waUrl = booking.customer_phone
     ? buildWhatsAppLink(booking.customer_phone, waMessage)
     : null

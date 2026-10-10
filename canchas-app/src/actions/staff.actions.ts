@@ -101,10 +101,15 @@ export async function inviteStaffMember(params: {
   email: string
   role: StaffRole
   phone?: string
+  password?: string
 }): Promise<{ success: boolean; member?: StaffMember; error?: string }> {
   try {
     if (!params.tenantId || !params.fullName.trim() || !params.email.trim()) {
       return { success: false, error: 'Por favor completá todos los campos requeridos.' }
+    }
+
+    if (params.password && params.password.trim().length < 8) {
+      return { success: false, error: 'La contraseña debe tener al menos 8 caracteres.' }
     }
 
     const authCheck = await assertTenantAdmin(params.tenantId)
@@ -116,6 +121,7 @@ export async function inviteStaffMember(params: {
     const cleanEmail = params.email.trim().toLowerCase()
     const cleanName = params.fullName.trim()
     const cleanPhone = params.phone?.trim() || null
+    const chosenPassword = params.password?.trim() || `Club${Math.floor(100000 + Math.random() * 900000)}`
 
     // 1. Buscar si ya existe una cuenta de usuario con este correo
     const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
@@ -124,16 +130,15 @@ export async function inviteStaffMember(params: {
 
     // 2. Si no existe, crear el usuario en Supabase Auth
     if (!existingUser) {
-      const tempPassword = `Club${Math.floor(100000 + Math.random() * 900000)}`
       const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
         email: cleanEmail,
-        password: tempPassword,
+        password: chosenPassword,
         email_confirm: true,
         user_metadata: {
           full_name: cleanName,
           phone: cleanPhone,
-          assigned_password: tempPassword,
-          initial_password: tempPassword,
+          assigned_password: chosenPassword,
+          initial_password: chosenPassword,
         },
       })
 
@@ -143,15 +148,25 @@ export async function inviteStaffMember(params: {
       }
       userId = newUser.user.id
     } else {
-      // Si ya existía, confirmar su email para evitar bloqueos
-      await supabase.auth.admin.updateUserById(existingUser.id, {
+      // Si ya existía, confirmar su email y actualizar contraseña si se proveyó
+      const updateData: {
+        email_confirm: boolean
+        password?: string
+        user_metadata: Record<string, unknown>
+      } = {
         email_confirm: true,
         user_metadata: {
           ...(existingUser.user_metadata || {}),
           full_name: cleanName,
           phone: cleanPhone || existingUser.user_metadata?.phone,
-        }
-      })
+        },
+      }
+      if (params.password?.trim()) {
+        updateData.password = params.password.trim()
+        updateData.user_metadata.assigned_password = params.password.trim()
+      }
+
+      await supabase.auth.admin.updateUserById(existingUser.id, updateData)
       userId = existingUser.id
     }
 

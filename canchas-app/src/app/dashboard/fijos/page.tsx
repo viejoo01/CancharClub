@@ -13,7 +13,8 @@ import {
   Loader2, 
   CalendarDays, 
   ShieldAlert,
-  Lock
+  Pencil,
+  Trash2
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -34,12 +35,14 @@ import {
   createRecurringSlot, 
   generateMonthlyBookingsForSlot, 
   checkAndReleaseOverdueRecurringSlots, 
-  updateRecurringSlotStatus 
+  updateRecurringSlotStatus,
+  updateRecurringSlot,
+  deleteRecurringSlot
 } from '@/actions/recurring-slots.actions'
 import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
-import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
+import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 import { createClient } from '@/lib/supabase/client'
 
@@ -52,7 +55,6 @@ const DAYS_NAME = [
 
 export default function TurnosFijosPage() {
   const tenantId = useTenantId()
-  const { isOwner } = useUserRole()
   const [slots, setSlots] = useState<RecurringSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -60,7 +62,7 @@ export default function TurnosFijosPage() {
   const [actionSlotId, setActionSlotId] = useState<string | null>(null)
   const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>([])
 
-  // Form states
+  // Form states (Alta)
   const [courtId, setCourtId] = useState('')
   const [dayOfWeek, setDayOfWeek] = useState(1) // Lunes
   const [startTime, setStartTime] = useState('20:00')
@@ -69,6 +71,106 @@ export default function TurnosFijosPage() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [monthlyPrice, setMonthlyPrice] = useState('56000')
   const [paymentDueDay, setPaymentDueDay] = useState(10)
+
+  // Estados para Modal de Edición de Abono
+  const [editingSlot, setEditingSlot] = useState<RecurringSlot | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editCourtId, setEditCourtId] = useState('')
+  const [editDayOfWeek, setEditDayOfWeek] = useState(1)
+  const [editStartTime, setEditStartTime] = useState('20:00')
+  const [editEndTime, setEditEndTime] = useState('21:30')
+  const [editCustomerName, setEditCustomerName] = useState('')
+  const [editCustomerPhone, setEditCustomerPhone] = useState('')
+  const [editMonthlyPrice, setEditMonthlyPrice] = useState('')
+  const [editPaymentDueDay, setEditPaymentDueDay] = useState(10)
+  const [submittingEdit, setSubmittingEdit] = useState(false)
+
+  // Estados para Modal de Eliminación de Abono
+  const [deletingSlot, setDeletingSlot] = useState<RecurringSlot | null>(null)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [cancelFutureBookings, setCancelFutureBookings] = useState(true)
+  const [submittingDelete, setSubmittingDelete] = useState(false)
+
+  const openEditModal = (slot: RecurringSlot) => {
+    setEditingSlot(slot)
+    setEditCourtId(slot.court_id)
+    setEditDayOfWeek(slot.day_of_week)
+    setEditStartTime(slot.start_time.slice(0, 5))
+    setEditEndTime(slot.end_time.slice(0, 5))
+    setEditCustomerName(slot.customer_name)
+    setEditCustomerPhone(slot.customer_phone)
+    setEditMonthlyPrice(String(slot.monthly_price))
+    setEditPaymentDueDay(slot.payment_due_day)
+    setIsEditModalOpen(true)
+  }
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingSlot) return
+    if (!editCustomerName.trim() || !editCustomerPhone.trim()) {
+      toast.error('Completá nombre y teléfono del abonado')
+      return
+    }
+    const priceNum = Number(editMonthlyPrice)
+    if (isNaN(priceNum) || priceNum < 0) {
+      toast.error('Ingresá un precio mensual válido')
+      return
+    }
+    setSubmittingEdit(true)
+    try {
+      const res = await updateRecurringSlot(editingSlot.id, {
+        court_id: editCourtId,
+        day_of_week: Number(editDayOfWeek),
+        start_time: editStartTime,
+        end_time: editEndTime,
+        customer_name: editCustomerName.trim(),
+        customer_phone: editCustomerPhone.trim(),
+        monthly_price: priceNum,
+        payment_due_day: Number(editPaymentDueDay),
+      })
+      if (res.success) {
+        toast.success('¡Abono mensual actualizado correctamente!')
+        setIsEditModalOpen(false)
+        setEditingSlot(null)
+        await loadData()
+      } else {
+        toast.error(res.error || 'Error al actualizar abono')
+      }
+    } catch {
+      toast.error('Error al actualizar abono')
+    } finally {
+      setSubmittingEdit(false)
+    }
+  }
+
+  const openDeleteModal = (slot: RecurringSlot) => {
+    setDeletingSlot(slot)
+    setCancelFutureBookings(true)
+    setIsDeleteModalOpen(true)
+  }
+
+  const handleDelete = async () => {
+    if (!deletingSlot) return
+    setSubmittingDelete(true)
+    try {
+      const res = await deleteRecurringSlot(deletingSlot.id, {
+        cancelFutureBookings,
+      })
+      if (res.success) {
+        toast.success('Abonado fijo eliminado correctamente')
+        setSlots((prev) => prev.filter((s) => s.id !== deletingSlot.id))
+        setIsDeleteModalOpen(false)
+        setDeletingSlot(null)
+        await loadData()
+      } else {
+        toast.error(res.error || 'Error al eliminar abono')
+      }
+    } catch {
+      toast.error('Error al eliminar abono fijo')
+    } finally {
+      setSubmittingDelete(false)
+    }
+  }
 
   const loadData = useCallback(async () => {
     if (!tenantId) return
@@ -145,10 +247,6 @@ export default function TurnosFijosPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isOwner) {
-      toast.error('Solo el dueño del club tiene permisos para crear turnos fijos o fijar precios mensuales.')
-      return
-    }
     if (!customerName || !customerPhone) {
       toast.error('Completá nombre y teléfono del abonado')
       return
@@ -339,11 +437,19 @@ export default function TurnosFijosPage() {
                   </div>
                   <CardTitle className="text-base text-white mt-2 flex items-center justify-between">
                     <span>{slot.customer_name}</span>
-                    <span className="text-emerald-400 font-extrabold text-sm">{formatARS(slot.monthly_price)}/mes</span>
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(slot)}
+                      className="text-emerald-400 hover:text-emerald-300 font-extrabold text-sm flex items-center gap-1.5 transition-colors group cursor-pointer"
+                      title="Hacé click para modificar el precio del abono mensual"
+                    >
+                      <span>{formatARS(slot.monthly_price)}/mes</span>
+                      <Pencil className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-300 transition-colors" />
+                    </button>
                   </CardTitle>
                   <CardDescription className="text-xs text-slate-400 flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{slot.start_time} a {slot.end_time} hs • {courtName}</span>
+                    <span>{slot.start_time.slice(0, 5)} a {slot.end_time.slice(0, 5)} hs • {courtName}</span>
                   </CardDescription>
                 </CardHeader>
 
@@ -362,6 +468,7 @@ export default function TurnosFijosPage() {
                     </Badge>
                   </div>
 
+                  {/* Acciones del turno: Generar mes, Calendar y WhatsApp */}
                   <div className="pt-1 flex items-center justify-between gap-2">
                     <Button
                       size="sm"
@@ -386,11 +493,11 @@ export default function TurnosFijosPage() {
 
                         downloadIcs({
                           title: `Abono: ${slot.customer_name} - ${courtName}`,
-                          description: `Turno semanal fijo.\nCliente: ${slot.customer_name}\nHorario: ${slot.start_time} a ${slot.end_time} hs`,
+                          description: `Turno semanal fijo.\nCliente: ${slot.customer_name}\nHorario: ${slot.start_time.slice(0, 5)} a ${slot.end_time.slice(0, 5)} hs`,
                           location: courtName,
                           date: nextDate,
-                          startTime: slot.start_time,
-                          endTime: slot.end_time,
+                          startTime: slot.start_time.slice(0, 5),
+                          endTime: slot.end_time.slice(0, 5),
                           rrule: `FREQ=WEEKLY;BYDAY=${rruleDays[slot.day_of_week]}`,
                         }, `abono-${slot.customer_name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.ics`)
                         toast.success('Archivo .ics de abono recurrente descargado')
@@ -410,6 +517,31 @@ export default function TurnosFijosPage() {
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span>WhatsApp</span>
                     </a>
+                  </div>
+
+                  {/* Botones de Gestión: Editar y Borrar */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditModal(slot)}
+                      className="h-8 text-[11px] border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 hover:border-sky-500/50 hover:text-sky-200 flex-1 gap-1.5 font-medium transition-colors"
+                      title="Editar todos los datos del abono fijo"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Editar Abono</span>
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDeleteModal(slot)}
+                      className="h-8 px-3 text-[11px] border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/50 hover:text-rose-200 gap-1.5 font-medium transition-colors"
+                      title="Eliminar abono fijo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Borrar</span>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -518,34 +650,15 @@ export default function TurnosFijosPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-slate-300">Precio Mensual ($ARS)</Label>
-                  {!isOwner && (
-                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
-                      <Lock className="w-2.5 h-2.5" /> Solo Dueño
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    value={monthlyPrice}
-                    onChange={(e) => setMonthlyPrice(e.target.value)}
-                    disabled={!isOwner}
-                    required
-                    className={`bg-slate-900 border-slate-800 text-xs font-mono font-bold ${
-                      !isOwner ? 'cursor-not-allowed opacity-90 pr-8' : ''
-                    }`}
-                  />
-                  {!isOwner && (
-                    <Lock className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  )}
-                </div>
-                {!isOwner && (
-                  <p className="text-[10px] text-slate-500">
-                    Solo el dueño del club puede fijar o modificar el abono mensual.
-                  </p>
-                )}
+                <Label className="text-xs font-bold text-slate-300">Precio Mensual ($ARS)</Label>
+                <Input
+                  type="number"
+                  value={monthlyPrice}
+                  onChange={(e) => setMonthlyPrice(e.target.value)}
+                  required
+                  placeholder="Ej: 56000"
+                  className="bg-slate-900 border-slate-800 text-xs font-mono font-bold text-white focus:border-purple-500"
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -557,7 +670,7 @@ export default function TurnosFijosPage() {
                   value={paymentDueDay}
                   onChange={(e) => setPaymentDueDay(Number(e.target.value))}
                   required
-                  className="bg-slate-900 border-slate-800 text-xs font-mono"
+                  className="bg-slate-900 border-slate-800 text-xs font-mono text-white"
                 />
               </div>
             </div>
@@ -580,6 +693,226 @@ export default function TurnosFijosPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Editar Abonado Fijo Completo */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Pencil className="w-5 h-5 text-sky-400" />
+              Editar Abonado Semanal Fijo
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Modificá la cancha, día, horario, precio mensual o datos del titular del abono.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleUpdate} className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Cancha</Label>
+                <select
+                  value={editCourtId}
+                  onChange={(e) => setEditCourtId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md p-2.5 focus:border-sky-500 focus:outline-none"
+                >
+                  {dbCourts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.sport})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Día de la Semana</Label>
+                <select
+                  value={editDayOfWeek}
+                  onChange={(e) => setEditDayOfWeek(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-md p-2.5 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value={1}>Lunes</option>
+                  <option value={2}>Martes</option>
+                  <option value={3}>Miércoles</option>
+                  <option value={4}>Jueves</option>
+                  <option value={5}>Viernes</option>
+                  <option value={6}>Sábado</option>
+                  <option value={0}>Domingo</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Hora Inicio</Label>
+                <Input
+                  type="time"
+                  value={editStartTime}
+                  onChange={(e) => setEditStartTime(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Hora Fin</Label>
+                <Input
+                  type="time"
+                  value={editEndTime}
+                  onChange={(e) => setEditEndTime(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-300">Nombre del Abonado</Label>
+              <Input
+                value={editCustomerName}
+                onChange={(e) => setEditCustomerName(e.target.value)}
+                required
+                className="bg-slate-900 border-slate-800 text-xs text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-300">WhatsApp / Teléfono</Label>
+              <Input
+                value={editCustomerPhone}
+                onChange={(e) => setEditCustomerPhone(e.target.value)}
+                required
+                className="bg-slate-900 border-slate-800 text-xs text-white font-mono"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-emerald-400">Precio Mensual ($ARS)</Label>
+                <Input
+                  type="number"
+                  value={editMonthlyPrice}
+                  onChange={(e) => setEditMonthlyPrice(e.target.value)}
+                  required
+                  className="bg-slate-900 border-emerald-500/40 text-xs font-mono font-bold text-emerald-300 focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Día Límite de Pago (1-31)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={editPaymentDueDay}
+                  onChange={(e) => setEditPaymentDueDay(Number(e.target.value))}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs font-mono text-white"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+                className="border-slate-800 text-slate-300"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={submittingEdit}
+                className="bg-sky-600 hover:bg-sky-500 text-white font-bold"
+              >
+                {submittingEdit ? 'Guardando...' : 'Guardar Cambios'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Eliminación de Abono Fijo */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 w-[95vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-400">
+              <Trash2 className="w-5 h-5 text-rose-500" />
+              Eliminar Abonado Semanal Fijo
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              ¿Estás seguro de que deseás eliminar este abono recurrente? Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deletingSlot && (
+            <div className="space-y-4 py-2">
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-bold text-white text-sm">
+                  <span>{deletingSlot.customer_name}</span>
+                  <span className="text-emerald-400">{formatARS(deletingSlot.monthly_price)}/mes</span>
+                </div>
+                <div className="text-slate-400 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  <span>
+                    {DAYS_NAME[deletingSlot.day_of_week]} • {deletingSlot.start_time.slice(0, 5)} a {deletingSlot.end_time.slice(0, 5)} hs
+                  </span>
+                </div>
+                <div className="text-slate-400">
+                  Teléfono: <span className="text-slate-200 font-mono">{deletingSlot.customer_phone}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
+                <input
+                  type="checkbox"
+                  id="cancelFuture"
+                  checked={cancelFutureBookings}
+                  onChange={(e) => setCancelFutureBookings(e.target.checked)}
+                  className="mt-0.5 rounded border-rose-500/40 text-rose-600 focus:ring-rose-500 cursor-pointer h-4 w-4 bg-slate-900"
+                />
+                <label htmlFor="cancelFuture" className="cursor-pointer select-none">
+                  <span className="font-semibold block text-rose-200">Cancelar reservas futuras en la grilla</span>
+                  <span className="text-slate-400 text-[11px] block mt-0.5">
+                    Libera automáticamente los turnos agendados de este mes para que queden disponibles al público.
+                  </span>
+                </label>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  disabled={submittingDelete}
+                  className="border-slate-800 text-slate-300"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={submittingDelete}
+                  className="bg-rose-600 hover:bg-rose-500 text-white font-bold gap-1.5"
+                >
+                  {submittingDelete ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Eliminando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Eliminar Abono</span>
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

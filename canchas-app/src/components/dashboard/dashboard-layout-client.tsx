@@ -23,6 +23,7 @@ import { ClubSocialLinksModal } from './club-social-links-modal'
 import { cn } from '@/lib/utils'
 import type { SaaSPlanId } from '@/config/saas-plans'
 import type { TenantSubscriptionStatus } from '@/types/database'
+import { useUserRole } from '@/hooks/use-tenant-id'
 
 interface DashboardLayoutClientProps {
   tenantId?: string | null
@@ -115,7 +116,8 @@ export function DashboardLayoutClient({
     }
   }, [mobileMenuOpen])
 
-  const isStaff = userRole === 'TENANT_STAFF'
+  const { role: hookRole } = useUserRole()
+  const isStaff = userRole === 'TENANT_STAFF' || hookRole === 'TENANT_STAFF'
 
   // Items rápidos para la barra de navegación inferior en celulares
   const quickBottomNav = [
@@ -234,7 +236,7 @@ export function DashboardLayoutClient({
 
         <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
           {/* Banner visual prominente de 15 Días de Prueba Gratuita */}
-          {isTrial && (
+          {isTrial && !isStaff && (
             <TrialBanner
               daysRemaining={typeof trialDaysRemaining === 'number' ? trialDaysRemaining : 15}
               dueDate={trialDueDate || dueDate || ''}
@@ -244,7 +246,7 @@ export function DashboardLayoutClient({
           )}
 
           {/* Banner de Aviso: Prueba Gratuita Revocada por Reactivación */}
-          {trialForfeited && !isTrial && (
+          {trialForfeited && !isTrial && !isStaff && (
             <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-200 text-xs shadow-lg shadow-amber-950/20 backdrop-blur-md">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
@@ -267,28 +269,34 @@ export function DashboardLayoutClient({
             </div>
           )}
 
-          {isActive && !isTrial && gracePeriodBanner}
+          {isActive && !isTrial && !isStaff && gracePeriodBanner}
 
           {/* Modal de vinculación de tarjeta para activar plan */}
-          <PlanActivationModal
-            isOpen={showActivationModal}
-            onOpenChange={setShowActivationModal}
-            tenantName={tenantName}
-            tenantId={tenantId}
-            planId={planId}
-          />
+          {!isStaff && (
+            <PlanActivationModal
+              isOpen={showActivationModal}
+              onOpenChange={setShowActivationModal}
+              tenantName={tenantName}
+              tenantId={tenantId}
+              planId={planId}
+            />
+          )}
 
           {/* Alerta Progresiva Emergente de Vencimiento de Plan (3, 2, 1 días) con botón Entendido */}
-          <PlanExpirationAlert
-            tenantId={tenantId}
-            dueDate={dueDate}
-            daysRemaining={daysRemaining}
-          />
+          {!isStaff && (
+            <PlanExpirationAlert
+              tenantId={tenantId}
+              dueDate={dueDate}
+              daysRemaining={daysRemaining}
+            />
+          )}
 
           {/* Alerta de Débito Automático (Cobro Fallido o Exitoso) con botón Entendido */}
-          <AutoDebitAlertModal
-            tenantId={tenantId}
-          />
+          {!isStaff && (
+            <AutoDebitAlertModal
+              tenantId={tenantId}
+            />
+          )}
 
           <div className="relative w-full">
             <div className="w-full">

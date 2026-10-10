@@ -211,3 +211,33 @@ export async function notifyWaitlistSlotAvailable(params: {
 
   return sendWhatsAppMessage(params.phone, message)
 }
+
+/**
+ * 6. Redacta el mensaje personalizado para WhatsApp con la propuesta de reagenda por lluvia
+ */
+export interface RainRescheduleMessageParams {
+  customerName: string
+  clubName: string
+  originalCourtName: string
+  originalSport: string
+  originalDateFormatted: string
+  originalTime: string
+  creditedAmount: number
+  suggestedReschedule: {
+    courtName: string
+    dateFormatted: string
+    startTime: string
+  } | null
+}
+
+export function buildRainRescheduleWhatsAppMessage(params: RainRescheduleMessageParams): string {
+  const creditLine = params.creditedAmount > 0
+    ? `💰 *Seña Protegida:* Tu seña de *${formatARS(params.creditedAmount)}* ya quedó acreditada al 100% como saldo a tu favor en el club.\n\n`
+    : ''
+
+  const rescheduleSection = params.suggestedReschedule
+    ? `📅 *Propuesta de Reagenda (Próximo turno disponible):*\nTe guardamos la prioridad para el *${params.suggestedReschedule.dateFormatted} a las ${params.suggestedReschedule.startTime} hs* en *${params.suggestedReschedule.courtName}*.\n\n¿Te confirmamos este nuevo turno o preferís coordinar otro día y horario? Avisanos por acá y te lo dejamos listo! 🙌`
+    : `📅 Podés escribirnos por acá para coordinar el nuevo día y horario que te quede más cómodo para reprogramar tu partido.\n\n¡Gracias por tu comprensión! 🙌`
+
+  return `¡Hola ${params.customerName}! 👋 Te escribimos de *${params.clubName}*.\n\n🌧️ *Aviso por Lluvia / Mal Tiempo:*\nDebido a las condiciones climáticas desfavorables y para cuidar tu seguridad, tu turno de hoy (*${params.originalCourtName}* a las *${params.originalTime} hs*) debió ser suspendido por lluvia.\n\n${creditLine}${rescheduleSection}`
+}

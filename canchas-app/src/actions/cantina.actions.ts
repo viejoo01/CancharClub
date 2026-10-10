@@ -8,9 +8,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
-import { INITIAL_CANTINA_PRODUCTS, type CantinaProduct } from '@/config/cantina-data'
+import { type CantinaProduct, type CantinaSupplier, DEFAULT_CANTINA_SUPPLIERS } from '@/config/cantina-data'
 
-export type { CantinaProduct }
+export type { CantinaProduct, CantinaSupplier }
+
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
 export type CantinaPaymentMethod = 'TRANSFER' | 'CASH' | 'QR_MP' | 'CUENTA_CORRIENTE'
 export type CantinaPaymentStatus = 'PAID' | 'PENDING'
@@ -446,36 +447,53 @@ export async function getCantinaStats(tenantId: string): Promise<CantinaStats> {
 
 // ─── GESTIÓN DE INVENTARIO Y CATÁLOGO DE PRODUCTOS ───────────────────────────
 
+const DEMO_PRODUCT_IDS = new Set(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'])
+const DEMO_PRODUCT_NAMES = new Set([
+  'gatorade / powerade 500ml',
+  'agua mineral 500ml',
+  'cerveza corona / stella 330ml',
+  'tubo pelotas pádel x3 (bullpadel)',
+  'tubo pelotas padel x3 (bullpadel)',
+  'alquiler de paleta de pádel',
+  'alquiler de paleta de padel',
+  'overgrip wilson / bullpadel',
+  'barra de cereal / proteica',
+  'papas fritas / maní snack',
+  'papas fritas / mani snack'
+])
+
 export async function getCantinaProducts(tenantId: string): Promise<CantinaProduct[]> {
   try {
-    const auth = await assertTenantMember(tenantId)
-    if (!auth.authorized) {
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
       return []
     }
 
+    const cleanTenantId = tenantId.trim()
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('audit_log')
       .select('new_data')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', cleanTenantId)
       .eq('action', 'CANTINA_PRODUCT_CATALOG')
       .eq('table_name', 'cantina_products')
       .order('created_at', { ascending: false })
       .limit(1)
 
     if (error || !data || data.length === 0 || !data[0].new_data) {
-      return INITIAL_CANTINA_PRODUCTS
+      return []
     }
 
     const catalog = data[0].new_data as { products: CantinaProduct[] }
-    if (Array.isArray(catalog.products) && catalog.products.length > 0) {
-      return catalog.products
+    if (Array.isArray(catalog.products)) {
+      return catalog.products.filter(
+        p => !DEMO_PRODUCT_IDS.has(p.id) && !DEMO_PRODUCT_NAMES.has(p.name?.toLowerCase().trim())
+      )
     }
 
-    return INITIAL_CANTINA_PRODUCTS
+    return []
   } catch (err) {
     console.error('[getCantinaProducts] Error:', err)
-    return INITIAL_CANTINA_PRODUCTS
+    return []
   }
 }
 
@@ -608,3 +626,86 @@ export async function deleteProduct(
     return { success: false, products: [], error: errorMsg }
   }
 }
+
+// ─── GESTIÓN DE PROVEEDORES DE CANTINA ────────────────────────────────────────
+
+export async function getCantinaSuppliers(tenantId: string): Promise<CantinaSupplier[]> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) return DEFAULT_CANTINA_SUPPLIERS
+
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'CANTINA_SUPPLIERS')
+      .eq('table_name', 'cantina_suppliers')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (error || !data || data.length === 0 || !data[0].new_data) {
+      return DEFAULT_CANTINA_SUPPLIERS
+    }
+
+    const payload = data[0].new_data as { suppliers: CantinaSupplier[] }
+    if (Array.isArray(payload.suppliers) && payload.suppliers.length > 0) {
+      return payload.suppliers
+    }
+
+    return DEFAULT_CANTINA_SUPPLIERS
+  } catch (err) {
+    console.error('[getCantinaSuppliers] Error:', err)
+    return DEFAULT_CANTINA_SUPPLIERS
+  }
+}
+
+export async function saveCantinaSuppliers(
+  tenantId: string,
+  suppliers: CantinaSupplier[]
+): Promise<{ success: boolean; suppliers: CantinaSupplier[]; error?: string }> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, suppliers: [], error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: existing } = await supabase
+      .from('audit_log')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'CANTINA_SUPPLIERS')
+      .eq('table_name', 'cantina_suppliers')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      const updateRes = await supabase
+        .from('audit_log')
+        .update({
+          new_data: { suppliers, updated_at: new Date().toISOString() }
+        })
+        .eq('id', existing[0].id)
+
+      if (updateRes.error) throw updateRes.error
+    } else {
+      const insertRes = await supabase.from('audit_log').insert({
+        tenant_id: tenantId,
+        action: 'CANTINA_SUPPLIERS',
+        table_name: 'cantina_suppliers',
+        new_data: { suppliers, updated_at: new Date().toISOString() }
+      })
+
+      if (insertRes.error) throw insertRes.error
+    }
+
+    revalidatePath('/dashboard/cantina')
+    return { success: true, suppliers }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al guardar proveedores'
+    console.error('[saveCantinaSuppliers] Error:', errorMsg)
+    return { success: false, suppliers, error: errorMsg }
+  }
+}
+

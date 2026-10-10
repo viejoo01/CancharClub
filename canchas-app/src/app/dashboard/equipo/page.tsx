@@ -13,6 +13,8 @@ import {
   X,
   Loader2,
   KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -43,6 +45,8 @@ export default function EquipoPage() {
   // Form state
   const [fullName, setFullName] = useState('')
   const [emailPrefix, setEmailPrefix] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState<StaffRole>('TENANT_STAFF')
 
@@ -102,6 +106,8 @@ export default function EquipoPage() {
     setIsModalOpen(false)
     setFullName('')
     setEmailPrefix('')
+    setPassword('')
+    setShowPassword(false)
     setPhone('')
     setRole('TENANT_STAFF')
   }
@@ -114,6 +120,11 @@ export default function EquipoPage() {
       return
     }
 
+    if (!password || password.length < 8) {
+      toast.error('La contraseña debe tener como mínimo 8 caracteres.')
+      return
+    }
+
     const fullEmail = `${cleanPrefix}@encargado.com`
 
     setSubmitting(true)
@@ -122,6 +133,7 @@ export default function EquipoPage() {
         tenantId: tenantId!,
         fullName: fullName.trim(),
         email: fullEmail,
+        password: password.trim(),
         phone: phone.trim() || undefined,
         role,
       })
@@ -482,6 +494,50 @@ export default function EquipoPage() {
                     {emailPrefix.trim() ? `${emailPrefix.trim().toLowerCase()}@encargado.com` : 'nombre@encargado.com'}
                   </span>
                 </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Contraseña de Acceso
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Mínimo 8 caracteres
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    placeholder="Mínimo 8 caracteres"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`w-full px-3.5 py-2.5 pr-11 bg-slate-800 border rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none transition-all ${
+                      password && password.length < 8
+                        ? 'border-amber-500/80 focus:border-amber-500'
+                        : 'border-slate-700 focus:border-emerald-500'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 text-slate-400 hover:text-slate-200 transition-colors p-1"
+                    tabIndex={-1}
+                    title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {password && password.length < 8 ? (
+                  <p className="text-[11px] text-amber-400 mt-1 flex items-center gap-1">
+                    <span>⚠️ Mínimo 8 caracteres (faltan {8 - password.length}).</span>
+                  </p>
+                ) : password.length >= 8 ? (
+                  <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+                    <span>✓ Contraseña válida ({password.length} caracteres).</span>
+                  </p>
+                ) : null}
               </div>
 
               <div>

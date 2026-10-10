@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { QrCode, Printer, Copy, Check, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
+import { useTenantSlug, useTenantId } from '@/hooks/use-tenant-id'
+import { getTenantClubInfo } from '@/actions/club.actions'
 
 interface CourtQrModalProps {
   isOpen: boolean
@@ -35,22 +37,52 @@ export function CourtQrModal(props: CourtQrModalProps) {
     tableName = '',
     clubSlug = ''
   } = props
+
+  const contextSlug = useTenantSlug()
+  const tenantId = useTenantId()
+
+  const [fetchedSlug, setFetchedSlug] = useState<string>('')
+  const [fetchedClubName, setFetchedClubName] = useState<string>('')
+
   const [copied, setCopied] = useState(false)
   const [selectedTable, setSelectedTable] = useState(tableName || '')
   const [downloading, setDownloading] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
 
-  const effectiveSlug = clubSlug || 'club'
+  // Resolver slug e información verificada del club: 1. Prop, 2. Context, 3. Base de Datos
+  useEffect(() => {
+    if (!isOpen) return
+
+    if (tenantId && (!fetchedSlug || !fetchedClubName)) {
+      getTenantClubInfo(tenantId)
+        .then((info) => {
+          if (info?.slug) {
+            setFetchedSlug(info.slug)
+          }
+          if (info?.name) {
+            setFetchedClubName(info.name)
+          }
+        })
+        .catch((err) => {
+          console.error('[CourtQrModal] Error fetching club info:', err)
+        })
+    }
+  }, [isOpen, tenantId, fetchedSlug, fetchedClubName])
+
+  const effectiveSlug = (clubSlug && clubSlug !== 'club' ? clubSlug : '') || (contextSlug && contextSlug !== 'club' ? contextSlug : '') || fetchedSlug
+  const displayClubName = fetchedClubName ? fetchedClubName.toUpperCase() : siteConfig.name.toUpperCase()
   const isCourtMode = Boolean(court)
   const origin = typeof window !== 'undefined' ? window.location.origin : siteConfig.url
   const tableParam = selectedTable.trim() ? `&mesa=${encodeURIComponent(selectedTable.trim())}` : ''
-  const orderUrl = isCourtMode
-    ? `${origin}/club/${effectiveSlug}/pedido?cancha=${encodeURIComponent(court?.name || '')}`
-    : `${origin}/club/${effectiveSlug}/pedido?origen=mesa${tableParam}`
+  const orderUrl = effectiveSlug
+    ? (isCourtMode
+        ? `${origin}/club/${effectiveSlug}/pedido?cancha=${encodeURIComponent(court?.name || '')}`
+        : `${origin}/club/${effectiveSlug}/pedido?origen=mesa${tableParam}`)
+    : ''
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || !orderUrl) return
     let isMounted = true
     QRCode.toDataURL(orderUrl, {
       width: 600,
@@ -86,6 +118,10 @@ export function CourtQrModal(props: CourtQrModalProps) {
     : 'Hacé tu pedido desde la mesa y retiralo por el mostrador'
 
   const handleCopy = () => {
+    if (!orderUrl) {
+      toast.error('Esperá a que se genere el enlace exclusivo de tu club')
+      return
+    }
     navigator.clipboard.writeText(orderUrl)
     setCopied(true)
     toast.success('Enlace de pedido copiado al portapapeles')
@@ -255,7 +291,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
         </head>
         <body>
           <div class="poster-card">
-            <div class="brand-badge">${siteConfig.name} • CANTINA</div>
+            <div class="brand-badge">${displayClubName} • CANTINA</div>
             <div class="main-title">${titleText}</div>
             <div class="subtitle">${subtitleText}</div>
 
@@ -340,7 +376,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
       ctx.fillStyle = '#ffffff'
       ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(`${siteConfig.name.toUpperCase()} • CANTINA`, 600, 182)
+      ctx.fillText(`${displayClubName} • CANTINA`, 600, 182)
 
       // Título principal
       ctx.fillStyle = '#020617'
@@ -477,7 +513,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
           className="my-3 p-4 rounded-2xl bg-white text-slate-900 shadow-2xl border-2 border-slate-950 flex flex-col items-center max-w-[340px] mx-auto"
         >
           <div className="px-3 py-0.5 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] tracking-widest uppercase mb-1">
-            {siteConfig.name} • CANTINA
+            {displayClubName} • CANTINA
           </div>
           <div className="text-lg font-black text-slate-950 uppercase tracking-tight">
             {titleText}
@@ -487,9 +523,12 @@ export function CourtQrModal(props: CourtQrModalProps) {
           </div>
 
           <div className="p-2 bg-white border-2 border-slate-200 rounded-xl shadow-inner mb-2 flex items-center justify-center min-w-40 min-h-40">
-            {!qrDataUrl ? (
-              <div className="w-40 h-40 flex items-center justify-center text-slate-400">
-                <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+            {!qrDataUrl || !effectiveSlug ? (
+              <div className="w-40 h-40 flex flex-col items-center justify-center text-slate-400 gap-2 p-2">
+                <Loader2 className="w-7 h-7 animate-spin text-emerald-600" />
+                <span className="text-[10px] font-medium text-slate-500 text-center">
+                  {!effectiveSlug ? 'Vinculando catálogo del club...' : 'Generando QR...'}
+                </span>
               </div>
             ) : (
               /* eslint-disable-next-line @next/next/no-img-element */
@@ -524,18 +563,31 @@ export function CourtQrModal(props: CourtQrModalProps) {
           </div>
         </div>
 
-        {/* Input link */}
-        <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-left">
-          <span className="truncate text-slate-400 flex-1 font-mono text-[11px]">{orderUrl}</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleCopy}
-            className="h-7 px-2 text-slate-300 hover:text-white"
-            title="Copiar enlace"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </Button>
+        {/* Input link y badge de verificación del club */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-left">
+            <span className="truncate text-slate-300 flex-1 font-mono text-[11px]">
+              {orderUrl || (!effectiveSlug ? 'Obteniendo enlace seguro de tu club...' : 'Generando enlace...')}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleCopy}
+              disabled={!orderUrl}
+              className="h-7 px-2 text-slate-300 hover:text-white"
+              title="Copiar enlace"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+          {effectiveSlug && (
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 py-1 px-2.5 rounded-lg">
+              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">
+                Catálogo verificado del club: <strong>/club/{effectiveSlug}</strong>
+              </span>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
@@ -543,7 +595,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
             type="button"
             variant="outline"
             onClick={handleDownloadImage}
-            disabled={downloading}
+            disabled={downloading || !effectiveSlug || !qrDataUrl}
             className="w-full sm:w-auto flex-1 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5 min-h-10 rounded-xl"
           >
             {downloading ? (
@@ -557,7 +609,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
           <Button
             type="button"
             onClick={handlePrint}
-            disabled={printing}
+            disabled={printing || !effectiveSlug || !qrDataUrl}
             className="w-full sm:w-auto flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 text-xs min-h-10 rounded-xl shadow-md cursor-pointer"
           >
             {printing ? (

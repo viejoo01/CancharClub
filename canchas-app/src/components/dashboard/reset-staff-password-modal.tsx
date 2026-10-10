@@ -57,8 +57,8 @@ export function ResetStaffPasswordModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const clean = newPassword.trim()
-    if (clean.length < 6) {
-      toast.error('La contraseña debe tener al menos 6 caracteres.')
+    if (clean.length < 8) {
+      toast.error('La contraseña debe tener al menos 8 caracteres.')
       return
     }
 
@@ -211,7 +211,8 @@ export function ResetStaffPasswordModal({
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
+                  minLength={8}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
@@ -227,6 +228,15 @@ export function ResetStaffPasswordModal({
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {newPassword && newPassword.length < 8 ? (
+                <p className="text-[11px] text-amber-400 mt-1">
+                  ⚠️ Mínimo 8 caracteres (faltan {8 - newPassword.length}).
+                </p>
+              ) : newPassword.length >= 8 ? (
+                <p className="text-[11px] text-emerald-400 mt-1">
+                  ✓ Contraseña válida ({newPassword.length} caracteres).
+                </p>
+              ) : null}
             </div>
 
             {/* Botón para generar aleatoria */}
@@ -253,7 +263,7 @@ export function ResetStaffPasswordModal({
               </Button>
               <Button
                 type="submit"
-                disabled={loading || newPassword.trim().length < 6}
+                disabled={loading || newPassword.trim().length < 8}
                 className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold cursor-pointer shadow-md shadow-amber-950/40"
               >
                 {loading ? (

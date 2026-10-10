@@ -42,7 +42,7 @@ export function ChangePasswordModal({
 
   if (!isOpen) return null
 
-  const isLengthValid = newPassword.trim().length >= 6
+  const isLengthValid = newPassword.trim().length >= 8
   const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword
 
   const isStaff = userRole === 'TENANT_STAFF'
@@ -53,7 +53,7 @@ export function ChangePasswordModal({
     setErrorMsg(null)
 
     if (!isLengthValid) {
-      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.')
+      setErrorMsg('La nueva contraseña debe tener al menos 8 caracteres.')
       return
     }
 
@@ -185,7 +185,8 @@ export function ChangePasswordModal({
             <div className="relative">
               <input
                 type={showNew ? 'text' : 'password'}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
+                minLength={8}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
@@ -239,7 +240,7 @@ export function ChangePasswordModal({
                 ✓
               </div>
               <span className={isLengthValid ? 'text-emerald-400' : 'text-slate-400'}>
-                Al menos 6 caracteres
+                Al menos 8 caracteres
               </span>
             </div>
 

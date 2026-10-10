@@ -191,6 +191,198 @@ export async function updateRecurringSlotStatus(
   }
 }
 
+/** Actualizar datos de un turno fijo (precio mensual, día de corte, cliente, etc.) */
+export async function updateRecurringSlot(
+  slotId: string,
+  payload: Partial<{
+    court_id: string
+    day_of_week: number
+    start_time: string
+    end_time: string
+    customer_name: string
+    customer_phone: string
+    customer_email?: string
+    monthly_price: number
+    payment_due_day: number
+    notes?: string
+  }>
+): Promise<{ success: boolean; slot?: RecurringSlot; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+    const { data: slot } = await serviceClient
+      .from('recurring_slots')
+      .select('*')
+      .eq('id', slotId)
+      .maybeSingle()
+
+    let targetTenantId = slot?.tenant_id
+    if (!targetTenantId) {
+      const { data: auditRow } = await serviceClient
+        .from('audit_log')
+        .select('tenant_id, new_data')
+        .eq('action', 'RECURRING_SLOT')
+        .eq('record_id', slotId)
+        .maybeSingle()
+      targetTenantId = auditRow?.tenant_id
+    }
+
+    const auth = await assertTenantMember(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para modificar el turno fijo.' }
+    }
+
+    const updateData: Record<string, unknown> = {
+      ...payload,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data: updatedDb, error } = await serviceClient
+      .from('recurring_slots')
+      .update(updateData)
+      .eq('id', slotId)
+      .select('*, court:courts(id, name, sport, slot_duration_minutes)')
+      .maybeSingle()
+
+    if (error || !updatedDb) {
+      // Fallback audit_log
+      const { data } = await serviceClient
+        .from('audit_log')
+        .select('id, new_data')
+        .eq('action', 'RECURRING_SLOT')
+        .eq('record_id', slotId)
+        .limit(1)
+
+      if (data && data.length > 0) {
+        const existing = (data[0].new_data || {}) as Record<string, unknown>
+        const merged = { ...existing, ...payload, updated_at: new Date().toISOString() } as RecurringSlot
+        await serviceClient
+          .from('audit_log')
+          .update({ new_data: merged })
+          .eq('id', data[0].id)
+        
+        revalidatePath('/dashboard/fijos')
+        revalidatePath('/dashboard')
+        revalidatePath('/dashboard/canchas')
+        return { success: true, slot: merged }
+      }
+    }
+
+    revalidatePath('/dashboard/fijos')
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+    return { success: true, slot: updatedDb as unknown as RecurringSlot }
+  } catch (err) {
+    console.error('[updateRecurringSlot] Error:', err)
+    return { success: false, error: 'Error al actualizar el abono recurrente' }
+  }
+}
+
+/**
+ * Eliminar un turno fijo recurrente (abonado)
+ * Opcionalmente cancela las reservas futuras asociadas generadas en la grilla para liberar el horario.
+ */
+export async function deleteRecurringSlot(
+  slotId: string,
+  options?: { cancelFutureBookings?: boolean }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const serviceClient = await createServiceClient()
+
+    // 1. Obtener datos del slot para auditoría y validación
+    let targetTenantId: string | undefined
+    let slotCustomerName: string | undefined
+    let slotCourtId: string | undefined
+
+    const { data: slot } = await serviceClient
+      .from('recurring_slots')
+      .select('id, tenant_id, customer_name, court_id')
+      .eq('id', slotId)
+      .maybeSingle()
+
+    if (slot) {
+      targetTenantId = slot.tenant_id
+      slotCustomerName = slot.customer_name
+      slotCourtId = slot.court_id
+    } else {
+      const { data: auditRow } = await serviceClient
+        .from('audit_log')
+        .select('tenant_id, new_data')
+        .eq('action', 'RECURRING_SLOT')
+        .eq('record_id', slotId)
+        .maybeSingle()
+      if (auditRow) {
+        targetTenantId = auditRow.tenant_id
+        const parsed = auditRow.new_data as Record<string, unknown> | null
+        slotCustomerName = (parsed?.customer_name as string) || undefined
+        slotCourtId = (parsed?.court_id as string) || undefined
+      }
+    }
+
+    const auth = await assertTenantMember(targetTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para eliminar el turno fijo.' }
+    }
+
+    // 2. Si se cancelan reservas futuras generadas por este abono
+    const cancelBookings = options?.cancelFutureBookings ?? true
+    if (cancelBookings && targetTenantId) {
+      // Cancelar por recurring_slot_id
+      await serviceClient
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
+        })
+        .eq('tenant_id', targetTenantId)
+        .eq('recurring_slot_id', slotId)
+        .not('status', 'eq', 'cancelled')
+
+      // También cancelar reservas asociadas identificadas por notas
+      if (slotCustomerName && slotCourtId) {
+        await serviceClient
+          .from('bookings')
+          .update({
+            status: 'cancelled',
+            staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
+          })
+          .eq('tenant_id', targetTenantId)
+          .eq('court_id', slotCourtId)
+          .ilike('staff_notes', `%ABONO FIJO: ${slotCustomerName}%`)
+          .not('status', 'eq', 'cancelled')
+      }
+    }
+
+    // 3. Eliminar de la tabla recurring_slots
+    if (targetTenantId) {
+      const { error: dbDeleteErr } = await serviceClient
+        .from('recurring_slots')
+        .delete()
+        .eq('id', slotId)
+        .eq('tenant_id', targetTenantId)
+
+      if (dbDeleteErr) {
+        console.warn('[deleteRecurringSlot] Error deleting from DB table:', dbDeleteErr.message)
+      }
+    }
+
+    // 4. Eliminar de audit_log si existía allí
+    await serviceClient
+      .from('audit_log')
+      .delete()
+      .eq('action', 'RECURRING_SLOT')
+      .eq('record_id', slotId)
+
+    revalidatePath('/dashboard/fijos')
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/canchas')
+
+    return { success: true }
+  } catch (err) {
+    console.error('[deleteRecurringSlot] Error:', err)
+    return { success: false, error: 'Error al eliminar el abono fijo' }
+  }
+}
+
 /** 
  * Generar reservas automáticas en la tabla `bookings` para el mes y año dados
  * Encuentra todas las fechas en el mes que coincidan con `day_of_week`

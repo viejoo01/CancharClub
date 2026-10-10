@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { 
   CreditCard, 
   CheckCircle2, 
@@ -52,10 +53,13 @@ import {
 } from '@/lib/card-validation'
 import { toast } from 'sonner'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 
 export default function ClubPlanPage() {
   const tenantId = useTenantId()
+  const { role, isOwner } = useUserRole()
+  const router = useRouter()
+  const isStaffForbidden = role === 'TENANT_STAFF' || (!isOwner && role !== 'SUPERADMIN' && role !== '')
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
   const [hasAutoDebit, setHasAutoDebit] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -121,6 +125,7 @@ export default function ClubPlanPage() {
 
   // Cargar información oficial del club y sincronización continua en tiempo real
   useEffect(() => {
+    if (isStaffForbidden) return
     let isMounted = true
     async function fetchInitial() {
       try {
@@ -154,7 +159,7 @@ export default function ClubPlanPage() {
       window.removeEventListener('focus', handleSync)
       document.removeEventListener('visibilitychange', handleSync)
     }
-  }, [tenantId])
+  }, [tenantId, isStaffForbidden])
 
   // Limpiar cualquier residuo de clave global de términos para no contaminar el club
   useEffect(() => {
@@ -473,6 +478,38 @@ export default function ClubPlanPage() {
     planDetails?.termsAcceptedAt ||
     (typeof window !== 'undefined' && tenantId ? localStorage.getItem(`canchar_terms_accepted_${tenantId}`) : null)
   )
+
+  useEffect(() => {
+    if (isStaffForbidden) {
+      toast.error('Acceso denegado: El perfil de encargado no tiene permisos para ver o modificar el plan del club.')
+      router.replace('/dashboard')
+    }
+  }, [isStaffForbidden, router])
+
+  if (isStaffForbidden) {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4">
+        <Card className="border-red-500/30 bg-red-950/20 text-center p-6 shadow-xl">
+          <CardHeader className="flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
+              <ShieldAlert className="w-8 h-8 text-red-400" />
+            </div>
+            <CardTitle className="text-xl font-bold text-white">Acceso Restringido</CardTitle>
+            <CardDescription className="text-slate-300 max-w-md mt-2 text-sm leading-relaxed">
+              La gestión de suscripción, facturación y planes del club está reservada exclusivamente para los administradores y dueños del club.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pt-2">
+            <Button asChild variant="outline" className="border-slate-700 bg-slate-800 text-slate-200 hover:text-white">
+              <Link href="/dashboard">
+                Volver al Panel Principal
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

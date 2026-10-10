@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
+import { useUserRole } from '@/hooks/use-tenant-id'
 
 interface NavItem {
   title: string
@@ -175,15 +176,20 @@ export function Sidebar({
     },
   ]
 
-  const isStaff = userRole === 'TENANT_STAFF'
-  const isSuperadmin = userRole === 'SUPERADMIN'
+  const { role: hookRole } = useUserRole()
+  const effectiveRole = (userRole && userRole !== 'ADMIN') ? userRole : (hookRole || userRole || 'ADMIN')
+  const isStaff = effectiveRole === 'TENANT_STAFF' || userRole === 'TENANT_STAFF' || hookRole === 'TENANT_STAFF'
+  const isSuperadmin = effectiveRole === 'SUPERADMIN' || userRole === 'SUPERADMIN'
   const effectivePlanId: SaaSPlanId = planId || 'MEDIANO_2'
   const currentPlan = SAAS_PLANS[effectivePlanId] || SAAS_PLANS.MEDIANO_2
   const planAllowedFeatures = currentPlan.allowedModules
 
   const filteredNavItems = navItems.filter(item => {
+    // Si es encargado (TENANT_STAFF), bajo ninguna circunstancia puede ver "Mi plan"
+    if (isStaff && item.href === '/dashboard/plan') return false
+
     // 1. Filtrar por rol de usuario
-    if (!item.roles.includes(userRole)) return false
+    if (!item.roles.includes(effectiveRole)) return false
 
     // 2. Superadmin tiene acceso a todo
     if (isSuperadmin) return true
@@ -251,7 +257,7 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
-        {isTrial && (
+        {isTrial && !isStaff && (
           <Link
             href="/dashboard/plan"
             onClick={() => onClose?.()}

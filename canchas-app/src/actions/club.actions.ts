@@ -606,6 +606,7 @@ export async function getClubPriceRules(tenantId?: string | null) {
 export async function createPriceRule(payload: {
   tenant_id?: string | null
   court_id?: string | null
+  sport?: string | null
   name: string
   days_of_week?: number[]
   day_of_week?: number[]
@@ -662,10 +663,31 @@ export async function createPriceRule(payload: {
     }
   }
 
-  // Si no se especifica court_id, asignar a todas las canchas activas del club
+  // Determinar canchas destino: Cancha específica, por Deporte / Disciplina, o Todas las canchas
   let targetCourtIds: string[] = []
-  if (payload.court_id) {
+  const selectedSport = payload.sport || (payload.court_id?.startsWith('sport:') ? payload.court_id.replace('sport:', '') : null)
+
+  if (payload.court_id && !payload.court_id.startsWith('sport:')) {
     targetCourtIds = [payload.court_id]
+  } else if (selectedSport) {
+    const { data: clubCourts } = await supabase
+      .from('courts')
+      .select('id, sport')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('is_active', true)
+
+    if (clubCourts && clubCourts.length > 0) {
+      const normSelected = selectedSport.replace('_', '').toUpperCase()
+      const matching = clubCourts.filter(c => (c.sport || '').replace('_', '').toUpperCase() === normSelected)
+      targetCourtIds = matching.map(c => c.id)
+    }
+
+    if (targetCourtIds.length === 0) {
+      return {
+        success: false,
+        error: 'No se encontraron canchas activas para la disciplina seleccionada.',
+      }
+    }
   } else {
     const { data: clubCourts } = await supabase
       .from('courts')
@@ -819,8 +841,10 @@ export async function updatePriceRule(payload: {
     time_to: timeToFormatted,
     price_cents: priceCents,
   }
-  if (payload.court_id) {
-    updateData.court_id = payload.court_id
+  if (payload.court_id !== undefined) {
+    if (payload.court_id && !payload.court_id.startsWith('sport:')) {
+      updateData.court_id = payload.court_id
+    }
   }
 
   const { data, error } = await supabase
@@ -1734,6 +1758,63 @@ export async function geocodeClubAddress(
     console.warn('[geocodeClubAddress] Fallback error:', err)
   }
   return null
+}
+
+// ─── INFORMACIÓN Y SLUG AUTÉNTICO DEL CLUB (MULTI-TENANT SEGURO) ─────────────
+
+export interface TenantClubInfo {
+  id: string
+  name: string
+  slug: string
+  bankAlias?: string
+  bankCbu?: string
+  phone?: string
+}
+
+export async function getTenantClubInfo(tenantId?: string | null): Promise<TenantClubInfo | null> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    const targetId = effectiveTenantId || tenantId
+    if (!targetId) {
+      return null
+    }
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('id, name, slug, bank_alias, bank_cbu, phone_whatsapp')
+      .eq('id', targetId)
+      .maybeSingle()
+
+    if (error || !tenant) {
+      return null
+    }
+
+    let slug = (tenant.slug || '').trim()
+    // Si por alguna razón el slug no estuviera o fuera 'club'/'mi-club', auto-repararlo con el nombre real
+    if (!slug || slug === 'club' || slug === 'mi-club') {
+      const baseSlug = (tenant.name || 'club')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'club'
+      slug = `${baseSlug}-${tenant.id.slice(0, 4)}`
+      await supabase.from('tenants').update({ slug }).eq('id', tenant.id)
+    }
+
+    return {
+      id: tenant.id,
+      name: tenant.name || 'Mi Club',
+      slug,
+      bankAlias: tenant.bank_alias || undefined,
+      bankCbu: tenant.bank_cbu || undefined,
+      phone: tenant.phone_whatsapp || undefined,
+    }
+  } catch (err) {
+    console.error('[getTenantClubInfo] Exception:', err)
+    return null
+  }
 }
 
 // ─── PORTAL PÚBLICO: DATOS REALES DE TENANT Y CANCHAS (Mejora 8) ───────────────

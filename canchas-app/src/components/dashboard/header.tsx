@@ -91,17 +91,26 @@ export function Header({
 
         {/* Badge de Prueba Gratuita (15 días) */}
         {isTrial && (
-          <Link 
-            href="/dashboard/plan" 
-            title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
-          >
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+          isOwner ? (
+            <Link 
+              href="/dashboard/plan" 
+              title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
+            >
+              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>
+                  Prueba 15 Días: <strong className="text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+                </span>
+              </Badge>
+            </Link>
+          ) : (
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
               <span>
                 Prueba 15 Días: <strong className="text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
               </span>
             </Badge>
-          </Link>
+          )
         )}
 
         {mpConnected ? (

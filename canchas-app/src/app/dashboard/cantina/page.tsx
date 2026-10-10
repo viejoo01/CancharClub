@@ -28,7 +28,10 @@ import {
   Lock,
   Wallet,
   Users,
-  History
+  History,
+  Phone,
+  Truck,
+  Save
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -57,9 +60,12 @@ import {
   updateProductStock,
   saveSingleProduct,
   deleteProduct,
+  getCantinaSuppliers,
+  saveCantinaSuppliers,
   type CourtOrder,
   type OrderStatus,
   type CantinaPaymentMethod,
+  type CantinaSupplier,
 } from '@/actions/cantina.actions'
 import {
   getCustomerAccounts,
@@ -68,9 +74,10 @@ import {
   type CustomerAccount,
 } from '@/actions/cuenta-corriente.actions'
 import { buildDebtWhatsAppReminder } from '@/lib/cuenta-corriente-utils'
-import type { CantinaProduct } from '@/config/cantina-data'
-import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
+import { type CantinaProduct, DEFAULT_CANTINA_SUPPLIERS } from '@/config/cantina-data'
+import { useTenantId, useTenantSlug, useUserRole } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
+import { getTenantClubInfo } from '@/actions/club.actions'
 
 
 export type Product = CantinaProduct
@@ -131,6 +138,7 @@ function playOrderChime() {
 
 export default function CantinaPage() {
   const tenantId = useTenantId()
+  const contextSlug = useTenantSlug()
   const { isOwner } = useUserRole()
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY' | 'CUENTA_CORRIENTE'>('POS')
   const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
@@ -299,6 +307,61 @@ export default function CantinaPage() {
     return accounts.filter(a => a.balance > 0).length
   }, [accounts])
 
+  // Proveedores de Cantina
+  const [suppliers, setSuppliers] = useState<CantinaSupplier[]>(DEFAULT_CANTINA_SUPPLIERS)
+  const [isSuppliersModalOpen, setIsSuppliersModalOpen] = useState(false)
+  const [isRestockOrderModalOpen, setIsRestockOrderModalOpen] = useState(false)
+  const [supplierFormList, setSupplierFormList] = useState<CantinaSupplier[]>([])
+  const [savingSuppliers, setSavingSuppliers] = useState(false)
+  const [editingPhoneSupplierId, setEditingPhoneSupplierId] = useState<string | null>(null)
+  const [quickPhoneInput, setQuickPhoneInput] = useState<string>('')
+
+  const loadSuppliers = useCallback(async () => {
+    if (!tenantId) return
+    try {
+      const data = await getCantinaSuppliers(tenantId)
+      setSuppliers(data || DEFAULT_CANTINA_SUPPLIERS)
+      setSupplierFormList(data || DEFAULT_CANTINA_SUPPLIERS)
+    } catch (err) {
+      console.warn('[loadSuppliers] Error:', err)
+    }
+  }, [tenantId])
+
+  const handleSaveSuppliers = async (updatedList: CantinaSupplier[]) => {
+    if (!tenantId) return
+    setSavingSuppliers(true)
+    try {
+      setSuppliers(updatedList)
+      setSupplierFormList(updatedList)
+      const res = await saveCantinaSuppliers(tenantId, updatedList)
+      if (!res.success) throw new Error(res.error)
+      toast.success('¡Proveedores guardados correctamente!')
+      setIsSuppliersModalOpen(false)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al guardar proveedores'
+      toast.error(msg)
+      loadSuppliers()
+    } finally {
+      setSavingSuppliers(false)
+    }
+  }
+
+  const handleQuickSaveSupplierPhone = async (supplierId: string, newPhone: string) => {
+    const updated = suppliers.map(s => s.id === supplierId ? { ...s, phone: newPhone.trim() } : s)
+    setSuppliers(updated)
+    setSupplierFormList(updated)
+    setEditingPhoneSupplierId(null)
+    setQuickPhoneInput('')
+    if (tenantId) {
+      const res = await saveCantinaSuppliers(tenantId, updated)
+      if (res.success) {
+        toast.success('¡Número de proveedor guardado!')
+      } else {
+        toast.error('Error al guardar el número')
+      }
+    }
+  }
+
   // Carga de Productos desde Supabase
   const loadProducts = useCallback(async () => {
     if (!tenantId) return
@@ -411,15 +474,12 @@ export default function CantinaPage() {
 
     setProductSaving(true)
     try {
-      // Asignar emoji representativo automáticamente por categoría o preservar el existente
-      const categoryEmoji = productForm.category === 'BEBIDAS' ? '🥤' : productForm.category === 'EQUIPAMIENTO' ? '🎾' : '🍫'
       const productPayload: CantinaProduct = {
         id: editingProduct ? editingProduct.id : `prod_${Date.now()}`,
         name: productForm.name.trim(),
         category: productForm.category,
         price: effectivePrice,
         stock: Math.max(0, Number(productForm.stock)),
-        emoji: editingProduct?.emoji || categoryEmoji,
         is_active: true,
       }
 
@@ -481,6 +541,7 @@ export default function CantinaPage() {
   const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
   const [courts, setCourts] = useState<Array<{ id: string; name: string; sport: string }>>([])
   const [clubSlug, setClubSlug] = useState<string>('')
+  const effectiveClubSlug = clubSlug || contextSlug || ''
 
   // Estados para Impresión Térmica
   const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
@@ -508,7 +569,6 @@ export default function CantinaPage() {
             category: 'SNACKS',
             price: it.unit_price,
             stock: 99,
-            emoji: '🍽️',
             is_active: true,
           },
           quantity: it.quantity,
@@ -537,7 +597,7 @@ export default function CantinaPage() {
               if (prev.some((o) => o.id === order.id)) return prev
               return [order, ...prev]
             })
-            toast.success('🔔 ¡Nuevo pedido de mesa!', {
+            toast.success('¡Nuevo pedido de mesa!', {
               description: `${order.customer_name} • ${order.court_name} (${formatARS(order.total_ars)})`,
               action: {
                 label: 'Cargar al carrito',
@@ -560,7 +620,15 @@ export default function CantinaPage() {
       loadOrders(true)
       loadProducts()
       loadAccounts()
+      loadSuppliers()
       if (tenantId) {
+        getTenantClubInfo(tenantId).then((info) => {
+          if (info) {
+            if (info.name) setClubName(info.name)
+            if (info.slug) setClubSlug(info.slug)
+            if (info.bankAlias) setBankAlias(info.bankAlias)
+          }
+        })
         const supabase = createClient()
         supabase
           .from('courts')
@@ -570,16 +638,6 @@ export default function CantinaPage() {
           .order('display_order', { ascending: true })
           .then(({ data }) => {
             if (data) setCourts(data)
-          })
-        supabase
-          .from('tenants')
-          .select('name, slug, bank_cbu_alias')
-          .eq('id', tenantId)
-          .maybeSingle()
-          .then(({ data }) => {
-            if (data?.name) setClubName(data.name)
-            if (data?.slug) setClubSlug(data.slug)
-            if (data?.bank_cbu_alias) setBankAlias(data.bank_cbu_alias)
           })
       }
     }, 0)
@@ -601,7 +659,7 @@ export default function CantinaPage() {
             if (prev.some((o) => o.id === newOrder.id)) return prev
             return [newOrder, ...prev]
           })
-          toast.success('🔔 ¡Nuevo pedido de mesa!', {
+          toast.success('¡Nuevo pedido de mesa!', {
             description: `${newOrder.customer_name} • ${newOrder.court_name} (${formatARS(newOrder.total_ars)})`,
             action: {
               label: 'Ver y armar carrito',
@@ -675,7 +733,7 @@ export default function CantinaPage() {
         createClient().removeChannel(supabaseChannel)
       }
     }
-  }, [loadOrders, loadOrderIntoCart, loadProducts, loadAccounts, tenantId])
+  }, [loadOrders, loadOrderIntoCart, loadProducts, loadAccounts, loadSuppliers, tenantId])
 
   // Datos para Alerta Predictiva de Stock memoizados (calculado sobre productos reales con bajo stock)
   const weekendPredictions = useMemo(() => {
@@ -690,15 +748,66 @@ export default function CantinaPage() {
       .filter(p => p.deficit > 0)
   }, [products])
 
-  const distributorWhatsAppUrl = useMemo(() => {
-    if (weekendPredictions.length === 0) return '#'
-    return buildWhatsAppLink(
-      '5493815009988',
-      `¡Hola! Te paso el pedido de reposición preventiva de cantina para el fin de semana:\n\n` +
-      weekendPredictions.map(p => `• ${p.deficit}x ${p.product.name} (Stock actual: ${p.currentStock})`).join('\n') +
-      `\n\n¿Nos podrán entregar antes del fin de semana? ¡Muchas gracias!`
-    )
-  }, [weekendPredictions])
+  // Agrupar faltantes por proveedor según su categoría
+  const restockOrdersBySupplier = useMemo(() => {
+    if (weekendPredictions.length === 0) return []
+
+    const map = new Map<string, { supplier: CantinaSupplier; items: typeof weekendPredictions; waUrl: string }>()
+    suppliers.forEach(s => {
+      map.set(s.id, { supplier: s, items: [], waUrl: '' })
+    })
+
+    const unassigned: typeof weekendPredictions = []
+
+    weekendPredictions.forEach(pred => {
+      // 1. Buscar proveedor que suministra exactamente la categoría del producto
+      let targetSupplier = suppliers.find(s => s.category === pred.product.category)
+      // 2. Si no hay proveedor específico, buscar proveedor con categoría ALL (General)
+      if (!targetSupplier) {
+        targetSupplier = suppliers.find(s => s.category === 'ALL')
+      }
+
+      if (targetSupplier && map.has(targetSupplier.id)) {
+        map.get(targetSupplier.id)!.items.push(pred)
+      } else {
+        unassigned.push(pred)
+      }
+    })
+
+    const result: Array<{ supplier: CantinaSupplier; items: typeof weekendPredictions; waUrl: string }> = []
+    map.forEach(entry => {
+      if (entry.items.length > 0) {
+        const message =
+          `¡Hola ${entry.supplier.name}! Te paso el pedido de reposición de cantina para el fin de semana:\n\n` +
+          entry.items.map(p => `• ${p.deficit}x ${p.product.name} (Stock actual: ${p.currentStock})`).join('\n') +
+          `\n\n¿Nos podrán entregar antes del fin de semana? ¡Muchas gracias!`
+
+        entry.waUrl = entry.supplier.phone ? buildWhatsAppLink(entry.supplier.phone, message) : ''
+        result.push(entry)
+      }
+    })
+
+    if (unassigned.length > 0) {
+      const fallbackSupplier: CantinaSupplier = {
+        id: 'sup_general_fallback',
+        name: 'Proveedor General',
+        category: 'ALL',
+        phone: suppliers[0]?.phone || '',
+      }
+      const message =
+        `¡Hola! Te paso el pedido de reposición de cantina para el fin de semana:\n\n` +
+        unassigned.map(p => `• ${p.deficit}x ${p.product.name} (Stock actual: ${p.currentStock})`).join('\n') +
+        `\n\n¿Nos podrán entregar antes del fin de semana? ¡Muchas gracias!`
+
+      result.push({
+        supplier: fallbackSupplier,
+        items: unassigned,
+        waUrl: fallbackSupplier.phone ? buildWhatsAppLink(fallbackSupplier.phone, message) : '',
+      })
+    }
+
+    return result
+  }, [weekendPredictions, suppliers])
 
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
     // Optimistic update
@@ -722,6 +831,33 @@ export default function CantinaPage() {
       return matchesCat && matchesSearch
     })
   }, [products, selectedCategory, searchTerm])
+
+  const groupedProducts = useMemo(() => {
+    const categoryOrder = ['BEBIDAS', 'EQUIPAMIENTO', 'SNACKS']
+    const map = new Map<string, CantinaProduct[]>()
+
+    filteredProducts.forEach(p => {
+      const cat = p.category || 'VARIOS'
+      if (!map.has(cat)) {
+        map.set(cat, [])
+      }
+      map.get(cat)!.push(p)
+    })
+
+    const sortedCategories = Array.from(map.keys()).sort((a, b) => {
+      const idxA = categoryOrder.indexOf(a)
+      const idxB = categoryOrder.indexOf(b)
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB
+      if (idxA !== -1) return -1
+      if (idxB !== -1) return 1
+      return a.localeCompare(b)
+    })
+
+    return sortedCategories.map(cat => ({
+      category: cat,
+      items: map.get(cat)!
+    }))
+  }, [filteredProducts])
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -914,8 +1050,8 @@ export default function CantinaPage() {
         <div className="fixed bottom-6 right-6 z-50 max-w-md w-full bg-slate-900/95 border-2 border-emerald-500 rounded-3xl p-4 shadow-2xl shadow-emerald-950/60 backdrop-blur-xl animate-in slide-in-from-bottom-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-xl shrink-0 animate-bounce">
-                🔔
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <ChefHat className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -992,15 +1128,30 @@ export default function CantinaPage() {
             </div>
           </div>
 
-          <a
-            href={distributorWhatsAppUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shrink-0 transition-colors shadow-xs"
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>Pedir Reposición (WhatsApp)</span>
-          </a>
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
+                setIsSuppliersModalOpen(true)
+              }}
+              className="bg-slate-900/90 hover:bg-slate-800 border-amber-500/40 text-amber-300 hover:text-white text-xs font-semibold rounded-xl gap-1.5 h-9"
+            >
+              <Phone className="w-3.5 h-3.5 text-amber-400" />
+              <span>Editar Proveedores</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setIsRestockOrderModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl gap-2 h-9 shadow-md shadow-emerald-950/40"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Pedir Reposición (WhatsApp)</span>
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1145,7 +1296,7 @@ export default function CantinaPage() {
                                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                             }`}
                           >
-                            {order.status === 'PENDING' ? '⏳ PENDIENTE' : order.status === 'PREPARING' ? '🔥 EN PREPARACIÓN' : '✅ ENTREGADO'}
+                            {order.status === 'PENDING' ? 'PENDIENTE' : order.status === 'PREPARING' ? 'EN PREPARACIÓN' : 'ENTREGADO'}
                           </Badge>
                           <Badge 
                             className={`text-[10px] font-semibold ${
@@ -1154,7 +1305,7 @@ export default function CantinaPage() {
                                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                             }`}
                           >
-                            {order.payment_method === 'TRANSFER' ? '💳 Transferencia' : '💵 Efectivo'}
+                            {order.payment_method === 'TRANSFER' ? 'Transferencia' : 'Efectivo'}
                           </Badge>
                         </div>
                         <h3 className="font-bold text-sm text-white mt-1">{order.court_name}</h3>
@@ -1327,6 +1478,19 @@ export default function CantinaPage() {
               </div>
 
               <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
+                  setIsSuppliersModalOpen(true)
+                }}
+                className="bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200 text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0"
+              >
+                <Truck className="w-4 h-4 text-sky-400" />
+                <span className="hidden md:inline">Proveedores</span>
+              </Button>
+
+              <Button
                 onClick={() => openRestockModal()}
                 variant="outline"
                 className="bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200 text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0"
@@ -1384,12 +1548,12 @@ export default function CantinaPage() {
                       const isLowStock = p.stock > 0 && p.stock < 10
                       return (
                         <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
-                          {/* Producto & Emoji */}
+                          {/* Producto */}
                           <td className="p-3.5 pl-4">
                             <div className="flex items-center gap-3">
-                              <span className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-lg shrink-0">
-                                {p.emoji}
-                              </span>
+                              <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400 shrink-0">
+                                <Package className="w-4 h-4 text-emerald-400" />
+                              </div>
                               <div>
                                 <div className="font-bold text-slate-100 text-xs">{p.name}</div>
                                 <div className="text-[10px] text-slate-500 font-mono">ID: {p.id}</div>
@@ -1755,8 +1919,8 @@ export default function CantinaPage() {
               </div>
             </div>
 
-            {/* Grid de Productos */}
-            {filteredProducts.length === 0 ? (
+            {/* Lista de Productos Enlistados por Categoría */}
+            {groupedProducts.length === 0 ? (
               <div className="py-12 text-center rounded-2xl bg-slate-900/40 border border-slate-800/80 p-8 space-y-3">
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
                   <Package className="w-6 h-6" />
@@ -1775,31 +1939,101 @@ export default function CantinaPage() {
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {filteredProducts.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/40 hover:bg-slate-900 transition-all cursor-pointer group flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                        {p.emoji}
+              <div className="space-y-6">
+                {groupedProducts.map((group) => {
+                  const catLabel =
+                    group.category === 'BEBIDAS'
+                      ? 'Bebidas'
+                      : group.category === 'EQUIPAMIENTO'
+                      ? 'Equipamiento'
+                      : group.category === 'SNACKS'
+                      ? 'Snacks'
+                      : group.category
+
+                  const catBadgeStyle =
+                    group.category === 'BEBIDAS'
+                      ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                      : group.category === 'EQUIPAMIENTO'
+                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                      : group.category === 'SNACKS'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+
+                  return (
+                    <div key={group.category} className="space-y-2">
+                      {/* Cabecera de Categoría */}
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-1 rounded-lg border text-xs font-bold tracking-wider uppercase ${catBadgeStyle}`}>
+                            {catLabel}
+                          </span>
+                          <span className="text-xs text-slate-400 font-medium">
+                            ({group.items.length} {group.items.length === 1 ? 'artículo' : 'artículos'})
+                          </span>
+                        </div>
                       </div>
-                      <div className="font-semibold text-slate-200 text-xs line-clamp-2">
-                        {p.name}
+
+                      {/* Lista Vertical de Artículos: Uno abajo del otro con letra clara y prolija */}
+                      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 divide-y divide-slate-800/60 overflow-hidden shadow-sm">
+                        {group.items.map((p) => {
+                          const isOutOfStock = p.stock <= 0
+                          const isLowStock = p.stock > 0 && p.stock < 10
+
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => addToCart(p)}
+                              className="px-4 py-3 sm:px-5 sm:py-3.5 flex items-center justify-between gap-4 hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                            >
+                              {/* Nombre del Artículo y Estado de Stock */}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors tracking-wide truncate">
+                                  {p.name}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {isOutOfStock ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                      Sin stock
+                                    </span>
+                                  ) : isLowStock ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                      Stock bajo: {p.stock} u.
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+                                      Stock disponible: {p.stock} u.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Precio y Botón (+) */}
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="font-extrabold text-emerald-400 text-sm sm:text-base font-mono">
+                                  {formatARS(p.price)}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    addToCart(p)
+                                  }}
+                                  className="h-8 w-8 p-0 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-500 transition-all"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center justify-between">
-                      <span className="font-extrabold text-emerald-400 text-sm">
-                        {formatARS(p.price)}
-                      </span>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg group-hover:bg-emerald-600 group-hover:text-white">
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -2101,7 +2335,7 @@ export default function CantinaPage() {
         isOpen={isTableQrOpen}
         onClose={() => setIsTableQrOpen(false)}
         tableName=""
-        clubSlug={clubSlug || 'club'}
+        clubSlug={effectiveClubSlug}
       />
 
       {/* Modal: Cargar Stock / Ingreso de Mercadería */}
@@ -2122,7 +2356,9 @@ export default function CantinaPage() {
               {/* Selector o Vista del Producto seleccionado */}
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{selectedRestockProduct.emoji}</span>
+                  <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Package className="w-4 h-4" />
+                  </div>
                   <div>
                     <h4 className="text-xs font-bold text-white">{selectedRestockProduct.name}</h4>
                     <span className="text-[10px] text-slate-400">Categoría: {selectedRestockProduct.category}</span>
@@ -2621,6 +2857,329 @@ export default function CantinaPage() {
               className="text-xs text-slate-300 border-slate-800 hover:bg-slate-800 rounded-xl"
             >
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Pedir Reposición a Proveedores */}
+      <Dialog open={isRestockOrderModalOpen} onOpenChange={setIsRestockOrderModalOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-emerald-400" />
+              <span>Pedir Reposición a Proveedores</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Enviá el pedido de mercadería faltante al WhatsApp del proveedor correspondiente según su categoría o especialidad.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {restockOrdersBySupplier.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-400">
+                No hay artículos con déficit proyectado para reponer.
+              </div>
+            ) : (
+              restockOrdersBySupplier.map(({ supplier, items, waUrl }) => {
+                const isEditingThisPhone = editingPhoneSupplierId === supplier.id
+                const catLabel =
+                  supplier.category === 'BEBIDAS'
+                    ? 'Bebidas'
+                    : supplier.category === 'EQUIPAMIENTO'
+                    ? 'Equipamiento'
+                    : supplier.category === 'SNACKS'
+                    ? 'Snacks & Kiosco'
+                    : 'General'
+
+                const catBadgeStyle =
+                  supplier.category === 'BEBIDAS'
+                    ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                    : supplier.category === 'EQUIPAMIENTO'
+                    ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                    : supplier.category === 'SNACKS'
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    : 'bg-slate-800 text-slate-300 border-slate-700'
+
+                return (
+                  <div
+                    key={supplier.id}
+                    className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-emerald-400" />
+                        <span className="font-bold text-sm text-white">{supplier.name}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border uppercase ${catBadgeStyle}`}>
+                          {catLabel}
+                        </span>
+                      </div>
+
+                      {/* Teléfono del Proveedor & Edición Rápida */}
+                      <div className="flex items-center gap-2 text-xs">
+                        {isEditingThisPhone ? (
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              value={quickPhoneInput}
+                              onChange={(e) => setQuickPhoneInput(e.target.value)}
+                              placeholder="Ej: 5493815009988"
+                              className="h-7 text-xs w-36 bg-slate-900 border-slate-700 font-mono"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleQuickSaveSupplierPhone(supplier.id, quickPhoneInput)}
+                              className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] rounded-lg"
+                            >
+                              Guardar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingPhoneSupplierId(null)}
+                              className="h-7 px-2 text-slate-400 hover:text-white text-[11px]"
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 font-mono text-[11px]">
+                              {supplier.phone ? `WhatsApp: ${supplier.phone}` : 'Sin número asignado'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingPhoneSupplierId(supplier.id)
+                                setQuickPhoneInput(supplier.phone || '')
+                              }}
+                              className="text-[11px] text-amber-400 hover:text-amber-300 underline underline-offset-2 flex items-center gap-0.5"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>{supplier.phone ? 'Cambiar' : 'Asignar número'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Artículos a reponer de este proveedor */}
+                    <div className="space-y-1 text-xs">
+                      <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Artículos a pedir ({items.length}):
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                        {items.map((it) => (
+                          <div
+                            key={it.product.id}
+                            className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs"
+                          >
+                            <span className="text-slate-200 font-medium truncate pr-2">{it.product.name}</span>
+                            <span className="font-bold text-amber-400 font-mono shrink-0">
+                              Pedir: {it.deficit} u.
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Botón WhatsApp para este proveedor */}
+                    <div className="pt-2 flex justify-end">
+                      {supplier.phone ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full sm:w-auto h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          <span>Enviar Pedido a {supplier.name} (WhatsApp)</span>
+                        </a>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            setEditingPhoneSupplierId(supplier.id)
+                            setQuickPhoneInput('')
+                          }}
+                          className="w-full sm:w-auto bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl gap-1.5 h-9"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Ingresar número para enviar WhatsApp</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-3 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsRestockOrderModalOpen(false)
+                setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
+                setIsSuppliersModalOpen(true)
+              }}
+              className="text-xs text-amber-300 border-amber-500/40 hover:bg-amber-500/10 rounded-xl gap-1.5"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>Administrar Todos los Proveedores</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsRestockOrderModalOpen(false)}
+              className="text-xs text-slate-400 hover:text-white rounded-xl"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Configuración de Proveedores */}
+      <Dialog open={isSuppliersModalOpen} onOpenChange={setIsSuppliersModalOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Truck className="w-5 h-5 text-emerald-400" />
+              <span>Configurar Proveedores de Cantina</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Registrá los números de teléfono de WhatsApp de cada distribuidor o proveedor para pedir automáticamente los artículos de su rubro.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {supplierFormList.map((sup, idx) => (
+              <div
+                key={sup.id || idx}
+                className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                  {/* Nombre */}
+                  <div className="sm:col-span-5 space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Nombre / Empresa
+                    </label>
+                    <Input
+                      value={sup.name}
+                      onChange={(e) => {
+                        const updated = [...supplierFormList]
+                        updated[idx] = { ...updated[idx], name: e.target.value }
+                        setSupplierFormList(updated)
+                      }}
+                      placeholder="Ej: Distribuidora Quilmes"
+                      className="h-9 text-xs bg-slate-900 border-slate-800 rounded-xl"
+                    />
+                  </div>
+
+                  {/* Rubro / Categoría */}
+                  <div className="sm:col-span-3 space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Rubro que entrega
+                    </label>
+                    <select
+                      value={sup.category}
+                      onChange={(e) => {
+                        const updated = [...supplierFormList]
+                        updated[idx] = { ...updated[idx], category: e.target.value as CantinaSupplier['category'] }
+                        setSupplierFormList(updated)
+                      }}
+                      className="w-full h-9 rounded-xl bg-slate-900 border border-slate-800 px-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="BEBIDAS">Bebidas</option>
+                      <option value="EQUIPAMIENTO">Equipamiento</option>
+                      <option value="SNACKS">Snacks & Kiosco</option>
+                      <option value="ALL">Todas (General)</option>
+                    </select>
+                  </div>
+
+                  {/* Teléfono WhatsApp */}
+                  <div className="sm:col-span-3 space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Teléfono WhatsApp
+                    </label>
+                    <Input
+                      value={sup.phone}
+                      onChange={(e) => {
+                        const updated = [...supplierFormList]
+                        updated[idx] = { ...updated[idx], phone: e.target.value }
+                        setSupplierFormList(updated)
+                      }}
+                      placeholder="Ej: 5493815009988"
+                      className="h-9 text-xs bg-slate-900 border-slate-800 rounded-xl font-mono"
+                    />
+                  </div>
+
+                  {/* Eliminar */}
+                  <div className="sm:col-span-1 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const updated = supplierFormList.filter((_, i) => i !== idx)
+                        setSupplierFormList(updated)
+                      }}
+                      className="h-9 w-9 p-0 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSupplierFormList(prev => [
+                  ...prev,
+                  {
+                    id: `sup_${Date.now()}`,
+                    name: 'Nuevo Proveedor',
+                    category: 'ALL',
+                    phone: '',
+                  }
+                ])
+              }}
+              className="w-full border-dashed border-slate-800 hover:border-emerald-500/60 text-slate-300 hover:text-white text-xs h-10 rounded-xl gap-2"
+            >
+              <Plus className="w-4 h-4 text-emerald-400" />
+              <span>Agregar Otro Proveedor</span>
+            </Button>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsSuppliersModalOpen(false)}
+              className="text-xs text-slate-400 hover:text-white rounded-xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={savingSuppliers}
+              onClick={() => handleSaveSuppliers(supplierFormList)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-2 h-10"
+            >
+              {savingSuppliers ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Guardar Proveedores</span>
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

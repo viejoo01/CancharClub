@@ -48,10 +48,12 @@ export default function CourtOrderPage({
 
   const fallbackClub = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
   const [liveClub, setLiveClub] = useState<ClubData | null>(null)
+  const [loadingClub, setLoadingClub] = useState(true)
+  const [clubNotFound, setClubNotFound] = useState(false)
   const club = liveClub || fallbackClub
   const bankDetails = useMemo(() => getClubBankDetails(club), [club])
 
-  const [clubTenantId, setClubTenantId] = useState<string>(club?.id && club.id.length > 10 ? club.id : '')
+  const [clubTenantId, setClubTenantId] = useState<string>('')
   const [products, setProducts] = useState<CantinaProduct[]>([])
   const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
   const [customerName, setCustomerName] = useState('')
@@ -63,27 +65,51 @@ export default function CourtOrderPage({
   const [orderConfirmed, setOrderConfirmed] = useState(false)
   const [confirmedOrderId, setConfirmedOrderId] = useState<string>('')
 
-  // Cargar catálogo dinámico de productos desde Supabase para este club
+  // Cargar catálogo dinámico de productos desde Supabase exclusivamente para este club
   useEffect(() => {
-    getClubPublicData(resolvedParams.slug).then((data) => {
-      if (data) {
-        setLiveClub(data)
-      }
-      const tid = data?.id || (club?.id && club.id.length > 10 ? club.id : DEMO_TENANT_ID)
-      if (tid) {
-        setClubTenantId(tid)
-        getCantinaProducts(tid)
-          .then((items) => {
-            if (items) {
-              setProducts(items.filter((p) => p.is_active !== false))
-            }
-          })
-          .catch((err) => {
-            console.warn('Error al cargar productos de cantina:', err)
-          })
-      }
-    })
-  }, [resolvedParams.slug, club?.id])
+    let isMounted = true
+    getClubPublicData(resolvedParams.slug)
+      .then((data) => {
+        if (!isMounted) return
+        // Validar si el club retornado es un club real de la base de datos (UUID válido)
+        const isUuid = Boolean(data?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id))
+        if (data && isUuid) {
+          setLiveClub(data)
+          setClubTenantId(data.id)
+          setClubNotFound(false)
+          getCantinaProducts(data.id)
+            .then((items) => {
+              if (isMounted && items) {
+                setProducts(items.filter((p) => p.is_active !== false))
+              }
+            })
+            .catch((err) => {
+              console.warn('Error al cargar productos de cantina:', err)
+            })
+        } else {
+          // El club no existe en la base de datos
+          setClubNotFound(true)
+          setClubTenantId('')
+          setProducts([])
+        }
+      })
+      .catch((err) => {
+        console.error('[CourtOrderPage] Error fetching club public data:', err)
+        if (isMounted) {
+          setClubNotFound(true)
+          setClubTenantId('')
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingClub(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [resolvedParams.slug])
 
   const addToCart = (product: Product) => {
     if (product.stock !== undefined && product.stock <= 0) {
@@ -151,7 +177,11 @@ export default function CourtOrderPage({
       }))
 
       // Guardar en base de datos vía Server Action
-      const effectiveTenant = clubTenantId || DEMO_TENANT_ID
+      if (!clubTenantId || clubTenantId === DEMO_TENANT_ID) {
+        toast.error('El club no está identificado correctamente. Por favor recargá la página.')
+        return
+      }
+      const effectiveTenant = clubTenantId
       const result = await createCourtOrder({
         tenant_id: effectiveTenant,
         court_name: destination,
@@ -224,6 +254,36 @@ export default function CourtOrderPage({
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (loadingClub) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <Loader2 className="w-10 h-10 animate-spin text-emerald-500 mb-3" />
+        <h2 className="text-sm font-bold text-white">Cargando menú de la cantina...</h2>
+        <p className="text-xs text-slate-400 mt-1">Conectando con el catálogo oficial del club</p>
+      </div>
+    )
+  }
+
+  if (clubNotFound || !clubTenantId) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4">
+          <UtensilsCrossed className="w-8 h-8" />
+        </div>
+        <h1 className="text-xl font-black text-white uppercase tracking-tight mb-2">Club no encontrado</h1>
+        <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+          No pudimos encontrar el catálogo del club correspondiente a este código QR o enlace.
+          Verificá que hayas escaneado el código QR actualizado del club.
+        </p>
+        <Link href="/">
+          <Button variant="outline" className="text-xs border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 rounded-xl">
+            Volver a CancharClub
+          </Button>
+        </Link>
+      </div>
+    )
   }
 
   if (orderConfirmed) {
@@ -375,65 +435,79 @@ export default function CourtOrderPage({
           Carta de la Cantina
         </h3>
 
-        <div className="grid grid-cols-1 gap-2.5">
-          {products.map((product) => {
-            const inCart = cart.find((i) => i.product.id === product.id)
-            const isOutOfStock = product.stock !== undefined && product.stock <= 0
-            return (
-              <div
-                key={product.id}
-                className="p-3 rounded-2xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-lg shrink-0">
-                    {product.emoji}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white leading-tight">
-                      {product.name}
-                    </h4>
-                    <div className="text-xs font-extrabold text-emerald-400 mt-0.5">
-                      {formatARS(product.price)}
+        {products.length === 0 ? (
+          <div className="p-8 text-center rounded-2xl bg-slate-900/50 border border-slate-800/80 text-slate-400 text-xs space-y-2">
+            <UtensilsCrossed className="w-8 h-8 text-slate-600 mx-auto" />
+            <p className="font-semibold text-slate-300">Carta de cantina en actualización</p>
+            <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed">
+              {club.name} todavía no tiene productos activos cargados en su inventario. Consultá en el mostrador para realizar tu pedido.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2.5">
+            {products.map((product) => {
+              const inCart = cart.find((i) => i.product.id === product.id)
+              const isOutOfStock = product.stock !== undefined && product.stock <= 0
+              return (
+                <div
+                  key={product.id}
+                  className="p-3 rounded-2xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400 shrink-0">
+                      {product.emoji ? (
+                        <span className="text-lg">{product.emoji}</span>
+                      ) : (
+                        <Coffee className="w-5 h-5 text-emerald-400" />
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white leading-tight">
+                        {product.name}
+                      </h4>
+                      <div className="text-xs font-extrabold text-emerald-400 mt-0.5">
+                        {formatARS(product.price)}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {isOutOfStock ? (
-                  <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30 text-[10px] font-bold px-2.5 py-1">
-                    Agotado
-                  </Badge>
-                ) : inCart ? (
-                  <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 shrink-0">
-                    <button
-                      onClick={() => updateQuantity(product.id, -1)}
-                      className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 flex items-center justify-center text-slate-300"
+                  {isOutOfStock ? (
+                    <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30 text-[10px] font-bold px-2.5 py-1">
+                      Agotado
+                    </Badge>
+                  ) : inCart ? (
+                    <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 shrink-0">
+                      <button
+                        onClick={() => updateQuantity(product.id, -1)}
+                        className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 flex items-center justify-center text-slate-300"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="w-5 text-center text-xs font-bold text-white">
+                        {inCart.quantity}
+                      </span>
+                      <button
+                        onClick={() => updateQuantity(product.id, 1)}
+                        className="w-7 h-7 rounded-lg bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-white"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => addToCart(product)}
+                      className="h-8 px-3 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white text-xs font-bold shrink-0 transition-colors"
                     >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="w-5 text-center text-xs font-bold text-white">
-                      {inCart.quantity}
-                    </span>
-                    <button
-                      onClick={() => updateQuantity(product.id, 1)}
-                      className="w-7 h-7 rounded-lg bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-white"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={() => addToCart(product)}
-                    className="h-8 px-3 rounded-xl bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white text-xs font-bold shrink-0 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    <span>Agregar</span>
-                  </Button>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      <span>Agregar</span>
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Barra Flotante de Confirmación de Pedido */}

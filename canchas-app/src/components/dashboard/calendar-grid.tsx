@@ -441,7 +441,7 @@ export function CalendarGrid({
           schema: 'public',
           table: 'bookings',
         },
-        (payload) => {
+        (payload: { new: unknown; old: unknown }) => {
           const newRec = payload.new as { tenant_id?: string } | null
           const oldRec = payload.old as { tenant_id?: string } | null
           if ((newRec?.tenant_id && newRec.tenant_id !== tenantId) || (oldRec?.tenant_id && oldRec.tenant_id !== tenantId)) {

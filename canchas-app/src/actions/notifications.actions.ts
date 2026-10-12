@@ -139,6 +139,21 @@ export async function recordClubNotification(params: {
   }
 }
 
+// Cache en memoria en servidor para notificaciones recientes (15s)
+const notifsCache = new Map<string, { data: { notifications: ClubNotification[]; stats: NotificationsStats }; expiresAt: number }>()
+
+export async function invalidateClubNotificationsCache(tenantId?: string | null) {
+  if (tenantId) {
+    for (const key of notifsCache.keys()) {
+      if (key.startsWith(tenantId)) {
+        notifsCache.delete(key)
+      }
+    }
+  } else {
+    notifsCache.clear()
+  }
+}
+
 /**
  * Consulta y consolida todo el historial de notificaciones y alertas del club.
  */
@@ -159,6 +174,12 @@ export async function getClubNotificationsAction(params?: {
         notifications: [],
         stats: { total: 0, unread: 0, bookingsCount: 0, paymentsCount: 0, alertsCount: 0, systemCount: 0 },
       }
+    }
+
+    const cacheKey = `${effectiveTenantId}_${params?.category || 'ALL'}_${params?.limit || 100}_${params?.search || ''}_${Boolean(params?.unreadOnly)}`
+    const cached = notifsCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
     }
 
     const auth = await assertTenantMember(effectiveTenantId)
@@ -495,10 +516,13 @@ export async function getClubNotificationsAction(params?: {
       filtered = filtered.slice(0, params.limit)
     }
 
-    return {
+    const result = {
       notifications: filtered,
       stats,
     }
+    notifsCache.set(cacheKey, { data: result, expiresAt: Date.now() + 15000 })
+
+    return result
   } catch (err) {
     console.error('[getClubNotificationsAction] Error fetching notifications:', err)
     return {
@@ -527,6 +551,7 @@ export async function markNotificationAsReadAction(
       markedAllReadAt: markedAllReadAt ? new Date(markedAllReadAt).toISOString() : null,
     })
 
+    await invalidateClubNotificationsCache(effectiveTenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/notificaciones')
     return { success: true }
@@ -551,6 +576,7 @@ export async function markAllNotificationsAsReadAction(
       markedAllReadAt: new Date().toISOString(),
     })
 
+    await invalidateClubNotificationsCache(effectiveTenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/notificaciones')
     return { success: true }
@@ -621,6 +647,7 @@ export async function sendTestNotificationAction(
       })
     }
 
+    await invalidateClubNotificationsCache(effectiveTenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/notificaciones')
     return { success: true, notification: notif || undefined }

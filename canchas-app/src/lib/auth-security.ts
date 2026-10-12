@@ -9,6 +9,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { cache } from 'react'
 import type { UserRole } from '@/types/database'
 
 export interface AuthUserProfile {
@@ -58,7 +59,7 @@ export function verifySuperadminSessionToken(token: string, secret: string): boo
  * Obtiene el perfil del usuario autenticado actual desde Supabase Auth o cookies de sesión.
  * Retorna null si no hay sesión activa.
  */
-export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
+export const getCurrentUserProfile = cache(async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
   try {
     const cookieStore = await cookies()
 
@@ -85,11 +86,11 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
     if (user && !authErr) {
       const isSuperById = Boolean(process.env.SUPERADMIN_USER_ID && user.id === process.env.SUPERADMIN_USER_ID)
       const serviceClient = await createServiceClient()
-      const { data: profile } = await serviceClient
+      const { data: profile } = (await serviceClient
         .from('profiles')
         .select('id, full_name, role, tenant_id')
         .eq('id', user.id)
-        .maybeSingle()
+        .maybeSingle()) as { data: { id: string; full_name?: string | null; role?: string | null; tenant_id?: string | null } | null }
 
       if (profile) {
         const effectiveRole = (isSuperById ? 'SUPERADMIN' : (profile.role as UserRole)) || 'CUSTOMER'
@@ -134,7 +135,7 @@ export async function getCurrentUserProfile(): Promise<AuthUserProfile | null> {
     console.error('[auth-security] Error fetching user profile:', err)
     return null
   }
-}
+})
 
 /**
  * Valida la robustez de una contraseña según estándares de seguridad:
@@ -179,7 +180,7 @@ export function validatePasswordStrength(password: string): { valid: boolean; er
  * 2. Si el usuario es administrador o staff de un club, ÚNICAMENTE puede acceder a profile.tenantId.
  * 3. Jamás se hace fallback al primer club de la base de datos para evitar fugas de información.
  */
-export async function resolveEffectiveTenantId(explicitTenantId?: string | null): Promise<string | null> {
+export const resolveEffectiveTenantId = cache(async function resolveEffectiveTenantId(explicitTenantId?: string | null): Promise<string | null> {
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
@@ -190,11 +191,11 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
   if (profile.role === 'SUPERADMIN') {
     if (explicitTenantId && explicitTenantId.trim()) {
       const serviceClient = await createServiceClient()
-      const { data: existing } = await serviceClient
+      const { data: existing } = (await serviceClient
         .from('tenants')
         .select('id')
         .eq('id', explicitTenantId.trim())
-        .maybeSingle()
+        .maybeSingle()) as { data: { id: string } | null }
       if (existing?.id) return existing.id
     }
     return profile.tenantId || null
@@ -211,24 +212,24 @@ export async function resolveEffectiveTenantId(explicitTenantId?: string | null)
   }
 
   return null
-}
+})
 
 /**
  * Valida que el usuario esté autenticado.
  */
-export async function assertAuthenticatedUser(): Promise<AuthSecurityResult> {
+export const assertAuthenticatedUser = cache(async function assertAuthenticatedUser(): Promise<AuthSecurityResult> {
   const profile = await getCurrentUserProfile()
   if (!profile) {
     return { authorized: false, error: 'Sesión no iniciada. Por favor ingresá a tu cuenta.' }
   }
   return { authorized: true, user: profile }
-}
+})
 
 /**
  * Valida que el usuario sea administrador del club indicado (o Superadmin de la plataforma).
  * Si targetTenantId no se provee, se valida contra el propio club del usuario.
  */
-export async function assertTenantAdmin(targetTenantId?: string | null): Promise<AuthSecurityResult> {
+export const assertTenantAdmin = cache(async function assertTenantAdmin(targetTenantId?: string | null): Promise<AuthSecurityResult> {
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
@@ -251,12 +252,12 @@ export async function assertTenantAdmin(targetTenantId?: string | null): Promise
   }
 
   return { authorized: true, user: profile }
-}
+})
 
 /**
  * Valida que el usuario sea miembro del club (Dueño o Canchero / Staff) o Superadmin.
  */
-export async function assertTenantMember(targetTenantId?: string | null): Promise<AuthSecurityResult> {
+export const assertTenantMember = cache(async function assertTenantMember(targetTenantId?: string | null): Promise<AuthSecurityResult> {
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
@@ -277,13 +278,13 @@ export async function assertTenantMember(targetTenantId?: string | null): Promis
   }
 
   return { authorized: true, user: profile }
-}
+})
 
 /**
  * Valida que el usuario tenga rol SUPERADMIN de la plataforma.
  * Debe usarse al inicio de TODA función en superadmin.actions.ts.
  */
-export async function assertSuperadmin(): Promise<AuthSecurityResult> {
+export const assertSuperadmin = cache(async function assertSuperadmin(): Promise<AuthSecurityResult> {
   const profile = await getCurrentUserProfile()
 
   if (!profile) {
@@ -295,4 +296,4 @@ export async function assertSuperadmin(): Promise<AuthSecurityResult> {
   }
 
   return { authorized: true, user: profile }
-}
+})

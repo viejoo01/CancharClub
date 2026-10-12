@@ -39,6 +39,10 @@ interface DynamicPricingModalProps {
   tenantId?: string
 }
 
+// Cache en memoria a nivel módulo para apertura instantánea del modal (0ms)
+const cachedDynamicPricingConfig = new Map<string, DynamicPricingConfig>()
+const cachedOccupancyInsights = new Map<string, OccupancyInsight[]>()
+
 export function DynamicPricingModal({
   open,
   onOpenChange,
@@ -47,30 +51,40 @@ export function DynamicPricingModal({
   const hookTenantId = useTenantId()
   const { isOwner } = useUserRole()
   const tenantId = propTenantId || hookTenantId || ''
-  const [config, setConfig] = useState<DynamicPricingConfig>({
-    enable_last_minute: true,
-    last_minute_discount_pct: 25,
-    last_minute_hours_threshold: 3,
-    enable_happy_hour: true,
-    happy_hour_discount_pct: 20,
-    happy_hour_from: '12:00',
-    happy_hour_to: '17:00',
-    enable_peak_surge: false,
-    peak_surge_pct: 15,
+  const [config, setConfig] = useState<DynamicPricingConfig>(() => {
+    if (tenantId && cachedDynamicPricingConfig.has(tenantId)) {
+      return cachedDynamicPricingConfig.get(tenantId)!
+    }
+    return {
+      enable_last_minute: true,
+      last_minute_discount_pct: 25,
+      last_minute_hours_threshold: 3,
+      enable_happy_hour: true,
+      happy_hour_discount_pct: 20,
+      happy_hour_from: '12:00',
+      happy_hour_to: '17:00',
+      enable_peak_surge: false,
+      peak_surge_pct: 15,
+    }
   })
-  const [insights, setInsights] = useState<OccupancyInsight[]>([])
-  const [loading, setLoading] = useState(true)
+  const [insights, setInsights] = useState<OccupancyInsight[]>(() => {
+    return tenantId && cachedOccupancyInsights.has(tenantId) ? cachedOccupancyInsights.get(tenantId)! : []
+  })
+  const [loading, setLoading] = useState(() => !tenantId || !cachedOccupancyInsights.has(tenantId))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !tenantId) return
     let isMounted = true
+
     Promise.all([
       getDynamicPricingSettings(tenantId),
       getOccupancyInsights(tenantId)
     ])
       .then(([savedConfig, insightsData]) => {
         if (isMounted) {
+          cachedDynamicPricingConfig.set(tenantId, savedConfig)
+          cachedOccupancyInsights.set(tenantId, insightsData)
           setConfig(savedConfig)
           setInsights(insightsData)
           setLoading(false)

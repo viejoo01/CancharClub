@@ -66,8 +66,11 @@ export async function saveDynamicPricingSettings(
     }
 
     const supabase = await createServiceClient()
-    const { error } = await supabase
-      .from('tenants')
+    const { error } = await (supabase.from('tenants') as unknown as {
+      update: (data: Record<string, unknown>) => {
+        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+      }
+    })
       .update({
         updated_at: new Date().toISOString()
       })
@@ -96,7 +99,7 @@ export async function getOccupancyInsights(tenantIdParam?: string): Promise<Occu
     const supabase = await createServiceClient()
     const { data: bookings } = await supabase
       .from('bookings')
-      .select('start_time, status, booking_date')
+      .select('id, booked_at, status')
       .eq('tenant_id', targetTenantId)
       .limit(200)
 

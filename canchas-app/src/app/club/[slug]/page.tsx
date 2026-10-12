@@ -212,7 +212,7 @@ export default function ClubPublicPage({
           schema: 'public',
           table: 'bookings',
         },
-        (payload) => {
+        (payload: { new: unknown; old: unknown }) => {
           const newRec = payload.new as { tenant_id?: string } | null
           const oldRec = payload.old as { tenant_id?: string } | null
           if ((newRec?.tenant_id && newRec.tenant_id !== club.id) || (oldRec?.tenant_id && oldRec.tenant_id !== club.id)) {
@@ -228,7 +228,7 @@ export default function ClubPublicPage({
           schema: 'public',
           table: 'waitlists',
         },
-        (payload) => {
+        (payload: { new: unknown; old: unknown }) => {
           const newRec = payload.new as { tenant_id?: string } | null
           const oldRec = payload.old as { tenant_id?: string } | null
           if ((newRec?.tenant_id && newRec.tenant_id !== club.id) || (oldRec?.tenant_id && oldRec.tenant_id !== club.id)) {

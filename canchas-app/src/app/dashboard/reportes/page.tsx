@@ -38,37 +38,48 @@ const DAYS_HEADER = [
   'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
 ]
 
+// Cache en memoria a nivel módulo para navegación instantánea (0ms)
+const cachedOccupancyData = new Map<string, OccupancyReportData>()
+const cachedTenantMeta = new Map<string, { name: string; slug: string }>()
+
 export default function ReportesPage() {
   const tenantId = useTenantId()
-  const [data, setData] = useState<OccupancyReportData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [clubName, setClubName] = useState('Mi Club')
-  const [clubSlug, setClubSlug] = useState('')
+  const [data, setData] = useState<OccupancyReportData | null>(() => (tenantId ? cachedOccupancyData.get(tenantId) || null : null))
+  const [loading, setLoading] = useState(() => !tenantId || !cachedOccupancyData.has(tenantId))
+  const [clubName, setClubName] = useState(() => (tenantId ? cachedTenantMeta.get(tenantId)?.name || 'Mi Club' : 'Mi Club'))
+  const [clubSlug, setClubSlug] = useState(() => (tenantId ? cachedTenantMeta.get(tenantId)?.slug || '' : ''))
 
   useEffect(() => {
     if (!tenantId) return
+    if (cachedTenantMeta.has(tenantId)) return
+
     const supabase = createClient()
     supabase
       .from('tenants')
       .select('name, slug')
       .eq('id', tenantId)
       .maybeSingle()
-      .then(({ data: t }) => {
-        if (t?.name) setClubName(t.name)
-        if (t?.slug) setClubSlug(t.slug)
+      .then(({ data: t }: { data: { name?: string | null; slug?: string | null } | null }) => {
+        if (t?.name) {
+          cachedTenantMeta.set(tenantId, { name: t.name, slug: t.slug || '' })
+          setClubName(t.name)
+          if (t.slug) setClubSlug(t.slug)
+        }
       })
   }, [tenantId])
 
   const loadReport = useCallback(async (isInitial = false) => {
     if (!tenantId) return
-    if (isInitial) setLoading(true)
+    const hasCached = cachedOccupancyData.has(tenantId)
+    if (isInitial && !hasCached) setLoading(true)
     try {
       const res = await getOccupancyReport(tenantId)
+      cachedOccupancyData.set(tenantId, res)
       setData(res)
     } catch {
-      if (isInitial) toast.error('Error al cargar reporte de ocupación')
+      if (isInitial && !hasCached) toast.error('Error al cargar reporte de ocupación')
     } finally {
-      if (isInitial) setLoading(false)
+      setLoading(false)
     }
   }, [tenantId])
 

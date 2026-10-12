@@ -636,8 +636,8 @@ export default function CantinaPage() {
           .eq('tenant_id', tenantId)
           .eq('is_active', true)
           .order('display_order', { ascending: true })
-          .then(({ data }) => {
-            if (data) setCourts(data)
+          .then(({ data }: { data: unknown }) => {
+            if (Array.isArray(data)) setCourts(data as Array<{ id: string; name: string; sport: string }>)
           })
       }
     }, 0)

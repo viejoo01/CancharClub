@@ -66,12 +66,16 @@ interface ClubCourtSimple {
   sport?: string | null
 }
 
+// Cache en memoria a nivel módulo para transiciones instantáneas entre menús (0ms)
+const cachedRulesMap = new Map<string, PriceRuleItem[]>()
+const cachedCourtsMap = new Map<string, ClubCourtSimple[]>()
+
 export default function PreciosPage() {
   const tenantId = useTenantId()
   const { isOwner } = useUserRole()
-  const [rules, setRules] = useState<PriceRuleItem[]>([])
-  const [availableCourts, setAvailableCourts] = useState<ClubCourtSimple[]>([])
-  const [loadingRules, setLoadingRules] = useState(true)
+  const [rules, setRules] = useState<PriceRuleItem[]>(() => (tenantId ? cachedRulesMap.get(tenantId) || [] : []))
+  const [availableCourts, setAvailableCourts] = useState<ClubCourtSimple[]>(() => (tenantId ? cachedCourtsMap.get(tenantId) || [] : []))
+  const [loadingRules, setLoadingRules] = useState(() => !tenantId || !cachedRulesMap.has(tenantId))
 
   const reloadRules = async (tId: string, showToastOnError = false) => {
     try {
@@ -109,9 +113,12 @@ export default function PreciosPage() {
           deposit_pct: 50,
         }
       })
+      cachedRulesMap.set(tId, mapped)
       setRules(mapped)
+      return mapped
     } catch {
       if (showToastOnError) toast.error('Error al cargar tarifas')
+      return []
     }
   }
 
@@ -121,22 +128,28 @@ export default function PreciosPage() {
     let isMounted = true
 
     async function init(isInitial = false) {
-      if (isInitial) setLoadingRules(true)
-      await reloadRules(tenantId!, isInitial)
-
-      // Cargar canchas disponibles para asignación con su disciplina
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('courts')
-        .select('id, name, sport')
-        .eq('tenant_id', tenantId!)
-        .eq('is_active', true)
-        .order('display_order', { ascending: true })
-
-      if (isMounted && data) {
-        setAvailableCourts(data)
+      const hasCached = tenantId && cachedRulesMap.has(tenantId)
+      if (isInitial && !hasCached) {
+        setLoadingRules(true)
       }
-      if (isMounted && isInitial) {
+
+      // Cargar tarifas y canchas en paralelo
+      const supabase = createClient()
+      const [, courtsRes] = await Promise.all([
+        reloadRules(tenantId!, isInitial && !hasCached),
+        supabase
+          .from('courts')
+          .select('id, name, sport')
+          .eq('tenant_id', tenantId!)
+          .eq('is_active', true)
+          .order('display_order', { ascending: true })
+      ])
+
+      if (isMounted) {
+        if (courtsRes.data) {
+          cachedCourtsMap.set(tenantId!, courtsRes.data)
+          setAvailableCourts(courtsRes.data)
+        }
         setLoadingRules(false)
       }
     }

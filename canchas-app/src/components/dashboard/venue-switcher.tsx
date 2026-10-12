@@ -129,8 +129,9 @@ export function VenueSwitcher({
 
       const { data, error } = await query
       if (data && !error) {
-        const uniqueSports = Array.from(new Set(data.map(c => c.sport).filter(Boolean)))
-        const formatted = uniqueSports.map(s => {
+        const courtsList = data as Array<{ id: string; sport?: string | null; is_active?: boolean | null }>
+        const uniqueSports = Array.from(new Set(courtsList.map(c => c.sport).filter(Boolean))) as string[]
+        const formatted: string[] = uniqueSports.map(s => {
           if (s === 'FUTBOL11' || s === 'FUTBOL_11') return 'Fútbol 11'
           if (s === 'FUTBOL7' || s === 'FUTBOL_7') return 'Fútbol 7'
           if (s === 'FUTBOL5' || s === 'FUTBOL_5') return 'Fútbol 5'
@@ -140,7 +141,7 @@ export function VenueSwitcher({
           return s
         })
         setFetchedCourts({
-          count: data.length,
+          count: courtsList.length,
           sports: formatted.length > 0 ? formatted : ['Fútbol', 'Pádel']
         })
       }

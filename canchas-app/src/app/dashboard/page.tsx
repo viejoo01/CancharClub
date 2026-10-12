@@ -1,5 +1,6 @@
 import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
 import { DashboardDailySummary } from '@/components/dashboard/dashboard-daily-summary'
+import type { QuickBookingPriceRule } from '@/components/dashboard/quick-booking-modal'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
@@ -54,7 +55,7 @@ export default async function DashboardPage(props: {
       : Promise.resolve({ data: [] as DbCourtRow[] }),
     tenantId ? getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]> : Promise.resolve([] as CalendarBooking[]),
     tenantId ? getClubSchedule(tenantId) : Promise.resolve(undefined),
-    tenantId ? getClubPriceRules(tenantId) : Promise.resolve([]),
+    tenantId ? (getClubPriceRules(tenantId) as unknown as Promise<QuickBookingPriceRule[]>) : Promise.resolve([] as QuickBookingPriceRule[]),
   ])
 
   const rawCourts = rawCourtsResult.data

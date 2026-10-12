@@ -310,6 +310,7 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={() => onClose?.()}
+              prefetch={false}
               className={cn(
                 'flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium transition-all duration-150',
                 isActive_item

@@ -66,13 +66,19 @@ function formatTime(iso: string): string {
   }
 }
 
+// Cache en memoria a nivel módulo para apertura instantánea (0ms)
+const cachedDailyCash = new Map<string, DailyCashReport>()
+
 export default function CajaPage() {
   const tenantId = useTenantId()
   const { isOwner } = useUserRole()
   const today = new Date().toISOString().split('T')[0]
   const [selectedDate, setSelectedDate] = useState(today)
-  const [report, setReport] = useState<DailyCashReport | null>(null)
-  const [loading, setLoading] = useState(true)
+  const cacheKey = `${tenantId || ''}_${selectedDate}`
+  const [report, setReport] = useState<DailyCashReport | null>(() => {
+    return cachedDailyCash.get(cacheKey) || null
+  })
+  const [loading, setLoading] = useState(() => !cachedDailyCash.has(cacheKey))
 
   // Estado de Arqueo Ciego
   const [showBlindAuditModal, setShowBlindAuditModal] = useState(false)
@@ -91,15 +97,18 @@ export default function CajaPage() {
   useEffect(() => {
     if (!tenantId) return
     let isMounted = true
+    const currentKey = `${tenantId}_${selectedDate}`
+    const hasCached = cachedDailyCash.has(currentKey)
 
     getDailyCashReport(tenantId, selectedDate).then((data) => {
-      if (isMounted) {
+      if (isMounted && data) {
+        cachedDailyCash.set(currentKey, data)
         setReport(data)
         setLoading(false)
       }
     }).catch(() => {
       if (isMounted) {
-        toast.error('Error al cargar el reporte de caja')
+        if (!hasCached) toast.error('Error al cargar el reporte de caja')
         setLoading(false)
       }
     })
@@ -109,21 +118,23 @@ export default function CajaPage() {
     }
   }, [tenantId, selectedDate])
 
-  // Sincronización continua en segundo plano cada 5s y al enfocar la ventana (sin recargar ni parpadear)
+  // Sincronización continua en segundo plano cada 20s y al enfocar la ventana (sin recargar ni parpadear)
   useEffect(() => {
     if (!tenantId) return
     let isMounted = true
+    const currentKey = `${tenantId}_${selectedDate}`
 
     const silentSync = () => {
       if (document.hidden) return
       getDailyCashReport(tenantId, selectedDate).then((data) => {
         if (isMounted && data) {
+          cachedDailyCash.set(currentKey, data)
           setReport(data)
         }
       }).catch(() => {})
     }
 
-    const intervalId = setInterval(silentSync, 5000)
+    const intervalId = setInterval(silentSync, 20000)
     window.addEventListener('focus', silentSync)
     document.addEventListener('visibilitychange', silentSync)
 

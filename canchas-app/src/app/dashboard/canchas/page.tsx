@@ -270,8 +270,9 @@ export default function CanchasPage() {
       .select('tenants(slug)')
       .eq('tenant_id', tenantId)
       .maybeSingle()
-      .then(({ data }) => {
-        const slug = (data?.tenants as { slug?: string } | null)?.slug
+      .then(({ data }: { data: unknown }) => {
+        const profileData = data as { tenants?: { slug?: string } | null } | null
+        const slug = profileData?.tenants?.slug
         if (slug) setClubSlug(slug)
       })
 

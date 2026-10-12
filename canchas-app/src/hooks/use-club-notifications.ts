@@ -58,14 +58,19 @@ interface UseClubNotificationsOptions {
   autoRefreshIntervalMs?: number
 }
 
+const cachedNotifsByTenant = new Map<string, { notifications: ClubNotification[]; stats: NotificationsStats }>()
+
 export function useClubNotifications({
   tenantId,
   category = 'ALL',
   initialLimit = 100,
   autoRefreshIntervalMs = 30000,
 }: UseClubNotificationsOptions = {}) {
-  const [notifications, setNotifications] = useState<ClubNotification[]>([])
-  const [stats, setStats] = useState<NotificationsStats>({
+  const cacheKey = `${tenantId || 'default'}_${category}`
+  const initialCached = cachedNotifsByTenant.get(cacheKey)
+
+  const [notifications, setNotifications] = useState<ClubNotification[]>(() => initialCached?.notifications || [])
+  const [stats, setStats] = useState<NotificationsStats>(() => initialCached?.stats || {
     total: 0,
     unread: 0,
     bookingsCount: 0,
@@ -73,7 +78,7 @@ export function useClubNotifications({
     alertsCount: 0,
     systemCount: 0,
   })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !initialCached)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -109,30 +114,34 @@ export function useClubNotifications({
   // Cargar notificaciones
   const loadNotifications = useCallback(
     async (isBackground = false) => {
-      if (!isBackground) setLoading(true)
+      if (!isBackground && !cachedNotifsByTenant.has(cacheKey)) {
+        setLoading(true)
+      }
       try {
         const res = await getClubNotificationsAction({
           tenantId: tenantId || undefined,
           category,
           limit: initialLimit,
         })
+        cachedNotifsByTenant.set(cacheKey, { notifications: res.notifications, stats: res.stats })
         setNotifications(res.notifications)
         setStats(res.stats)
       } catch (err) {
         console.error('Error loading notifications:', err)
       } finally {
-        if (!isBackground) setLoading(false)
+        setLoading(false)
       }
     },
-    [tenantId, category, initialLimit]
+    [tenantId, category, initialLimit, cacheKey]
   )
 
   useEffect(() => {
+    const isBackground = Boolean(initialCached)
     const timer = setTimeout(() => {
-      void loadNotifications()
+      void loadNotifications(isBackground)
     }, 0)
     return () => clearTimeout(timer)
-  }, [loadNotifications])
+  }, [loadNotifications, initialCached])
 
   // Polling suave en segundo plano
   useEffect(() => {

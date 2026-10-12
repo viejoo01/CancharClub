@@ -29,11 +29,31 @@ import {
   type AutomatedMessageLog 
 } from '@/actions/whatsapp-bot.actions'
 
+// Cache en memoria a nivel módulo para renderizado instantáneo (0ms)
+const cachedWhatsAppConfig = new Map<string, WhatsAppBotConfig>()
+const cachedWhatsAppLogs = new Map<string, AutomatedMessageLog[]>()
+
+const getDefaultConfig = (tId: string): WhatsAppBotConfig => ({
+  tenant_id: tId,
+  is_enabled: true,
+  auto_confirm_bookings: true,
+  auto_reminder_2h: true,
+  auto_waitlist_alert: true,
+  provider: 'SIMULATED',
+  custom_greeting: '¡Hola! Te escribimos de CancharClub en nombre de tu club.',
+})
+
 export default function WhatsAppBotPage() {
   const tenantId = useTenantId()
-  const [config, setConfig] = useState<WhatsAppBotConfig | null>(null)
-  const [logs, setLogs] = useState<AutomatedMessageLog[]>([])
-  const [loading, setLoading] = useState(true)
+  const [config, setConfig] = useState<WhatsAppBotConfig>(() => {
+    if (tenantId && cachedWhatsAppConfig.has(tenantId)) {
+      return cachedWhatsAppConfig.get(tenantId)!
+    }
+    return getDefaultConfig(tenantId || '')
+  })
+  const [logs, setLogs] = useState<AutomatedMessageLog[]>(() => {
+    return tenantId && cachedWhatsAppLogs.has(tenantId) ? cachedWhatsAppLogs.get(tenantId)! : []
+  })
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testPhone, setTestPhone] = useState('')
@@ -48,14 +68,13 @@ export default function WhatsAppBotPage() {
     ])
       .then(([cfg, logList]) => {
         if (isMounted) {
+          cachedWhatsAppConfig.set(tenantId, cfg)
+          cachedWhatsAppLogs.set(tenantId, logList)
           setConfig(cfg)
           setLogs(logList)
-          setLoading(false)
         }
       })
-      .catch(() => {
-        if (isMounted) setLoading(false)
-      })
+      .catch(() => {})
 
     return () => {
       isMounted = false
@@ -65,6 +84,7 @@ export default function WhatsAppBotPage() {
   const handleToggle = async (key: keyof WhatsAppBotConfig) => {
     if (!config || !tenantId) return
     const updated = { ...config, [key]: !config[key] }
+    cachedWhatsAppConfig.set(tenantId, updated)
     setConfig(updated)
     setSaving(true)
     try {
@@ -101,6 +121,7 @@ export default function WhatsAppBotPage() {
         }
         // Recargar logs
         const updatedLogs = await getWhatsAppMessageLogs(tenantId)
+        cachedWhatsAppLogs.set(tenantId, updatedLogs)
         setLogs(updatedLogs)
       } else {
         toast.error(res.error || 'No se pudo enviar el mensaje')
@@ -110,15 +131,6 @@ export default function WhatsAppBotPage() {
     } finally {
       setTesting(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
-        <p className="text-sm text-slate-400">Cargando automatizaciones de WhatsApp...</p>
-      </div>
-    )
   }
 
   return (

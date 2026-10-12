@@ -97,7 +97,7 @@ export default function LucesPage() {
         if (!isMounted) return
 
         if (courtsData && courtsData.length > 0) {
-          const items: CourtUIItem[] = courtsData.map(c => {
+          const items: CourtUIItem[] = courtsData.map((c: { id: string; name: string; has_lights?: boolean | null; light_is_on?: boolean | null }) => {
             const saved = savedConfigs[c.id] || {}
             return {
               court_id: c.id,

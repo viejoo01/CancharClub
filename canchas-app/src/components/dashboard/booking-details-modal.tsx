@@ -91,7 +91,7 @@ export function BookingDetailsModal({
       .select('name, slug')
       .eq('id', tenantId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: { name?: string | null; slug?: string | null } | null }) => {
         if (data?.name) setClubName(data.name)
         if (data?.slug) setClubSlug(data.slug)
       })

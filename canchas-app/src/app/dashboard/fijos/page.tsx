@@ -187,10 +187,11 @@ export default function TurnosFijosPage() {
     let isMounted = true
     // Load courts from DB
     const supabase = createClient()
-    supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }) => {
-      if (data && data.length > 0) {
-        setDbCourts(data)
-        setCourtId(data[0].id)
+    supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }: { data: unknown }) => {
+      const courtsList = data as { id: string; name: string; sport: string }[] | null
+      if (courtsList && courtsList.length > 0) {
+        setDbCourts(courtsList)
+        setCourtId(courtsList[0].id)
       }
     })
     // Load recurring slots

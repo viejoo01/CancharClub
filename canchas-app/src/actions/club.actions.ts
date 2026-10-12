@@ -559,10 +559,27 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
 
 // ─── REGLAS DE PRECIOS ────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const priceRulesCache = new Map<string, { data: any[]; expiresAt: number }>()
+
+export async function invalidatePriceRulesCache(tenantId?: string | null) {
+  if (tenantId) {
+    priceRulesCache.delete(tenantId)
+  } else {
+    priceRulesCache.clear()
+  }
+}
+
 export async function getClubPriceRules(tenantId?: string | null) {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    // Cache en memoria para respuestas ultra-rápidas (0ms)
+    const cached = priceRulesCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
 
     const auth = await assertTenantMember(effectiveTenantId)
     if (!auth.authorized) return []
@@ -590,13 +607,16 @@ export async function getClubPriceRules(tenantId?: string | null) {
       console.warn('[getClubPriceRules] Error fetching price rules:', error.message)
       return []
     }
-    return (data ?? []).map(r => ({
+    const mapped = (data ?? []).map(r => ({
       ...r,
       days_of_week: (r.day_of_week || []).map((d: number) => d === 7 ? 0 : d),
       price_ars: Math.round(Number(r.price_cents) / 100),
       time_from: r.time_from ? r.time_from.substring(0, 5) : '18:00',
       time_to: r.time_to ? (r.time_to.startsWith('24:00') ? '00:00' : r.time_to.substring(0, 5)) : '23:00',
     }))
+
+    priceRulesCache.set(effectiveTenantId, { data: mapped, expiresAt: Date.now() + 60000 })
+    return mapped
   } catch (err) {
     console.warn('[getClubPriceRules] Exception:', err)
     return []
@@ -768,6 +788,7 @@ export async function createPriceRule(payload: {
     console.warn('[createPriceRule] High-water mark notice:', hwmErr)
   }
 
+  await invalidatePriceRulesCache(effectiveTenantId)
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard/plan')
   revalidatePath('/dashboard')
@@ -898,6 +919,7 @@ export async function updatePriceRule(payload: {
     console.warn('[updatePriceRule] High-water mark notice:', hwmErr)
   }
 
+  await invalidatePriceRulesCache(effectiveTenantId)
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard/plan')
   revalidatePath('/dashboard')
@@ -938,6 +960,7 @@ export async function deletePriceRule(ruleId: string, tenantId?: string | null) 
     if (error) {
       return { success: false, error: error.message }
     }
+    await invalidatePriceRulesCache(effectiveTenantId)
     revalidatePath('/dashboard/precios')
     revalidatePath('/dashboard/plan')
     revalidatePath('/dashboard')
@@ -2505,11 +2528,17 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
     // 5. Estadísticas de Cantina
     let cantinaRevenue = 0
     try {
-      const { getCantinaStats } = await import('./cantina.actions')
-      const cantinaStats = await getCantinaStats(effectiveTenantId)
-      cantinaRevenue = cantinaStats.totalRevenue || 0
-    } catch (cantinaErr) {
-      console.warn('[getClubAnalytics] Cantina stats unavailable:', cantinaErr)
+      const { data: cantinaOrders } = await supabase
+        .from('court_orders')
+        .select('total_ars')
+        .eq('tenant_id', effectiveTenantId)
+        .gte('created_at', thirtyDaysAgo)
+        .not('status', 'eq', 'CANCELLED')
+      if (cantinaOrders) {
+        cantinaRevenue = cantinaOrders.reduce((sum, o) => sum + (Number(o.total_ars) || 0), 0)
+      }
+    } catch {
+      // Cantina stats fallback a 0 si tabla no existe
     }
 
     const totalRevenue = courtsRevenue + cantinaRevenue

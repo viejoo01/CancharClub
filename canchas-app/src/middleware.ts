@@ -135,6 +135,12 @@ export async function middleware(request: NextRequest) {
   // Refrescar la sesión
   const { data: { user } } = await supabase.auth.getUser()
 
+  let profileData: {
+    role?: string
+    tenant_id?: string
+    tenants?: { subscription_status?: string; is_active?: boolean; description?: string }
+  } | null = null
+
   // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS (DASHBOARD) ──────────────────────────
   // El acceso al dashboard requiere una sesión real autenticada en Supabase o sesión Superadmin.
   if (pathname.startsWith('/dashboard')) {
@@ -146,8 +152,22 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // SI EL USUARIO NO ES SUPERADMIN: VERIFICAR QUE EL CLUB HAYA VINCULADO SU TARJETA
+    // SI EL USUARIO NO ES SUPERADMIN: OBTENER PERFIL Y VERIFICAR ACCESO
     if (!saSession && user) {
+      const { data: profile } = (await supabase
+        .from('profiles')
+        .select('role, tenant_id, tenants(subscription_status, is_active, description)')
+        .eq('id', user.id)
+        .maybeSingle()) as {
+          data: {
+            role?: string
+            tenant_id?: string
+            tenants?: { subscription_status?: string; is_active?: boolean; description?: string }
+          } | null
+        }
+
+      profileData = profile
+
       const isFromMpReturn = request.nextUrl.searchParams.get('subscription_active') === 'true' ||
                              request.nextUrl.searchParams.get('auto_debit_registered') === 'true' ||
                              request.nextUrl.searchParams.get('mp_card_connected') === 'true' ||
@@ -169,27 +189,18 @@ export async function middleware(request: NextRequest) {
       // En desarrollo sin DB puede admitir cookies demo; en producción se verifica estrictamente la BD
       const requiresCardCheck = isProdEnv || isPendingActivation || (!cookieHasCard || !cookieCardLast4)
 
-      if (requiresCardCheck) {
-        // Consultar perfil para descartar superadmin y verificar metadatos de tarjeta
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, tenant_id, tenants(subscription_status, is_active, description)')
-          .eq('id', user.id)
-          .single()
+      if (requiresCardCheck && profileData && profileData.role !== 'SUPERADMIN') {
+        const tenantData = profileData.tenants
+        let metaCardLinked = false
+        if (tenantData?.description) {
+          try {
+            const meta = JSON.parse(tenantData.description)
+            metaCardLinked = Boolean(meta.card_linked)
+          } catch {}
+        }
 
-        if (profile && profile.role !== 'SUPERADMIN') {
-          const tenantData = profile?.tenants as unknown as { subscription_status?: string; is_active?: boolean; description?: string } | null
-          let metaCardLinked = false
-          if (tenantData?.description) {
-            try {
-              const meta = JSON.parse(tenantData.description)
-              metaCardLinked = Boolean(meta.card_linked)
-            } catch {}
-          }
-
-          if (!metaCardLinked) {
-            return NextResponse.redirect(new URL('/onboarding/tarjeta', request.url))
-          }
+        if (!metaCardLinked) {
+          return NextResponse.redirect(new URL('/onboarding/tarjeta', request.url))
         }
       }
     }
@@ -248,15 +259,9 @@ export async function middleware(request: NextRequest) {
 
   // ─── 5. EVALUACIÓN DEL ESTADO DE DUNNING DEL CLUB (TENANT) ────────────────
   if (pathname.startsWith('/dashboard') && user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('tenant_id, tenants(subscription_status, is_active)')
-      .eq('id', user.id)
-      .single()
-
-    const tenantData = profile?.tenants as unknown as { subscription_status?: string; is_active?: boolean } | null
+    const tenantData = profileData?.tenants
     const isProd = process.env.NODE_ENV === 'production'
-    // En producción la base de datos es la única fuente de verdad inmutable (impide bypass por query params o cookies manipuladas)
+    // En producción la base de datos es la única fuente de verdad inmutable
     const tenantStatus = (isProd ? tenantData?.subscription_status : (demoStatusOverride || tenantData?.subscription_status)) || 'ACTIVE'
 
     // Inyectar estado en headers para consumo en Server Components

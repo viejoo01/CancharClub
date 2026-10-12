@@ -457,6 +457,17 @@ const SLOTS_MAP: {
   { key: 'NOCHE',  label: 'Noche (Pico)', range: '20:00 - 00:00', startHour: 20, endHour: 24 },
 ]
 
+// Cache en memoria en servidor para reporte de ocupación semanal (60s)
+const occupancyReportCache = new Map<string, { data: OccupancyReportData; expiresAt: number }>()
+
+export async function invalidateOccupancyReportCache(tenantId?: string | null) {
+  if (tenantId) {
+    occupancyReportCache.delete(tenantId)
+  } else {
+    occupancyReportCache.clear()
+  }
+}
+
 /**
  * Genera el reporte de ocupación semanal con datos 100% reales en huso horario de Argentina.
  */
@@ -479,6 +490,12 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       return emptyReport
     }
 
+    // Cache ultra-rápido en memoria (0ms)
+    const cached = occupancyReportCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const authCheck = await assertTenantMember(effectiveTenantId)
     if (!authCheck.authorized) {
       return emptyReport
@@ -486,27 +503,32 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
 
     const supabase = await createServiceClient()
 
-    // Canchas activas del club
-    const { data: courts } = await supabase
-      .from('courts')
-      .select('id, slot_duration_minutes')
-      .eq('tenant_id', effectiveTenantId)
-      .eq('is_active', true)
-
-    const courtsCount = Math.max(1, courts?.length || 1)
-
-    // Reservas de los últimos 30 días (y próximas dentro de la ventana de 30 días)
+    // Reservas de los últimos 30 días y próximas
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
     const futureLimit = new Date(Date.now() + 30 * 86400000)
 
-    const { data: bookings, error: bookingsErr } = await supabase
-      .from('bookings')
-      .select('booked_at, price_total_cents')
-      .eq('tenant_id', effectiveTenantId)
-      .not('status', 'in', '("cancelled")')
+    // Cargar canchas y reservas en paralelo
+    const [courtsRes, bookingsRes] = await Promise.all([
+      supabase
+        .from('courts')
+        .select('id, slot_duration_minutes')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('is_active', true),
+      supabase
+        .from('bookings')
+        .select('booked_at, price_total_cents')
+        .eq('tenant_id', effectiveTenantId)
+        .not('status', 'in', '("cancelled")')
+        .order('created_at', { ascending: false })
+        .limit(600),
+    ])
 
-    if (bookingsErr) {
-      console.error('[getOccupancyReport] Error fetching bookings:', bookingsErr)
+    const courts = courtsRes.data
+    const bookings = bookingsRes.data
+    const courtsCount = Math.max(1, courts?.length || 1)
+
+    if (bookingsRes.error) {
+      console.error('[getOccupancyReport] Error fetching bookings:', bookingsRes.error)
     }
 
     // Construir matriz day x slot con conteos reales en huso horario Argentina (UTC-3)
@@ -660,7 +682,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       }
     }
 
-    return {
+    const result: OccupancyReportData = {
       weeklyAverageOccupancy: weeklyAverage,
       totalBookingsPeriod,
       peakSlot,
@@ -671,6 +693,8 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
       heatmap,
       recommendations,
     }
+    occupancyReportCache.set(effectiveTenantId, { data: result, expiresAt: Date.now() + 60000 })
+    return result
   } catch (err) {
     console.error('[getOccupancyReport] Error:', err)
     return emptyReport

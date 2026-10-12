@@ -1,7 +1,5 @@
-// src/lib/supabase/server.ts
-// Cliente Supabase para uso en SERVER COMPONENTS y SERVER ACTIONS
 import { createServerClient } from '@supabase/ssr'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
@@ -34,14 +32,21 @@ export async function createClient() {
  * NO utiliza cookies de sesión del usuario para evitar que el token de usuario o RLS sobrescriban
  * los permisos de administración del sistema.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let serviceClientInstance: SupabaseClient<any, 'public', any> | null = null
+
 export async function createServiceClient() {
+  if (serviceClientInstance) return serviceClientInstance
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-key'
 
-  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
+  serviceClientInstance = createSupabaseClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
   })
+
+  return serviceClientInstance
 }

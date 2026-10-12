@@ -44,24 +44,33 @@ export function useTenantId(): string | null {
   const [fallbackTenantId, setFallbackTenantId] = useState<string | null>(() => getGlobalCachedTenantId())
 
   useEffect(() => {
+    // Si ya tenemos el tenantId del contexto o de la caché global, evitar consultas de red redundantes
+    if (contextTenantId || fallbackTenantId) return
+
     let isMounted = true
     const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user || !isMounted) return
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-      if (profile?.tenant_id && isMounted) {
-        setGlobalCachedTenantId(profile.tenant_id)
-        setFallbackTenantId(profile.tenant_id)
-      }
-    })
+    async function loadTenant() {
+      try {
+        const { data } = await supabase.auth.getUser()
+        const user = data?.user
+        if (!user || !isMounted) return
+        const { data: profile } = (await supabase
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .maybeSingle()) as { data: { tenant_id?: string | null } | null }
+        if (profile?.tenant_id && isMounted) {
+          setGlobalCachedTenantId(profile.tenant_id)
+          setFallbackTenantId(profile.tenant_id)
+        }
+      } catch {}
+    }
+    void loadTenant()
+
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [contextTenantId, fallbackTenantId])
 
   return contextTenantId || fallbackTenantId
 }
@@ -84,23 +93,32 @@ export function useUserRole(): { role: string; isOwner: boolean } {
   const [asyncRole, setAsyncRole] = useState<string | null>(null)
 
   useEffect(() => {
+    // Si el rol ya viene provisto por el contexto o cookie, no consultar la red
+    if (contextRole) return
+
     let isMounted = true
     const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user || !isMounted) return
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
-      if (profile?.role && isMounted) {
-        setAsyncRole(profile.role)
-      }
-    })
+    async function loadRole() {
+      try {
+        const { data } = await supabase.auth.getUser()
+        const user = data?.user
+        if (!user || !isMounted) return
+        const { data: profile } = (await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle()) as { data: { role?: string | null } | null }
+        if (profile?.role && isMounted) {
+          setAsyncRole(profile.role)
+        }
+      } catch {}
+    }
+    void loadRole()
+
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [contextRole])
 
   const cookieRole = typeof document !== 'undefined'
     ? (() => {

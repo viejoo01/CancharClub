@@ -10,11 +10,9 @@
 // 4. Alertas del sistema y cobros automáticos
 // ==============================================================================
 
-import { createServiceClient, createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
-import { formatARS } from '@/lib/utils'
 import type {
   ClubNotification,
   NotificationCategory,
@@ -89,6 +87,7 @@ async function saveReadState(
       tenant_id: tenantId,
       action: 'NOTIFICATIONS_READ_STATE',
       table_name: 'notifications',
+      record_id: tenantId,
       new_data: state,
       created_at: new Date().toISOString(),
     })

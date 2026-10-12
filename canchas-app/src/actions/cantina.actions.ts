@@ -533,6 +533,7 @@ export async function saveCantinaProducts(
         tenant_id: tenantId,
         action: 'CANTINA_PRODUCT_CATALOG',
         table_name: 'cantina_products',
+        record_id: tenantId,
         new_data: { products, updated_at: new Date().toISOString() }
       })
 
@@ -694,6 +695,7 @@ export async function saveCantinaSuppliers(
         tenant_id: tenantId,
         action: 'CANTINA_SUPPLIERS',
         table_name: 'cantina_suppliers',
+        record_id: tenantId,
         new_data: { suppliers, updated_at: new Date().toISOString() }
       })
 

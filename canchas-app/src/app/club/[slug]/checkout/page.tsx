@@ -16,7 +16,8 @@ import {
   Smartphone, 
   Send, 
   Wallet,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,6 +52,20 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const date = searchParams.get('date') || getArgentinaTodayIso()
   const time = searchParams.get('time') || '19:00'
   const claimId = searchParams.get('claimId')
+  const [effectiveClaimId] = useState<string | null>(() => {
+    if (claimId) return claimId
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('canchar_active_waitlist')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (parsed?.id) return parsed.id
+        }
+      } catch {}
+    }
+    return null
+  })
+
   const rawTotalParam = Number(searchParams.get('total'))
   const rawDepositParam = Number(searchParams.get('deposit'))
 
@@ -281,6 +296,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       ].filter(Boolean).join(' ')
 
       // Invocar Server Action para lock + registro de booking con el método elegido
+      const activeClaimToken = effectiveClaimId || claimId || undefined
       const res = await initiateOnlineCheckout(
         {
           tenant_id: resolvedTenantId || (club?.id && club.id.length > 10 ? club.id : '00000000-0000-0000-0000-000000000001'),
@@ -295,6 +311,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
           total_amount_ars: effectiveTotal,
           deposit_amount_ars: payableDeposit,
           payment_method: payableDeposit === 0 ? 'TRANSFER' : paymentMethod,
+          claim_id: activeClaimToken,
         },
         (
           courtObj?.slotDurationMinutes === 60
@@ -322,9 +339,14 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         }
       } catch {}
 
-      // Si venía de reclamo de lista de espera, marcarlo como completado
-      if (claimId) {
-        markWaitlistAsClaimed(claimId).catch(() => {})
+      // Si venía de reclamo de lista de espera, marcarlo como completado y limpiar local storage
+      if (activeClaimToken) {
+        markWaitlistAsClaimed(activeClaimToken).catch(() => {})
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('canchar_active_waitlist')
+          }
+        } catch {}
       }
 
       const buildConfirmedUrl = (chosenMethod: string, depAmount: number) => {
@@ -423,6 +445,19 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
           <ShieldCheck className="w-4 h-4 text-emerald-500/80" />
         </div>
       </header>
+
+      {/* Banner de Prioridad Exclusiva de Lista de Espera */}
+      {(effectiveClaimId || claimId) && (
+        <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-teal-950/60 border border-emerald-500/50 flex items-center justify-between text-emerald-200 text-xs shadow-md">
+          <div className="flex items-center gap-2 font-semibold">
+            <Zap className="w-4 h-4 text-emerald-400 shrink-0 fill-emerald-400" />
+            <span className="text-[11px] sm:text-xs">Prioridad exclusiva de Lista de Espera</span>
+          </div>
+          <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] font-black uppercase px-2 py-0.5">
+            10 MIN
+          </Badge>
+        </div>
+      )}
 
       {/* Timer de Bloqueo Temporal (Redis Lock) */}
       <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-gradient-to-r from-amber-950/50 to-amber-900/30 border border-amber-500/30 flex items-center justify-between text-amber-200 text-xs shadow-sm">

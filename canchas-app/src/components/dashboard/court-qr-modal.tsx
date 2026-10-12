@@ -158,11 +158,31 @@ export function CourtQrModal(props: CourtQrModalProps) {
       <html lang="es">
         <head>
           <meta charset="utf-8" />
-          <title>Cartel QR - ${titleText}</title>
+          <title></title>
           <style>
             @page {
               size: A4 portrait;
-              margin: 10mm;
+              margin: 0 !important;
+            }
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 0 !important;
+              }
+              html, body {
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .poster-card {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                margin: auto !important;
+              }
             }
             * {
               box-sizing: border-box;
@@ -177,7 +197,9 @@ export function CourtQrModal(props: CourtQrModalProps) {
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              min-height: 92vh;
+              min-height: 100vh;
+              padding: 10mm 0;
+              margin: 0;
               -webkit-print-color-adjust: exact;
               print-color-adjust: exact;
             }
@@ -326,8 +348,13 @@ export function CourtQrModal(props: CourtQrModalProps) {
     const executePrint = () => {
       setTimeout(() => {
         setPrinting(false)
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
+        if (iframe.contentWindow) {
+          try {
+            iframe.contentWindow.document.title = ''
+          } catch {}
+          iframe.contentWindow.focus()
+          iframe.contentWindow.print()
+        }
         setTimeout(() => {
           iframe.remove()
         }, 4000)
@@ -620,6 +647,9 @@ export function CourtQrModal(props: CourtQrModalProps) {
             <span>Imprimir Cartel (A4/Mesa)</span>
           </Button>
         </DialogFooter>
+        <p className="text-[10px] text-center text-slate-500 pt-0.5">
+          ✨ Impresión limpia sin fecha, títulos ni URL del navegador.
+        </p>
       </DialogContent>
     </Dialog>
   )

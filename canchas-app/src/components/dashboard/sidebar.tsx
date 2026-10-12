@@ -24,7 +24,8 @@ import {
   KeyRound,
   Share2,
   Sparkles,
-  MessageSquare
+  MessageSquare,
+  Bell
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -73,6 +74,13 @@ export function Sidebar({
       href: '/dashboard',
       icon: CalendarDays,
       exact: true,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,
+    },
+    {
+      title: 'Notificaciones',
+      href: '/dashboard/notificaciones',
+      icon: Bell,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       staffVisible: true,
     },

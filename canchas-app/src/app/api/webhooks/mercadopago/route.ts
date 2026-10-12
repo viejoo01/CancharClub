@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import { releaseBookingLock } from '@/lib/redis'
 import { sendBookingConfirmationToPlayer, sendNewBookingAlertToClub } from '@/lib/notifications/email.service'
 import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
+import { recordClubNotification } from '@/actions/notifications.actions'
 import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
@@ -228,7 +229,7 @@ export async function POST(request: NextRequest) {
     staff_deposit_amount_cents?: number | null
     customer_name?: string | null
     customer_email?: string | null
-    starts_at?: string | null
+    booked_at?: string | null
     court_id?: string | null
   } | null = null
 
@@ -237,7 +238,7 @@ export async function POST(request: NextRequest) {
     if (isUUID) {
       const { data } = await supabase
         .from('bookings')
-        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, staff_deposit_amount_cents, customer_name, customer_email, starts_at, court_id')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, staff_deposit_amount_cents, customer_name, customer_email, booked_at, court_id')
         .eq('id', bookingIdCandidate)
         .maybeSingle()
       booking = data
@@ -330,6 +331,7 @@ export async function POST(request: NextRequest) {
 
     // ── Despachar correos electrónicos transaccionales ────────────────────
     if (newStatus === 'confirmed') {
+      let courtName = 'Cancha'
       try {
         const { data: tenantData } = await supabase
           .from('tenants')
@@ -345,9 +347,14 @@ export async function POST(request: NextRequest) {
 
         const clubName = tenantData?.name || 'CancharClub'
         const clubEmail = tenantData?.email
-        const courtName = courtData?.name || 'Cancha'
-        const timeStr = booking.starts_at
-          ? new Date(booking.starts_at).toLocaleTimeString('es-AR', {
+        if (courtData?.name) courtName = courtData.name
+        let startIso: string | undefined
+        if (booking.booked_at) {
+          const m = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+          if (m?.[1]) startIso = m[1]
+        }
+        const timeStr = startIso
+          ? new Date(startIso).toLocaleTimeString('es-AR', {
               hour: '2-digit',
               minute: '2-digit',
               timeZone: 'America/Argentina/Buenos_Aires',
@@ -385,6 +392,24 @@ export async function POST(request: NextRequest) {
       sendAutomatedBookingConfirmation(booking.id).catch((waErr) => {
         console.warn('[MP Webhook] WhatsApp bot dispatch warning:', waErr)
       })
+
+      // Registrar en el historial de notificaciones y alertas
+      const depositArs = (booking.price_total_cents || 0) / 100
+      recordClubNotification({
+        tenantId: booking.tenant_id,
+        type: 'PAYMENT_RECEIVED',
+        category: 'PAYMENTS',
+        title: '💳 Seña Acreditada por Mercado Pago',
+        message: `Pago de $${depositArs.toLocaleString('es-AR')} de ${booking.customer_name || 'Jugador'} acreditado automáticamente para ${courtName}.`,
+        metadata: {
+          booking_id: booking.id,
+          customer_name: booking.customer_name || undefined,
+          customer_email: booking.customer_email || undefined,
+          court_name: courtName,
+          amount_ars: depositArs,
+          payment_method: 'Mercado Pago',
+        },
+      }).catch(() => {})
     }
   }
 

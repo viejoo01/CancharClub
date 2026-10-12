@@ -389,7 +389,7 @@ export default function CajaPage() {
                     id="declared"
                     type="number"
                     min="0"
-                    step="100"
+                    step="any"
                     placeholder="0"
                     value={declaredCash}
                     onChange={(e) => setDeclaredCash(e.target.value)}

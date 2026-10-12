@@ -11,6 +11,7 @@ import {
   buildLockKey,
   acquireBookingLock,
   releaseBookingLock,
+  forceReleaseBookingLock,
 } from '@/lib/redis'
 import {
   computeEndsAt,
@@ -24,11 +25,17 @@ import type {
   TenantSubscriptionStatus,
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
-import { processWaitlistOnCancellation } from './waitlist.actions'
+import {
+  processWaitlistOnCancellation,
+  verifyWaitlistClaim,
+  markWaitlistAsClaimed,
+  getWaitlistActivePriorities,
+} from './waitlist.actions'
 import { sendAutomatedBookingConfirmation } from './whatsapp-bot.actions'
 import { addVenueBooking, getVenueBookings, cancelVenueBooking } from '@/config/venues-data'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { isPlayerBlocked } from './players.actions'
+import { recordClubNotification } from './notifications.actions'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -131,12 +138,68 @@ export async function initiateOnlineCheckout(
     const endsAt = computeEndsAt(payload.starts_at, courtSlotDuration)
     const startsAtIso = slotStartDate.toISOString()
     const endsAtIso = parseArgentinaDate(endsAt).toISOString()
-    const lockKey = buildLockKey(payload.court_id, payload.starts_at)
+    const dayStr = startsAtIso.split('T')[0]
+
+    // 1.1 Resolver Court UUID y clave de bloqueo canónica
+    const supabase = await createServiceClient()
+    const effectiveTenantId = (payload.tenant_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.tenant_id))
+      ? payload.tenant_id
+      : '00000000-0000-0000-0000-000000000001'
+
+    const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
+    const canonicalCourtId = effectiveCourtId || payload.court_id
+    const lockKey = buildLockKey(canonicalCourtId, payload.starts_at)
+
+    // 1.5 GESTIÓN DE PRIORIDAD EXCLUSIVA DE LISTA DE ESPERA (10 MINUTOS)
+    let isWaitlistClaimValid = false
+    const slotHourMin = `${String(slotStartDate.getHours()).padStart(2, '0')}:${String(slotStartDate.getMinutes()).padStart(2, '0')}`
+
+    if (payload.claim_id) {
+      const waitlistCheck = await verifyWaitlistClaim(payload.claim_id)
+      if (waitlistCheck.valid && waitlistCheck.entry) {
+        const entry = waitlistCheck.entry
+        const claimMatchesDate = !entry.date || entry.date === dayStr
+        const claimMatchesTime = !entry.time_slot || entry.time_slot.startsWith(slotHourMin)
+        const claimMatchesCourt = !entry.court_id || entry.court_id === payload.court_id || entry.court_id === canonicalCourtId
+
+        if (claimMatchesDate && claimMatchesTime && claimMatchesCourt) {
+          isWaitlistClaimValid = true
+          // El jugador posee prioridad exclusiva legítima: liberar cualquier bloqueo remanente de la reserva previa cancelada
+          await forceReleaseBookingLock(lockKey)
+          if (payload.court_id && payload.court_id !== canonicalCourtId) {
+            await forceReleaseBookingLock(buildLockKey(payload.court_id, payload.starts_at))
+          }
+        }
+      }
+    } else {
+      // Si el checkout NO viene con reclamo de lista de espera, verificar si el slot está reservado con prioridad activa para otro jugador
+      const activePriorities = await getWaitlistActivePriorities(effectiveTenantId, dayStr)
+      const hasPriorityForThisSlot = activePriorities.some((p) => {
+        const matchCourt = !p.court_id || p.court_id === payload.court_id || p.court_id === canonicalCourtId
+        const matchTime = p.time_slot.startsWith(slotHourMin)
+        return matchCourt && matchTime
+      })
+
+      if (hasPriorityForThisSlot) {
+        return {
+          success: false,
+          error: 'Este turno se liberó recientemente y está en ventana de prioridad exclusiva (10 min) para un jugador en lista de espera. Si no lo confirma, quedará abierto al público.',
+          error_code: 'WAITLIST_PRIORITY_ACTIVE',
+        }
+      }
+    }
+
     const bookingId = crypto.randomUUID()
 
     // 2. ADQUIRIR LOCK EN REDIS + MEMORIA (atómico: SET NX PX)
     //    Si falla → slot ya tomado por otro checkout simultáneo
-    const lockAcquired = await acquireBookingLock(lockKey, bookingId)
+    let lockAcquired = await acquireBookingLock(lockKey, bookingId)
+    if (!lockAcquired && isWaitlistClaimValid) {
+      // Reintento forzado para jugador con prioridad legítima de lista de espera
+      await forceReleaseBookingLock(lockKey)
+      lockAcquired = await acquireBookingLock(lockKey, bookingId)
+    }
+
     if (!lockAcquired) {
       return {
         success: false,
@@ -146,14 +209,13 @@ export async function initiateOnlineCheckout(
     }
 
     // 2.1 PRE-VERIFICACIÓN DE DISPONIBILIDAD (evita colisiones simultáneas)
-    const dayStr = startsAtIso.split('T')[0]
     const memoryBookings = getVenueBookings(payload.tenant_id, dayStr)
     const isAlreadyBookedInMemory = memoryBookings.some((b) => {
       const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
       const matchCourt = b.court_id === payload.court_id || (payload.court_name && cName?.toLowerCase() === payload.court_name.toLowerCase())
       return matchCourt && b.starts_at === startsAtIso && !String(b.status).toUpperCase().includes('CANCEL')
     })
-    if (isAlreadyBookedInMemory) {
+    if (isAlreadyBookedInMemory && !isWaitlistClaimValid) {
       await releaseBookingLock(lockKey, bookingId)
       return {
         success: false,
@@ -163,14 +225,7 @@ export async function initiateOnlineCheckout(
     }
 
     // 3. REGISTRAR BOOKING en PostgreSQL con status='confirmed' (cierre 24hs automático del turno)
-    const supabase = await createServiceClient()
     const bookingRange = `[${startsAtIso},${endsAtIso})`
-
-    const effectiveTenantId = (payload.tenant_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.tenant_id))
-      ? payload.tenant_id
-      : '00000000-0000-0000-0000-000000000001'
-
-    const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
 
     let sportEnum: 'PADEL' | 'FUTBOL5' | 'FUTBOL7' | 'FUTBOL11' | 'TENIS' = 'PADEL'
     if (effectiveCourtId) {
@@ -236,6 +291,10 @@ export async function initiateOnlineCheckout(
       console.warn('[initiateOnlineCheckout] DB insert notice (continuing):', insertError.message)
     } else {
       dbInsertSuccess = true
+    }
+
+    if (dbInsertSuccess && payload.claim_id && isWaitlistClaimValid) {
+      await markWaitlistAsClaimed(payload.claim_id)
     }
 
     // Registrar también en memoria para respuesta instantánea (0ms) en la grilla
@@ -626,8 +685,27 @@ export async function createManualBooking(
       },
     })
 
+    // Registrar en el historial de notificaciones y alertas
+    void recordClubNotification({
+      tenantId: effectiveTenantId,
+      type: 'BOOKING_CREATED',
+      category: 'BOOKINGS',
+      title: '⚽ Turno Reservado en Mostrador',
+      message: `${payload.customer_name?.trim() || 'Cliente'} reservó ${payload.court_name || 'Cancha'} para el ${startsAtDate.toLocaleDateString('es-AR')} a las ${startsAtDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs ($${Number(payload.total_amount_ars || 0).toLocaleString('es-AR')}).`,
+      metadata: {
+        booking_id: booking.id,
+        customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
+        customer_phone: payload.customer_phone?.trim() || undefined,
+        court_name: payload.court_name || 'Cancha',
+        sport: court.sport || 'PADEL',
+        amount_ars: Number(payload.total_amount_ars || 0),
+        payment_method: isFullCash ? 'Efectivo Total' : 'Seña Mostrador',
+      },
+    })
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/dashboard/notificaciones')
     return { success: true, booking_id: booking.id }
 
   } catch (error) {
@@ -649,7 +727,7 @@ export async function registerCashPayment(params: {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status, paid_at')
+      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status, paid_at, customer_name, customer_phone')
       .eq('id', params.booking_id)
       .single()
 
@@ -736,8 +814,26 @@ export async function registerCashPayment(params: {
       return { success: false, error: upErr.message }
     }
 
+    // Registrar en el historial de notificaciones y alertas
+    const customerDisplayName = booking.customer_name?.trim() || 'Cliente'
+    void recordClubNotification({
+      tenantId: booking.tenant_id,
+      type: 'PAYMENT_RECEIVED',
+      category: 'PAYMENTS',
+      title: '💰 Pago / Seña Recibida en Mostrador',
+      message: `Se registró un cobro de $${(effectiveAmountCents / 100).toLocaleString('es-AR')} (${methodSpanish}) de ${customerDisplayName} a las ${timeStr} hs.`,
+      metadata: {
+        booking_id: booking.id,
+        customer_name: customerDisplayName,
+        customer_phone: booking.customer_phone?.trim() || undefined,
+        amount_ars: effectiveAmountCents / 100,
+        payment_method: methodSpanish,
+      },
+    })
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/dashboard/notificaciones')
     return { success: true }
   } catch (error) {
     console.error('[registerCashPayment] Error:', error)
@@ -763,7 +859,7 @@ export async function cancelBooking(params: {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('redis_lock_key, id, tenant_id, court_id, booked_at, staff_notes')
+      .select('redis_lock_key, id, tenant_id, court_id, booked_at, staff_notes, customer_name, customer_phone')
       .eq('id', params.booking_id)
       .single()
 
@@ -793,9 +889,16 @@ export async function cancelBooking(params: {
     // Si la reserva estaba en memoria, marcarla como cancelada para sincronización inmediata
     cancelVenueBooking(params.booking_id)
 
-    // Si había un lock de Redis activo, liberarlo
+    // Liberar candados de Redis / memoria incondicionalmente para habilitar reclamos inmediatos
     if (booking?.redis_lock_key) {
-      await releaseBookingLock(booking.redis_lock_key, booking.id)
+      await forceReleaseBookingLock(booking.redis_lock_key)
+    }
+    if (booking?.court_id && booking?.booked_at) {
+      const match = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (match && match[1]) {
+        const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+        await forceReleaseBookingLock(buildLockKey(booking.court_id, rawStart))
+      }
     }
 
     // Trigger de Lista de Espera con conversión horaria exacta a Argentina
@@ -843,7 +946,39 @@ export async function cancelBooking(params: {
       }
     }
 
+    // Registrar en el historial de notificaciones y alertas
+    const customerName = booking?.customer_name?.trim() || 'Cliente'
+    void recordClubNotification({
+      tenantId: booking.tenant_id,
+      type: 'BOOKING_CANCELLED',
+      category: 'ALERTS',
+      title: '❌ Turno Cancelado',
+      message: `El turno de ${customerName} fue cancelado (${params.reason || 'Sin motivo'}).`,
+      metadata: {
+        booking_id: booking.id,
+        customer_name: customerName,
+        customer_phone: booking?.customer_phone?.trim() || undefined,
+        reason: params.reason,
+      },
+    })
+
+    if (waitlistInfo.waitlistNotified && waitlistInfo.waitlistCustomerName) {
+      void recordClubNotification({
+        tenantId: booking.tenant_id,
+        type: 'WAITLIST_NOTIFIED',
+        category: 'ALERTS',
+        title: '🔔 Alerta de Cupo Enviada a Lista de Espera',
+        message: `Se notificó a ${waitlistInfo.waitlistCustomerName} con 10 min de prioridad para tomar el turno liberado.`,
+        metadata: {
+          customer_name: waitlistInfo.waitlistCustomerName,
+          customer_phone: waitlistInfo.waitlistCustomerPhone,
+          whatsapp_url: waitlistInfo.waitlistWhatsAppUrl,
+        },
+      })
+    }
+
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/notificaciones')
     return { success: true, ...waitlistInfo }
   } catch (error) {
     console.error('[cancelBooking] Error:', error)
@@ -895,12 +1030,20 @@ export async function markBookingNoShow(bookingId: string): Promise<{ success: b
 
 // ─── ACTION: Confirmar seña / Aprobar turno transferido ─────────────────────────
 
-export async function confirmBookingDeposit(bookingId: string): Promise<{ success: boolean; error?: string; updatedNotes?: string }> {
+export async function confirmBookingDeposit(bookingId: string): Promise<{
+  success: boolean
+  error?: string
+  updatedNotes?: string
+  waUrl?: string
+  isSimulated?: boolean
+  customerPhone?: string
+  customerName?: string
+}> {
   try {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status')
+      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status, customer_name, customer_phone')
       .eq('id', bookingId)
       .single()
 
@@ -933,14 +1076,49 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{ succes
       return { success: false, error: upErr.message }
     }
 
-    // Despacho de WhatsApp Bot automático en segundo plano
-    sendAutomatedBookingConfirmation(bookingId).catch((waErr) => {
+    // Despacho de WhatsApp Bot automático (confirmación inmediata de seña y turno)
+    let waResult: {
+      success: boolean
+      isSimulated?: boolean
+      waUrl?: string
+      error?: string
+      customerName?: string
+      customerPhone?: string
+    } | undefined
+
+    try {
+      waResult = await sendAutomatedBookingConfirmation(bookingId)
+    } catch (waErr) {
       console.warn('[confirmBookingDeposit] WhatsApp bot dispatch warning:', waErr)
+    }
+
+    // Registrar en el historial de notificaciones y alertas
+    const depositArs = Math.round((Number(booking.deposit_cents) || 0) / 100)
+    void recordClubNotification({
+      tenantId: booking.tenant_id,
+      type: 'BOOKING_CONFIRMED',
+      category: 'BOOKINGS',
+      title: '✅ Turno y Seña Confirmados',
+      message: `Se verificó la seña de $${depositArs.toLocaleString('es-AR')} para ${booking.customer_name || 'el cliente'}. Turno confirmado en el calendario.`,
+      metadata: {
+        booking_id: booking.id,
+        customer_name: booking.customer_name || undefined,
+        customer_phone: booking.customer_phone || undefined,
+        amount_ars: depositArs,
+      },
     })
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
-    return { success: true, updatedNotes }
+    revalidatePath('/dashboard/notificaciones')
+    return {
+      success: true,
+      updatedNotes,
+      waUrl: waResult?.waUrl,
+      isSimulated: waResult?.isSimulated,
+      customerPhone: booking.customer_phone || undefined,
+      customerName: booking.customer_name || undefined,
+    }
   } catch (error) {
     console.error('[confirmBookingDeposit] Error:', error)
     return { success: false, error: 'Error interno al confirmar seña' }
@@ -1523,7 +1701,7 @@ export async function cancelBookingByPlayer(
     // 1. Obtener la reserva actual
     const { data: booking, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, court_id, tenant_id, customer_email, customer_phone, booked_at, status, staff_notes')
+      .select('id, court_id, tenant_id, customer_email, customer_phone, booked_at, status, staff_notes, redis_lock_key')
       .eq('id', cleanId)
       .maybeSingle()
 
@@ -1582,6 +1760,18 @@ export async function cancelBookingByPlayer(
 
     // Liberar reserva de memoria en vivo para consistencia instantánea
     cancelVenueBooking(cleanId)
+
+    // Liberar candados de Redis / memoria incondicionalmente para habilitar reclamos inmediatos
+    if (booking?.redis_lock_key) {
+      await forceReleaseBookingLock(booking.redis_lock_key)
+    }
+    if (booking?.court_id && booking?.booked_at) {
+      const match = String(booking.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (match && match[1]) {
+        const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+        await forceReleaseBookingLock(buildLockKey(booking.court_id, rawStart))
+      }
+    }
 
     // 4. Liberar waitlist con zona horaria oficial de Argentina
     let waitlistInfo: {

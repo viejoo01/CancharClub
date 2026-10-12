@@ -2502,12 +2502,12 @@ export default function CantinaPage() {
                   <Input
                     type="number"
                     required
-                    min="1"
-                    step="50"
-                    placeholder=""
+                    min="0"
+                    step="any"
+                    placeholder="0"
                     value={productForm.price || ''}
                     disabled={!isOwner}
-                    onChange={(e) => setProductForm(prev => ({ ...prev, price: Math.max(0, parseInt(e.target.value) || 0) }))}
+                    onChange={(e) => setProductForm(prev => ({ ...prev, price: Math.max(0, parseFloat(e.target.value) || 0) }))}
                     className={`bg-slate-950 border-slate-800 text-white text-xs rounded-xl h-10 font-mono ${
                       !isOwner ? 'opacity-70 cursor-not-allowed bg-slate-950/80 pr-8' : ''
                     }`}

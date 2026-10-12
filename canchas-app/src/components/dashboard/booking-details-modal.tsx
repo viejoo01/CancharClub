@@ -19,6 +19,7 @@ import {
   getPlayerReputation,
   confirmBookingDeposit 
 } from '@/actions/booking.actions'
+import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
 import { emitQuickInvoiceForBooking } from '@/actions/afip.actions'
 import { formatARS, formatTime, buildWhatsAppLink, cleanNoteForDisplay } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -107,6 +108,7 @@ export function BookingDetailsModal({
   const [loadingNoShow, setLoadingNoShow] = useState(false)
   const [loadingConfirm, setLoadingConfirm] = useState(false)
   const [loadingInvoice, setLoadingInvoice] = useState(false)
+  const [loadingWhatsApp, setLoadingWhatsApp] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const isSubmittingPayRef = useRef(false)
@@ -279,18 +281,63 @@ export function BookingDetailsModal({
     }
   }
 
+  const handleSendWhatsAppVoucher = async () => {
+    if (!booking) return
+    setLoadingWhatsApp(true)
+    try {
+      const res = await sendAutomatedBookingConfirmation(booking.id)
+      if (res.success && res.waUrl) {
+        window.open(res.waUrl, '_blank')
+        toast.success('¡Comprobante de WhatsApp generado!', {
+          description: 'Se abrió la conversación de WhatsApp con el comprobante y detalle de saldo.',
+          action: {
+            label: 'Reabrir WhatsApp',
+            onClick: () => window.open(res.waUrl, '_blank'),
+          },
+        })
+      } else if (res.success) {
+        toast.success('Comprobante enviado por WhatsApp al cliente.')
+      } else {
+        toast.error(res.error || 'No se pudo generar el comprobante')
+      }
+    } catch {
+      toast.error('Error al generar comprobante de WhatsApp')
+    } finally {
+      setLoadingWhatsApp(false)
+    }
+  }
+
   const handleConfirmDeposit = async () => {
     setLoadingConfirm(true)
     try {
       const res = await confirmBookingDeposit(booking.id)
       if (res.success) {
-        toast.success('¡Turno y seña confirmados exitosamente!', {
-          description: 'El turno quedó validado en el sistema.',
-        })
         setLocalStatus('CONFIRMED')
         setLocalVerifiedDeposit(true)
         const noteAddition = res.updatedNotes || (currentNotes ? `${currentNotes} | Seña verificada y aprobada por el club` : 'Seña verificada y aprobada por el club')
         setLocalNotes(noteAddition)
+
+        // Apertura o notificación de WhatsApp con el comprobante completo
+        if (res.waUrl) {
+          // Si es modo simulado / wa.me directo, abrir WhatsApp automáticamente
+          if (res.isSimulated) {
+            window.open(res.waUrl, '_blank')
+          }
+          toast.success('¡Turno y seña confirmados exitosamente!', {
+            description: res.isSimulated
+              ? 'Se abrió WhatsApp con el comprobante detallado para el cliente.'
+              : 'Se envió la confirmación oficial por WhatsApp al cliente.',
+            action: {
+              label: 'Abrir WhatsApp',
+              onClick: () => window.open(res.waUrl, '_blank'),
+            },
+          })
+        } else {
+          toast.success('¡Turno y seña confirmados exitosamente!', {
+            description: 'El turno quedó validado en el sistema.',
+          })
+        }
+
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('canchar_bookings')
@@ -557,6 +604,20 @@ export function BookingDetailsModal({
                     <BellRing className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Recordatorio WhatsApp</span>
                   </a>
+                )}
+                {booking.customer_phone && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingWhatsApp}
+                    onClick={handleSendWhatsAppVoucher}
+                    className="h-9 px-3 gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                    title="Enviar comprobante oficial de reserva y saldo por WhatsApp"
+                  >
+                    {loadingWhatsApp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />}
+                    <span>Comprobante WA</span>
+                  </Button>
                 )}
               </div>
             </div>

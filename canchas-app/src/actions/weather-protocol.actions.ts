@@ -6,7 +6,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { formatARS, formatTime, sportLabel } from '@/lib/utils'
+import { formatTime } from '@/lib/utils'
 import { notifyRainCancellation, buildWaMeLink, buildRainRescheduleWhatsAppMessage } from '@/lib/whatsapp'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { format, parseISO, addDays } from 'date-fns'
@@ -19,8 +19,10 @@ import {
   type ClubScheduleConfig,
 } from '@/lib/time-slots'
 import { getClubSchedule } from './club.actions'
-import { getVenueBookings, addVenueBooking } from '@/config/venues-data'
+import { getVenueBookings, addVenueBooking, cancelVenueBooking } from '@/config/venues-data'
 import type { CustomerCredit } from '@/types/database'
+import { recordClubNotification } from './notifications.actions'
+import { forceReleaseBookingLock, buildLockKey } from '@/lib/redis'
 
 export interface SuggestedReschedule {
   courtId: string
@@ -124,7 +126,7 @@ export async function executeRainCancellation(params: {
 
     const { data: bookings, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, deposit_cents, price_total_cents, booked_at, staff_notes, court_id, courts(id, name, sport, slot_duration_minutes)')
+      .select('id, customer_name, customer_phone, deposit_cents, price_total_cents, booked_at, staff_notes, court_id, redis_lock_key, courts(id, name, sport, slot_duration_minutes)')
       .eq('tenant_id', effectiveTenantId)
       .in('court_id', params.courtIds)
       .filter('booked_at', 'ov', `[${new Date(startWindow).toISOString()},${new Date(endWindow).toISOString()}]`)
@@ -277,6 +279,19 @@ export async function executeRainCancellation(params: {
           .eq('id', b.id)
       }
 
+      // Liberar en memoria y candados de Redis para permitir reservas futuras inmediatas
+      cancelVenueBooking(b.id)
+      if (b.redis_lock_key) {
+        await forceReleaseBookingLock(b.redis_lock_key)
+      }
+      if (b.court_id && b.booked_at) {
+        const match = String(b.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match && match[1]) {
+          const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+          await forceReleaseBookingLock(buildLockKey(b.court_id, rawStart))
+        }
+      }
+
       // 4. ALGORITMO: Encontrar el próximo turno disponible más cercano
       // Orden de canchas compatibles: Misma cancha primero, luego otras canchas del mismo deporte
       const sameCourt = activeCourts.find((c) => c.id === b.court_id)
@@ -409,8 +424,24 @@ export async function executeRainCancellation(params: {
       })
     }
 
+    // Registrar en el historial de notificaciones y alertas
+    void recordClubNotification({
+      tenantId: effectiveTenantId,
+      type: 'WEATHER_ALERT',
+      category: 'ALERTS',
+      title: '🌧️ Protocolo Climático Activado',
+      message: `Se cancelaron ${targetBookings.length} turnos por lluvia para el ${params.date} (${params.timeFrom} a ${params.timeTo} hs). Se generaron avisos con propuesta de reagenda y se acreditaron $${totalCreditedArs.toLocaleString('es-AR')} en saldo a favor.`,
+      metadata: {
+        affected_count: targetBookings.length,
+        credited_total_ars: totalCreditedArs,
+        booked_date: params.date,
+        reason: params.reason || 'Lluvia / Mal tiempo',
+      },
+    })
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/dashboard/notificaciones')
 
     return {
       success: true,

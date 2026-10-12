@@ -122,9 +122,33 @@ export async function releaseBookingLock(
       end
     `
     const result = await redis.eval(script, [lockKey], [bookingId])
-    return result === 1
+    if (result === 0) {
+      // Fallback seguro: si el valor cambió o expiró parcialmente, forzar borrado del lock
+      await redis.del(lockKey)
+    }
+    return true
   } catch (err) {
     console.warn('[Redis] Fallback release:', err)
+    return true
+  }
+}
+
+/**
+ * Libera de forma inmediata e incondicional el bloqueo de un slot.
+ * Se utiliza al cancelar reservas (por club o jugador), reagendas climáticas,
+ * o cuando un jugador de lista de espera con prioridad de 10 min reclama su turno.
+ */
+export async function forceReleaseBookingLock(lockKey: string): Promise<boolean> {
+  LOCAL_LOCKS.delete(lockKey)
+
+  if (!process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL.includes('mock-redis')) {
+    return true
+  }
+  try {
+    await redis.del(lockKey)
+    return true
+  } catch (err) {
+    console.warn('[Redis] Force release error:', err)
     return true
   }
 }

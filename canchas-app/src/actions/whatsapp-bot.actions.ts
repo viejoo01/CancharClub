@@ -49,9 +49,6 @@ export async function getWhatsAppBotConfig(tenantId: string): Promise<WhatsAppBo
   }
 
   try {
-    const auth = await assertTenantMember(tenantId)
-    if (!auth.authorized) return defaultConfig
-
     const supabase = await createServiceClient()
     const { data } = await supabase
       .from('audit_log')
@@ -169,16 +166,25 @@ async function logAutomatedMessage(
  */
 export async function sendAutomatedBookingConfirmation(
   bookingId: string
-): Promise<{ success: boolean; isSimulated?: boolean; waUrl?: string; error?: string }> {
+): Promise<{
+  success: boolean
+  isSimulated?: boolean
+  waUrl?: string
+  error?: string
+  customerName?: string
+  customerPhone?: string
+  messageText?: string
+}> {
   try {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, customer_name, customer_phone, booked_at, starts_at, total_amount_ars, price_total_cents, deposit_cents, total_paid, balance_due, staff_notes, courts(name, sport), tenants(name, address, bank_alias, phone_whatsapp)')
+      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, courts(name, sport), tenants(name, address, bank_alias, phone_whatsapp)')
       .eq('id', bookingId)
       .maybeSingle()
 
     if (bErr || !booking) {
+      console.error('[sendAutomatedBookingConfirmation] Error al obtener reserva:', bErr?.message || 'No encontrada')
       return { success: false, error: 'Reserva no encontrada' }
     }
 
@@ -198,7 +204,7 @@ export async function sendAutomatedBookingConfirmation(
     const clubName = tenantObj?.name || 'Club Deportivo'
     const clubAddress = tenantObj?.address ? `📍 ${tenantObj.address}\n` : ''
 
-    // Parsear fecha y hora
+    // Parsear fecha y hora desde booked_at (tstzrange e.g. ["2026-10-12 13:00:00+00","2026-10-12 14:00:00+00"))
     let dateStr = ''
     let timeStr = ''
     if (booking.booked_at) {
@@ -209,18 +215,16 @@ export async function sendAutomatedBookingConfirmation(
         timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
       }
     }
-    if (!dateStr && booking.starts_at) {
-      const d = new Date(booking.starts_at)
-      dateStr = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Argentina/Buenos_Aires' })
-      timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
+    if (dateStr) {
+      dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1)
     }
 
-    const totalArs = booking.total_amount_ars || (Number(booking.price_total_cents || 0) / 100)
-    const paidArs = booking.total_paid || (Number(booking.deposit_cents || 0) / 100)
+    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
+    const paidArs = Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
     const balanceArs = Math.max(0, totalArs - paidArs)
 
     const balanceText = balanceArs > 0
-      ? `\n💰 *Saldo a pagar al llegar:* ${formatARS(balanceArs)}`
+      ? `\n💰 *Saldo restante a pagar en cancha:* ${formatARS(balanceArs)}`
       : '\n✅ *Turno saldado al 100%*'
 
     const message = 
@@ -235,7 +239,7 @@ ${clubAddress}💵 *Total:* ${formatARS(totalArs)}
 💳 *Seña abonada:* ${formatARS(paidArs)}${balanceText}
 
 ¡Te esperamos! Te recordamos llegar 10 minutos antes.
-_Mensaje automático enviado por CancharClub._`
+_Comprobante automático emitido por CancharClub._`
 
     const sendRes = await sendWhatsAppMessage(phone, message)
 
@@ -252,6 +256,9 @@ _Mensaje automático enviado por CancharClub._`
       success: sendRes.success,
       isSimulated: sendRes.isSimulated,
       waUrl: sendRes.waUrl,
+      customerName: booking.customer_name || undefined,
+      customerPhone: phone,
+      messageText: message,
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al enviar confirmación'

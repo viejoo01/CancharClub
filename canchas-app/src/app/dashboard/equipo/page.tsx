@@ -32,12 +32,13 @@ import { useTenantId } from '@/hooks/use-tenant-id'
 import { ResetStaffPasswordModal } from '@/components/dashboard/reset-staff-password-modal'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
-// tenant isolation: useTenantId hook
+// Module-level cache for instant 0ms tab navigation
+let cachedStaff: StaffMember[] | null = null
 
 export default function EquipoPage() {
   const tenantId = useTenantId()
-  const [staff, setStaff] = useState<StaffMember[]>([])
-  const [loading, setLoading] = useState(true)
+  const [staff, setStaff] = useState<StaffMember[]>(() => cachedStaff || [])
+  const [loading, setLoading] = useState(() => !cachedStaff)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedStaffForPassword, setSelectedStaffForPassword] = useState<StaffMember | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -55,12 +56,13 @@ export default function EquipoPage() {
     try {
       const res = await getClubStaff(tenantId)
       if (res.success) {
+        cachedStaff = res.staff
         setStaff(res.staff)
-      } else if (isInitial) {
+      } else if (isInitial && !cachedStaff) {
         toast.error('Error al cargar equipo')
       }
     } catch {
-      if (isInitial) toast.error('Error inesperado')
+      if (isInitial && !cachedStaff) toast.error('Error inesperado')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -291,7 +293,7 @@ export default function EquipoPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {loading ? (
+          {loading && staff.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
               <p className="text-sm">Cargando personal del club...</p>

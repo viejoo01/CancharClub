@@ -11,9 +11,23 @@ import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
 import { assertTenantMember } from '@/lib/auth-security'
 
+const recurringSlotsCache = new Map<string, { data: RecurringSlot[]; expiresAt: number }>()
+
+export async function invalidateRecurringSlotsCache(tenantId?: string | null) {
+  if (tenantId) recurringSlotsCache.delete(tenantId)
+  else recurringSlotsCache.clear()
+}
+
 /** Obtener todos los turnos fijos del club */
 export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot[]> {
   try {
+    if (!tenantId) return []
+
+    const cached = recurringSlotsCache.get(tenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
       return []
@@ -27,7 +41,9 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
       .order('day_of_week', { ascending: true })
 
     if (!error && data && data.length > 0) {
-      return data as unknown as RecurringSlot[]
+      const res = data as unknown as RecurringSlot[]
+      recurringSlotsCache.set(tenantId, { data: res, expiresAt: Date.now() + 60000 })
+      return res
     }
 
     // Si la tabla no existe o está vacía, consultar audit_log para este tenant_id
@@ -40,9 +56,11 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
       .order('created_at', { ascending: true })
 
     if (auditData && auditData.length > 0) {
-      return auditData
+      const res = auditData
         .map(r => r.new_data as RecurringSlot)
         .filter(s => s && s.status !== 'CANCELLED')
+      recurringSlotsCache.set(tenantId, { data: res, expiresAt: Date.now() + 60000 })
+      return res
     }
 
     return []
@@ -128,6 +146,7 @@ export async function createRecurringSlot(payload: {
     const now = new Date()
     await generateMonthlyBookingsForSlot(data.id, now.getFullYear(), now.getMonth() + 1)
 
+    await invalidateRecurringSlotsCache(payload.tenant_id)
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard')
     return { success: true, slot: data as RecurringSlot }
@@ -182,6 +201,7 @@ export async function updateRecurringSlotStatus(
       }
     }
 
+    await invalidateRecurringSlotsCache(targetTenantId)
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard')
     return { success: true }
@@ -267,6 +287,7 @@ export async function updateRecurringSlot(
       }
     }
 
+    await invalidateRecurringSlotsCache(targetTenantId)
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/canchas')
@@ -372,6 +393,7 @@ export async function deleteRecurringSlot(
       .eq('action', 'RECURRING_SLOT')
       .eq('record_id', slotId)
 
+    await invalidateRecurringSlotsCache(targetTenantId)
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/canchas')

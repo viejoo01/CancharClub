@@ -2438,6 +2438,8 @@ export interface ClubAnalyticsData {
 
 const HEATMAP_HOUR_BUCKETS = [8, 10, 12, 14, 16, 18, 19.5, 21, 22.5]
 
+const analyticsCache = new Map<string, { data: ClubAnalyticsData; expiresAt: number }>()
+
 export async function getClubAnalytics(tenantId: string | null | undefined): Promise<ClubAnalyticsData> {
   const defaultEmpty: ClubAnalyticsData = {
     totalRevenue: 0,
@@ -2457,30 +2459,42 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return defaultEmpty
 
+    const cached = analyticsCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const supabase = await createServiceClient()
 
-    // 1. Obtener canchas activas
-    const { data: dbCourts } = await supabase
-      .from('courts')
-      .select('id, name, sport')
-      .eq('tenant_id', effectiveTenantId)
-      .eq('is_active', true)
-      .order('display_order', { ascending: true })
-
-    const courtsList = dbCourts || []
-
-    // 2. Traer reservas de los últimos 60 días (para comparar con mes anterior)
     const now = new Date()
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString()
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000).toISOString()
 
-    const { data: rawBookings } = await supabase
-      .from('bookings')
-      .select('id, court_id, customer_name, customer_phone, customer_email, booked_at, status, price_total_cents, deposit_cents, created_at')
-      .eq('tenant_id', effectiveTenantId)
-      .gte('created_at', sixtyDaysAgo)
+    // Ejecutar consultas en paralelo para máxima velocidad
+    const [courtsResult, bookingsResult, cantinaResult] = await Promise.all([
+      supabase
+        .from('courts')
+        .select('id, name, sport')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true }),
+      supabase
+        .from('bookings')
+        .select('id, court_id, customer_name, customer_phone, customer_email, booked_at, status, price_total_cents, deposit_cents, created_at')
+        .eq('tenant_id', effectiveTenantId)
+        .gte('created_at', sixtyDaysAgo)
+        .limit(1000),
+      supabase
+        .from('court_orders')
+        .select('total_ars')
+        .eq('tenant_id', effectiveTenantId)
+        .gte('created_at', thirtyDaysAgo)
+        .not('status', 'eq', 'CANCELLED'),
+    ])
 
-    const allBookings = rawBookings || []
+    const courtsList = courtsResult.data || []
+    const allBookings = bookingsResult.data || []
+    const cantinaRevenue = (cantinaResult.data || []).reduce((sum, o: { total_ars?: number | null }) => sum + (Number(o.total_ars) || 0), 0)
 
     // 3. Separar por períodos (actuales 30 días vs anteriores 30 días)
     const currentPeriodBookings = allBookings.filter(b => {
@@ -2524,22 +2538,6 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
         return st.includes('cancel') || st.includes('no_show')
       })
       .reduce((sum, b) => sum + ((b.deposit_cents || 0) / 100), 0)
-
-    // 5. Estadísticas de Cantina
-    let cantinaRevenue = 0
-    try {
-      const { data: cantinaOrders } = await supabase
-        .from('court_orders')
-        .select('total_ars')
-        .eq('tenant_id', effectiveTenantId)
-        .gte('created_at', thirtyDaysAgo)
-        .not('status', 'eq', 'CANCELLED')
-      if (cantinaOrders) {
-        cantinaRevenue = cantinaOrders.reduce((sum, o) => sum + (Number(o.total_ars) || 0), 0)
-      }
-    } catch {
-      // Cantina stats fallback a 0 si tabla no existe
-    }
 
     const totalRevenue = courtsRevenue + cantinaRevenue
 
@@ -2644,7 +2642,7 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
         totalSpent: p.spent
       }))
 
-    return {
+    const result: ClubAnalyticsData = {
       totalRevenue,
       courtsRevenue,
       cantinaRevenue,
@@ -2657,6 +2655,9 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
       occupancyHeatmap,
       topPlayers
     }
+
+    analyticsCache.set(effectiveTenantId, { data: result, expiresAt: Date.now() + 60000 })
+    return result
   } catch (err) {
     console.error('[getClubAnalytics] Error:', err)
     return defaultEmpty

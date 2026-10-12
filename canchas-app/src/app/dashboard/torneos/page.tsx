@@ -143,12 +143,16 @@ function computeGroupStandings(matches: TournamentMatch[], allTeams: TournamentT
   })
 }
 
+// Module-level cache for instant 0ms tab navigation
+let cachedTournaments: Tournament[] | null = null
+let cachedTournamentDetails: TournamentWithDetails | null = null
+
 export default function TorneosDashboardPage() {
   const tenantId = useTenantId()
-  const [tournaments, setTournaments] = useState<Tournament[]>([])
-  const [selectedTournament, setSelectedTournament] = useState<TournamentWithDetails | null>(null)
+  const [tournaments, setTournaments] = useState<Tournament[]>(() => cachedTournaments || [])
+  const [selectedTournament, setSelectedTournament] = useState<TournamentWithDetails | null>(() => cachedTournamentDetails)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !cachedTournaments)
 
   // Modales
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -181,6 +185,7 @@ export default function TorneosDashboardPage() {
   const loadTournamentDetails = useCallback(async (id: string, showToastOnError = false) => {
     try {
       const details = await getTournamentById(id)
+      cachedTournamentDetails = details
       setSelectedTournament(details)
       if (details?.categories && details.categories.length > 0) {
         setSelectedCategoryId((prev) => {
@@ -189,7 +194,7 @@ export default function TorneosDashboardPage() {
         })
       }
     } catch {
-      if (showToastOnError) toast.error('Error al cargar detalle del torneo')
+      if (showToastOnError && !cachedTournamentDetails) toast.error('Error al cargar detalle del torneo')
     }
   }, [])
 
@@ -197,6 +202,7 @@ export default function TorneosDashboardPage() {
     if (!tenantId) return
     try {
       const list = await getTournaments(tenantId)
+      cachedTournaments = list
       setTournaments(list)
       if (list.length > 0) {
         setSelectedTournament((prev) => {
@@ -208,7 +214,7 @@ export default function TorneosDashboardPage() {
         setSelectedTournament(null)
       }
     } catch {
-      if (isInitial) toast.error('Error al cargar torneos')
+      if (isInitial && !cachedTournaments) toast.error('Error al cargar torneos')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -557,7 +563,7 @@ export default function TorneosDashboardPage() {
           </div>
         </div>
 
-        {loading ? (
+        {loading && tournaments.length === 0 ? (
           <div className="p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
             <span className="text-sm font-medium">Cargando torneos...</span>

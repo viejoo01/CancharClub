@@ -22,10 +22,28 @@ export interface IssuedInvoice {
 // In-memory fallback si la tabla no existe en Supabase todavía
 let mockInvoices: IssuedInvoice[] = []
 
+const afipConfigCache = new Map<string, { data: AfipConfig; expiresAt: number }>()
+const invoicesCache = new Map<string, { data: IssuedInvoice[]; expiresAt: number }>()
+
+export async function invalidateAfipCache(tenantId?: string | null) {
+  if (tenantId) {
+    afipConfigCache.delete(tenantId)
+    invoicesCache.delete(tenantId)
+  } else {
+    afipConfigCache.clear()
+    invoicesCache.clear()
+  }
+}
+
 export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
   const targetTenantId = await resolveEffectiveTenantId(tenantId)
 
   if (targetTenantId) {
+    const cached = afipConfigCache.get(targetTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     try {
       const auth = await assertTenantMember(targetTenantId)
       if (auth.authorized) {
@@ -50,7 +68,7 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
           const isBogusCuit = rawCuit.replace(/\D/g, '') === '20381456789'
           const cleanCuit = isBogusCuit ? '' : rawCuit
 
-          return {
+          const cfg: AfipConfig = {
             cuit: cleanCuit,
             puntoVenta: typeof afipMeta.puntoVenta === 'number' ? afipMeta.puntoVenta : 1,
             razonSocial: (afipMeta.razonSocial as string) || data.name || '',
@@ -60,6 +78,8 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
             ingresosBrutos: (afipMeta.ingresosBrutos as string) || '',
             environment: 'TESTING'
           }
+          afipConfigCache.set(targetTenantId, { data: cfg, expiresAt: Date.now() + 60000 })
+          return cfg
         }
       }
     } catch {
@@ -135,6 +155,7 @@ export async function saveAfipConfig(
       return { success: false, error: error.message }
     }
 
+    await invalidateAfipCache(targetTenantId)
     revalidatePath('/dashboard/facturacion')
     return { success: true }
   } catch (err: unknown) {
@@ -146,6 +167,11 @@ export async function getIssuedInvoices(tenantId?: string): Promise<IssuedInvoic
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return mockInvoices
+
+    const cached = invoicesCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
 
     const supabase = await createServiceClient()
     const { data } = await supabase
@@ -159,9 +185,11 @@ export async function getIssuedInvoices(tenantId?: string): Promise<IssuedInvoic
     if (data && data.length > 0) {
       const persisted = data.map(d => d.new_data as IssuedInvoice).filter(Boolean)
       const merged = [...persisted, ...mockInvoices.filter(m => !persisted.some(p => p.id === m.id))]
+      invoicesCache.set(effectiveTenantId, { data: merged, expiresAt: Date.now() + 60000 })
       return merged
     }
 
+    invoicesCache.set(effectiveTenantId, { data: mockInvoices, expiresAt: Date.now() + 60000 })
     return mockInvoices
   } catch {
     return mockInvoices
@@ -221,6 +249,7 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
         new_data: newInv,
       })
 
+      await invalidateAfipCache(effectiveTenantId)
       revalidatePath('/dashboard/facturacion')
       revalidatePath('/dashboard/caja')
 

@@ -50,6 +50,17 @@ export interface PlayersReportResult {
   error?: string
 }
 
+const playersReputationCache = new Map<string, {
+  allPlayers: PlayerSummary[]
+  stats: PlayersReportResult['stats']
+  expiresAt: number
+}>()
+
+export async function invalidatePlayersCache(tenantId?: string | null) {
+  if (tenantId) playersReputationCache.delete(tenantId)
+  else playersReputationCache.clear()
+}
+
 /**
  * Obtiene la lista agregada de todos los jugadores del club con sus métricas
  * calculadas a partir de la tabla bookings real.
@@ -59,6 +70,30 @@ export async function getPlayersReputation(
   searchQuery?: string
 ): Promise<PlayersReportResult> {
   try {
+    if (!tenantId) {
+      return {
+        success: true,
+        players: [],
+        stats: { totalPlayers: 0, exemplaryCount: 0, highRiskCount: 0, avgAttendanceRate: 0, totalRevenueTracked: 0 },
+      }
+    }
+
+    const cached = playersReputationCache.get(tenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      let filtered = cached.allPlayers
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const q = searchQuery.toLowerCase().trim()
+        filtered = cached.allPlayers.filter(
+          p => p.name.toLowerCase().includes(q) || p.phone.includes(q)
+        )
+      }
+      return {
+        success: true,
+        players: filtered,
+        stats: cached.stats,
+      }
+    }
+
     const authCheck = await assertTenantMember(tenantId)
     if (!authCheck.authorized) {
       return {
@@ -71,20 +106,32 @@ export async function getPlayersReputation(
 
     const supabase = await createServiceClient()
 
-    // 1. Obtener todas las reservas del tenant
-    const { data: bookings, error } = await supabase
-      .from('bookings')
-      .select('id, customer_name, customer_phone, status, price_total_cents, booked_at, created_at')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
+    // 1. Obtener reservas y datos de jugadores en paralelo
+    const [bookingsRes, playersRes] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('id, customer_name, customer_phone, status, price_total_cents, booked_at, created_at')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(2000),
+      supabase
+        .from('players')
+        .select('phone, is_blocked, internal_notes')
+        .eq('tenant_id', tenantId)
+        .limit(1000),
+    ])
 
-    if (error) {
-      console.error('[getPlayersReputation] Error:', error.message)
+    const bookings = bookingsRes.data
+    const dbPlayers = playersRes.data
+    const dbPlayersErr = playersRes.error
+
+    if (bookingsRes.error) {
+      console.error('[getPlayersReputation] Error:', bookingsRes.error.message)
       return {
         success: false,
         players: [],
         stats: { totalPlayers: 0, exemplaryCount: 0, highRiskCount: 0, avgAttendanceRate: 0, totalRevenueTracked: 0 },
-        error: error.message,
+        error: bookingsRes.error.message,
       }
     }
 
@@ -153,11 +200,6 @@ export async function getPlayersReputation(
 
     // 2.5 Cargar datos de bloqueos y notas de jugadores para este tenant
     const statusMap = new Map<string, { is_blocked: boolean; block_reason?: string | null; notes?: string | null }>()
-
-    const { data: dbPlayers, error: dbPlayersErr } = await supabase
-      .from('players')
-      .select('phone, is_blocked, internal_notes')
-      .eq('tenant_id', tenantId)
 
     if (!dbPlayersErr && dbPlayers) {
       for (const p of dbPlayers) {
@@ -264,16 +306,24 @@ export async function getPlayersReputation(
     const totalPlayers = players.length
     const avgAttendanceRate = totalPlayers > 0 ? Math.round(totalScoreSum / totalPlayers) : 100
 
+    const computedStats = {
+      totalPlayers,
+      exemplaryCount,
+      highRiskCount,
+      avgAttendanceRate,
+      totalRevenueTracked: totalRevenue,
+    }
+
+    playersReputationCache.set(tenantId, {
+      allPlayers: players,
+      stats: computedStats,
+      expiresAt: Date.now() + 60000,
+    })
+
     return {
       success: true,
       players: filteredPlayers,
-      stats: {
-        totalPlayers,
-        exemplaryCount,
-        highRiskCount,
-        avgAttendanceRate,
-        totalRevenueTracked: totalRevenue,
-      },
+      stats: computedStats,
     }
   } catch (err) {
     console.error('[getPlayersReputation] Exception:', err)
@@ -450,6 +500,7 @@ export async function toggleBlockPlayer(
       },
     })
 
+    await invalidatePlayersCache(tenantId)
     revalidatePath('/dashboard/jugadores')
     return { success: true, is_blocked: newBlockedState }
   } catch (err) {
@@ -500,6 +551,7 @@ export async function savePlayerNotes(
       },
     })
 
+    await invalidatePlayersCache(tenantId)
     revalidatePath('/dashboard/jugadores')
     return { success: true }
   } catch (err) {

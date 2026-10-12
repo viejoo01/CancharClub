@@ -20,6 +20,13 @@ export interface StaffMember {
   last_sign_in_at?: string | null
 }
 
+const staffCache = new Map<string, { data: StaffMember[]; expiresAt: number }>()
+
+export async function invalidateStaffCache(tenantId?: string | null) {
+  if (tenantId) staffCache.delete(tenantId)
+  else staffCache.clear()
+}
+
 /**
  * Obtiene la lista de colaboradores reales del club desde PostgreSQL y Supabase Auth.
  * Si el club no tiene colaboradores adicionales o solo tiene al dueño, devuelve únicamente
@@ -31,6 +38,11 @@ export async function getClubStaff(
   try {
     if (!tenantId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
       return { success: true, staff: [] }
+    }
+
+    const cached = staffCache.get(tenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return { success: true, staff: cached.data }
     }
 
     const authCheck = await assertTenantMember(tenantId)
@@ -85,6 +97,7 @@ export async function getClubStaff(
       })
     )
 
+    staffCache.set(tenantId, { data: staff, expiresAt: Date.now() + 60000 })
     return { success: true, staff }
   } catch (err) {
     console.error('[getClubStaff] Exception:', err)
@@ -192,6 +205,7 @@ export async function inviteStaffMember(params: {
       return { success: false, error: profileErr?.message || 'Error al guardar el colaborador en la base de datos' }
     }
 
+    await invalidateStaffCache(params.tenantId)
     revalidatePath('/dashboard/equipo')
     revalidatePath('/superadmin')
     return {
@@ -242,6 +256,7 @@ export async function updateStaffRole(
       return { success: false, error: error.message }
     }
 
+    await invalidateStaffCache(tenantId)
     revalidatePath('/dashboard/equipo')
     revalidatePath('/superadmin')
     return { success: true }
@@ -312,6 +327,7 @@ export async function updateStaffPassword(params: {
       return { success: false, error: updateErr.message }
     }
 
+    await invalidateStaffCache(params.tenantId)
     revalidatePath('/dashboard/equipo')
     revalidatePath('/superadmin')
     return { success: true }
@@ -380,6 +396,7 @@ export async function removeStaffMember(
       await supabase.auth.admin.deleteUser(profileId)
     } catch {}
 
+    await invalidateStaffCache(tenantId)
     revalidatePath('/dashboard/equipo')
     revalidatePath('/superadmin')
     return { success: true }

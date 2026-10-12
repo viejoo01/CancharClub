@@ -22,9 +22,27 @@ export interface TournamentWithDetails extends Tournament {
   })[]
 }
 
+const tournamentsCache = new Map<string, { data: Tournament[]; expiresAt: number }>()
+const tournamentDetailsCache = new Map<string, { data: TournamentWithDetails; expiresAt: number }>()
+
+export async function invalidateTournamentCache(tenantId?: string | null, tournamentId?: string | null) {
+  if (tenantId) tournamentsCache.delete(tenantId)
+  else tournamentsCache.clear()
+
+  if (tournamentId) tournamentDetailsCache.delete(tournamentId)
+  else tournamentDetailsCache.clear()
+}
+
 /** Obtener torneos de un tenant */
 export async function getTournaments(tenantId: string): Promise<Tournament[]> {
   try {
+    if (!tenantId) return []
+
+    const cached = tournamentsCache.get(tenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('tournaments')
@@ -36,7 +54,9 @@ export async function getTournaments(tenantId: string): Promise<Tournament[]> {
       console.warn('[getTournaments] DB warning:', error.message)
       return []
     }
-    return (data as Tournament[]) || []
+    const result = (data as Tournament[]) || []
+    tournamentsCache.set(tenantId, { data: result, expiresAt: Date.now() + 60000 })
+    return result
   } catch {
     return []
   }
@@ -45,6 +65,13 @@ export async function getTournaments(tenantId: string): Promise<Tournament[]> {
 /** Obtener un torneo por ID con categorías, equipos y partidos */
 export async function getTournamentById(tournamentId: string): Promise<TournamentWithDetails | null> {
   try {
+    if (!tournamentId) return null
+
+    const cached = tournamentDetailsCache.get(tournamentId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const supabase = await createServiceClient()
     
     // 1. Torneo
@@ -85,10 +112,12 @@ export async function getTournamentById(tournamentId: string): Promise<Tournamen
       })
     )
 
-    return {
+    const result: TournamentWithDetails = {
       ...(tournament as Tournament),
       categories: fullCategories,
     }
+    tournamentDetailsCache.set(tournamentId, { data: result, expiresAt: Date.now() + 60000 })
+    return result
   } catch (err) {
     console.error('[getTournamentById] Error:', err)
     return null
@@ -141,6 +170,7 @@ export async function createTournament(payload: {
       await supabase.from('tournament_categories').insert(catRows)
     }
 
+    await invalidateTournamentCache(payload.tenant_id)
     revalidatePath('/dashboard/torneos')
     return { success: true, tournament_id: tournament.id }
   } catch (err) {

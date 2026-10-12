@@ -32,12 +32,29 @@ export interface CustomerAccount {
   updated_at: string
 }
 
+// Cache en memoria para apertura instantánea (TTL 60s)
+const customerAccountsCache = new Map<string, { data: CustomerAccount[]; timestamp: number }>()
+const CUENTA_CORRIENTE_CACHE_TTL_MS = 60000
+
+export async function invalidateCustomerAccountsCache(tenantId?: string) {
+  if (tenantId) {
+    customerAccountsCache.delete(tenantId)
+  } else {
+    customerAccountsCache.clear()
+  }
+}
+
 // ─── Listar Cuentas Corrientes del Club ──────────────────────────────────────
 
 export async function getCustomerAccounts(tenantId?: string): Promise<CustomerAccount[]> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    const cached = customerAccountsCache.get(effectiveTenantId)
+    if (cached && Date.now() - cached.timestamp < CUENTA_CORRIENTE_CACHE_TTL_MS) {
+      return cached.data
+    }
 
     const auth = await assertTenantMember(effectiveTenantId)
     if (!auth.authorized) return []
@@ -52,7 +69,7 @@ export async function getCustomerAccounts(tenantId?: string): Promise<CustomerAc
       .order('balance', { ascending: false })
 
     if (!error && data && data.length > 0) {
-      return data.map(item => ({
+      const result = data.map(item => ({
         id: item.id,
         tenant_id: item.tenant_id,
         customer_name: item.customer_name,
@@ -64,6 +81,8 @@ export async function getCustomerAccounts(tenantId?: string): Promise<CustomerAc
         created_at: item.created_at,
         updated_at: item.updated_at,
       }))
+      customerAccountsCache.set(effectiveTenantId, { data: result, timestamp: Date.now() })
+      return result
     }
 
     // 2. Fallback resiliente a audit_log
@@ -78,10 +97,13 @@ export async function getCustomerAccounts(tenantId?: string): Promise<CustomerAc
     if (auditData && auditData.length > 0 && auditData[0].new_data) {
       const parsed = auditData[0].new_data as { accounts?: CustomerAccount[] }
       if (Array.isArray(parsed.accounts)) {
-        return parsed.accounts.sort((a, b) => b.balance - a.balance)
+        const result = parsed.accounts.sort((a, b) => b.balance - a.balance)
+        customerAccountsCache.set(effectiveTenantId, { data: result, timestamp: Date.now() })
+        return result
       }
     }
 
+    customerAccountsCache.set(effectiveTenantId, { data: [], timestamp: Date.now() })
     return []
   } catch (err) {
     console.warn('[getCustomerAccounts] Error:', err)
@@ -95,6 +117,7 @@ async function persistCustomerAccounts(
   tenantId: string, 
   accounts: CustomerAccount[]
 ): Promise<void> {
+  customerAccountsCache.set(tenantId, { data: accounts, timestamp: Date.now() })
   const supabase = await createServiceClient()
   try {
     for (const acc of accounts) {

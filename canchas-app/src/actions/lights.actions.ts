@@ -194,11 +194,25 @@ export async function toggleCourtLight(
   }
 }
 
+const lightConfigsCache = new Map<string, { data: Record<string, Partial<CourtLightConfigData>>; expiresAt: number }>()
+
+export async function invalidateLightConfigsCache(tenantId?: string | null) {
+  if (tenantId) lightConfigsCache.delete(tenantId)
+  else lightConfigsCache.clear()
+}
+
 /**
  * Obtener configuración de iluminación de las canchas del club.
  */
 export async function getCourtLightConfigs(tenantId: string): Promise<Record<string, Partial<CourtLightConfigData>>> {
   try {
+    if (!tenantId) return {}
+
+    const cached = lightConfigsCache.get(tenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
+
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) return {}
 
@@ -211,10 +225,12 @@ export async function getCourtLightConfigs(tenantId: string): Promise<Record<str
       .order('created_at', { ascending: false })
       .limit(1)
 
+    let configs: Record<string, Partial<CourtLightConfigData>> = {}
     if (data && data.length > 0 && data[0].new_data) {
-      return (data[0].new_data as { configs: Record<string, Partial<CourtLightConfigData>> }).configs || {}
+      configs = (data[0].new_data as { configs: Record<string, Partial<CourtLightConfigData>> }).configs || {}
     }
-    return {}
+    lightConfigsCache.set(tenantId, { data: configs, expiresAt: Date.now() + 60000 })
+    return configs
   } catch {
     return {}
   }
@@ -244,6 +260,7 @@ export async function saveCourtLightConfig(
       new_data: { configs: current, updated_at: new Date().toISOString() },
     })
 
+    await invalidateLightConfigsCache(tenantId)
     revalidatePath('/dashboard/luces')
     return { success: true }
   } catch (err: unknown) {

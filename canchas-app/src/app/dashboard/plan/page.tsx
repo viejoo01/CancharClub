@@ -55,12 +55,15 @@ import { toast } from 'sonner'
 import { SAAS_PLANS_LIST, getPlanByCourtsCount } from '@/config/saas-plans'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 
+// Module-level cache container for instant 0ms tab navigation
+const planCacheRef: { current: ClubPlanDetails | null } = { current: null }
+
 export default function ClubPlanPage() {
   const tenantId = useTenantId()
   const { role, isOwner } = useUserRole()
   const router = useRouter()
   const isStaffForbidden = role === 'TENANT_STAFF' || (!isOwner && role !== 'SUPERADMIN' && role !== '')
-  const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
+  const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(() => planCacheRef.current)
   const [hasAutoDebit, setHasAutoDebit] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -160,6 +163,12 @@ export default function ClubPlanPage() {
       document.removeEventListener('visibilitychange', handleSync)
     }
   }, [tenantId, isStaffForbidden])
+
+  useEffect(() => {
+    if (planDetails) {
+      planCacheRef.current = planDetails
+    }
+  }, [planDetails])
 
   // Limpiar cualquier residuo de clave global de términos para no contaminar el club
   useEffect(() => {

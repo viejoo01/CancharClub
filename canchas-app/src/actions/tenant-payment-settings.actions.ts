@@ -28,6 +28,13 @@ export interface TenantPaymentSettings {
   mpPublicKey?: string | null
 }
 
+const paymentSettingsCache = new Map<string, { data: TenantPaymentSettings; expiresAt: number }>()
+
+export async function invalidatePaymentSettingsCache(tenantId?: string | null) {
+  if (tenantId) paymentSettingsCache.delete(tenantId)
+  else paymentSettingsCache.clear()
+}
+
 /**
  * Obtiene la configuración de cobro y datos bancarios del club.
  * Si tenantId no se suministra, se auto-resuelve desde el usuario, cookies o BD.
@@ -36,6 +43,11 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return null
+
+    const cached = paymentSettingsCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
 
     const authCheck = await assertTenantMember(effectiveTenantId)
     if (!authCheck.authorized) return null
@@ -60,7 +72,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
 
     const cleanWhatsapp = tenant.phone_whatsapp || ''
 
-    return {
+    const result: TenantPaymentSettings = {
       tenantId: tenant.id,
       clubName: tenant.name || 'Mi Club',
       bankName: tenant.bank_name || '',
@@ -74,6 +86,9 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       mpCollectorId: tenant.mp_collector_id,
       mpPublicKey: tenant.mp_public_key,
     }
+
+    paymentSettingsCache.set(effectiveTenantId, { data: result, expiresAt: Date.now() + 60000 })
+    return result
   } catch (err) {
     console.error('[getTenantPaymentSettings] Error:', err)
     return null
@@ -167,6 +182,7 @@ export async function saveTenantBankSettings(
       return { success: false, error: 'No se encontró la fila del club en la base de datos' }
     }
 
+    invalidatePaymentSettingsCache(effectiveTenantId)
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
     revalidatePath('/club/[slug]', 'page')

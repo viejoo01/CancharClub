@@ -10,6 +10,21 @@ import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
 import { type CantinaProduct, type CantinaSupplier, DEFAULT_CANTINA_SUPPLIERS } from '@/config/cantina-data'
 
+// Cache en memoria en el servidor (TTL 60s)
+const cantinaProductsCache = new Map<string, { data: CantinaProduct[]; timestamp: number }>()
+const cantinaSuppliersCache = new Map<string, { data: CantinaSupplier[]; timestamp: number }>()
+const CANTINA_CACHE_TTL_MS = 60000
+
+export async function invalidateCantinaCache(tenantId?: string) {
+  if (tenantId) {
+    cantinaProductsCache.delete(tenantId)
+    cantinaSuppliersCache.delete(tenantId)
+  } else {
+    cantinaProductsCache.clear()
+    cantinaSuppliersCache.clear()
+  }
+}
+
 export type { CantinaProduct, CantinaSupplier }
 
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'DELIVERED' | 'CANCELLED'
@@ -469,6 +484,11 @@ export async function getCantinaProducts(tenantId: string): Promise<CantinaProdu
     }
 
     const cleanTenantId = tenantId.trim()
+    const cached = cantinaProductsCache.get(cleanTenantId)
+    if (cached && Date.now() - cached.timestamp < CANTINA_CACHE_TTL_MS) {
+      return cached.data
+    }
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('audit_log')
@@ -484,13 +504,15 @@ export async function getCantinaProducts(tenantId: string): Promise<CantinaProdu
     }
 
     const catalog = data[0].new_data as { products: CantinaProduct[] }
+    let productsList: CantinaProduct[] = []
     if (Array.isArray(catalog.products)) {
-      return catalog.products.filter(
+      productsList = catalog.products.filter(
         p => !DEMO_PRODUCT_IDS.has(p.id) && !DEMO_PRODUCT_NAMES.has(p.name?.toLowerCase().trim())
       )
     }
 
-    return []
+    cantinaProductsCache.set(cleanTenantId, { data: productsList, timestamp: Date.now() })
+    return productsList
   } catch (err) {
     console.error('[getCantinaProducts] Error:', err)
     return []
@@ -502,6 +524,7 @@ export async function saveCantinaProducts(
   products: CantinaProduct[]
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
+    cantinaProductsCache.delete(tenantId.trim())
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
       return { success: false, products, error: auth.error || 'Sin permisos sobre este club' }
@@ -540,6 +563,7 @@ export async function saveCantinaProducts(
       if (insertRes.error) throw insertRes.error
     }
 
+    cantinaProductsCache.set(tenantId.trim(), { data: products, timestamp: Date.now() })
     revalidatePath('/dashboard/cantina')
     return { success: true, products }
   } catch (err: unknown) {
@@ -635,11 +659,17 @@ export async function getCantinaSuppliers(tenantId: string): Promise<CantinaSupp
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) return DEFAULT_CANTINA_SUPPLIERS
 
+    const cleanTenantId = tenantId.trim()
+    const cached = cantinaSuppliersCache.get(cleanTenantId)
+    if (cached && Date.now() - cached.timestamp < CANTINA_CACHE_TTL_MS) {
+      return cached.data
+    }
+
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('audit_log')
       .select('new_data')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', cleanTenantId)
       .eq('action', 'CANTINA_SUPPLIERS')
       .eq('table_name', 'cantina_suppliers')
       .order('created_at', { ascending: false })
@@ -650,11 +680,13 @@ export async function getCantinaSuppliers(tenantId: string): Promise<CantinaSupp
     }
 
     const payload = data[0].new_data as { suppliers: CantinaSupplier[] }
+    let suppliersList = DEFAULT_CANTINA_SUPPLIERS
     if (Array.isArray(payload.suppliers) && payload.suppliers.length > 0) {
-      return payload.suppliers
+      suppliersList = payload.suppliers
     }
 
-    return DEFAULT_CANTINA_SUPPLIERS
+    cantinaSuppliersCache.set(cleanTenantId, { data: suppliersList, timestamp: Date.now() })
+    return suppliersList
   } catch (err) {
     console.error('[getCantinaSuppliers] Error:', err)
     return DEFAULT_CANTINA_SUPPLIERS
@@ -666,6 +698,7 @@ export async function saveCantinaSuppliers(
   suppliers: CantinaSupplier[]
 ): Promise<{ success: boolean; suppliers: CantinaSupplier[]; error?: string }> {
   try {
+    cantinaSuppliersCache.delete(tenantId.trim())
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
       return { success: false, suppliers: [], error: auth.error || 'Sin permisos sobre este club' }
@@ -702,6 +735,7 @@ export async function saveCantinaSuppliers(
       if (insertRes.error) throw insertRes.error
     }
 
+    cantinaSuppliersCache.set(tenantId.trim(), { data: suppliers, timestamp: Date.now() })
     revalidatePath('/dashboard/cantina')
     return { success: true, suppliers }
   } catch (err: unknown) {

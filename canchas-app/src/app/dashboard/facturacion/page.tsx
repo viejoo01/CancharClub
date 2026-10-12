@@ -43,10 +43,14 @@ import type { AfipConfig, TipoComprobante } from '@/lib/afip'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
+// Module-level cache for instant 0ms tab navigation
+let cachedInvoices: IssuedInvoice[] | null = null
+let cachedAfipConfig: AfipConfig | null = null
+
 export default function FacturacionPage() {
   const tenantId = useTenantId()
-  const [invoices, setInvoices] = useState<IssuedInvoice[]>([])
-  const [config, setConfig] = useState<AfipConfig>({
+  const [invoices, setInvoices] = useState<IssuedInvoice[]>(() => cachedInvoices || [])
+  const [config, setConfig] = useState<AfipConfig>(() => cachedAfipConfig || {
     cuit: '',
     puntoVenta: 1,
     razonSocial: '',
@@ -56,7 +60,7 @@ export default function FacturacionPage() {
     ingresosBrutos: '',
     environment: 'TESTING'
   })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !cachedInvoices)
 
   // Modales
   const [isEmitOpen, setIsEmitOpen] = useState(false)
@@ -80,6 +84,8 @@ export default function FacturacionPage() {
     ])
       .then(([invs, cfg]) => {
         if (isMounted) {
+          cachedInvoices = invs
+          if (cfg) cachedAfipConfig = cfg
           setInvoices(invs)
           if (cfg) setConfig(cfg)
           setLoading(false)
@@ -348,7 +354,7 @@ export default function FacturacionPage() {
         </CardHeader>
 
         <CardContent className="p-0">
-          {loading ? (
+          {loading && invoices.length === 0 ? (
             <div className="p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
               <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
               <span className="text-xs">Cargando libro de IVA / comprobantes...</span>

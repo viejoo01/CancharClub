@@ -25,10 +25,13 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const HOURS = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '19:30', '21:00', '22:30']
 const COURT_COLORS = ['bg-emerald-500', 'bg-teal-500', 'bg-sky-500', 'bg-indigo-500', 'bg-amber-500', 'bg-purple-500']
 
+// Module-level cache for instant 0ms tab navigation
+let cachedAnalytics: ClubAnalyticsData | null = null
+
 export default function MetricasPage() {
   const tenantId = useTenantId()
-  const [analytics, setAnalytics] = useState<ClubAnalyticsData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [analytics, setAnalytics] = useState<ClubAnalyticsData | null>(() => cachedAnalytics)
+  const [loading, setLoading] = useState(() => !cachedAnalytics)
 
   const [selectedCell, setSelectedCell] = useState<{ day: string; hour: string; pct: number } | null>(null)
 
@@ -39,6 +42,7 @@ export default function MetricasPage() {
     getClubAnalytics(tenantId)
       .then(data => {
         if (isMounted) {
+          cachedAnalytics = data
           setAnalytics(data)
           setLoading(false)
         }
@@ -90,7 +94,7 @@ export default function MetricasPage() {
   const courtsSharePct = totalRevenue > 0 ? Math.round((courtsRevenue / totalRevenue) * 100) : 100
   const cantinaSharePct = totalRevenue > 0 ? Math.round((cantinaRevenue / totalRevenue) * 100) : 0
 
-  if (loading) {
+  if (loading && !analytics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 text-center">
         <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />

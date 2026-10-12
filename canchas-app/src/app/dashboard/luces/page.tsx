@@ -57,10 +57,13 @@ interface CourtUIItem {
   last_state_change: string
 }
 
+// Module-level cache for instant 0ms tab navigation
+let cachedCourts: CourtUIItem[] | null = null
+
 export default function LucesPage() {
   const tenantId = useTenantId()
-  const [courts, setCourts] = useState<CourtUIItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [courts, setCourts] = useState<CourtUIItem[]>(() => cachedCourts || [])
+  const [loading, setLoading] = useState(() => !cachedCourts)
 
   // Estado del modal de configuración de relé IoT
   const [configModalOpen, setConfigModalOpen] = useState(false)
@@ -112,8 +115,10 @@ export default function LucesPage() {
               last_state_change: c.light_is_on ? 'Encendido manual' : 'Apagado automático (sin turno)',
             }
           })
+          cachedCourts = items
           setCourts(items)
         } else {
+          cachedCourts = []
           setCourts([])
         }
       } catch (err) {
@@ -346,7 +351,7 @@ export default function LucesPage() {
         </div>
 
         {/* Grid de Canchas */}
-        {loading ? (
+        {loading && courts.length === 0 ? (
           <div className="flex items-center justify-center py-16 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin mr-2 text-emerald-400" />
             <span>Cargando canchas e interruptores...</span>

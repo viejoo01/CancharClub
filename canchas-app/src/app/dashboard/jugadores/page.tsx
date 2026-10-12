@@ -31,19 +31,21 @@ import {
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 
-// tenant isolation: useTenantId hook
+// Module-level cache for instant 0ms tab navigation
+let cachedPlayers: PlayerSummary[] | null = null
+let cachedStats = {
+  totalPlayers: 0,
+  exemplaryCount: 0,
+  highRiskCount: 0,
+  avgAttendanceRate: 0,
+  totalRevenueTracked: 0,
+}
 
 export default function JugadoresPage() {
   const tenantId = useTenantId()
-  const [players, setPlayers] = useState<PlayerSummary[]>([])
-  const [stats, setStats] = useState({
-    totalPlayers: 0,
-    exemplaryCount: 0,
-    highRiskCount: 0,
-    avgAttendanceRate: 0,
-    totalRevenueTracked: 0,
-  })
-  const [loading, setLoading] = useState(true)
+  const [players, setPlayers] = useState<PlayerSummary[]>(() => cachedPlayers || [])
+  const [stats, setStats] = useState(() => cachedStats)
+  const [loading, setLoading] = useState(() => !cachedPlayers)
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState<'ALL' | 'EXEMPLARY' | 'RELIABLE' | 'HIGH_RISK' | 'BLOCKED'>('ALL')
 
@@ -57,17 +59,19 @@ export default function JugadoresPage() {
 
   const loadData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
-    if (isInitial) setLoading(true)
+    if (isInitial && !cachedPlayers) setLoading(true)
     try {
       const res = await getPlayersReputation(tenantId, searchQuery)
       if (res.success) {
+        cachedPlayers = res.players
+        cachedStats = res.stats
         setPlayers(res.players)
         setStats(res.stats)
-      } else if (isInitial) {
+      } else if (isInitial && !cachedPlayers) {
         toast.error('Error al cargar datos de jugadores')
       }
     } catch {
-      if (isInitial) toast.error('Error inesperado')
+      if (isInitial && !cachedPlayers) toast.error('Error inesperado')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -325,7 +329,7 @@ export default function JugadoresPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {loading ? (
+          {loading && filteredPlayers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
               <p className="text-sm">Analizando historial de reservas y reputación...</p>

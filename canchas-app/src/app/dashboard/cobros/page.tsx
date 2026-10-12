@@ -6,7 +6,7 @@ import {
   Building2, 
   ShieldCheck, 
   Save, 
-  Loader2, 
+  Loader2,
   CheckCircle2, 
   ShieldAlert
 } from 'lucide-react'
@@ -23,22 +23,26 @@ import {
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
 
+import type { TenantPaymentSettings } from '@/actions/tenant-payment-settings.actions'
+
+let cachedCobrosSettings: TenantPaymentSettings | null = null
+
 export default function CobrosConfigPage() {
   const tenantId = useTenantId()
   const { role, isOwner } = useUserRole()
-  const [loading, setLoading] = useState(true)
+  const [, setLoading] = useState(false)
   const [savingBank, setSavingBank] = useState(false)
 
   // Datos bancarios
-  const [bankName, setBankName] = useState('')
-  const [accountHolder, setAccountHolder] = useState('')
-  const [cbu, setCbu] = useState('')
-  const [alias, setAlias] = useState('')
-  const [cuit, setCuit] = useState('')
-  const [whatsappPhone, setWhatsappPhone] = useState('')
+  const [bankName, setBankName] = useState(() => cachedCobrosSettings?.bankName || '')
+  const [accountHolder, setAccountHolder] = useState(() => cachedCobrosSettings?.accountHolder || '')
+  const [cbu, setCbu] = useState(() => cachedCobrosSettings?.cbu || '')
+  const [alias, setAlias] = useState(() => cachedCobrosSettings?.alias || '')
+  const [cuit, setCuit] = useState(() => cachedCobrosSettings?.cuit || '')
+  const [whatsappPhone, setWhatsappPhone] = useState(() => cachedCobrosSettings?.whatsappPhone || '')
 
   // Estado de persistencia y borrador
-  const [isSavedInDb, setIsSavedInDb] = useState(false)
+  const [isSavedInDb, setIsSavedInDb] = useState(() => Boolean(cachedCobrosSettings?.accountHolder && (cachedCobrosSettings?.alias || cachedCobrosSettings?.cbu)))
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export default function CobrosConfigPage() {
       try {
         const settings = await getTenantPaymentSettings(tenantId || undefined)
         if (settings && isMounted) {
+          cachedCobrosSettings = settings
           if (settings.tenantId) {
             setGlobalCachedTenantId(settings.tenantId)
           }
@@ -203,15 +208,6 @@ export default function CobrosConfigPage() {
             </Button>
           </CardContent>
         </Card>
-      </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="p-8 flex items-center justify-center text-slate-400 gap-2">
-        <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
-        <span>Cargando cuentas de cobro...</span>
       </div>
     )
   }

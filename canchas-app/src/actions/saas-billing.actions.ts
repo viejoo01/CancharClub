@@ -74,6 +74,13 @@ export interface ClubPlanDetails {
   trialForfeitedAt?: string | null
 }
 
+const planDetailsCache = new Map<string, { data: ClubPlanDetails; expiresAt: number }>()
+
+export async function invalidatePlanDetailsCache(tenantId?: string | null) {
+  if (tenantId) planDetailsCache.delete(tenantId)
+  else planDetailsCache.clear()
+}
+
 /**
  * Obtiene los detalles completos y oficiales del plan SaaS del club actualmente autenticado.
  * Garantiza que siempre muestre el nombre del club registrado y el plan asignado por el Superadmin.
@@ -93,6 +100,13 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     const auth = await assertTenantMember(targetTenantId)
     if (!auth.authorized) {
       targetTenantId = null
+    }
+  }
+
+  if (targetTenantId) {
+    const cached = planDetailsCache.get(targetTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
     }
   }
 
@@ -435,7 +449,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const reactivationDueDate = lastUnpaidInvoice?.due_date || pricing.nextDueDate
   const reactivationDetails = calculateReactivationFee(baseReactivationAmount, reactivationDueDate)
 
-  return {
+  const result: ClubPlanDetails = {
     tenantId: targetTenantId || '',
     tenantName,
     tenantSlug,
@@ -462,6 +476,11 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     trialForfeited,
     trialForfeitedAt,
   }
+
+  if (targetTenantId) {
+    planDetailsCache.set(targetTenantId, { data: result, expiresAt: Date.now() + 30000 })
+  }
+  return result
 }
 
 /**

@@ -69,26 +69,33 @@ function formatSport(sport?: string | null) {
   return sport
 }
 
+// Caché en memoria a nivel módulo para renderizado instantáneo (0ms)
+let cachedCourts: Court[] | null = null
+let cachedSchedule: ClubScheduleConfig | null = null
+let cachedHighlight: ClubHighlightInfo | null = null
+let cachedSocialLinks: ClubSocialLinks | null = null
+let cachedServicesLocation: ClubServicesAndLocationData | null = null
+
 export default function CanchasPage() {
   const tenantId = useTenantId()
-  const [courts, setCourts] = useState<Court[]>([])
-  const [courtsLoading, setCourtsLoading] = useState(true)
+  const [courts, setCourts] = useState<Court[]>(() => cachedCourts || [])
+  const [courtsLoading, setCourtsLoading] = useState(() => !cachedCourts)
   const [clubSlug, setClubSlug] = useState('club')
-  const [schedule, setSchedule] = useState<ClubScheduleConfig>(DEFAULT_CLUB_SCHEDULE)
+  const [schedule, setSchedule] = useState<ClubScheduleConfig>(() => cachedSchedule || DEFAULT_CLUB_SCHEDULE)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
-  const [highlightInfo, setHighlightInfo] = useState<ClubHighlightInfo>({
+  const [highlightInfo, setHighlightInfo] = useState<ClubHighlightInfo>(() => cachedHighlight || {
     highlightText: '',
     highlightBadge: '🔥 Promoción Especial',
     isHighlightActive: false,
   })
   const [isHighlightModalOpen, setIsHighlightModalOpen] = useState(false)
-  const [socialLinks, setSocialLinks] = useState<ClubSocialLinks>({
+  const [socialLinks, setSocialLinks] = useState<ClubSocialLinks>(() => cachedSocialLinks || {
     instagram: '',
     facebook: '',
     tiktok: '',
   })
   const [isSocialLinksModalOpen, setIsSocialLinksModalOpen] = useState(false)
-  const [servicesLocation, setServicesLocation] = useState<ClubServicesAndLocationData>({
+  const [servicesLocation, setServicesLocation] = useState<ClubServicesAndLocationData>(() => cachedServicesLocation || {
     services: {
       parking: false,
       cantina: false,
@@ -188,12 +195,19 @@ export default function CanchasPage() {
     if (!tenantId) return
     const supabase = createClient()
     try {
-      const { data, error } = await supabase
-        .from('courts')
-        .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
-        .eq('tenant_id', tenantId)
-        .order('display_order', { ascending: true })
+      const [courtsRes, sched, hInfo, sLinks, sLoc] = await Promise.all([
+        supabase
+          .from('courts')
+          .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
+          .eq('tenant_id', tenantId)
+          .order('display_order', { ascending: true }),
+        getClubSchedule(tenantId).catch(() => null),
+        getClubHighlightInfo(tenantId).catch(() => null),
+        getClubSocialLinks(tenantId).catch(() => null),
+        getClubServicesAndLocation(tenantId).catch(() => null),
+      ])
 
+      const { data, error } = courtsRes
       if (data && !error) {
         interface CourtDbRow {
           id: string
@@ -216,27 +230,25 @@ export default function CanchasPage() {
           is_active: c.is_active ?? true,
         }))
         setCourts(mapped)
+        cachedCourts = mapped
       }
-    } catch {}
 
-    try {
-      const sched = await getClubSchedule(tenantId)
-      if (sched) setSchedule(sched)
-    } catch {}
-
-    try {
-      const hInfo = await getClubHighlightInfo(tenantId)
-      if (hInfo) setHighlightInfo(hInfo)
-    } catch {}
-
-    try {
-      const sLinks = await getClubSocialLinks(tenantId)
-      if (sLinks) setSocialLinks(sLinks)
-    } catch {}
-
-    try {
-      const sLoc = await getClubServicesAndLocation(tenantId)
-      if (sLoc) setServicesLocation(sLoc)
+      if (sched) {
+        setSchedule(sched)
+        cachedSchedule = sched
+      }
+      if (hInfo) {
+        setHighlightInfo(hInfo)
+        cachedHighlight = hInfo
+      }
+      if (sLinks) {
+        setSocialLinks(sLinks)
+        cachedSocialLinks = sLinks
+      }
+      if (sLoc) {
+        setServicesLocation(sLoc)
+        cachedServicesLocation = sLoc
+      }
     } catch {}
 
     if (isInitial) setCourtsLoading(false)

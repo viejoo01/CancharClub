@@ -82,6 +82,11 @@ import { getTenantClubInfo } from '@/actions/club.actions'
 
 export type Product = CantinaProduct
 
+// Cache en memoria a nivel módulo para apertura instantánea (0ms)
+const cantinaProductsClientCache: { current: CantinaProduct[] } = { current: [] }
+const cantinaSuppliersClientCache: { current: CantinaSupplier[] } = { current: DEFAULT_CANTINA_SUPPLIERS }
+const cantinaAccountsClientCache: { current: CustomerAccount[] } = { current: [] }
+
 // Singleton reutilizable para el contexto de audio (previene memory leaks y bloqueos del navegador)
 let sharedAudioCtx: AudioContext | null = null
 function getAudioContext(): AudioContext | null {
@@ -146,7 +151,7 @@ export default function CantinaPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
   // Estados para Cuentas Corrientes & Fiados
-  const [accounts, setAccounts] = useState<CustomerAccount[]>([])
+  const [accounts, setAccounts] = useState<CustomerAccount[]>(() => cantinaAccountsClientCache.current)
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [accountSearch, setAccountSearch] = useState('')
   const [payAccountModalOpen, setPayAccountModalOpen] = useState(false)
@@ -176,7 +181,7 @@ export default function CantinaPage() {
   const [bankAlias, setBankAlias] = useState('')
 
   // Catálogo de Productos y Estado de Inventario
-  const [products, setProducts] = useState<CantinaProduct[]>([])
+  const [products, setProducts] = useState<CantinaProduct[]>(() => cantinaProductsClientCache.current)
   const [, setProductsLoading] = useState(false)
 
   // Modales y Control de Inventario
@@ -308,13 +313,26 @@ export default function CantinaPage() {
   }, [accounts])
 
   // Proveedores de Cantina
-  const [suppliers, setSuppliers] = useState<CantinaSupplier[]>(DEFAULT_CANTINA_SUPPLIERS)
+  const [suppliers, setSuppliers] = useState<CantinaSupplier[]>(() => cantinaSuppliersClientCache.current)
   const [isSuppliersModalOpen, setIsSuppliersModalOpen] = useState(false)
   const [isRestockOrderModalOpen, setIsRestockOrderModalOpen] = useState(false)
   const [supplierFormList, setSupplierFormList] = useState<CantinaSupplier[]>([])
   const [savingSuppliers, setSavingSuppliers] = useState(false)
   const [editingPhoneSupplierId, setEditingPhoneSupplierId] = useState<string | null>(null)
   const [quickPhoneInput, setQuickPhoneInput] = useState<string>('')
+
+  // Sincronizar caches en memoria del cliente para navegación instantánea (0ms)
+  useEffect(() => {
+    if (products.length > 0) cantinaProductsClientCache.current = products
+  }, [products])
+
+  useEffect(() => {
+    if (suppliers.length > 0) cantinaSuppliersClientCache.current = suppliers
+  }, [suppliers])
+
+  useEffect(() => {
+    if (accounts.length > 0) cantinaAccountsClientCache.current = accounts
+  }, [accounts])
 
   const loadSuppliers = useCallback(async () => {
     if (!tenantId) return

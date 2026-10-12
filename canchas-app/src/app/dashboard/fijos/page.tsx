@@ -53,14 +53,18 @@ const DAYS_NAME = [
 
 
 
+// Module-level cache for instant 0ms tab navigation
+let cachedSlots: RecurringSlot[] | null = null
+let cachedDbCourts: { id: string; name: string; sport: string }[] | null = null
+
 export default function TurnosFijosPage() {
   const tenantId = useTenantId()
-  const [slots, setSlots] = useState<RecurringSlot[]>([])
-  const [loading, setLoading] = useState(true)
+  const [slots, setSlots] = useState<RecurringSlot[]>(() => cachedSlots || [])
+  const [loading, setLoading] = useState(() => !cachedSlots)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actionSlotId, setActionSlotId] = useState<string | null>(null)
-  const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>([])
+  const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => cachedDbCourts || [])
 
   // Form states (Alta)
   const [courtId, setCourtId] = useState('')
@@ -176,6 +180,7 @@ export default function TurnosFijosPage() {
     if (!tenantId) return
     try {
       const data = await getRecurringSlots(tenantId)
+      cachedSlots = data
       setSlots(data)
     } catch {
       toast.error('Error al actualizar turnos fijos')
@@ -190,6 +195,7 @@ export default function TurnosFijosPage() {
     supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }: { data: unknown }) => {
       const courtsList = data as { id: string; name: string; sport: string }[] | null
       if (courtsList && courtsList.length > 0) {
+        cachedDbCourts = courtsList
         setDbCourts(courtsList)
         setCourtId(courtsList[0].id)
       }
@@ -198,6 +204,7 @@ export default function TurnosFijosPage() {
     getRecurringSlots(tenantId)
       .then((data) => {
         if (isMounted) {
+          cachedSlots = data
           setSlots(data)
           setLoading(false)
         }
@@ -214,6 +221,7 @@ export default function TurnosFijosPage() {
       if (document.hidden) return
       getRecurringSlots(tenantId).then((data) => {
         if (isMounted && data) {
+          cachedSlots = data
           setSlots(data)
         }
       }).catch(() => {})
@@ -392,7 +400,7 @@ export default function TurnosFijosPage() {
 
       {/* Listado de Turnos Fijos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading ? (
+        {loading && slots.length === 0 ? (
           <div className="col-span-full flex justify-center py-12">
             <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
           </div>

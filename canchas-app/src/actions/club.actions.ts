@@ -392,10 +392,36 @@ export async function deleteCourt(
 
 // ─── CALENDARIO & TURNOS DEL DÍA ──────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const calendarBookingsCache = new Map<string, { data: any[]; expiresAt: number }>()
+
+export async function invalidateCalendarBookingsCache(tenantId?: string | null, dateIso?: string | null) {
+  if (!tenantId) {
+    calendarBookingsCache.clear()
+    return
+  }
+  if (dateIso) {
+    calendarBookingsCache.delete(`${tenantId}_${dateIso}`)
+  } else {
+    for (const key of calendarBookingsCache.keys()) {
+      if (key.startsWith(`${tenantId}_`)) {
+        calendarBookingsCache.delete(key)
+      }
+    }
+  }
+}
+
 export async function getCalendarBookings(tenantId: string | null | undefined, dateIso: string) {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    // Revisar caché en memoria (TTL de 20 segundos) para evitar saturar Supabase con polling
+    const cacheKey = `${effectiveTenantId}_${dateIso}`
+    const cached = calendarBookingsCache.get(cacheKey)
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.data
+    }
 
     const auth = await assertTenantMember(effectiveTenantId)
     if (!auth.authorized) return []
@@ -446,7 +472,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
     }
 
     // Parsear booked_at (tstzrange) para la grilla de turnos
-    return ((data || []) as unknown as RawDbBooking[]).map((b) => {
+    const mapped = ((data || []) as unknown as RawDbBooking[]).map((b) => {
       let start = ''
       let end = ''
       if (b.booked_at) {
@@ -551,6 +577,10 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         },
       }
     })
+
+    // Guardar en caché con expiración a los 20 segundos
+    calendarBookingsCache.set(cacheKey, { data: mapped, expiresAt: Date.now() + 20_000 })
+    return mapped
   } catch (err) {
     console.warn('[getCalendarBookings] Fallback por excepción:', err)
     return []

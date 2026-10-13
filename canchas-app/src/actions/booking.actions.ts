@@ -36,6 +36,7 @@ import { addVenueBooking, getVenueBookings, cancelVenueBooking } from '@/config/
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { isPlayerBlocked } from './players.actions'
 import { recordClubNotification } from './notifications.actions'
+import { invalidateCalendarBookingsCache } from './club.actions'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -622,15 +623,31 @@ export async function createManualBooking(
     const isFullCash = depositCents >= priceTotalCents && priceTotalCents > 0
     const initialStatus = isFullCash ? 'confirmed_cash' : 'confirmed'
 
-    const noteParts = []
-    if (payload.internal_notes) noteParts.push(payload.internal_notes)
-    if (payload.customer_notes) noteParts.push(`Nota cliente: ${payload.customer_notes}`)
-    const staffNotes = noteParts.join(' | ') || null
-
     const rawMethod = String(payload.payment_method || 'cash').toLowerCase()
     const mappedPaymentMethod = rawMethod.includes('transfer') ? 'bank_transfer'
       : (rawMethod.includes('mercado') || rawMethod.includes('mp')) ? 'mercadopago'
       : 'cash'
+
+    const noteParts = []
+    if (payload.internal_notes) noteParts.push(payload.internal_notes)
+    if (payload.customer_notes) noteParts.push(`Nota cliente: ${payload.customer_notes}`)
+
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const timeStr = getArgentinaTimeStr(now)
+    const methodSpanish = mappedPaymentMethod === 'bank_transfer' ? 'Transferencia'
+      : mappedPaymentMethod === 'mercadopago' ? 'Mercado Pago'
+      : 'Efectivo'
+    const formattedDeposit = (depositCents / 100).toLocaleString('es-AR')
+
+    if (depositCents > 0) {
+      const cobroNote = isFullCash
+        ? `Cobro $${formattedDeposit} (${methodSpanish}) a las ${timeStr} hs [${nowIso}] - Pago total en mostrador (verificado)`
+        : `Cobro $${formattedDeposit} (${methodSpanish}) a las ${timeStr} hs [${nowIso}] - Seña inicial verificada y cobrada en mostrador (${methodSpanish})`
+      noteParts.push(cobroNote)
+    }
+
+    const staffNotes = noteParts.join(' | ') || null
 
     const { data: booking, error } = await supabase
       .from('bookings')
@@ -644,7 +661,7 @@ export async function createManualBooking(
         deposit_cents: depositCents,
         staff_deposit_amount_cents: depositCents,
         payment_method: mappedPaymentMethod,
-        paid_at: depositCents > 0 ? new Date().toISOString() : null,
+        paid_at: depositCents > 0 ? nowIso : null,
         customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
         customer_phone: payload.customer_phone?.trim() || null,
         customer_email: payload.customer_email?.trim() || null,
@@ -661,6 +678,9 @@ export async function createManualBooking(
       console.error('[createManualBooking] DB insert error:', error.message)
       return { success: false, error: error.message }
     }
+
+    // Invalidar inmediatamente la caché del calendario para esta fecha
+    void invalidateCalendarBookingsCache(effectiveTenantId, dayStr)
 
     // Sincronizar en memoria para reflejo instantáneo (0ms) en el portal de jugadores
     addVenueBooking({
@@ -699,13 +719,29 @@ export async function createManualBooking(
         court_name: payload.court_name || 'Cancha',
         sport: court.sport || 'PADEL',
         amount_ars: Number(payload.total_amount_ars || 0),
-        payment_method: isFullCash ? 'Efectivo Total' : 'Seña Mostrador',
+        payment_method: isFullCash ? 'Efectivo Total' : (depositCents > 0 ? `Seña ${methodSpanish}` : 'Sin seña'),
       },
     })
 
+    if (depositCents > 0) {
+      void recordClubNotification({
+        tenantId: effectiveTenantId,
+        type: 'PAYMENT_RECEIVED',
+        category: 'PAYMENTS',
+        title: '💰 Pago / Seña Recibida en Mostrador',
+        message: `Se registró un cobro de $${formattedDeposit} (${methodSpanish}) de ${payload.customer_name?.trim() || 'Cliente'} a las ${timeStr} hs.`,
+        metadata: {
+          booking_id: booking.id,
+          customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
+          customer_phone: payload.customer_phone?.trim() || undefined,
+          amount_ars: depositCents / 100,
+          payment_method: methodSpanish,
+        },
+      })
+    }
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
-    revalidatePath('/dashboard/notificaciones')
     return { success: true, booking_id: booking.id }
 
   } catch (error) {
@@ -830,6 +866,8 @@ export async function registerCashPayment(params: {
         payment_method: methodSpanish,
       },
     })
+
+    void invalidateCalendarBookingsCache(booking.tenant_id)
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
@@ -977,6 +1015,8 @@ export async function cancelBooking(params: {
       })
     }
 
+    void invalidateCalendarBookingsCache(booking.tenant_id)
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/notificaciones')
     return { success: true, ...waitlistInfo }
@@ -1019,6 +1059,8 @@ export async function markBookingNoShow(bookingId: string): Promise<{ success: b
       console.error('[markBookingNoShow] DB error:', error.message)
       return { success: false, error: error.message }
     }
+
+    void invalidateCalendarBookingsCache(booking.tenant_id)
 
     revalidatePath('/dashboard')
     return { success: true }
@@ -1107,6 +1149,8 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{
         amount_ars: depositArs,
       },
     })
+
+    void invalidateCalendarBookingsCache(booking.tenant_id)
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')

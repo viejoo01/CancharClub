@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createManualBooking, registerCashPayment } from '@/actions/booking.actions'
+import { createManualBooking } from '@/actions/booking.actions'
 import { getClubPriceRules } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { Loader2, Lock } from 'lucide-react'
@@ -132,9 +132,9 @@ export function QuickBookingModal({
   const [loading, setLoading] = useState(false)
 
 
-  // Cargar reglas reales desde el backend si no fueron inyectadas por props
+  // Cargar reglas reales desde el backend si no fueron inyectadas por props (una sola vez)
   useEffect(() => {
-    if (!priceRules && tenantId) {
+    if (!priceRules && tenantId && isOpen) {
       let isMounted = true
       getClubPriceRules(tenantId).then((rules) => {
         if (isMounted && rules && rules.length > 0) {
@@ -149,7 +149,8 @@ export function QuickBookingModal({
         isMounted = false
       }
     }
-  }, [priceRules, tenantId, courtId, date, time])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceRules, tenantId, isOpen])
 
   const recalculatePrice = useCallback(
     (cId: string, d: string, t: string) => {
@@ -181,7 +182,7 @@ export function QuickBookingModal({
         ? `[ABONO SEMANAL FIJO] ${notes}`.trim()
         : notes || undefined
 
-      // 1. Crear reserva manual en PostgreSQL (con seña en 0 para que registerCashPayment la registre formalmente con timestamp y desglose en caja)
+      // 1. Crear reserva manual en PostgreSQL (con seña directamente en una sola transacción atómica de alta velocidad)
       const res = await createManualBooking({
         tenant_id: tenantId,
         court_id: courtId,
@@ -191,7 +192,7 @@ export function QuickBookingModal({
         duration_minutes: durationMinutes,
         origin: isRecurring ? 'ADMIN_MANUAL' : 'PHONE',
         total_amount_ars: total,
-        deposit_amount_ars: 0,
+        deposit_amount_ars: deposit,
         payment_method: paymentMethod === 'TRANSFER' ? 'TRANSFER' : paymentMethod === 'CASH' ? 'CASH' : undefined,
         internal_notes: fullNotes,
       })
@@ -202,25 +203,38 @@ export function QuickBookingModal({
         return
       }
 
-      // 2. Si se cobró seña o pago en el momento, registrar cobro en caja
-      if (deposit > 0 && paymentMethod !== 'NONE' && res.booking_id) {
-        const isFull = deposit >= total && total > 0
-        const methodSpanish = paymentMethod === 'TRANSFER' ? 'Transferencia' : 'Efectivo'
-        await registerCashPayment({
-          booking_id: res.booking_id,
-          amount_ars: deposit,
-          payment_method: paymentMethod as 'CASH' | 'TRANSFER',
-          notes: isFull ? 'Pago total en mostrador (verificado)' : `Seña inicial verificada y cobrada en mostrador (${methodSpanish})`,
-        })
-      }
-
       toast.success('¡Turno registrado exitosamente!')
 
       // Emitir en BroadcastChannel para sincronización instantánea en grilla y portal de jugadores (0ms)
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const bc = new BroadcastChannel('canchar_bookings')
-          bc.postMessage({ type: 'BOOKING_CONFIRMED', court_id: courtId, starts_at: startsAt })
+          const selectedCourt = courts.find(c => c.id === courtId)
+          bc.postMessage({
+            type: 'BOOKING_CONFIRMED',
+            court_id: courtId,
+            starts_at: startsAt,
+            booking: {
+              id: res.booking_id || `booking_${Date.now()}`,
+              court_id: courtId,
+              customer_name: customerName,
+              customer_phone: customerPhone || undefined,
+              starts_at: startsAt,
+              ends_at: new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString(),
+              status: deposit >= total && total > 0 ? 'FULLY_PAID' : (deposit > 0 ? 'CONFIRMED' : 'PENDING_DEPOSIT'),
+              origin: 'PHONE',
+              total_amount_ars: total,
+              deposit_amount_ars: deposit,
+              total_paid: deposit,
+              balance_due: Math.max(0, total - deposit),
+              internal_notes: fullNotes || null,
+              courts: {
+                name: selectedCourt?.name || 'Cancha',
+                sport: selectedCourt?.sport || 'PADEL',
+                slot_duration: durationMinutes === 60 ? 'MIN_60' : 'MIN_90',
+              }
+            }
+          })
           bc.close()
         }
       } catch {}

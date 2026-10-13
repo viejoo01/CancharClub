@@ -103,6 +103,9 @@ interface CourtItem {
   is_active: boolean
 }
 
+// Caché en cliente para cambio instantáneo (0ms) entre fechas
+const clientBookingsCache = new Map<string, { bookings: CalendarBooking[]; timestamp: number }>()
+
 interface CalendarGridProps {
   tenantId: string
   courts: CourtItem[]
@@ -304,17 +307,28 @@ export function CalendarGrid({
     }
   }, [initialBookings])
 
-  // Cargar turnos reales de la base de datos para la fecha seleccionada
+  // Cargar turnos reales de la base de datos para la fecha seleccionada con caché local instantáneo (0ms)
   const fetchBookingsForDate = useCallback(async (dateToFetch: string) => {
     if (!tenantId) return
+    const cacheKey = `${tenantId}_${dateToFetch}`
+    const cached = clientBookingsCache.get(cacheKey)
+
+    // Si ya existe en caché reciente (20s), mostrar al instante (0ms de latencia visual)
+    if (cached && Date.now() - cached.timestamp < 20_000) {
+      setLoadedBookings(cached.bookings)
+      setOptimisticBookings([])
+    }
+
     try {
       const fresh = await getCalendarBookings(tenantId, dateToFetch)
       if (Array.isArray(fresh)) {
-        setLoadedBookings(fresh as CalendarBooking[])
+        const bookingsList = fresh as CalendarBooking[]
+        clientBookingsCache.set(cacheKey, { bookings: bookingsList, timestamp: Date.now() })
+        setLoadedBookings(bookingsList)
         setOptimisticBookings([])
         setSelectedBooking((prev) => {
           if (!prev) return null
-          const updated = (fresh as CalendarBooking[]).find((b) => b.id === prev.id)
+          const updated = bookingsList.find((b) => b.id === prev.id)
           return updated || prev
         })
       }
@@ -323,26 +337,10 @@ export function CalendarGrid({
     }
   }, [tenantId])
 
-  // Cargar turnos al cambiar de fecha y mantener consultas continuas a la base de datos cada 5 segundos
+  // Cargar turnos al cambiar de fecha
   useEffect(() => {
     if (!selectedDate || !tenantId) return
-
     fetchBookingsForDate(selectedDate)
-
-    const syncBookings = () => {
-      if (typeof document !== 'undefined' && document.hidden) return
-      fetchBookingsForDate(selectedDate)
-    }
-
-    const interval = setInterval(syncBookings, 5000)
-    window.addEventListener('focus', syncBookings)
-    document.addEventListener('visibilitychange', syncBookings)
-
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', syncBookings)
-      document.removeEventListener('visibilitychange', syncBookings)
-    }
   }, [selectedDate, tenantId, fetchBookingsForDate])
 
   const activeBookings = useMemo(() => {
@@ -379,31 +377,33 @@ export function CalendarGrid({
       try {
         const fresh = await getCalendarBookings(tenantId, selectedDate)
         if (!isMounted || !Array.isArray(fresh)) return
+        const freshList = fresh as CalendarBooking[]
+        clientBookingsCache.set(`${tenantId}_${selectedDate}`, { bookings: freshList, timestamp: Date.now() })
 
         setLoadedBookings((prev) => {
           const prevSig = prev.map(b => `${b.id}:${b.status}:${b.total_paid}:${b.balance_due}`).sort().join('|')
-          const freshSig = (fresh as CalendarBooking[]).map(b => `${b.id}:${b.status}:${b.total_paid}:${b.balance_due}`).sort().join('|')
+          const freshSig = freshList.map(b => `${b.id}:${b.status}:${b.total_paid}:${b.balance_due}`).sort().join('|')
 
           if (prevSig !== freshSig) {
             // Notificaciones en vivo de altas y bajas de turnos
-            if (fresh.length > prev.length) {
-              const newB = (fresh as CalendarBooking[]).find(f => !prev.some(p => p.id === f.id))
+            if (freshList.length > prev.length) {
+              const newB = freshList.find(f => !prev.some(p => p.id === f.id))
               if (newB) {
                 toast.success('¡Nueva reserva registrada en el sistema!', {
                   description: `${newB.customer_name} en ${newB.courts && !Array.isArray(newB.courts) ? newB.courts.name : 'Cancha'}`
                 })
               }
-            } else if (fresh.length < prev.length) {
+            } else if (freshList.length < prev.length) {
               toast.info('Se ha cancelado o liberado un turno en la grilla.')
             }
-            return fresh as CalendarBooking[]
+            return freshList
           }
           return prev
         })
 
         setSelectedBooking((prev) => {
           if (!prev) return null
-          const updated = (fresh as CalendarBooking[]).find((b) => b.id === prev.id)
+          const updated = freshList.find((b) => b.id === prev.id)
           return updated || prev
         })
       } catch (err) {
@@ -424,7 +424,6 @@ export function CalendarGrid({
             setOptimisticBookings((prev) => [event.data.booking, ...prev])
           }
           silentSync()
-          router.refresh()
           onRefresh?.()
         }
       }
@@ -448,18 +447,17 @@ export function CalendarGrid({
             return
           }
           silentSync()
-          router.refresh()
           onRefresh?.()
         }
       )
       .subscribe()
 
-    // 3. Heartbeat continuo cada 4 segundos (Garantiza que nunca haga falta pulsar F5)
+    // 3. Heartbeat pasivo cada 25 segundos (los WebSockets y BroadcastChannel ya actualizan al instante)
     const intervalId = setInterval(() => {
       if (!document.hidden) {
         silentSync()
       }
-    }, 4000)
+    }, 25000)
 
     // 4. Sincronización inmediata al volver a la pestaña o ventana del navegador
     const handleFocus = () => {
@@ -482,7 +480,7 @@ export function CalendarGrid({
       supabase.removeChannel(channel)
       bc?.close()
     }
-  }, [tenantId, selectedDate, onRefresh, router])
+  }, [tenantId, selectedDate, onRefresh])
 
   // Filtro de canchas
   const filteredCourts = useMemo(() => {

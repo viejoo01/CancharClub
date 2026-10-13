@@ -139,17 +139,26 @@ export async function recordClubNotification(params: {
   }
 }
 
-// Cache en memoria en servidor para notificaciones recientes (15s)
+// Cache en memoria en servidor para notificaciones recientes (25s)
 const notifsCache = new Map<string, { data: { notifications: ClubNotification[]; stats: NotificationsStats }; expiresAt: number }>()
+
+interface RawNotifsCacheEntry {
+  notificationsWithReadState: ClubNotification[]
+  stats: NotificationsStats
+  expiresAt: number
+}
+const rawNotifsCache = new Map<string, RawNotifsCacheEntry>()
 
 export async function invalidateClubNotificationsCache(tenantId?: string | null) {
   if (tenantId) {
+    rawNotifsCache.delete(tenantId)
     for (const key of Array.from(notifsCache.keys())) {
       if (key.startsWith(tenantId)) {
         notifsCache.delete(key)
       }
     }
   } else {
+    rawNotifsCache.clear()
     notifsCache.clear()
   }
 }
@@ -193,18 +202,26 @@ export async function getClubNotificationsAction(params?: {
       }
     }
 
-    const supabase = await createServiceClient()
+    let notificationsWithReadState: ClubNotification[] = []
+    let stats: NotificationsStats = { total: 0, unread: 0, bookingsCount: 0, paymentsCount: 0, alertsCount: 0, systemCount: 0 }
 
-    // 1. Obtener canchas para asociar nombres rápidamente
-    const { data: courtsData } = await supabase
-      .from('courts')
-      .select('id, name, sport')
-      .eq('tenant_id', effectiveTenantId)
+    const cachedRaw = !params?.bypassCache ? rawNotifsCache.get(effectiveTenantId) : null
+    if (cachedRaw && cachedRaw.expiresAt > Date.now()) {
+      notificationsWithReadState = cachedRaw.notificationsWithReadState
+      stats = cachedRaw.stats
+    } else {
+      const supabase = await createServiceClient()
 
-    const courtMap = new Map<string, { name: string; sport: string }>()
-    ;(courtsData || []).forEach(c => {
-      courtMap.set(c.id, { name: c.name, sport: c.sport })
-    })
+      // 1. Obtener canchas para asociar nombres rápidamente
+      const { data: courtsData } = await supabase
+        .from('courts')
+        .select('id, name, sport')
+        .eq('tenant_id', effectiveTenantId)
+
+      const courtMap = new Map<string, { name: string; sport: string }>()
+      ;(courtsData || []).forEach(c => {
+        courtMap.set(c.id, { name: c.name, sport: c.sport })
+      })
 
     // 2. Consultar fuentes de datos en paralelo
     const [auditNotifsRes, bookingsRes, waitlistsRes, creditsRes, tenantRes] = await Promise.all([
@@ -482,7 +499,7 @@ export async function getClubNotificationsAction(params?: {
     })
 
     // 10. Calcular estadísticas globales del club
-    const stats: NotificationsStats = {
+    stats = {
       total: notificationsWithReadState.length,
       unread: notificationsWithReadState.filter(n => !n.read).length,
       bookingsCount: notificationsWithReadState.filter(n => n.category === 'BOOKINGS').length,
@@ -491,8 +508,15 @@ export async function getClubNotificationsAction(params?: {
       systemCount: notificationsWithReadState.filter(n => n.category === 'SYSTEM').length,
     }
 
-    // 11. Aplicar filtros solicitados
-    let filtered = notificationsWithReadState
+    rawNotifsCache.set(effectiveTenantId, {
+      notificationsWithReadState,
+      stats,
+      expiresAt: Date.now() + 25000,
+    })
+  }
+
+  // 11. Aplicar filtros solicitados
+  let filtered = notificationsWithReadState
 
     if (params?.category && params.category !== 'ALL') {
       filtered = filtered.filter(n => n.category === params.category)

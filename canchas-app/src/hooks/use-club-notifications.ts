@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { ClubNotification, NotificationCategory, NotificationsStats } from '@/types/notifications'
+import { getGlobalCachedTenantId } from '@/providers/tenant-provider'
 import {
   getClubNotificationsAction,
   markNotificationAsReadAction,
@@ -110,9 +111,20 @@ export function useClubNotifications({
   initialLimit = 100,
   autoRefreshIntervalMs = 30000,
 }: UseClubNotificationsOptions = {}) {
-  const cacheKey = `${tenantId || 'default'}_${category}`
-  const initialCached = cachedNotifsByTenant.get(cacheKey)
-  const initialLocalRead = getLocalReadState(tenantId)
+  const resolvedTenant = tenantId || (typeof window !== 'undefined' ? getGlobalCachedTenantId() : null) || 'default'
+  const cacheKey = `${resolvedTenant}_${category}`
+
+  // Buscar en cache específica o en cualquier cache previa del club (ej. cargada en el header)
+  let initialCached = cachedNotifsByTenant.get(cacheKey)
+  if (!initialCached) {
+    for (const [key, val] of cachedNotifsByTenant.entries()) {
+      if (key.startsWith(resolvedTenant)) {
+        initialCached = val
+        break
+      }
+    }
+  }
+  const initialLocalRead = getLocalReadState(resolvedTenant)
 
   const [notifications, setNotifications] = useState<ClubNotification[]>(() => {
     if (!initialCached) return []
@@ -174,16 +186,16 @@ export function useClubNotifications({
   // Cargar notificaciones
   const loadNotifications = useCallback(
     async (isBackground = false) => {
-      if (!isBackground && !cachedNotifsByTenant.has(cacheKey)) {
+      if (!isBackground && !initialCached && !cachedNotifsByTenant.has(cacheKey)) {
         setLoading(true)
       }
       try {
         const res = await getClubNotificationsAction({
-          tenantId: tenantId || undefined,
+          tenantId: tenantId || (resolvedTenant !== 'default' ? resolvedTenant : undefined),
           category,
           limit: initialLimit,
         })
-        const currentLocal = getLocalReadState(tenantId)
+        const currentLocal = getLocalReadState(resolvedTenant)
         const mergedNotifs = applyReadStateToNotifications(res.notifications, currentLocal)
         const unreadCount = mergedNotifs.filter(n => !n.read).length
         const mergedStats: NotificationsStats = {
@@ -200,7 +212,7 @@ export function useClubNotifications({
         setLoading(false)
       }
     },
-    [tenantId, category, initialLimit, cacheKey]
+    [tenantId, resolvedTenant, category, initialLimit, cacheKey, initialCached]
   )
 
   useEffect(() => {

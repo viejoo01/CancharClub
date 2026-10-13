@@ -12,6 +12,44 @@ import { verifySuperadminSessionToken } from '@/lib/auth-security'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+interface TenantLayoutSnapshot {
+  userRole: string
+  userName: string
+  tenantId: string | null
+  tenantName: string
+  tenantSlug: string
+  mpConnected: boolean
+  tenantCreatedAt: string | null
+  isActive: boolean
+  subscriptionStatus: TenantSubscriptionStatus
+  planId: SaaSPlanId
+  initialCourtsCount: number
+  initialSports: string[]
+  highestPriceArs: number
+  hasPriceConfigured: boolean
+  hasCard: boolean
+  trialEndsAt: string | null
+  trialForfeited: boolean
+  cancellationEffectiveDate: string | null
+}
+
+const tenantLayoutCache = new Map<string, { snapshot: TenantLayoutSnapshot; expiresAt: number }>()
+
+function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
+  const cached = tenantLayoutCache.get(userId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.snapshot
+  }
+  return null
+}
+
+function setCachedTenantLayout(userId: string, snapshot: TenantLayoutSnapshot) {
+  tenantLayoutCache.set(userId, {
+    snapshot,
+    expiresAt: Date.now() + 30000,
+  })
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -225,97 +263,140 @@ export default async function DashboardLayout({
       planId = getHigherPlan(planId, simulatedPlan)
     }
   } else if (user) {
-    const { data: profile } = await serviceClient
-      .from('profiles')
-      .select('role, full_name, tenant_id')
-      .eq('id', user.id)
-      .maybeSingle()
+    const snap = getCachedTenantLayout(user.id)
+    if (snap) {
+      userRole = snap.userRole
+      userName = snap.userName
+      tenantId = snap.tenantId
+      tenantName = snap.tenantName
+      tenantSlug = snap.tenantSlug
+      mpConnected = snap.mpConnected
+      tenantCreatedAt = snap.tenantCreatedAt
+      isActive = snap.isActive
+      subscriptionStatus = snap.subscriptionStatus
+      planId = snap.planId
+      initialCourtsCount = snap.initialCourtsCount
+      initialSports = snap.initialSports
+      highestPriceArs = snap.highestPriceArs
+      hasPriceConfigured = snap.hasPriceConfigured
+      hasCard = snap.hasCard
+      trialEndsAt = snap.trialEndsAt
+      trialForfeited = snap.trialForfeited
+      cancellationEffectiveDate = snap.cancellationEffectiveDate
+    } else {
+      const { data: profile } = await serviceClient
+        .from('profiles')
+        .select('role, full_name, tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
 
-    if (!profile || !profile.tenant_id) {
-      console.warn('[SEGURIDAD] Acceso sin club: ' + user.email)
-      await supabase.auth.signOut()
-      redirect('/auth/login?error=no_club_assigned')
-    }
+      if (!profile || !profile.tenant_id) {
+        console.warn('[SEGURIDAD] Acceso sin club: ' + user.email)
+        await supabase.auth.signOut()
+        redirect('/auth/login?error=no_club_assigned')
+      }
 
-    userRole = profile.role || 'TENANT_ADMIN'
-    userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
+      userRole = profile.role || 'TENANT_ADMIN'
+      userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
 
-    const [tenantResult, courtsResult, subResult, priceRulesResult] = await Promise.all([
-      serviceClient
-        .from('tenants')
-        .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
-        .eq('id', profile.tenant_id)
-        .maybeSingle(),
-      serviceClient
-        .from('courts')
-        .select('id, sport, is_active')
-        .eq('tenant_id', profile.tenant_id),
-      serviceClient
-        .from('saas_subscriptions')
-        .select('payment_notes, status')
-        .eq('tenant_id', profile.tenant_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      serviceClient
-        .from('price_rules')
-        .select('price_cents, is_active')
-        .eq('tenant_id', profile.tenant_id),
-    ])
+      const [tenantResult, courtsResult, subResult, priceRulesResult] = await Promise.all([
+        serviceClient
+          .from('tenants')
+          .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
+          .eq('id', profile.tenant_id)
+          .maybeSingle(),
+        serviceClient
+          .from('courts')
+          .select('id, sport, is_active')
+          .eq('tenant_id', profile.tenant_id),
+        serviceClient
+          .from('saas_subscriptions')
+          .select('payment_notes, status')
+          .eq('tenant_id', profile.tenant_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        serviceClient
+          .from('price_rules')
+          .select('price_cents, is_active')
+          .eq('tenant_id', profile.tenant_id),
+      ])
 
-    const courtsData = courtsResult.data
-    if (courtsData && courtsData.length > 0) {
-      initialCourtsCount = courtsData.length
-      initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
-    }
+      const courtsData = courtsResult.data
+      if (courtsData && courtsData.length > 0) {
+        initialCourtsCount = courtsData.length
+        initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
+      }
 
-    const t = tenantResult.data
-    if (!t) {
-      console.warn('[SEGURIDAD] Club no encontrado para ' + profile.tenant_id)
-      await supabase.auth.signOut()
-      redirect('/auth/login?error=club_not_found')
-    }
+      const t = tenantResult.data
+      if (!t) {
+        console.warn('[SEGURIDAD] Club no encontrado para ' + profile.tenant_id)
+        await supabase.auth.signOut()
+        redirect('/auth/login?error=club_not_found')
+      }
 
-    tenantId = t.id
-    tenantName = t.name || tenantName
-    tenantSlug = t.slug || tenantSlug
-    mpConnected = checkMpConnected(t)
-    if (t.created_at) tenantCreatedAt = t.created_at
-    parseTenantMeta(t.description || null)
-    if (typeof t.is_active === 'boolean') isActive = t.is_active
-    if (t.subscription_status) subscriptionStatus = t.subscription_status
-    planId = resolvePlanId(t.plan_id, t.base_slots_plan, t.description, initialCourtsCount)
+      tenantId = t.id
+      tenantName = t.name || tenantName
+      tenantSlug = t.slug || tenantSlug
+      mpConnected = checkMpConnected(t)
+      if (t.created_at) tenantCreatedAt = t.created_at
+      parseTenantMeta(t.description || null)
+      if (typeof t.is_active === 'boolean') isActive = t.is_active
+      if (t.subscription_status) subscriptionStatus = t.subscription_status
+      planId = resolvePlanId(t.plan_id, t.base_slots_plan, t.description, initialCourtsCount)
 
-    // Auto-reparar la base de datos si el plan registrado era inferior
-    if (t.id && (t.plan_id !== planId || Number(t.base_slots_plan) < (initialCourtsCount || 1))) {
-      void serviceClient
-        .from('tenants')
-        .update({
-          plan_id: planId,
-          base_slots_plan: Math.max(Number(t.base_slots_plan) || 1, initialCourtsCount || 1)
-        })
-        .eq('id', t.id)
-    }
+      // Auto-reparar la base de datos si el plan registrado era inferior
+      if (t.id && (t.plan_id !== planId || Number(t.base_slots_plan) < (initialCourtsCount || 1))) {
+        void serviceClient
+          .from('tenants')
+          .update({
+            plan_id: planId,
+            base_slots_plan: Math.max(Number(t.base_slots_plan) || 1, initialCourtsCount || 1)
+          })
+          .eq('id', t.id)
+      }
 
-    if (priceRulesResult?.data && priceRulesResult.data.length > 0) {
-      const activeRules = priceRulesResult.data.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
-      if (activeRules.length > 0) {
-        const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
-        if (maxCents > 0) {
-          highestPriceArs = Math.round(maxCents / 100)
-          hasPriceConfigured = true
+      if (priceRulesResult?.data && priceRulesResult.data.length > 0) {
+        const activeRules = priceRulesResult.data.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
+        if (activeRules.length > 0) {
+          const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+          if (maxCents > 0) {
+            highestPriceArs = Math.round(maxCents / 100)
+            hasPriceConfigured = true
+          }
         }
       }
-    }
 
-    const subData = subResult.data
-    if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
-      hasCard = true
-    }
-    if (!hasCard) {
-      const cookieHas = cookieStore.get('demo_has_card')?.value === 'true'
-      const cookieLast4 = cookieStore.get('demo_card_last4')?.value
-      if (cookieHas && cookieLast4) hasCard = true
+      const subData = subResult.data
+      if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
+        hasCard = true
+      }
+      if (!hasCard) {
+        const cookieHas = cookieStore.get('demo_has_card')?.value === 'true'
+        const cookieLast4 = cookieStore.get('demo_card_last4')?.value
+        if (cookieHas && cookieLast4) hasCard = true
+      }
+
+      setCachedTenantLayout(user.id, {
+        userRole,
+        userName,
+        tenantId,
+        tenantName,
+        tenantSlug,
+        mpConnected,
+        tenantCreatedAt,
+        isActive,
+        subscriptionStatus,
+        planId: planId || 'MEDIANO_2',
+        initialCourtsCount,
+        initialSports,
+        highestPriceArs,
+        hasPriceConfigured,
+        hasCard,
+        trialEndsAt,
+        trialForfeited,
+        cancellationEffectiveDate,
+      })
     }
   }
 

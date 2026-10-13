@@ -55,6 +55,8 @@ export function verifySuperadminSessionToken(token: string, secret: string): boo
   }
 }
 
+const userProfileServerCache = new Map<string, { profile: AuthUserProfile; expiresAt: number }>()
+
 /**
  * Obtiene el perfil del usuario autenticado actual desde Supabase Auth o cookies de sesión.
  * Retorna null si no hay sesión activa.
@@ -76,6 +78,20 @@ export const getCurrentUserProfile = cache(async function getCurrentUserProfile(
       }
     }
 
+    // 0.1 Cache en memoria de servidor para navegación instantánea entre menús (30s)
+    const authCookieTokens = cookieStore
+      .getAll()
+      .filter(c => c.name.startsWith('sb-') && c.name.includes('auth-token'))
+      .map(c => c.value)
+      .join(':')
+
+    if (authCookieTokens) {
+      const cached = userProfileServerCache.get(authCookieTokens)
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.profile
+      }
+    }
+
     // SEGURIDAD CRÍTICA: La sesión de Superadmin REQUIERE verificación criptográfica
     // de sa_session con HMAC (implementada arriba) o un perfil verificado en Supabase Auth.
     // NUNCA se otorga rol SUPERADMIN a partir de una cookie editable en cliente como demo_user_role.
@@ -94,21 +110,35 @@ export const getCurrentUserProfile = cache(async function getCurrentUserProfile(
 
       if (profile) {
         const effectiveRole = (isSuperById ? 'SUPERADMIN' : (profile.role as UserRole)) || 'CUSTOMER'
-        return {
+        const resultProfile: AuthUserProfile = {
           id: user.id,
           email: user.email || '',
           fullName: profile.full_name || '',
           role: effectiveRole,
           tenantId: profile.tenant_id || null,
         }
+        if (authCookieTokens) {
+          userProfileServerCache.set(authCookieTokens, {
+            profile: resultProfile,
+            expiresAt: Date.now() + 30000,
+          })
+        }
+        return resultProfile
       } else if (isSuperById) {
-        return {
+        const resultProfile: AuthUserProfile = {
           id: user.id,
           email: user.email || '',
           fullName: 'Superadmin Plataforma',
           role: 'SUPERADMIN',
           tenantId: null,
         }
+        if (authCookieTokens) {
+          userProfileServerCache.set(authCookieTokens, {
+            profile: resultProfile,
+            expiresAt: Date.now() + 30000,
+          })
+        }
+        return resultProfile
       }
     }
 

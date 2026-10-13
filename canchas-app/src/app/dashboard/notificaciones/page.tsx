@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { useClubNotifications } from '@/hooks/use-club-notifications'
+import { useTenantId } from '@/hooks/use-tenant-id'
 import type { ClubNotification, NotificationCategory, NotificationType } from '@/types/notifications'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -136,6 +137,7 @@ function getVisualProps(type: NotificationType) {
 }
 
 export default function NotificationsPage() {
+  const tenantId = useTenantId()
   const {
     notifications,
     stats,
@@ -147,7 +149,7 @@ export default function NotificationsPage() {
     markAllAsRead,
     sendTestNotification,
     refresh,
-  } = useClubNotifications({ initialLimit: 120 })
+  } = useClubNotifications({ tenantId, initialLimit: 120 })
 
   const [categoryFilter, setCategoryFilter] = useState<NotificationCategory>('ALL')
   const [searchQuery, setSearchQuery] = useState('')

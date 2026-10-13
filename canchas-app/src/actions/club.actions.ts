@@ -1216,9 +1216,16 @@ export async function applyBulkInflationPriceAdjustment(
 
 // ─── HORARIOS DE APERTURA Y CIERRE DEL CLUB ─────────────────────────────────
 
+const scheduleMemoryCache = new Map<string, { config: ClubScheduleConfig; expiresAt: number }>()
+
 export async function getClubSchedule(tenantId?: string | null): Promise<ClubScheduleConfig> {
   const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
   if (!effectiveTenantId) return DEFAULT_CLUB_SCHEDULE
+
+  const cached = scheduleMemoryCache.get(effectiveTenantId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.config
+  }
 
   try {
     const supabase = await createServiceClient()
@@ -1229,16 +1236,20 @@ export async function getClubSchedule(tenantId?: string | null): Promise<ClubSch
       .maybeSingle()
 
     if (error || !tenant || !tenant.description) {
+      scheduleMemoryCache.set(effectiveTenantId, { config: DEFAULT_CLUB_SCHEDULE, expiresAt: Date.now() + 60000 })
       return DEFAULT_CLUB_SCHEDULE
     }
 
     try {
       const parsed = JSON.parse(tenant.description)
-      return {
+      const res: ClubScheduleConfig = {
         opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
         closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
       }
+      scheduleMemoryCache.set(effectiveTenantId, { config: res, expiresAt: Date.now() + 60000 })
+      return res
     } catch {
+      scheduleMemoryCache.set(effectiveTenantId, { config: DEFAULT_CLUB_SCHEDULE, expiresAt: Date.now() + 60000 })
       return DEFAULT_CLUB_SCHEDULE
     }
   } catch (err) {
@@ -1292,12 +1303,14 @@ export async function updateClubSchedule(
         description: JSON.stringify(meta),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', tenantId)
+      .eq('id', effectiveTenantId)
 
     if (updateErr) {
       console.error('[updateClubSchedule] Error updating tenants:', updateErr.message)
       return { success: false, error: updateErr.message }
     }
+
+    scheduleMemoryCache.delete(effectiveTenantId)
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/canchas')

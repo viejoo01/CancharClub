@@ -58,6 +58,50 @@ interface UseClubNotificationsOptions {
   autoRefreshIntervalMs?: number
 }
 
+// Helpers de sincronización local para lectura inmediata e indestructible
+function getLocalReadState(tenantId?: string | null): { readIds: Set<string>; markedAllReadAt: number | null } {
+  if (typeof window === 'undefined') return { readIds: new Set(), markedAllReadAt: null }
+  try {
+    const raw = localStorage.getItem(`canchar_read_state_${tenantId || 'default'}`)
+    if (raw) {
+      const parsed = JSON.parse(raw) as { readIds?: string[]; markedAllReadAt?: number | null }
+      return {
+        readIds: new Set(Array.isArray(parsed.readIds) ? parsed.readIds : []),
+        markedAllReadAt: typeof parsed.markedAllReadAt === 'number' ? parsed.markedAllReadAt : null,
+      }
+    }
+  } catch {}
+  return { readIds: new Set(), markedAllReadAt: null }
+}
+
+function saveLocalReadState(
+  tenantId: string | null | undefined,
+  state: { readIds: string[]; markedAllReadAt: number | null }
+) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(
+      `canchar_read_state_${tenantId || 'default'}`,
+      JSON.stringify(state)
+    )
+  } catch {}
+}
+
+function applyReadStateToNotifications(
+  notifs: ClubNotification[],
+  readState: { readIds: Set<string>; markedAllReadAt: number | null }
+): ClubNotification[] {
+  return notifs.map(n => {
+    const createdTime = new Date(n.created_at).getTime()
+    const isMarkedMassive = readState.markedAllReadAt !== null && createdTime <= readState.markedAllReadAt
+    const isIndividuallyRead = readState.readIds.has(n.id)
+    return {
+      ...n,
+      read: Boolean(n.read || isMarkedMassive || isIndividuallyRead),
+    }
+  })
+}
+
 const cachedNotifsByTenant = new Map<string, { notifications: ClubNotification[]; stats: NotificationsStats }>()
 
 export function useClubNotifications({
@@ -68,16 +112,32 @@ export function useClubNotifications({
 }: UseClubNotificationsOptions = {}) {
   const cacheKey = `${tenantId || 'default'}_${category}`
   const initialCached = cachedNotifsByTenant.get(cacheKey)
+  const initialLocalRead = getLocalReadState(tenantId)
 
-  const [notifications, setNotifications] = useState<ClubNotification[]>(() => initialCached?.notifications || [])
-  const [stats, setStats] = useState<NotificationsStats>(() => initialCached?.stats || {
-    total: 0,
-    unread: 0,
-    bookingsCount: 0,
-    paymentsCount: 0,
-    alertsCount: 0,
-    systemCount: 0,
+  const [notifications, setNotifications] = useState<ClubNotification[]>(() => {
+    if (!initialCached) return []
+    return applyReadStateToNotifications(initialCached.notifications, initialLocalRead)
   })
+
+  const [stats, setStats] = useState<NotificationsStats>(() => {
+    if (!initialCached) {
+      return {
+        total: 0,
+        unread: 0,
+        bookingsCount: 0,
+        paymentsCount: 0,
+        alertsCount: 0,
+        systemCount: 0,
+      }
+    }
+    const merged = applyReadStateToNotifications(initialCached.notifications, initialLocalRead)
+    const unread = merged.filter(n => !n.read).length
+    return {
+      ...initialCached.stats,
+      unread,
+    }
+  })
+
   const [loading, setLoading] = useState(() => !initialCached)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -123,9 +183,17 @@ export function useClubNotifications({
           category,
           limit: initialLimit,
         })
-        cachedNotifsByTenant.set(cacheKey, { notifications: res.notifications, stats: res.stats })
-        setNotifications(res.notifications)
-        setStats(res.stats)
+        const currentLocal = getLocalReadState(tenantId)
+        const mergedNotifs = applyReadStateToNotifications(res.notifications, currentLocal)
+        const unreadCount = mergedNotifs.filter(n => !n.read).length
+        const mergedStats: NotificationsStats = {
+          ...res.stats,
+          unread: unreadCount,
+        }
+
+        cachedNotifsByTenant.set(cacheKey, { notifications: mergedNotifs, stats: mergedStats })
+        setNotifications(mergedNotifs)
+        setStats(mergedStats)
       } catch (err) {
         console.error('Error loading notifications:', err)
       } finally {
@@ -152,12 +220,12 @@ export function useClubNotifications({
     return () => clearInterval(interval)
   }, [autoRefreshIntervalMs, loadNotifications])
 
-  // Escuchar BroadcastChannel para actualizaciones instantáneas en vivo (0ms)
+  // Escuchar BroadcastChannel para sincronización en tiempo real entre pestañas/componentes
   useEffect(() => {
     let bcBookings: BroadcastChannel | null = null
     let bcNotifs: BroadcastChannel | null = null
 
-    const handleEvent = () => {
+    const handleNewEvent = () => {
       if (soundEnabledRef.current) {
         playChimeSound()
       }
@@ -169,13 +237,28 @@ export function useClubNotifications({
         bcBookings = new BroadcastChannel('canchar_bookings')
         bcBookings.onmessage = (e) => {
           if (e.data?.type === 'BOOKING_CONFIRMED' || e.data?.type === 'NEW_BOOKING') {
-            handleEvent()
+            handleNewEvent()
           }
         }
 
         bcNotifs = new BroadcastChannel('canchar_notifications')
-        bcNotifs.onmessage = () => {
-          handleEvent()
+        bcNotifs.onmessage = (e) => {
+          if (e.data?.type === 'ALL_READ') {
+            // Actualización instantánea silenciosa
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+            setStats(prev => ({ ...prev, unread: 0 }))
+          } else if (e.data?.type === 'READ_ITEM' && e.data?.id) {
+            const itemId = e.data.id as string
+            setNotifications(prev =>
+              prev.map(n => (n.id === itemId ? { ...n, read: true } : n))
+            )
+            setStats(prev => ({
+              ...prev,
+              unread: Math.max(0, prev.unread - 1),
+            }))
+          } else {
+            handleNewEvent()
+          }
         }
       }
     } catch {}
@@ -199,7 +282,7 @@ export function useClubNotifications({
   // Marcar una como leída
   const markAsRead = useCallback(
     async (id: string) => {
-      // Optimista en UI
+      // 1. Optimista instantáneo en componente
       setNotifications(prev =>
         prev.map(n => (n.id === id ? { ...n, read: true } : n))
       )
@@ -208,6 +291,37 @@ export function useClubNotifications({
         unread: Math.max(0, prev.unread - 1),
       }))
 
+      // 2. Persistir inmediatamente en localStorage
+      const local = getLocalReadState(tenantId)
+      local.readIds.add(id)
+      saveLocalReadState(tenantId, {
+        readIds: Array.from(local.readIds),
+        markedAllReadAt: local.markedAllReadAt,
+      })
+
+      // 3. Actualizar todas las entradas en memoria del club
+      const prefix = tenantId || 'default'
+      for (const [key, val] of cachedNotifsByTenant.entries()) {
+        if (key.startsWith(prefix)) {
+          const updated = val.notifications.map(n => (n.id === id ? { ...n, read: true } : n))
+          const unread = updated.filter(n => !n.read).length
+          cachedNotifsByTenant.set(key, {
+            notifications: updated,
+            stats: { ...val.stats, unread },
+          })
+        }
+      }
+
+      // 4. Notificar a otras pestañas
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('canchar_notifications')
+          bc.postMessage({ type: 'READ_ITEM', id, tenantId })
+          bc.close()
+        }
+      } catch {}
+
+      // 5. Persistir en servidor
       try {
         await markNotificationAsReadAction(id, tenantId || undefined)
       } catch (err) {
@@ -219,12 +333,40 @@ export function useClubNotifications({
 
   // Marcar todas como leídas
   const markAllAsRead = useCallback(async () => {
-    // Optimista en UI
+    // 1. Optimista instantáneo en componente
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
     setStats(prev => ({ ...prev, unread: 0 }))
 
     toast.success('Todas las notificaciones fueron marcadas como leídas')
 
+    // 2. Persistir inmediatamente en localStorage
+    const cutoffTime = Date.now() + 5000
+    saveLocalReadState(tenantId, {
+      readIds: [],
+      markedAllReadAt: cutoffTime,
+    })
+
+    // 3. Actualizar todas las entradas de memoria del club
+    const prefix = tenantId || 'default'
+    for (const [key, val] of cachedNotifsByTenant.entries()) {
+      if (key.startsWith(prefix)) {
+        cachedNotifsByTenant.set(key, {
+          notifications: val.notifications.map(n => ({ ...n, read: true })),
+          stats: { ...val.stats, unread: 0 },
+        })
+      }
+    }
+
+    // 4. Notificar a otras pestañas
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('canchar_notifications')
+        bc.postMessage({ type: 'ALL_READ', tenantId, cutoffTime })
+        bc.close()
+      }
+    } catch {}
+
+    // 5. Persistir en servidor
     try {
       await markAllNotificationsAsReadAction(tenantId || undefined)
     } catch (err) {

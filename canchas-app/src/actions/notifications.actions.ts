@@ -57,7 +57,7 @@ async function getReadState(tenantId: string): Promise<{ readIds: Set<string>; m
       .select('new_data')
       .eq('tenant_id', tenantId)
       .eq('action', 'NOTIFICATIONS_READ_STATE')
-      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(1)
       .maybeSingle()
 
@@ -144,7 +144,7 @@ const notifsCache = new Map<string, { data: { notifications: ClubNotification[];
 
 export async function invalidateClubNotificationsCache(tenantId?: string | null) {
   if (tenantId) {
-    for (const key of notifsCache.keys()) {
+    for (const key of Array.from(notifsCache.keys())) {
       if (key.startsWith(tenantId)) {
         notifsCache.delete(key)
       }
@@ -163,6 +163,7 @@ export async function getClubNotificationsAction(params?: {
   limit?: number
   search?: string
   unreadOnly?: boolean
+  bypassCache?: boolean
 }): Promise<{
   notifications: ClubNotification[]
   stats: NotificationsStats
@@ -177,9 +178,11 @@ export async function getClubNotificationsAction(params?: {
     }
 
     const cacheKey = `${effectiveTenantId}_${params?.category || 'ALL'}_${params?.limit || 100}_${params?.search || ''}_${Boolean(params?.unreadOnly)}`
-    const cached = notifsCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data
+    if (!params?.bypassCache) {
+      const cached = notifsCache.get(cacheKey)
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.data
+      }
     }
 
     const auth = await assertTenantMember(effectiveTenantId)
@@ -566,20 +569,21 @@ export async function markNotificationAsReadAction(
  */
 export async function markAllNotificationsAsReadAction(
   tenantId?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; markedAllReadAt?: string; error?: string }> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return { success: false, error: 'Club no especificado' }
 
+    const markedAllReadAt = new Date(Date.now() + 5000).toISOString()
     await saveReadState(effectiveTenantId, {
       readIds: [],
-      markedAllReadAt: new Date().toISOString(),
+      markedAllReadAt,
     })
 
     await invalidateClubNotificationsCache(effectiveTenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/notificaciones')
-    return { success: true }
+    return { success: true, markedAllReadAt }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al marcar todas como leídas'
     return { success: false, error: msg }

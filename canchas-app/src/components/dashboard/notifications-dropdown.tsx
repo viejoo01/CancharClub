@@ -211,22 +211,40 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
       {isOpen && (
         <div className="absolute right-0 mt-2 w-85 sm:w-105 max-w-[calc(100vw-24px)] rounded-3xl bg-slate-900/95 border border-slate-800/90 shadow-2xl backdrop-blur-xl z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
           {/* Encabezado */}
-          <div className="p-3.5 sm:p-4 border-b border-slate-800/80 bg-slate-950/60 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <div className="p-3 sm:p-3.5 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                 <Bell className="w-3.5 h-3.5" />
               </div>
-              <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight">
-                Notificaciones y Alertas
-              </h3>
-              {unreadCount > 0 && (
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] py-0 px-1.5 h-4 font-mono font-bold">
-                  {unreadCount} nuevas
-                </Badge>
-              )}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate">
+                  Notificaciones
+                </h3>
+                {unreadCount > 0 && (
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] py-0 px-1.5 h-4 font-mono font-bold shrink-0">
+                    {unreadCount} nuevas
+                  </Badge>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Marcar todas como leídas */}
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void markAllAsRead()
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-lg transition-colors cursor-pointer"
+                  title="Marcar todas como leídas"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Marcar leídas</span>
+                </button>
+              )}
+
               {/* Toggle de Sonido */}
               <button
                 type="button"
@@ -254,18 +272,6 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
               >
                 <Settings className="w-3.5 h-3.5" />
               </button>
-
-              {/* Marcar todas como leídas */}
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void markAllAsRead()}
-                  className="p-1.5 text-xs text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
-                  title="Marcar todas como leídas"
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
           </div>
 
@@ -349,28 +355,45 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                     onClick={() => {
                       if (!notif.read) void markAsRead(notif.id)
                     }}
-                    className={`p-3 sm:p-3.5 transition-colors cursor-pointer flex items-start gap-3 hover:bg-slate-800/40 relative ${
-                      !notif.read ? 'bg-emerald-950/15' : 'opacity-90'
+                    className={`p-3 sm:p-3.5 transition-colors cursor-pointer flex items-start gap-3 hover:bg-slate-800/50 relative group ${
+                      !notif.read ? 'bg-emerald-950/20' : 'opacity-90'
                     }`}
                   >
-                    {/* Indicador no leído */}
-                    {!notif.read && (
-                      <span className="absolute top-4 right-3 w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400/80" />
-                    )}
-
                     {/* Icono con badge visual */}
                     <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${visuals.bg}`}>
                       <IconComponent className="w-4 h-4" />
                     </div>
 
-                    <div className="flex-1 min-w-0 pr-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <Badge className={`${visuals.badgeBg} text-[9px] py-0 px-1 font-bold tracking-wider uppercase`}>
-                          {visuals.badgeLabel}
-                        </Badge>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          {getRelativeTimeLabel(notif.created_at)}
-                        </span>
+                    <div className="flex-1 min-w-0 pr-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge className={`${visuals.badgeBg} text-[9px] py-0 px-1 font-bold tracking-wider uppercase`}>
+                            {visuals.badgeLabel}
+                          </Badge>
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {getRelativeTimeLabel(notif.created_at)}
+                          </span>
+                        </div>
+
+                        {/* Botón explícito o indicador de visto */}
+                        {!notif.read ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void markAsRead(notif.id)
+                            }}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-emerald-400 hover:text-emerald-200 hover:bg-emerald-500/20 transition-all cursor-pointer"
+                            title="Marcar como vista"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400/80" />
+                            <span className="hidden group-hover:inline">Marcar vista</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-600 flex items-center gap-0.5" title="Notificación vista">
+                            <Check className="w-3 h-3 text-slate-500" />
+                          </span>
+                        )}
                       </div>
 
                       <h4 className="text-xs font-bold text-white mt-1 leading-snug truncate">

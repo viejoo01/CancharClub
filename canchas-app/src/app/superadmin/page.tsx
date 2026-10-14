@@ -692,15 +692,6 @@ export default function SuperadminPage() {
     }
   }
 
-  const handleDeleteTenant = (tenantId: string, clubName: string) => {
-    const found = tenants.find(t => t.id === tenantId)
-    handleOpenDeleteTenantModal({
-      id: tenantId,
-      name: clubName,
-      slug: found?.slug || tenantId,
-      plan_id: found?.plan_id
-    })
-  }
 
   // Filtros de usuarios
   const [userSearchTerm, setUserSearchTerm] = useState('')

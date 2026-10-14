@@ -51,20 +51,79 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = getSupabase()
-  const { data, error } = await supabase
+  let slots = null
+  const { data: rpcData, error: rpcError } = await supabase
     .rpc('get_court_availability', {
       _court_id: courtId,
       _date_from: dateFrom,
       _date_to: dateTo,
     })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!rpcError && rpcData) {
+    slots = rpcData
+  } else {
+    // Fallback garantizado: si la función RPC no existe en la BD o falla la caché de esquema,
+    // consultar directamente la cancha y sus reservas activas
+    const { data: court } = await supabase
+      .from('courts')
+      .select('id, tenant_id, slot_duration_minutes, sport')
+      .eq('id', courtId)
+      .maybeSingle()
+
+    if (!court) {
+      return NextResponse.json({ error: 'Cancha no encontrada' }, { status: 404 })
+    }
+
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('booked_at, status')
+      .eq('court_id', courtId)
+      .not('status', 'in', '("cancelled")')
+
+    const durationMins = court.slot_duration_minutes || (court.sport?.includes('FUTBOL') ? 60 : 90)
+    const generatedSlots: Array<{
+      slot_start: string
+      slot_end: string
+      is_available: boolean
+      block_reason: string | null
+    }> = []
+
+    const curr = new Date(dFrom)
+    while (curr <= dTo) {
+      const yyyy = curr.getUTCFullYear()
+      const mm = String(curr.getUTCMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getUTCDate()).padStart(2, '0')
+      const dateStr = `${yyyy}-${mm}-${dd}`
+
+      for (let h = 8; h <= 23; h++) {
+        const hStr = String(h).padStart(2, '0')
+        const startIso = `${dateStr}T${hStr}:00:00-03:00`
+        const startDate = new Date(startIso)
+        const endDate = new Date(startDate.getTime() + durationMins * 60000)
+        const startIsoUtc = startDate.toISOString()
+        const endIsoUtc = endDate.toISOString()
+
+        const isOccupied = (bookings || []).some((b) => {
+          const bookedRange = String(b.booked_at || '')
+          return bookedRange.includes(startIsoUtc) || bookedRange.includes(`${dateStr} ${hStr}:00`)
+        })
+
+        generatedSlots.push({
+          slot_start: startIsoUtc,
+          slot_end: endIsoUtc,
+          is_available: !isOccupied,
+          block_reason: isOccupied ? 'RESERVED' : null,
+        })
+      }
+      curr.setUTCDate(curr.getUTCDate() + 1)
+    }
+    slots = generatedSlots
   }
 
-  return NextResponse.json({ slots: data }, {
+  return NextResponse.json({ slots }, {
     headers: {
       'Cache-Control': 'public, max-age=30, stale-while-revalidate=60',
     }
   })
 }
+

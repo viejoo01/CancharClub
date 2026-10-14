@@ -19,7 +19,6 @@ import {
   Loader2,
   Sparkles,
   CheckCircle2,
-  HelpCircle,
 } from 'lucide-react'
 import {
   InstagramIcon,

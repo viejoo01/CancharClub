@@ -7,20 +7,16 @@ import {
   Trophy, 
   Calendar, 
   Share2, 
-  Medal, 
   Sparkles, 
-  MapPin, 
   ChevronRight, 
   ArrowLeft,
   Flame,
-  Clock,
   Loader2
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getTournamentById, type TournamentWithDetails } from '@/actions/tournament.actions'
-import { buildWhatsAppLink } from '@/lib/utils'
 
 export default function PublicTournamentPage() {
   const params = useParams()

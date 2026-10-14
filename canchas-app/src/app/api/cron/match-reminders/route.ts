@@ -41,7 +41,7 @@ async function handleMatchReminders(request: NextRequest) {
     // 2. Consultar turnos confirmados con datos del club y cancha
     const { data: bookings, error: bookingsErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, customer_name, customer_phone, booked_at, staff_notes, status, courts(name), tenants(name, address)')
+      .select('id, tenant_id, customer_name, customer_phone, booked_at, staff_notes, status, reminder_sent_at, courts(name), tenants(name, address)')
       .eq('status', 'confirmed')
       .not('customer_phone', 'is', null)
 
@@ -61,9 +61,9 @@ async function handleMatchReminders(request: NextRequest) {
     for (const b of bookings || []) {
       if (!b.customer_phone) continue
 
-      // Evitar envíos duplicados si ya fue notificado
+      // Evitar envíos duplicados si ya fue notificado (columna reminder_sent_at o tag en notas)
       const notes = b.staff_notes || ''
-      if (notes.includes('[REMINDER_2H_SENT]')) {
+      if (b.reminder_sent_at || notes.includes('[REMINDER_2H_SENT]')) {
         continue
       }
 
@@ -112,7 +112,10 @@ async function handleMatchReminders(request: NextRequest) {
         const updatedNotes = notes ? `${notes} | [REMINDER_2H_SENT]` : '[REMINDER_2H_SENT]'
         await supabase
           .from('bookings')
-          .update({ staff_notes: updatedNotes })
+          .update({
+            staff_notes: updatedNotes,
+            reminder_sent_at: new Date().toISOString(),
+          })
           .eq('id', b.id)
 
         remindersSent.push({

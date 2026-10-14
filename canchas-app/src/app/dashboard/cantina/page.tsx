@@ -56,7 +56,6 @@ import {
   updateOrderStatus as dbUpdateOrderStatus,
   getDailyOrders,
   getCantinaProducts,
-  saveCantinaProducts,
   updateProductStock,
   saveSingleProduct,
   deleteProduct,

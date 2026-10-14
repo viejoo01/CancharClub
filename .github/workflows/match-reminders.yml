@@ -1,0 +1,45 @@
+name: WhatsApp Match Reminders (2h Before Match)
+
+on:
+  schedule:
+    # Se ejecuta cada 30 minutos para evaluar turnos que inician en las próximas 2 horas
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Disparo manual desde la pestaña Actions en GitHub
+
+jobs:
+  match-reminders:
+    name: Dispatch Match Reminders
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📱 Ejecutar Cron Match Reminders (/api/cron/match-reminders)
+        id: ping_reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          APP_URL="https://www.cancharclub.com.ar"
+          echo "Invocando recordatorios en: ${APP_URL}/api/cron/match-reminders"
+          
+          if [ -n "$CRON_SECRET" ]; then
+            RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/match-reminders" \
+              -H "User-Agent: GitHub-Actions-MatchReminders/1.0" \
+              -H "Authorization: Bearer $CRON_SECRET" || true)
+          else
+            RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/match-reminders" \
+              -H "User-Agent: GitHub-Actions-MatchReminders/1.0" || true)
+          fi
+          
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -2)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
+          TOTAL_TIME=$(echo "$RESPONSE" | tail -n 1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+          echo "Total Time: ${TOTAL_TIME}s"
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Recordatorios procesados exitosamente."
+          else
+            echo "⚠️ Aviso: Código HTTP $HTTP_CODE al procesar recordatorios."
+          fi

@@ -654,6 +654,7 @@ export async function registerRecurringSlotPaymentAction(
       .from('recurring_slots')
       .update({
         notes: updatedNotes,
+        last_paid_period: targetPeriod,
         status: 'ACTIVE',
         updated_at: now.toISOString(),
       })
@@ -708,8 +709,8 @@ export async function checkAndReleaseOverdueRecurringSlots(
 
     if (slots && slots.length > 0) {
       for (const slot of slots) {
-        // BLINDAJE: Si el abonado ya pagó la cuota de este mes ([LAST_PAID:YYYY-MM]), omitir
-        if (slot.notes && slot.notes.includes(`[LAST_PAID:${currentPeriod}]`)) {
+        // BLINDAJE: Si el abonado ya pagó la cuota de este mes (columna last_paid_period o tag [LAST_PAID:YYYY-MM]), omitir
+        if (slot.last_paid_period === currentPeriod || (slot.notes && slot.notes.includes(`[LAST_PAID:${currentPeriod}]`))) {
           continue
         }
 

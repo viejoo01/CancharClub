@@ -26,7 +26,6 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
-  ExternalLink,
   CalendarCheck2,
 } from 'lucide-react'
 import {

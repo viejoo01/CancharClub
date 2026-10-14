@@ -66,6 +66,7 @@ import {
   updateTenantSubscriptionStatusAction,
   activateTenantTrialPeriodAction,
   testSuperadminTelemetryAction,
+  createTenantFromSuperadmin,
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
@@ -550,34 +551,41 @@ export default function SuperadminPage() {
     })
   }
 
-  const handleCreateTenant = (e: React.FormEvent) => {
+  const [isCreatingTenant, setIsCreatingTenant] = useState(false)
+
+  const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newClubName.trim()) return
 
-    const slug = newClubName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-    const courtsNum = Number(newCourts) || 2
-    const created = {
-      id: `t-${Date.now()}`,
-      name: newClubName,
-      slug,
-      city: newCity,
-      active_courts: courtsNum,
-      highest_slot_price: Number(newMaxPrice) || 30000,
-      total_bookings: 0,
-      mp_connected: false,
-      status: 'ACTIVE',
-      subscription_status: 'PENDIENTE' as const,
-      last_paid: null,
-      plan_id: newPlanId || getPlanByCourtsCount(courtsNum).id,
-      is_active: true,
-    }
+    const courtsNum = Math.max(1, Number(newCourts) || 2)
+    const maxPrice = Number(newMaxPrice) || 30000
+    const chosenPlan = (newPlanId as SaaSPlanId) || getPlanByCourtsCount(courtsNum).id
 
-    setTenants(prev => [...prev, created])
-    setIsModalOpen(false)
-    setNewClubName('')
-    toast.success(`Club "${newClubName}" creado exitosamente`, {
-      description: `Plan: ${SAAS_PLANS[created.plan_id]?.name || created.plan_id}. Fórmula: ${calculateSaaSMultiplier(created.active_courts)} turnos ($${(created.highest_slot_price * calculateSaaSMultiplier(created.active_courts)).toLocaleString('es-AR')}/mes).`
-    })
+    setIsCreatingTenant(true)
+    try {
+      const res = await createTenantFromSuperadmin({
+        name: newClubName.trim(),
+        city: newCity.trim(),
+        courtsCount: courtsNum,
+        maxPrice,
+        planId: chosenPlan,
+      })
+
+      if (res.success && res.tenant) {
+        setTenants(prev => [res.tenant!, ...prev])
+        setIsModalOpen(false)
+        setNewClubName('')
+        toast.success(`Club "${newClubName}" creado exitosamente`, {
+          description: `Guardado en base de datos. Plan: ${SAAS_PLANS[chosenPlan]?.name || chosenPlan}. Canchas: ${courtsNum}.`
+        })
+      } else {
+        toast.error(res.error || 'Error al guardar el club en la base de datos')
+      }
+    } catch (err: unknown) {
+      toast.error((err as Error)?.message || 'Error inesperado al crear el club')
+    } finally {
+      setIsCreatingTenant(false)
+    }
   }
 
   const handleOpenEdit = (t: typeof tenants[0]) => {
@@ -3167,9 +3175,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               </Button>
               <Button 
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs flex-1 sm:flex-initial"
+                disabled={isCreatingTenant}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs flex-1 sm:flex-initial flex items-center justify-center gap-2"
               >
-                Registrar y Activar Club
+                {isCreatingTenant ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Guardando en BD...</span>
+                  </>
+                ) : (
+                  <span>Registrar y Activar Club</span>
+                )}
               </Button>
             </DialogFooter>
           </form>

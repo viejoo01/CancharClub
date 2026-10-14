@@ -1036,6 +1036,132 @@ export async function deleteTenantById(tenantId: string): Promise<{ success: boo
 }
 
 /**
+ * Permite al Superadmin dar de alta un nuevo club directamente en la base de datos de producción,
+ * sembrando sus canchas iniciales y configuración de precios para que esté operativo de inmediato.
+ */
+export async function createTenantFromSuperadmin(input: {
+  name: string
+  city?: string
+  courtsCount: number
+  maxPrice?: number
+  planId?: SaaSPlanId
+}): Promise<{ success: boolean; tenant?: SuperadminTenantItem; error?: string }> {
+  try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
+    const supabase = await createServiceClient()
+    const name = input.name.trim()
+    if (!name) return { success: false, error: 'El nombre del club es requerido' }
+
+    let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    // Si el slug ya existe, agregar sufijo
+    const { data: existingSlug } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle()
+    if (existingSlug) {
+      slug = `${slug}-${Date.now().toString().slice(-4)}`
+    }
+
+    const courtsCount = Math.max(1, Number(input.courtsCount) || 2)
+    const planId: SaaSPlanId = input.planId || getPlanByCourtsCount(courtsCount).id
+    const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 4 : 5
+    const now = new Date()
+
+    const { data: tenant, error: insertErr } = await supabase
+      .from('tenants')
+      .insert({
+        name,
+        slug,
+        city: input.city?.trim() || 'Tucumán',
+        province: 'Tucumán',
+        country: 'Argentina',
+        timezone: 'America/Argentina/Tucuman',
+        is_active: true,
+        subscription_status: 'ACTIVE',
+        plan_id: planId,
+        base_slots_plan: baseSlots,
+        payment_methods: ['CARD', 'MERCADO_PAGO'],
+        description: JSON.stringify({
+          card_linked: true,
+          created_by: 'SUPERADMIN',
+          created_at: now.toISOString(),
+        }),
+      })
+      .select()
+      .single()
+
+    if (insertErr || !tenant) {
+      console.error('Error al insertar club desde Superadmin:', insertErr)
+      return { success: false, error: insertErr?.message || 'Error al crear el club' }
+    }
+
+    // Sembrar canchas automáticas
+    const courtsToInsert = []
+    for (let i = 0; i < courtsCount; i++) {
+      courtsToInsert.push({
+        tenant_id: tenant.id,
+        name: `Cancha ${i + 1}`,
+        sport: 'PADEL',
+        surface: 'Sintético',
+        slot_duration_minutes: 60,
+        has_lights: true,
+        is_indoor: false,
+        is_active: true,
+        display_order: i + 1,
+      })
+    }
+    const { data: insertedCourts } = await supabase.from('courts').insert(courtsToInsert).select()
+
+    // Reglas de precios base si se especificó monto
+    const maxPrice = Number(input.maxPrice) || 0
+    if (maxPrice > 0 && insertedCourts && insertedCourts.length > 0) {
+      const priceRulesToInsert = []
+      for (const c of insertedCourts) {
+        for (let day = 0; day <= 6; day++) {
+          priceRulesToInsert.push({
+            tenant_id: tenant.id,
+            court_id: c.id,
+            day_of_week: day,
+            start_time: '08:00:00',
+            end_time: '23:59:59',
+            price_cents: maxPrice * 100,
+            deposit_pct: 30,
+            is_active: true,
+          })
+        }
+      }
+      await supabase.from('price_rules').insert(priceRulesToInsert)
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/')
+
+    return {
+      success: true,
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        city: tenant.city,
+        active_courts: courtsCount,
+        highest_slot_price: maxPrice,
+        total_bookings: 0,
+        mp_connected: false,
+        status: 'ACTIVE',
+        subscription_status: 'AL_DIA',
+        last_paid: null,
+        plan_id: planId,
+        is_active: true,
+        created_at: tenant.created_at,
+      },
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al crear el club'
+    console.error('createTenantFromSuperadmin exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
+/**
  * Envía una prueba de telemetría a Email / WhatsApp / Webhook configurado.
  */
 export async function testSuperadminTelemetryAction(): Promise<{

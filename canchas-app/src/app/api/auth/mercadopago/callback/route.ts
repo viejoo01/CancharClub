@@ -34,35 +34,35 @@ export async function GET(request: NextRequest) {
     const clientSecret = process.env.MP_CLIENT_SECRET
     const redirectUri = `${appUrl}/api/auth/mercadopago/callback`
 
-    let accessToken = `TEST_MP_TOKEN_${Date.now()}`
-    let refreshToken = `TEST_MP_REFRESH_${Date.now()}`
-    let collectorId = `COLLECTOR_${Date.now().toString().slice(-6)}`
-
-    // Si están configuradas las credenciales de MP Marketplace en producción, intercambiar código
-    if (clientId && clientSecret) {
-      const response = await fetch('https://api.mercadopago.com/oauth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_secret: clientSecret,
-          client_id: clientId,
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: redirectUri,
-        }),
-      })
-
-      const data = await response.json()
-      if (response.ok && data.access_token) {
-        accessToken = data.access_token
-        refreshToken = data.refresh_token
-        collectorId = String(data.user_id)
-      } else {
-        console.warn('[MP OAuth Token Exchange] Warning from MP API:', data)
-      }
+    if (!clientId || !clientSecret) {
+      console.error('[MP OAuth Callback] Error: MP_CLIENT_ID o MP_CLIENT_SECRET no configurados en el servidor')
+      return NextResponse.redirect(`${appUrl}/dashboard/plan?mp_error=server_missing_credentials`)
     }
+
+    const response = await fetch('https://api.mercadopago.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_secret: clientSecret,
+        client_id: clientId,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+      }),
+    })
+
+    const data = await response.json()
+    if (!response.ok || !data.access_token) {
+      console.error('[MP OAuth Token Exchange] Error retornado por Mercado Pago:', data)
+      const errorDetail = data?.message || data?.error || 'token_exchange_failed'
+      return NextResponse.redirect(`${appUrl}/dashboard/plan?mp_error=${encodeURIComponent(errorDetail)}`)
+    }
+
+    const accessToken = data.access_token
+    const refreshToken = data.refresh_token || null
+    const collectorId = String(data.user_id)
 
     // Actualizar en base de datos para el tenant
     const supabase = await createServiceClient()

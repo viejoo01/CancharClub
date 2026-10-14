@@ -116,15 +116,16 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text()
     const webhookSecret = process.env.MP_WEBHOOK_SECRET
+    const xSignature = request.headers.get('x-signature')
 
-    // 1. Verificación de Firma (si el secret está configurado y no es test mock)
-    if (webhookSecret && webhookSecret !== 'test_webhook_secret') {
+    // 1. Verificación de Firma (si viene x-signature y secret está configurado)
+    if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
       const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
       if (!isValid) {
         console.warn('[Billing Webhook] Firma X-Signature inválida — rechazando petición')
         return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
       }
-    } else if (process.env.NODE_ENV === 'production') {
+    } else if (process.env.NODE_ENV === 'production' && !webhookSecret) {
       console.error('[Billing Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
       return NextResponse.json({ error: 'Webhook secret no configurado' }, { status: 500 })
     }

@@ -190,7 +190,8 @@ export async function middleware(request: NextRequest) {
       const requiresCardCheck = isProdEnv || isPendingActivation || (!cookieHasCard || !cookieCardLast4)
 
       if (requiresCardCheck && profileData && (profileData.role === 'TENANT_ADMIN' || profileData.role === 'ADMIN')) {
-        const tenantData = profileData.tenants
+        const rawTenants = profileData.tenants
+        const tenantData = Array.isArray(rawTenants) ? rawTenants[0] : rawTenants
         let metaCardLinked = false
         if (tenantData?.description) {
           try {
@@ -259,7 +260,8 @@ export async function middleware(request: NextRequest) {
 
   // ─── 5. EVALUACIÓN DEL ESTADO DE DUNNING DEL CLUB (TENANT) ────────────────
   if (pathname.startsWith('/dashboard') && user) {
-    const tenantData = profileData?.tenants
+    const rawTenants = profileData?.tenants
+    const tenantData = Array.isArray(rawTenants) ? rawTenants[0] : rawTenants
     const isProd = process.env.NODE_ENV === 'production'
     // En producción la base de datos es la única fuente de verdad inmutable
     const tenantStatus = (isProd ? tenantData?.subscription_status : (demoStatusOverride || tenantData?.subscription_status)) || 'ACTIVE'

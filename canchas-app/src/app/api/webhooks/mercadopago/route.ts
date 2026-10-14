@@ -173,9 +173,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing payment id' }, { status: 400 })
   }
 
-  // ── Verificar firma usando el secret de la plataforma (para webhooks de APP) ─
+  // ── Verificar firma usando el secret de la plataforma (para webhooks de APP con x-signature) ─
   const webhookSecret = process.env.MP_WEBHOOK_SECRET
-  if (webhookSecret && webhookSecret !== 'test_webhook_secret') {
+  const xSignature = request.headers.get('x-signature')
+  if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
     const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
     if (!isValid) {
       console.warn('[MP Webhook] Firma inválida — descartando notificación maliciosa')

@@ -38,11 +38,12 @@ async function handleMatchReminders(request: NextRequest) {
     const windowStart = new Date(now.getTime() + 90 * 60 * 1000).toISOString()
     const windowEnd = new Date(now.getTime() + 150 * 60 * 1000).toISOString()
 
-    // 2. Consultar turnos confirmados con datos del club y cancha
+    // 2. Consultar turnos confirmados dentro de la ventana horaria en PostgreSQL
     const { data: bookings, error: bookingsErr } = await supabase
       .from('bookings')
       .select('id, tenant_id, customer_name, customer_phone, booked_at, staff_notes, status, reminder_sent_at, courts(name), tenants(name, address)')
       .eq('status', 'confirmed')
+      .filter('booked_at', 'ov', `[${windowStart},${windowEnd}]`)
       .not('customer_phone', 'is', null)
 
     if (bookingsErr) {
@@ -72,7 +73,12 @@ async function handleMatchReminders(request: NextRequest) {
       const startMatch = rangeStr.match(/[\[\(]([^,]+),/)
       if (!startMatch || !startMatch[1]) continue
 
-      const rawStartIso = startMatch[1].replace(/["']/g, '').trim()
+      let rawStartIso = startMatch[1].replace(/["']/g, '').trim().replace(' ', 'T')
+      if (rawStartIso.endsWith('+00')) {
+        rawStartIso = rawStartIso.slice(0, -3) + 'Z'
+      } else if (rawStartIso.endsWith('+00:00')) {
+        rawStartIso = rawStartIso.slice(0, -6) + 'Z'
+      }
       const startDate = new Date(rawStartIso)
 
       if (isNaN(startDate.getTime())) continue

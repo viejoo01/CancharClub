@@ -15,7 +15,7 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { MercadoPagoConfig, Preference, PreApproval, CardToken, Payment, PaymentRefund } from 'mercadopago'
 import type { TenantSubscriptionStatus, TenantInvoice, AutoDebitAlert } from '@/types/database'
-import { formatAutoDebitAlertDate } from '@/lib/utils'
+import { formatAutoDebitAlertDate, getArgentinaTodayIso } from '@/lib/utils'
 import {
   isValidLuhn,
   detectCardBrand,
@@ -677,7 +677,9 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
 
   const summary = await getClubBillingSummary(tenantId)
   const now = new Date()
-  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  const todayIso = getArgentinaTodayIso()
+  const [currY, currM] = todayIso.split('-').map(Number)
+  const periodStart = `${currY}-${String(currM).padStart(2, '0')}-01`
   const periodEnd = summary.nextDueDate
 
   const { error } = await serviceClient
@@ -707,7 +709,7 @@ export async function recordClubSubscriptionPayment(tenantId: string, notes?: st
     .eq('year', currentYear)
     .maybeSingle()
 
-  let validDueDate = new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0]
+  let validDueDate = getArgentinaTodayIso(new Date(now.getTime() + 30 * 86400000))
   if (periodEnd && periodEnd.includes('/')) {
     const [dd, mm, yyyy] = periodEnd.split('/')
     if (dd && mm && yyyy) {
@@ -953,7 +955,7 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
   } else {
     const now = new Date()
     const summary = await getClubBillingSummary(tenantId)
-    let validDueDate = new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0]
+    let validDueDate = getArgentinaTodayIso(new Date(now.getTime() + 30 * 86400000))
     if (summary.nextDueDate && summary.nextDueDate.includes('/')) {
       const [dd, mm, yyyy] = summary.nextDueDate.split('/')
       if (dd && mm && yyyy) {
@@ -2261,9 +2263,8 @@ export async function confirmAndActivateSubscriptionWithCard(
     // Registrar o actualizar registro en saas_subscriptions
     try {
       const summary = await getClubBillingSummary(tenantId)
-      const now = new Date()
-      const periodStart = now.toISOString().split('T')[0]
-      const periodEnd = summary.nextDueDate || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]
+      const periodStart = getArgentinaTodayIso()
+      const periodEnd = summary.nextDueDate || getArgentinaTodayIso(new Date(Date.now() + 15 * 86400000))
       const refPriceCents = Math.round((summary.pricing?.highestSlotPriceArs || 0) * 100)
       const multiplier = summary.pricing?.multiplier || 1.5
 
@@ -2772,7 +2773,7 @@ export async function applyReactivationPaymentInternal(params: {
         status: 'PAID',
         reference_slot_price: summary.pricing.highestSlotPriceArs,
         slots_multiplier: summary.pricing.multiplier,
-        due_date: now.toISOString().split('T')[0],
+        due_date: getArgentinaTodayIso(),
         paid_at: now.toISOString(),
         notes: paymentNote,
       })

@@ -162,6 +162,18 @@ export async function getPlayersReputation(
 
       if (!key) continue
 
+      const status = (b.status || '').toUpperCase()
+
+      // Ignorar reservas pendientes de seña (checkouts abandonados o no concretados)
+      if (['PENDING_DEPOSIT', 'PENDING'].includes(status)) {
+        continue
+      }
+
+      // Suspensiones climáticas o cancelaciones por el club no penalizan la reputación del jugador
+      if (status === 'RAIN_CANCELLED' || status === 'CANCELLED_CLUB') {
+        continue
+      }
+
       let startsAt: string | null = null
       if (b.booked_at) {
         const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
@@ -185,7 +197,6 @@ export async function getPlayersReputation(
 
       record.total++
 
-      const status = (b.status || '').toUpperCase()
       const spentAmount = Math.round((Number(b.price_total_cents) || 0) / 100)
 
       if (['COMPLETED', 'FULLY_PAID', 'CONFIRMED', 'CONFIRMED_CASH'].includes(status)) {

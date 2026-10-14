@@ -63,9 +63,22 @@ export default async function DashboardLayout({
   const saSession = cookieStore.get('sa_session')?.value
   const saSecret = process.env.SUPERADMIN_SESSION_SECRET
   const isSuperadminHMAC = Boolean(saSession && saSecret && verifySuperadminSessionToken(saSession, saSecret))
-  const isSuperadminUser = Boolean(process.env.SUPERADMIN_USER_ID && user?.id === process.env.SUPERADMIN_USER_ID)
-  const isSuperadminRole = cookieStore.get('demo_user_role')?.value === 'SUPERADMIN'
-  const isSuperadmin = isSuperadminHMAC || isSuperadminUser || isSuperadminRole
+  
+  let isSuperadminUser = Boolean(process.env.SUPERADMIN_USER_ID && user?.id === process.env.SUPERADMIN_USER_ID)
+  if (!isSuperadminUser && user) {
+    const serviceClientCheck = await createServiceClient()
+    const { data: userProfile } = await serviceClientCheck
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (userProfile?.role === 'SUPERADMIN') {
+      isSuperadminUser = true
+    }
+  }
+
+  // SEGURIDAD CRÍTICA: NUNCA autenticar a Superadmin por una cookie editable por el cliente como demo_user_role
+  const isSuperadmin = isSuperadminHMAC || isSuperadminUser
 
   if (!user && !isSuperadmin) {
     redirect('/auth/login')
@@ -429,8 +442,9 @@ export default async function DashboardLayout({
   const isCurrentlyInTrial = trialForfeited ? false : (trialEnd ? (now < trialEnd) : false)
   const trialDaysRemaining = isCurrentlyInTrial && trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0
 
-  // Si no tiene tarjeta pero está dentro de los 15 días de prueba gratis, NO se lo bloquea
-  if (!isSuperadmin && tenantId && !hasCard && !isCurrentlyInTrial) {
+  // Si no tiene tarjeta pero está dentro de los 15 días de prueba gratis, NO se lo bloquea.
+  // Solo se exige tarjeta a administradores del club (TENANT_ADMIN / ADMIN), no a empleados de recepción (TENANT_STAFF).
+  if (!isSuperadmin && (userRole === 'TENANT_ADMIN' || userRole === 'ADMIN') && tenantId && !hasCard && !isCurrentlyInTrial) {
     redirect('/onboarding/tarjeta')
   }
 

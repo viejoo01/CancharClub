@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import type { TenantSubscriptionStatus } from '@/types/database'
 
 import { calculateReactivationFee } from '@/lib/saas-pricing'
+import { getArgentinaTodayIso } from '@/lib/utils'
 
 interface GracePeriodBannerProps {
   initialStatus?: TenantSubscriptionStatus
@@ -15,12 +16,20 @@ interface GracePeriodBannerProps {
   dueDate?: string
 }
 
+function getDefaultDueDate(): string {
+  const today = getArgentinaTodayIso()
+  const [y, m] = today.split('-')
+  return `${y}-${m}-10`
+}
+
 export function GracePeriodBanner({
   initialStatus = 'ACTIVE',
   amountArs = 45000,
-  dueDate = '2026-09-30',
+  dueDate,
 }: GracePeriodBannerProps) {
-  const [status] = useState<TenantSubscriptionStatus>(() => {
+  const effectiveDueDate = dueDate || getDefaultDueDate()
+  const [prevInitialStatus, setPrevInitialStatus] = useState(initialStatus)
+  const [status, setStatus] = useState<TenantSubscriptionStatus>(() => {
     if (initialStatus) return initialStatus
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split('; ')
@@ -31,6 +40,11 @@ export function GracePeriodBanner({
     }
     return 'ACTIVE'
   })
+
+  if (prevInitialStatus !== initialStatus) {
+    setPrevInitialStatus(initialStatus)
+    setStatus(initialStatus || 'ACTIVE')
+  }
   const [isDismissed, setIsDismissed] = useState(false)
 
   // En ACTIVE o PAYMENT_PENDING ordinario no se muestra banner invasivo
@@ -40,7 +54,7 @@ export function GracePeriodBanner({
 
   const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
   const isGrace = status === 'GRACE_PERIOD'
-  const reactivation = calculateReactivationFee(amountArs, dueDate)
+  const reactivation = calculateReactivationFee(amountArs, effectiveDueDate)
 
   return (
     <div className={`w-full border-b transition-all animate-in slide-in-from-top duration-300 ${
@@ -83,7 +97,7 @@ export function GracePeriodBanner({
                 </>
               ) : (
                 <>
-                  Tu factura mensual vence el <strong>{dueDate}</strong>. Abona a tiempo para evitar la pausa de reservas web el día 13.
+                  Tu factura mensual vence el <strong>{effectiveDueDate}</strong>. Abona a tiempo para evitar la pausa de reservas web el día 13.
                 </>
               )}
             </p>

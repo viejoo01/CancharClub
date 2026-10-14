@@ -44,7 +44,7 @@ export default function CourtOrderPage({
   const searchParams = useSearchParams()
 
   const rawMesa = searchParams.get('mesa') || searchParams.get('cancha') || ''
-  const initialTable = rawMesa ? (rawMesa.toLowerCase().startsWith('cancha') ? 'Mesa' : rawMesa) : 'Mesa'
+  const initialTable = rawMesa ? rawMesa.trim() : 'Mesa'
 
   const fallbackClub = useMemo(() => getClubBySlug(resolvedParams.slug), [resolvedParams.slug])
   const [liveClub, setLiveClub] = useState<ClubData | null>(null)

@@ -29,7 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS, cleanNoteForDisplay, paymentMethodLabel } from '@/lib/utils'
+import { formatARS, cleanNoteForDisplay, paymentMethodLabel, getArgentinaTodayIso } from '@/lib/utils'
 import { getDailyCashReport, saveBlindAuditAction, type DailyCashReport, type DailyCashEntry } from '@/actions/analytics.actions'
 import { toast } from 'sonner'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
@@ -72,7 +72,7 @@ const cachedDailyCash = new Map<string, DailyCashReport>()
 export default function CajaPage() {
   const tenantId = useTenantId()
   const { isOwner } = useUserRole()
-  const today = new Date().toISOString().split('T')[0]
+  const today = getArgentinaTodayIso()
   const [selectedDate, setSelectedDate] = useState(today)
   const cacheKey = `${tenantId || ''}_${selectedDate}`
   const [report, setReport] = useState<DailyCashReport | null>(() => {

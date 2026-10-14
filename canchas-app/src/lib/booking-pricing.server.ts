@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { parseArgentinaDate } from '@/lib/utils'
+import { parseArgentinaDate, getArgentinaTimeStr, getArgentinaTodayIso } from '@/lib/utils'
 
 export interface OfficialSlotPricing {
   totalAmountArs: number
@@ -32,20 +32,22 @@ export async function resolveOfficialSlotPrice(params: {
   const courtName = court?.name || 'Cancha'
   const sport = court?.sport || 'PADEL'
 
-  // 2. Determinar día de la semana y hora en huso horario argentino
+  // 2. Determinar día de la semana y hora en huso horario argentino oficial (America/Argentina/Buenos_Aires)
   const dateObj = parseArgentinaDate(startsAt)
   if (isNaN(dateObj.getTime())) {
     return null
   }
 
+  // En servidores UTC (Vercel, Docker), dateObj.getHours() y getDay() reflejan UTC.
+  // Usamos los helpers con timeZone: 'America/Argentina/Buenos_Aires' para obtener la hora y el día local exactos.
+  const timeStr = getArgentinaTimeStr(dateObj)
+  const argIso = getArgentinaTodayIso(dateObj)
+  const [y, m, d] = argIso.split('-').map(Number)
+  const localDate = new Date(y, m - 1, d)
   // En JS: 0=Domingo, 1=Lunes, ..., 6=Sábado
-  const jsDay = dateObj.getDay()
-  // En PostgreSQL price_rules: 1=Lunes, ..., 7=Domingo (o array JS 0..6 normalizado)
+  const jsDay = localDate.getDay()
+  // En PostgreSQL price_rules: 1=Lunes, ..., 7=Domingo
   const dbDay = jsDay === 0 ? 7 : jsDay
-
-  const hh = String(dateObj.getHours()).padStart(2, '0')
-  const mm = String(dateObj.getMinutes()).padStart(2, '0')
-  const timeStr = `${hh}:${mm}`
 
   // 3. Consultar reglas de precios activas del club y configuración de tarifas dinámicas
   const [{ data: rules }, { data: tenant }] = await Promise.all([

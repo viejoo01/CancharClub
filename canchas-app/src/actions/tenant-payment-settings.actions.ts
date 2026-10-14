@@ -318,6 +318,7 @@ export async function saveTenantMpCredentials(
       return { success: false, error: error.message }
     }
 
+    invalidatePaymentSettingsCache(effectiveTenantId)
     revalidatePath('/dashboard/cobros')
     revalidatePath('/dashboard/caja')
     revalidatePath('/club/[slug]', 'page')
@@ -362,6 +363,7 @@ export async function disconnectTenantMpAccount(tenantId: string | null | undefi
       return { success: false, error: error.message }
     }
 
+    invalidatePaymentSettingsCache(effectiveTenantId)
     revalidatePath('/dashboard/cobros')
     revalidatePath('/club/[slug]', 'page')
     return { success: true }

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { siteConfig } from '@/config/site'
 import { checkCheckoutRateLimit, getClientIp } from '@/lib/rate-limiter'
 import { sanitizeText } from '@/lib/sanitize'
@@ -70,7 +70,6 @@ export async function POST(req: NextRequest) {
     }
 
     const payload = validation.data
-    const supabase = await createClient()
     const baseUrl = siteConfig.url
 
     // --------------------------------------------------------------------------
@@ -157,8 +156,9 @@ export async function POST(req: NextRequest) {
     // Title: "Seña Turno [Cancha] - CancharClub"
     // --------------------------------------------------------------------------
     if (payload.type === 'booking_deposit') {
-      // 1. BLINDAJE FINANCIERO ANTI-FRAUDE: Consultar reserva real en la base de datos
-      const { data: booking, error: bookingErr } = await supabase
+      // 1. BLINDAJE FINANCIERO ANTI-FRAUDE: Consultar reserva real en la base de datos con serviceClient
+      const serviceClient = await createServiceClient()
+      const { data: booking, error: bookingErr } = await serviceClient
         .from('bookings')
         .select('id, tenant_id, deposit_cents, staff_deposit_amount_cents, price_total_cents, status')
         .eq('id', payload.booking_id)
@@ -179,6 +179,21 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // Validar estado del turno
+      if (booking.status === 'confirmed') {
+        return NextResponse.json(
+          { success: false, error: 'Este turno ya ha sido confirmado previamente.' },
+          { status: 400 }
+        )
+      }
+
+      if (booking.status.toLowerCase().includes('cancel')) {
+        return NextResponse.json(
+          { success: false, error: 'Esta reserva se encuentra cancelada o ha expirado.' },
+          { status: 400 }
+        )
+      }
+
       // El monto se determina estrictamente desde la base de datos (NUNCA confiando en el cliente)
       const depositCents = Number(booking.staff_deposit_amount_cents || booking.deposit_cents || 0)
       const totalCents = Number(booking.price_total_cents || 0)
@@ -193,10 +208,10 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      const enforcedAmount = serverCalculatedDeposit
+      const enforcedAmount = Math.max(15, serverCalculatedDeposit)
 
-      // Obtener el access_token del tenant (cuenta Mercado Pago del club)
-      const { data: tenant } = await supabase
+      // Obtener el access_token del tenant (cuenta Mercado Pago del club) de forma segura en backend
+      const { data: tenant } = await serviceClient
         .from('tenants')
         .select('name, mp_access_token')
         .eq('id', payload.tenant_id)
@@ -223,34 +238,39 @@ export async function POST(req: NextRequest) {
       const safePayerName = sanitizeText(payload.payer_name, 70)
 
       const client = new Preference(new MercadoPagoConfig({ accessToken: tenantToken }))
-      const preference = await client.create({
-        body: {
-          items: [
-            {
-              id: payload.booking_id,
-              title: itemTitle,
-              quantity: 1,
-              unit_price: enforcedAmount,
-              currency_id: 'ARS',
-            },
-          ],
-          payer: {
-            name: safePayerName,
-            email: payload.payer_email,
+      const preferenceBody: Parameters<typeof client.create>[0]['body'] = {
+        items: [
+          {
+            id: payload.booking_id,
+            title: itemTitle,
+            quantity: 1,
+            unit_price: enforcedAmount,
+            currency_id: 'ARS',
           },
-          external_reference: externalRef,
-          statement_descriptor: siteConfig.statementDescriptor, // "CANCHARCLUB"
-          back_urls: {
-            success: `${baseUrl}/reserva/${payload.booking_id}/confirmado`,
-            pending: `${baseUrl}/reserva/${payload.booking_id}/pendiente`,
-            failure: `${baseUrl}/reserva/${payload.booking_id}/error`,
-          },
-          auto_return: 'approved',
-          notification_url: `${baseUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(payload.tenant_id)}&booking_id=${encodeURIComponent(payload.booking_id)}`,
-          expires: true,
-          expiration_date_from: new Date().toISOString(),
-          expiration_date_to: new Date(Date.now() + 420_000).toISOString(), // 7 minutos de bloqueo
+        ],
+        external_reference: externalRef,
+        statement_descriptor: siteConfig.statementDescriptor, // "CANCHARCLUB"
+        back_urls: {
+          success: `${baseUrl}/reserva/${payload.booking_id}/confirmado`,
+          pending: `${baseUrl}/reserva/${payload.booking_id}/pendiente`,
+          failure: `${baseUrl}/reserva/${payload.booking_id}/error`,
         },
+        auto_return: 'approved',
+        notification_url: `${baseUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(payload.tenant_id)}&booking_id=${encodeURIComponent(payload.booking_id)}`,
+        expires: true,
+        expiration_date_from: new Date().toISOString(),
+        expiration_date_to: new Date(Date.now() + 420_000).toISOString(), // 7 minutos de bloqueo
+      }
+
+      if (payload.payer_email && payload.payer_email.includes('@')) {
+        preferenceBody.payer = {
+          name: safePayerName || undefined,
+          email: payload.payer_email.trim(),
+        }
+      }
+
+      const preference = await client.create({
+        body: preferenceBody,
       })
 
       return NextResponse.json({

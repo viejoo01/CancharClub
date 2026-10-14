@@ -175,9 +175,24 @@ export async function chargeCustomerAccount(params: {
     }
 
     const accounts = await getCustomerAccounts(effectiveTenantId)
-    let account = accounts.find(
-      a => a.customer_name.toLowerCase().trim() === cleanName.toLowerCase().trim()
-    )
+    const cleanDigits = cleanPhone.replace(/\D/g, '')
+
+    let account: CustomerAccount | undefined
+
+    // 1. Priorizar coincidencia por teléfono si está disponible
+    if (cleanDigits && cleanDigits.length >= 6) {
+      account = accounts.find(a => {
+        const aDigits = (a.customer_phone || '').replace(/\D/g, '')
+        return aDigits.length >= 6 && (aDigits === cleanDigits || aDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aDigits))
+      })
+    }
+
+    // 2. Si no se encontró por teléfono, buscar por nombre
+    if (!account) {
+      account = accounts.find(
+        a => a.customer_name.toLowerCase().trim() === cleanName.toLowerCase().trim()
+      )
+    }
 
     const now = new Date().toISOString()
     const newMovement: AccountMovement = {

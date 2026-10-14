@@ -216,9 +216,16 @@ export async function sendAutomatedBookingConfirmation(
     if (booking.booked_at) {
       const match = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
       if (match?.[1]) {
-        const d = new Date(match[1])
-        dateStr = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Argentina/Buenos_Aires' })
-        timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
+        const raw = match[1].trim()
+        const isoNormalized = raw.includes(' ') ? raw.replace(' ', 'T') : raw
+        const finalIso = isoNormalized.endsWith('+00')
+          ? isoNormalized.replace('+00', 'Z')
+          : (isoNormalized.endsWith('+00:00') ? isoNormalized.replace('+00:00', 'Z') : isoNormalized)
+        const d = new Date(finalIso)
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Argentina/Buenos_Aires' })
+          timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
+        }
       }
     }
     if (dateStr) {

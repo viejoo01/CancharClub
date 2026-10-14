@@ -18,6 +18,7 @@ import { releaseBookingLock } from '@/lib/redis'
 import { sendBookingConfirmationToPlayer, sendNewBookingAlertToClub } from '@/lib/notifications/email.service'
 import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
 import { recordClubNotification } from '@/actions/notifications.actions'
+import { invalidateCalendarBookingsCache } from '@/actions/club.actions'
 import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
@@ -308,15 +309,19 @@ export async function POST(request: NextRequest) {
 
   // ── Detección de pago tardío sobre turno ya ocupado / cancelado ─────────────
   if (payment.status === 'approved' && booking.status === 'cancelled') {
-    const { data: occupant } = await supabase
+    let occupantQuery = supabase
       .from('bookings')
       .select('id, customer_name')
       .eq('tenant_id', booking.tenant_id)
       .eq('court_id', booking.court_id || '')
-      .eq('booked_at', booking.booked_at || '')
       .in('status', ['confirmed', 'deposit_paid'])
       .neq('id', booking.id)
-      .maybeSingle()
+
+    if (booking.booked_at) {
+      occupantQuery = occupantQuery.filter('booked_at', 'ov', booking.booked_at)
+    }
+
+    const { data: occupant } = await occupantQuery.maybeSingle()
 
     if (occupant) {
       console.warn(`[MP Webhook] ALERTA COLISIÓN: Turno ocupado por ${occupant.customer_name} al acreditarse pago tardío #${paymentId}`)
@@ -501,8 +506,8 @@ export async function POST(request: NextRequest) {
         console.warn('[MP Webhook] WhatsApp bot dispatch warning:', waErr)
       })
 
-      // Registrar en el historial de notificaciones y alertas
-      const depositArs = (booking.price_total_cents || 0) / 100
+      // Registrar en el historial de notificaciones y alertas con el monto de seña real abonado
+      const depositArs = Number(payment.transaction_amount || (updatePayload.deposit_cents ? Number(updatePayload.deposit_cents) / 100 : (booking.deposit_cents || 0) / 100))
       recordClubNotification({
         tenantId: booking.tenant_id,
         type: 'PAYMENT_RECEIVED',
@@ -518,6 +523,9 @@ export async function POST(request: NextRequest) {
           payment_method: 'Mercado Pago',
         },
       }).catch(() => {})
+
+      // Invalidar caché en memoria del calendario para que el club vea el turno confirmado al instante
+      invalidateCalendarBookingsCache(booking.tenant_id)
     }
   }
 

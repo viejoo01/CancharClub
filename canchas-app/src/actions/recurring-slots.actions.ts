@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { parseArgentinaDate } from '@/lib/utils'
+import { parseArgentinaDate, getArgentinaTodayIso } from '@/lib/utils'
 import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
 import { assertTenantMember } from '@/lib/auth-security'
@@ -85,6 +85,9 @@ export async function createRecurringSlot(payload: {
   notes?: string
 }): Promise<{ success: boolean; slot?: RecurringSlot; error?: string }> {
   try {
+    const todayArg = getArgentinaTodayIso()
+    const [tYear, tMonth] = todayArg.split('-').map(Number)
+
     // Miembro del club autorizado (Dueño o Encargado)
     const auth = await assertTenantMember(payload.tenant_id)
     if (!auth.authorized) {
@@ -119,7 +122,7 @@ export async function createRecurringSlot(payload: {
         monthly_price: payload.monthly_price,
         payment_due_day: payload.payment_due_day,
         status: 'ACTIVE',
-        last_generated_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+        last_generated_month: `${tYear}-${String(tMonth).padStart(2, '0')}`,
         notes: payload.notes || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -142,9 +145,8 @@ export async function createRecurringSlot(payload: {
       return { success: true, slot: newSlot }
     }
 
-    // Auto-generar turnos para el mes en curso
-    const now = new Date()
-    await generateMonthlyBookingsForSlot(data.id, now.getFullYear(), now.getMonth() + 1)
+    // Auto-generar turnos para el mes en curso en horario de Argentina
+    await generateMonthlyBookingsForSlot(data.id, tYear, tMonth)
 
     await invalidateRecurringSlotsCache(payload.tenant_id)
     revalidatePath('/dashboard/fijos')
@@ -356,7 +358,7 @@ export async function deleteRecurringSlot(
         })
         .eq('tenant_id', targetTenantId)
         .eq('recurring_slot_id', slotId)
-        .not('status', 'eq', 'cancelled')
+        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
       // También cancelar reservas asociadas identificadas por notas
       if (slotCustomerName && slotCourtId) {
@@ -369,7 +371,7 @@ export async function deleteRecurringSlot(
           .eq('tenant_id', targetTenantId)
           .eq('court_id', slotCourtId)
           .ilike('staff_notes', `%ABONO FIJO: ${slotCustomerName}%`)
-          .not('status', 'eq', 'cancelled')
+          .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
       }
     }
 
@@ -455,18 +457,19 @@ export async function generateMonthlyBookingsForSlot(
       return { success: false, generatedCount: 0, error: auth.error || 'Sin permisos para generar reservas' }
     }
 
-    const now = new Date()
-    const targetYear = year ?? now.getFullYear()
-    const targetMonth = month ?? (now.getMonth() + 1)
+    const todayArg = getArgentinaTodayIso()
+    const [defYear, defMonth] = todayArg.split('-').map(Number)
+    const targetYear = year ?? defYear
+    const targetMonth = month ?? defMonth
 
-    // Calcular los días del mes con ese día de la semana
+    // Calcular los días del mes con ese día de la semana sin riesgo de desfase por hora ni DST
     const dates: Date[] = []
-    const firstDay = new Date(targetYear, targetMonth - 1, 1)
-    const lastDay = new Date(targetYear, targetMonth, 0)
+    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate()
 
-    for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(targetYear, targetMonth - 1, day, 12, 0, 0)
       if (d.getDay() === slot.day_of_week) {
-        dates.push(new Date(d))
+        dates.push(d)
       }
     }
 
@@ -506,14 +509,15 @@ export async function generateMonthlyBookingsForSlot(
       const endsAtIso = new Date(slotStartDate.getTime() + durationMinutes * 60000).toISOString()
       const bookingRange = `[${startsAtIso},${endsAtIso})`
 
-      // Verificar si ya existe una reserva activa para este horario y cancha
+      // Verificar si ya existe una reserva activa para este horario y cancha (operador 'ov' de Postgres para solapamiento de rangos)
       const { data: existingBooking } = await supabase
         .from('bookings')
         .select('id, customer_name, status')
         .eq('tenant_id', slot.tenant_id)
         .eq('court_id', slot.court_id)
-        .eq('booked_at', bookingRange)
-        .not('status', 'eq', 'cancelled')
+        .filter('booked_at', 'ov', bookingRange)
+        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+        .limit(1)
         .maybeSingle()
 
       if (existingBooking) {
@@ -691,10 +695,10 @@ export async function checkAndReleaseOverdueRecurringSlots(
       }
     }
     const supabase = await createServiceClient()
-    const today = new Date()
-    const currentDayOfMonth = today.getDate()
-    const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-    const todayIsoDate = today.toISOString().split('T')[0]
+    const todayIsoDate = getArgentinaTodayIso()
+    const [tYear, tMonth, tDay] = todayIsoDate.split('-').map(Number)
+    const currentDayOfMonth = tDay
+    const currentPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
 
     // Buscar slots activos cuyo día de corte ya venció este mes
     const { data: slots } = await supabase
@@ -722,7 +726,7 @@ export async function checkAndReleaseOverdueRecurringSlots(
           .select('id, booked_at, staff_notes')
           .eq('tenant_id', tenantId)
           .eq('recurring_slot_id', slot.id)
-          .not('status', 'in', '("cancelled")')
+          .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
         if (bySlotId && bySlotId.length > 0) {
           pendingBookings = bySlotId
@@ -734,7 +738,7 @@ export async function checkAndReleaseOverdueRecurringSlots(
             .eq('tenant_id', tenantId)
             .eq('court_id', slot.court_id)
             .ilike('staff_notes', `%ABONO FIJO%${slot.customer_name}%`)
-            .not('status', 'in', '("cancelled")')
+            .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
           if (byNotes) {
             pendingBookings = byNotes
@@ -745,7 +749,8 @@ export async function checkAndReleaseOverdueRecurringSlots(
           for (const b of pendingBookings) {
             // Validar que la reserva sea del día de hoy o futura, nunca cancelar el pasado
             const bookedAtStr = String(b.booked_at || '')
-            const startDateStr = bookedAtStr.slice(1, 11) // ej: [2026-10-15...
+            const dateMatch = bookedAtStr.match(/\d{4}-\d{2}-\d{2}/)
+            const startDateStr = dateMatch ? dateMatch[0] : null
             if (startDateStr && startDateStr < todayIsoDate) {
               continue // Omitir turnos que ya se jugaron en el pasado
             }

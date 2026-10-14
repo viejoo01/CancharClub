@@ -23,6 +23,9 @@ export async function POST(request: Request) {
     'new_club_pending_activation',
     'canchar_active_venue_id',
     'canchar_active_venue_name',
+    'sa_session',
+    'demo_trial_ends_at',
+    'demo_trial_forfeited',
   ]
   cookiesToDelete.forEach(c => response.cookies.delete(c))
   return response

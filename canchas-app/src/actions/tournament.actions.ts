@@ -202,15 +202,28 @@ export async function addTeamToCategory(payload: {
 
     const supabase = await createServiceClient()
 
-    // Validar que la categoría exista
+    // Validar que la categoría exista y no supere el cupo máximo
     const { data: cat } = await supabase
       .from('tournament_categories')
-      .select('id')
+      .select('id, max_teams, tournament_id')
       .eq('id', payload.category_id)
       .maybeSingle()
 
     if (!cat) {
       return { success: false, error: 'Categoría no encontrada' }
+    }
+
+    const { count: currentTeamsCount } = await supabase
+      .from('tournament_teams')
+      .select('id', { count: 'exact', head: true })
+      .eq('category_id', payload.category_id)
+
+    const limit = Number(cat.max_teams) || 8
+    if (currentTeamsCount && currentTeamsCount >= limit) {
+      return {
+        success: false,
+        error: `Esta categoría ya completó su cupo máximo de ${limit} equipos inscriptos.`,
+      }
     }
 
     const { data: team, error } = await supabase
@@ -227,7 +240,9 @@ export async function addTeamToCategory(payload: {
 
     if (error) return { success: false, error: error.message }
 
+    await invalidateTournamentCache(null, cat?.tournament_id)
     revalidatePath('/dashboard/torneos')
+    if (cat?.tournament_id) revalidatePath(`/torneo/${cat.tournament_id}`)
     return { success: true, team: team as TournamentTeam }
   } catch (err) {
     console.error('[addTeamToCategory] Error:', err)
@@ -293,6 +308,9 @@ export async function generatePlayoffBracket(
       match_number: number
       team_a_id: string | null
       team_b_id: string | null
+      score_team_a?: string | null
+      score_team_b?: string | null
+      winner_team_id?: string | null
       status: string
       scheduled_time: string
       court_name: string
@@ -312,15 +330,52 @@ export async function generatePlayoffBracket(
           court_name: 'Cancha Central',
         },
       ]
-    } else if (teams.length <= 4) {
-      // 3 ó 4 equipos: Semifinales directas y Gran Final
+    } else if (teams.length === 3) {
+      // 3 equipos: Semifinal 1 con BYE automático (team 0 avanza directo a la Final)
       allMatches = [
         {
           category_id: categoryId,
           round: 'SEMIFINAL',
           match_number: 1,
-          team_a_id: teams[0]?.id || null,
-          team_b_id: teams[3]?.id || null,
+          team_a_id: teams[0].id,
+          team_b_id: null,
+          score_team_a: 'BYE',
+          score_team_b: '-',
+          winner_team_id: teams[0].id,
+          status: 'FINISHED',
+          scheduled_time: 'Clasificado por BYE',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 2,
+          team_a_id: teams[1].id,
+          team_b_id: teams[2].id,
+          status: 'SCHEDULED',
+          scheduled_time: 'Semis 2 - 19:30',
+          court_name: 'Cancha 2',
+        },
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: teams[0].id, // Ya en la final por BYE
+          team_b_id: null,        // Espera ganador de Semis 2
+          status: 'SCHEDULED',
+          scheduled_time: 'Final - 21:00',
+          court_name: 'Cancha Central',
+        },
+      ]
+    } else if (teams.length === 4) {
+      // 4 equipos: Semifinales completas y Gran Final
+      allMatches = [
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 1,
+          team_a_id: teams[0].id,
+          team_b_id: teams[3].id,
           status: 'SCHEDULED',
           scheduled_time: 'Semis 1 - 18:00',
           court_name: 'Cancha 1',
@@ -329,8 +384,8 @@ export async function generatePlayoffBracket(
           category_id: categoryId,
           round: 'SEMIFINAL',
           match_number: 2,
-          team_a_id: teams[1]?.id || null,
-          team_b_id: teams[2]?.id || null,
+          team_a_id: teams[1].id,
+          team_b_id: teams[2].id,
           status: 'SCHEDULED',
           scheduled_time: 'Semis 2 - 19:30',
           court_name: 'Cancha 2',
@@ -353,56 +408,60 @@ export async function generatePlayoffBracket(
         t.push(null as unknown as TournamentTeam)
       }
 
-      const cuartosRows = [
-        {
-          category_id: categoryId,
-          round: 'CUARTOS',
-          match_number: 1,
-          team_a_id: t[0]?.id || null,
-          team_b_id: t[7]?.id || null,
-          status: 'SCHEDULED',
-          scheduled_time: 'Viernes 18:00',
-          court_name: 'Cancha 1',
-        },
-        {
-          category_id: categoryId,
-          round: 'CUARTOS',
-          match_number: 2,
-          team_a_id: t[3]?.id || null,
-          team_b_id: t[4]?.id || null,
-          status: 'SCHEDULED',
-          scheduled_time: 'Viernes 19:30',
-          court_name: 'Cancha 2',
-        },
-        {
-          category_id: categoryId,
-          round: 'CUARTOS',
-          match_number: 3,
-          team_a_id: t[1]?.id || null,
-          team_b_id: t[6]?.id || null,
-          status: 'SCHEDULED',
-          scheduled_time: 'Viernes 21:00',
-          court_name: 'Cancha 1',
-        },
-        {
-          category_id: categoryId,
-          round: 'CUARTOS',
-          match_number: 4,
-          team_a_id: t[2]?.id || null,
-          team_b_id: t[5]?.id || null,
-          status: 'SCHEDULED',
-          scheduled_time: 'Viernes 22:30',
-          court_name: 'Cancha 2',
-        },
+      // Emparejamientos estándar de llave de 8
+      const cuartosPairs = [
+        { matchNum: 1, a: t[0], b: t[7], time: 'Viernes 18:00', court: 'Cancha 1' },
+        { matchNum: 2, a: t[3], b: t[4], time: 'Viernes 19:30', court: 'Cancha 2' },
+        { matchNum: 3, a: t[1], b: t[6], time: 'Viernes 21:00', court: 'Cancha 1' },
+        { matchNum: 4, a: t[2], b: t[5], time: 'Viernes 22:30', court: 'Cancha 2' },
       ]
 
+      const cuartosRows = []
+      const cuartosWinners: Array<string | null> = [null, null, null, null]
+
+      for (let i = 0; i < cuartosPairs.length; i++) {
+        const pair = cuartosPairs[i]
+        const teamA = pair.a
+        const teamB = pair.b
+
+        if (teamA && !teamB) {
+          // Pase automático por BYE
+          cuartosWinners[i] = teamA.id
+          cuartosRows.push({
+            category_id: categoryId,
+            round: 'CUARTOS',
+            match_number: pair.matchNum,
+            team_a_id: teamA.id,
+            team_b_id: null,
+            score_team_a: 'BYE',
+            score_team_b: '-',
+            winner_team_id: teamA.id,
+            status: 'FINISHED',
+            scheduled_time: `${pair.time} (BYE)`,
+            court_name: pair.court,
+          })
+        } else if (teamA && teamB) {
+          cuartosRows.push({
+            category_id: categoryId,
+            round: 'CUARTOS',
+            match_number: pair.matchNum,
+            team_a_id: teamA.id,
+            team_b_id: teamB.id,
+            status: 'SCHEDULED',
+            scheduled_time: pair.time,
+            court_name: pair.court,
+          })
+        }
+      }
+
+      // Semifinales (Cuartos 1 y 2 van a Semis 1; Cuartos 3 y 4 van a Semis 2)
       const semisRows = [
         {
           category_id: categoryId,
           round: 'SEMIFINAL',
           match_number: 1,
-          team_a_id: null,
-          team_b_id: null,
+          team_a_id: cuartosWinners[0],
+          team_b_id: cuartosWinners[1],
           status: 'SCHEDULED',
           scheduled_time: 'Sábado 18:00',
           court_name: 'Cancha 1',
@@ -411,8 +470,8 @@ export async function generatePlayoffBracket(
           category_id: categoryId,
           round: 'SEMIFINAL',
           match_number: 2,
-          team_a_id: null,
-          team_b_id: null,
+          team_a_id: cuartosWinners[2],
+          team_b_id: cuartosWinners[3],
           status: 'SCHEDULED',
           scheduled_time: 'Sábado 19:30',
           court_name: 'Cancha 2',
@@ -442,7 +501,9 @@ export async function generatePlayoffBracket(
 
     if (iErr) return { success: false, error: iErr.message }
 
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
     return { success: true, matchesCount: inserted?.length }
   } catch (err) {
     console.error('[generatePlayoffBracket] Error:', err)
@@ -468,7 +529,7 @@ export async function updateMatchScore(payload: {
     // 1. Obtener datos actuales del partido junto a su categoría y torneo
     const { data: currentMatch, error: mErr } = await supabase
       .from('tournament_matches')
-      .select('*, category:tournament_categories(tournament:tournaments(tenant_id))')
+      .select('*, category:tournament_categories(tournament_id, tournament:tournaments(tenant_id))')
       .eq('id', payload.matchId)
       .single()
 
@@ -476,8 +537,9 @@ export async function updateMatchScore(payload: {
       return { success: false, error: 'Partido no encontrado' }
     }
 
-    const catObj = currentMatch.category as unknown as { tournament?: { tenant_id?: string } } | null
+    const catObj = currentMatch.category as unknown as { tournament_id?: string; tournament?: { tenant_id?: string } } | null
     const resourceTenantId = catObj?.tournament?.tenant_id
+    const tournamentId = catObj?.tournament_id
     if (resourceTenantId) {
       const auth = await assertTenantMember(resourceTenantId)
       if (!auth.authorized) {
@@ -553,7 +615,9 @@ export async function updateMatchScore(payload: {
       }
     }
 
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
     return { success: true }
   } catch (err) {
     console.error('[updateMatchScore] Error:', err)
@@ -694,7 +758,9 @@ export async function generateGroupStageAndPlayoffs(
       return { success: false, error: insertErr.message }
     }
 
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
     return { success: true, matchesCount: inserted?.length }
   } catch (err) {
     console.error('[generateGroupStageAndPlayoffs] Error:', err)
@@ -724,6 +790,7 @@ export async function updateTournamentFormat(
 
     await supabase.from('tournaments').update({ format }).eq('id', tournamentId)
 
+    await invalidateTournamentCache(tour.tenant_id, tournamentId)
     revalidatePath('/dashboard/torneos')
     revalidatePath(`/torneo/${tournamentId}`)
     return { success: true }
@@ -749,11 +816,12 @@ export async function advanceGroupWinnersToPlayoffs(
     const supabase = await createServiceClient()
     const { data: category } = await supabase
       .from('tournament_categories')
-      .select('id, tournament:tournaments(tenant_id)')
+      .select('id, tournament_id, tournament:tournaments(tenant_id)')
       .eq('id', categoryId)
       .maybeSingle()
 
     const resourceTenantId = (category?.tournament as unknown as { tenant_id?: string })?.tenant_id
+    const tournamentId = category?.tournament_id
     if (!resourceTenantId) {
       return { success: false, error: 'Categoría no encontrada' }
     }
@@ -788,7 +856,9 @@ export async function advanceGroupWinnersToPlayoffs(
         .eq('match_number', 2)
     }
 
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
     return { success: true }
   } catch (err) {
     console.error('[advanceGroupWinnersToPlayoffs] Error:', err)
@@ -804,14 +874,15 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
     const supabase = await createServiceClient()
     const { data: team } = await supabase
       .from('tournament_teams')
-      .select('id, category_id, category:tournament_categories(tournament:tournaments(tenant_id))')
+      .select('id, category_id, category:tournament_categories(tournament_id, tournament:tournaments(tenant_id))')
       .eq('id', teamId)
       .maybeSingle()
 
     if (!team) return { success: false, error: 'Equipo no encontrado' }
 
-    const catObj = team.category as unknown as { tournament?: { tenant_id?: string } } | null
+    const catObj = team.category as unknown as { tournament_id?: string; tournament?: { tenant_id?: string } } | null
     const resourceTenantId = catObj?.tournament?.tenant_id
+    const tournamentId = catObj?.tournament_id
     if (resourceTenantId) {
       const auth = await assertTenantMember(resourceTenantId)
       if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
@@ -824,7 +895,9 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
 
     await supabase.from('tournament_teams').delete().eq('id', teamId)
 
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
     return { success: true }
   } catch (err) {
     console.error('[deleteTeam] Error:', err)

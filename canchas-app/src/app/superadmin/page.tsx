@@ -49,7 +49,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS, setClientCookie, cn } from '@/lib/utils'
+import { formatARS, setClientCookie, cn, getArgentinaTodayIso } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier, calculateReactivationFee } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
@@ -879,7 +879,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         tenantSlug: assignedTenant?.slug || '',
         password: newUserPassword.trim(),
         status: 'ACTIVE',
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: getArgentinaTodayIso()
       }
 
       setClubUsers(prev => [newUser, ...prev])
@@ -1021,7 +1021,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       tenantSlug: createdTenant.slug,
       password: wizardOwnerPassword.trim() || 'admin123',
       status: 'ACTIVE',
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: getArgentinaTodayIso()
     }
 
     const staffName = wizardStaffName.trim() || `Encargado ${createdTenant.name}`
@@ -1037,7 +1037,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       tenantSlug: createdTenant.slug,
       password: wizardStaffPassword.trim() || 'canchero123',
       status: 'ACTIVE',
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: getArgentinaTodayIso()
     }
 
     setTenants(prev => [createdTenant, ...prev])

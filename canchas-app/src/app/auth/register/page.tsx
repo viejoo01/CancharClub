@@ -110,12 +110,15 @@ function RegisterContent() {
       if (res && !res.success) {
         toast.error(res.error || 'Error al registrar el club')
         setLoading(false)
-      } else {
-        router.push('/onboarding/tarjeta')
+        return
       }
-    } catch {
-      // Manejado por redirect
+      toast.success('¡Club registrado exitosamente!')
       router.push('/onboarding/tarjeta')
+    } catch (err: unknown) {
+      console.error('[register/page] Error en registro:', err)
+      const errorMsg = err instanceof Error ? err.message : 'Error inesperado al conectar con el servidor'
+      toast.error(errorMsg)
+      setLoading(false)
     }
   }
 

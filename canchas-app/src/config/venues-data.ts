@@ -4,6 +4,7 @@
 // ==============================================================================
 
 import type { CalendarBooking } from '@/components/dashboard/calendar-grid'
+import { getArgentinaTodayIso } from '@/lib/utils'
 
 export interface VenueItem {
   id: string
@@ -88,7 +89,7 @@ export function getInMemoryBookings(): CalendarBooking[] {
 }
 
 export function getVenueBookings(venueId: string, dateStr: string): CalendarBooking[] {
-  const today = dateStr || new Date().toISOString().split('T')[0]
+  const today = dateStr || getArgentinaTodayIso()
 
   // Reservas dinámicas en memoria para la fecha seleccionada (0ms latencia)
   const dynamicForDay = IN_MEMORY_VENUE_BOOKINGS.filter((b) => {

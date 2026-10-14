@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { emitElectronicInvoice, type AfipConfig, type EmitInvoiceParams, type EmitInvoiceResult } from '@/lib/afip'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId, assertTenantAdmin, assertTenantMember } from '@/lib/auth-security'
+import { getArgentinaTodayIso } from '@/lib/utils'
 
 export interface IssuedInvoice {
   id: string
@@ -74,7 +75,7 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
             razonSocial: (afipMeta.razonSocial as string) || data.name || '',
             condicionIva: (afipMeta.condicionIva as 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO') || 'MONOTRIBUTO',
             domicilioComercial: (afipMeta.domicilioComercial as string) || data.address || '',
-            inicioActividades: (afipMeta.inicioActividades as string) || new Date().toISOString().split('T')[0],
+            inicioActividades: (afipMeta.inicioActividades as string) || getArgentinaTodayIso(),
             ingresosBrutos: (afipMeta.ingresosBrutos as string) || '',
             environment: 'TESTING'
           }
@@ -93,7 +94,7 @@ export async function getAfipConfig(tenantId?: string): Promise<AfipConfig> {
     razonSocial: '',
     condicionIva: 'MONOTRIBUTO',
     domicilioComercial: '',
-    inicioActividades: new Date().toISOString().split('T')[0],
+    inicioActividades: getArgentinaTodayIso(),
     ingresosBrutos: '',
     environment: 'TESTING'
   }
@@ -227,7 +228,7 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
         id: `inv-${Date.now()}`,
         comprobanteTipo: tipoNombre,
         numeroCompleto: `${ptoStr}-${nroStr}`,
-        fechaEmision: result.fechaEmision || new Date().toISOString().split('T')[0],
+        fechaEmision: result.fechaEmision || getArgentinaTodayIso(),
         cliente: params.nombreCliente,
         cuitDni: params.nroDocRec ? `${params.nroDocRec}` : 'Consumidor Final',
         montoTotal: result.importeTotal || 0,
@@ -276,7 +277,7 @@ export async function emitQuickInvoiceForBooking(
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, customer_name, total_amount_ars, price_total_cents, courts(name)')
+      .select('id, tenant_id, customer_name, price_total_cents, courts(name)')
       .eq('id', bookingId)
       .maybeSingle()
 
@@ -286,7 +287,7 @@ export async function emitQuickInvoiceForBooking(
 
     const courtObj = Array.isArray(booking.courts) ? booking.courts[0] : booking.courts
     const courtName = courtObj?.name || 'Cancha'
-    const totalArs = booking.total_amount_ars || Math.round(Number(booking.price_total_cents || 0) / 100) || 15000
+    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100) || 15000
 
     return await emitInvoiceAction({
       tenantId: booking.tenant_id,

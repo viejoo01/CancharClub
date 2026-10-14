@@ -35,7 +35,7 @@ import {
   type SuggestedReschedule,
   type RainAffectedBookingNotification,
 } from '@/actions/weather-protocol.actions'
-import { formatARS } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso } from '@/lib/utils'
 import { buildWaMeLink, buildRainRescheduleWhatsAppMessage } from '@/lib/whatsapp'
 import { toast } from 'sonner'
 
@@ -60,7 +60,7 @@ export function RainProtocolModal({
   onClose,
   tenantId,
   courts,
-  currentDate = new Date().toISOString().split('T')[0],
+  currentDate = getArgentinaTodayIso(),
   onSuccess,
 }: RainProtocolModalProps) {
   const [selectedDate, setSelectedDate] = useState(currentDate)

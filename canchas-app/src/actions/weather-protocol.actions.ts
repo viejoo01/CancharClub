@@ -6,7 +6,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { formatTime } from '@/lib/utils'
+import { formatTime, getArgentinaTodayIso } from '@/lib/utils'
 import { notifyRainCancellation, buildWaMeLink, buildRainRescheduleWhatsAppMessage } from '@/lib/whatsapp'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { format, parseISO, addDays } from 'date-fns'
@@ -23,6 +23,7 @@ import { getVenueBookings, addVenueBooking, cancelVenueBooking } from '@/config/
 import type { CustomerCredit } from '@/types/database'
 import { recordClubNotification } from './notifications.actions'
 import { forceReleaseBookingLock, buildLockKey } from '@/lib/redis'
+import { resolveOfficialSlotPrice } from '@/lib/booking-pricing.server'
 
 export interface SuggestedReschedule {
   courtId: string
@@ -206,7 +207,7 @@ export async function executeRainCancellation(params: {
       if (hasDbConflict) return true
 
       // Chequeo contra reservas en memoria volátil si existen
-      const dayIso = new Date(startMs).toISOString().split('T')[0]
+      const dayIso = getArgentinaTodayIso(new Date(startMs))
       const memoryBookings = getVenueBookings(effectiveTenantId, dayIso)
       const hasMemConflict = memoryBookings.some((mb) => {
         if (mb.court_id !== courtId) return false
@@ -238,22 +239,33 @@ export async function executeRainCancellation(params: {
 
       const creditedAmount = Math.round((Number(b.deposit_cents) || 0) / 100)
 
-      // Acreditar saldo a favor en customer_credits si tenía seña
-      if (creditedAmount > 0 && b.customer_phone) {
-        await supabase
+      // Acreditar saldo a favor en customer_credits con idempotencia estricta
+      if (creditedAmount > 0) {
+        const phoneForCredit = b.customer_phone?.trim() || `sin-telefono-${b.id.slice(0, 8)}`
+        
+        // Verificar que no se haya acreditado previamente para esta reserva
+        const { data: existingCredit } = await supabase
           .from('customer_credits')
-          .insert({
-            tenant_id: effectiveTenantId,
-            customer_phone: b.customer_phone,
-            customer_name: b.customer_name,
-            amount_ars: creditedAmount,
-            status: 'AVAILABLE',
-            source_booking_id: b.id,
-            reason: params.reason || 'Suspensión por lluvia / mal tiempo',
-            expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-          })
+          .select('id')
+          .eq('source_booking_id', b.id)
+          .maybeSingle()
 
-        totalCreditedArs += creditedAmount
+        if (!existingCredit) {
+          await supabase
+            .from('customer_credits')
+            .insert({
+              tenant_id: effectiveTenantId,
+              customer_phone: phoneForCredit,
+              customer_name: b.customer_name || 'Jugador',
+              amount_ars: creditedAmount,
+              status: 'AVAILABLE',
+              source_booking_id: b.id,
+              reason: params.reason || 'Suspensión por lluvia / mal tiempo',
+              expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+            })
+
+          totalCreditedArs += creditedAmount
+        }
       }
 
       // Actualizar estado de la reserva original
@@ -522,6 +534,22 @@ export async function confirmRainReschedule(params: {
     const shortRef = params.originalBookingId ? params.originalBookingId.slice(-8).toUpperCase() : ''
     const staffNotes = `Reagendado por protocolo de lluvia (Reserva original #${shortRef})`
 
+    // Determinar precio total oficial de la cancha para no condonar involuntariamente el saldo restante
+    let priceTotalCents = depositCents
+    try {
+      const pricing = await resolveOfficialSlotPrice({
+        tenantId: effectiveTenantId,
+        courtId: params.newCourtId,
+        startsAt: startsAtDate.toISOString(),
+      })
+      if (pricing && pricing.totalAmountArs > 0) {
+        priceTotalCents = Math.round(pricing.totalAmountArs * 100)
+      }
+    } catch {}
+    if (priceTotalCents < depositCents) {
+      priceTotalCents = depositCents
+    }
+
     // 4. Insertar la nueva reserva reagendada
     const { data: newBooking, error: insErr } = await supabase
       .from('bookings')
@@ -533,10 +561,10 @@ export async function confirmRainReschedule(params: {
         sport: court.sport || 'FUTBOL_5',
         customer_name: params.customerName?.trim() || 'Jugador',
         customer_phone: params.customerPhone?.trim() || null,
-        price_total_cents: depositCents > 0 ? depositCents : 0,
+        price_total_cents: priceTotalCents,
         deposit_cents: depositCents,
         staff_deposit_amount_cents: depositCents,
-        payment_method: depositCents > 0 ? 'cash' : 'cash',
+        payment_method: 'cash',
         staff_notes: staffNotes,
       })
       .select('id')

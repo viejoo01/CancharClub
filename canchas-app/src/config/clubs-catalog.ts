@@ -4,6 +4,7 @@
 // ==============================================================================
 
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
+import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 
 export type SportCategory = 'PADEL' | 'FUTBOL' | 'TENIS' | 'BASQUET'
 
@@ -549,10 +550,9 @@ export function generateClubSlots(
         }
         if (dp.enable_last_minute && targetDate) {
           const now = new Date()
-          const todayIso = now.toISOString().split('T')[0]
+          const todayIso = getArgentinaTodayIso(now)
           if (targetDate === todayIso) {
-            const [slotH, slotM] = time.split(':').map(Number)
-            const slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), slotH, slotM)
+            const slotDate = parseArgentinaDate(`${targetDate}T${time}:00`)
             const hoursDiff = (slotDate.getTime() - now.getTime()) / (1000 * 60 * 60)
             const threshold = Number(dp.last_minute_hours_threshold) || 3
             if (hoursDiff > 0 && hoursDiff <= threshold) {

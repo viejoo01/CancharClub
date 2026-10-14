@@ -3,6 +3,8 @@
  * Cumple con especificación técnica RG 4291 y RG 5003 de AFIP Argentina
  */
 
+import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
+
 export type TipoComprobante = 11 | 6 | 1 // 11: Factura C, 6: Factura B, 1: Factura A
 export type TipoDocumento = 96 | 80 | 99 // 96: DNI, 80: CUIT, 99: Consumidor Final
 
@@ -94,12 +96,12 @@ export async function emitElectronicInvoice(
   try {
     const totalAmount = params.items.reduce((acc, item) => acc + item.total, 0)
     const today = new Date()
-    const fechaEmision = today.toISOString().split('T')[0]
+    const fechaEmision = getArgentinaTodayIso(today)
     
-    // Vencimiento CAE: 10 días corridos posteriores a la emisión
-    const vtoDate = new Date(today)
+    // Vencimiento CAE: 10 días corridos posteriores a la emisión en Argentina
+    const vtoDate = parseArgentinaDate(fechaEmision)
     vtoDate.setDate(vtoDate.getDate() + 10)
-    const caeVencimiento = vtoDate.toISOString().split('T')[0]
+    const caeVencimiento = getArgentinaTodayIso(vtoDate)
 
     // Generar CAE oficial simulado de 14 dígitos único
     const randomCaeSuffix = Math.floor(10000000 + Math.random() * 90000000).toString()

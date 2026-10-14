@@ -18,7 +18,7 @@ import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-m
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
-import { formatARS, formatTime } from '@/lib/utils'
+import { formatARS, formatTime, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/utils'
 import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { format, addDays, subDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -121,7 +121,7 @@ export function CalendarGrid({
   tenantId,
   courts,
   initialBookings,
-  initialDate = new Date().toISOString().split('T')[0],
+  initialDate = getArgentinaTodayIso(),
   initialSchedule,
   priceRules,
   onRefresh,
@@ -161,11 +161,11 @@ export function CalendarGrid({
     }
   }, [])
 
-  // Desplazar al horario actual (ahora)
+  // Desplazar al horario actual (ahora) en huso horario de Argentina
   const scrollToNow = useCallback(() => {
-    const now = new Date()
-    const hh = String(now.getHours()).padStart(2, '0')
-    const mm = now.getMinutes() < 30 ? '00' : '30'
+    const timeStr = getArgentinaTimeStr()
+    const [hh, mmRaw] = timeStr.split(':')
+    const mm = Number(mmRaw) < 30 ? '00' : '30'
     const currentTimeStr = `${hh}:${mm}`
     const matchingSlot = timeSlots.find((t) => t >= currentTimeStr) || timeSlots[0]
     if (matchingSlot) {
@@ -176,12 +176,12 @@ export function CalendarGrid({
 
   // Auto-desplazamiento suave al horario actual en el primer render si la fecha es hoy
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = getArgentinaTodayIso()
     if (selectedDate === todayStr && timeSlots.length > 0) {
       const timer = setTimeout(() => {
-        const now = new Date()
-        const hh = String(now.getHours()).padStart(2, '0')
-        const mm = now.getMinutes() < 30 ? '00' : '30'
+        const timeStr = getArgentinaTimeStr()
+        const [hh, mmRaw] = timeStr.split(':')
+        const mm = Number(mmRaw) < 30 ? '00' : '30'
         const currentSlot = `${hh}:${mm}`
         const target = timeSlots.find((t) => t >= currentSlot)
         if (target && gridContainerRef.current) {

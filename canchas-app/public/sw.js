@@ -17,17 +17,29 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
 
+  const url = new URL(event.request.url)
+  // Rutas dinámicas y de autenticación: siempre directo a la red sin interceptar
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+    return
+  }
+
   // Navegación de páginas: SIEMPRE desde la red para ver los cambios en tiempo real
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(event.request).catch(async () => {
+        const cached = await caches.match(event.request)
+        return cached || new Response('Sin conexión', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+      })
     )
     return
   }
 
-  // Recursos estáticos: Network-First con fallback
+  // Recursos estáticos: Network-First con fallback seguro
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request).catch(async () => {
+      const cached = await caches.match(event.request)
+      return cached || new Response(null, { status: 404 })
+    })
   )
 })
 
@@ -59,16 +71,18 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetUrl = event.notification.data?.url || '/dashboard'
+  const targetPath = event.notification.data?.url || '/dashboard'
+  const fullTargetUrl = new URL(targetPath, self.location.origin).href
+
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url === targetUrl && 'focus' in client) {
+        if (client.url === fullTargetUrl && 'focus' in client) {
           return client.focus()
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(targetUrl)
+        return clients.openWindow(fullTargetUrl)
       }
     })
   )

@@ -22,7 +22,7 @@ import {
   type ClubServicesAndLocationData
 } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
-import { getArgentinaTimeStr, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
+import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
 import { getPlanByCourtsCount } from '@/config/saas-plans'
 
@@ -448,7 +448,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
       `)
       .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-      .not('status', 'in', '("cancelled")')
+      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
       .order('created_at', { ascending: true })
 
     if (error) {
@@ -536,13 +536,17 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         }
       }
 
+      const rawStatusLower = (b.status || '').toLowerCase()
+      const isCancelled = rawStatusLower.includes('cancel')
       const isConfirmedCash = b.status === 'confirmed_cash' && depositArs >= totalArs
       const isPendingDeposit = (b.status === 'pending_deposit' || b.status === 'pending') && depositArs < totalArs
       const isFullyPaid = isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
       const totalPaid = isFullyPaid ? totalArs : depositArs
       const balanceDue = Math.max(0, totalArs - totalPaid)
 
-      const statusFormatted = isFullyPaid
+      const statusFormatted = isCancelled
+        ? 'CANCELLED'
+        : isFullyPaid
         ? 'FULLY_PAID'
         : isPendingDeposit
         ? 'PENDING_DEPOSIT'
@@ -1036,7 +1040,7 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
       `)
       .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-      .not('status', 'in', '("cancelled")')
+      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
     if (error) {
       console.warn('[getDailyCashSummary] Error querying bookings:', error.message)
@@ -1190,13 +1194,14 @@ export async function applyBulkInflationPriceAdjustment(
     }
   }
 
+  const safeStep = Math.max(1, Number(roundingStep) || 500)
   const multiplier = 1 + (percentage / 100)
   let updatedCount = 0
 
   for (const rule of currentRules) {
     const currentPriceArs = Math.round((Number(rule.price_cents) || 0) / 100)
     const rawPrice = currentPriceArs * multiplier
-    const roundedPriceArs = Math.round(rawPrice / roundingStep) * roundingStep
+    const roundedPriceArs = Math.round(rawPrice / safeStep) * safeStep
     const newPriceCents = Math.round(roundedPriceArs * 100)
 
     const { error: updateErr } = await supabase
@@ -1951,7 +1956,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
         ? r.day_of_week.map((d: number) => d === 7 ? 0 : d)
         : [0, 1, 2, 3, 4, 5, 6],
       timeFrom: (r.time_from || '00:00:00').substring(0, 5),
-      timeTo: (r.time_to?.startsWith('24:00') ? '00:00' : (r.time_to || '23:59:59').substring(0, 5)),
+      timeTo: (r.time_to?.startsWith('24:00') ? '24:00' : (r.time_to || '23:59:59').substring(0, 5)),
       priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
       depositPct: Number(r.deposit_pct) || 50,
     }))
@@ -2183,7 +2188,7 @@ export async function getClubOccupiedSlots(
         .select('id, court_id, booked_at, status, lock_expires_at, courts(id, name)')
         .eq('tenant_id', tenantId)
         .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-        .not('status', 'in', '("cancelled")')
+        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
       if (dbBookings && dbBookings.length > 0) {
         const nowMs = Date.now()
@@ -2330,7 +2335,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
           ? r.day_of_week.map((d: number) => d === 7 ? 0 : d)
           : [0, 1, 2, 3, 4, 5, 6],
         timeFrom: (r.time_from || '00:00:00').substring(0, 5),
-        timeTo: (r.time_to?.startsWith('24:00') ? '00:00' : (r.time_to || '23:59:59').substring(0, 5)),
+        timeTo: (r.time_to?.startsWith('24:00') ? '24:00' : (r.time_to || '23:59:59').substring(0, 5)),
         priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
         depositPct: 50,
       }))
@@ -2636,12 +2641,15 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
         try {
           const d = new Date(startTimeStr.includes(' ') ? startTimeStr.replace(' ', 'T') : startTimeStr)
           if (!isNaN(d.getTime())) {
-            // Día de la semana (0 = Lunes, ..., 6 = Domingo)
-            const jsDay = d.getDay() // 0 = Domingo, 1 = Lunes
-            const dayIdx = (jsDay + 6) % 7
+            // Día de la semana y hora en huso horario oficial argentino (America/Argentina/Buenos_Aires)
+            const argTime = getArgentinaTimeStr(d)
+            const [hStr, mStr] = argTime.split(':')
+            const hoursDecimal = Number(hStr) + Number(mStr) / 60
 
-            // Hora aproximada
-            const hoursDecimal = d.getHours() + d.getMinutes() / 60
+            const argIso = getArgentinaTodayIso(d)
+            const [y, m, day] = argIso.split('-').map(Number)
+            const jsDay = new Date(y, m - 1, day).getDay()
+            const dayIdx = (jsDay + 6) % 7
 
             // Buscar bucket más cercano
             let bestBucketIdx = 0

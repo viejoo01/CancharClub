@@ -30,7 +30,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso } from '@/lib/utils'
 import { 
   getAfipConfig, 
   saveAfipConfig, 
@@ -56,7 +56,7 @@ export default function FacturacionPage() {
     razonSocial: '',
     condicionIva: 'MONOTRIBUTO',
     domicilioComercial: '',
-    inicioActividades: new Date().toISOString().split('T')[0],
+    inicioActividades: getArgentinaTodayIso(),
     ingresosBrutos: '',
     environment: 'TESTING'
   })

@@ -102,12 +102,13 @@ export async function getDailyCashReport(
   const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
   const dayEnd   = new Date(`${date}T23:59:59.999-03:00`).toISOString()
 
-  // 1. Consultar reservas del día
+  // 1. Consultar reservas del día (filtradas por fecha de juego, creación o cobro en PostgreSQL)
   const { data: bookingRows } = await supabase
     .from('bookings')
     .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
     .eq('tenant_id', effectiveTenantId)
-    .not('status', 'in', '("cancelled")')
+    .or(`booked_at.ov.[${dayStart},${dayEnd}],created_at.gte.${dayStart},updated_at.gte.${dayStart}`)
+    .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
 
   const entries: DailyCashEntry[] = []
 
@@ -530,7 +531,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
         .from('bookings')
         .select('booked_at, price_total_cents')
         .eq('tenant_id', effectiveTenantId)
-        .not('status', 'in', '("cancelled")')
+        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
         .order('created_at', { ascending: false })
         .limit(600),
     ])

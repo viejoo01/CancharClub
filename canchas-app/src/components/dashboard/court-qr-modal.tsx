@@ -45,7 +45,12 @@ export function CourtQrModal(props: CourtQrModalProps) {
   const [fetchedClubName, setFetchedClubName] = useState<string>('')
 
   const [copied, setCopied] = useState(false)
+  const [prevTableName, setPrevTableName] = useState(tableName || '')
   const [selectedTable, setSelectedTable] = useState(tableName || '')
+  if (prevTableName !== (tableName || '')) {
+    setPrevTableName(tableName || '')
+    setSelectedTable(tableName || '')
+  }
   const [downloading, setDownloading] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')

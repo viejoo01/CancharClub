@@ -43,6 +43,7 @@ import {
   deleteTeam,
   type TournamentWithDetails 
 } from '@/actions/tournament.actions'
+import { getArgentinaTodayIso } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
@@ -165,8 +166,13 @@ export default function TorneosDashboardPage() {
   const [newTourName, setNewTourName] = useState('')
   const [newTourSport, setNewTourSport] = useState('PADEL')
   const [newTourFormat, setNewTourFormat] = useState<'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'>('GROUPS_AND_PLAYOFFS')
-  const [newTourStart, setNewTourStart] = useState(() => new Date().toISOString().split('T')[0])
-  const [newTourEnd, setNewTourEnd] = useState(() => new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0])
+  const [newTourStart, setNewTourStart] = useState(() => getArgentinaTodayIso())
+  const [newTourEnd, setNewTourEnd] = useState(() => {
+    const today = getArgentinaTodayIso()
+    const [y, m, d] = today.split('-').map(Number)
+    const end = new Date(y, m - 1, d + 2, 12, 0, 0)
+    return getArgentinaTodayIso(end)
+  })
   const [newTourCats, setNewTourCats] = useState('4ta Caballeros, 6ta Damas, Suma 11')
 
   // Form inscribir equipo

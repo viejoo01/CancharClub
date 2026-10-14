@@ -150,8 +150,6 @@ export async function inviteStaffMember(params: {
         user_metadata: {
           full_name: cleanName,
           phone: cleanPhone,
-          assigned_password: chosenPassword,
-          initial_password: chosenPassword,
         },
       })
 
@@ -162,6 +160,11 @@ export async function inviteStaffMember(params: {
       userId = newUser.user.id
     } else {
       // Si ya existía, confirmar su email y actualizar contraseña si se proveyó
+      const currentMeta = { ...(existingUser.user_metadata || {}) }
+      delete currentMeta.assigned_password
+      delete currentMeta.initial_password
+      delete currentMeta.password
+
       const updateData: {
         email_confirm: boolean
         password?: string
@@ -169,14 +172,13 @@ export async function inviteStaffMember(params: {
       } = {
         email_confirm: true,
         user_metadata: {
-          ...(existingUser.user_metadata || {}),
+          ...currentMeta,
           full_name: cleanName,
           phone: cleanPhone || existingUser.user_metadata?.phone,
         },
       }
       if (params.password?.trim()) {
         updateData.password = params.password.trim()
-        updateData.user_metadata.assigned_password = params.password.trim()
       }
 
       await supabase.auth.admin.updateUserById(existingUser.id, updateData)
@@ -312,9 +314,10 @@ export async function updateStaffPassword(params: {
 
     const cleanMeta = {
       ...(userData.user.user_metadata || {}),
-      assigned_password: cleanPwd,
-      initial_password: cleanPwd,
     }
+    delete cleanMeta.assigned_password
+    delete cleanMeta.initial_password
+    delete cleanMeta.password
 
     // Actualizar la contraseña en Supabase Auth (asegurando confirmación de email)
     const { error: updateErr } = await supabase.auth.admin.updateUserById(params.staffProfileId, {

@@ -301,25 +301,33 @@ export async function toggleAllLights(
     const supabase = await createServiceClient()
     const { data: courts } = await supabase
       .from('courts')
-      .select('id, relay_ip, relay_type, relay_channel')
+      .select('id, has_lights')
       .eq('tenant_id', tenantId)
       .eq('is_active', true)
-      .eq('has_lighting', true)
 
     if (!courts?.length) {
       return { success: true, results: [] }
     }
 
+    const lightCourts = courts.filter(c => c.has_lights !== false)
+    if (!lightCourts.length) {
+      return { success: true, results: [] }
+    }
+
+    const configs = await getCourtLightConfigs(tenantId)
+
     const results = await Promise.allSettled(
-      courts.map(c =>
-        toggleCourtLight(
+      lightCourts.map(c => {
+        const conf = configs[c.id]
+        return toggleCourtLight(
           c.id,
           command,
-          c.relay_ip,
-          c.relay_type ?? 'SHELLY',
-          c.relay_channel ?? 0
+          conf?.relay_ip_or_id,
+          conf?.relay_type ?? 'SHELLY_CLOUD',
+          0,
+          conf?.cloud_config
         )
-      )
+      })
     )
 
     const settled = results.map(r =>

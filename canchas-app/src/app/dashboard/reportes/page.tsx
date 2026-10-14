@@ -17,7 +17,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso } from '@/lib/utils'
 import { getOccupancyReport, type OccupancyReportData, type PricingRecommendation } from '@/actions/analytics.actions'
 import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
@@ -122,7 +122,7 @@ export default function ReportesPage() {
     })
     exportToCsv({
       title: 'Reporte de Ocupación Semanal',
-      filename: `reporte-ocupacion-${new Date().toISOString().split('T')[0]}.csv`,
+      filename: `reporte-ocupacion-${getArgentinaTodayIso()}.csv`,
       headers,
       rows,
     })

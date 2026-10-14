@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, buildWhatsAppLink } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink, getArgentinaTodayIso } from '@/lib/utils'
 import { getBookingPublicReceipt, type PublicBookingReceipt } from '@/actions/booking.actions'
 
 function formatFriendlyDate(rawDate?: string | null): string {
@@ -98,7 +98,7 @@ function PendingContent({ bookingId }: { bookingId: string }) {
   const rawDateParam = searchParams.get('date')
   const dateFromReceipt = formatFriendlyDate(receipt?.dateFormatted)
   const dateFromParam = formatFriendlyDate(rawDateParam)
-  const todayFallback = formatFriendlyDate(new Date().toISOString().split('T')[0])
+  const todayFallback = formatFriendlyDate(getArgentinaTodayIso())
   const date = dateFromReceipt || dateFromParam || todayFallback
 
   const rawTimeParam = searchParams.get('time')

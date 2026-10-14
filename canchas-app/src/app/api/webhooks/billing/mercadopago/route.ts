@@ -14,6 +14,7 @@ import {
   confirmPreapprovalSubscriptionFromMercadoPago,
   applyReactivationPaymentInternal,
 } from '@/actions/saas-billing.actions'
+import { getArgentinaTodayIso } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -224,28 +225,46 @@ export async function POST(request: NextRequest) {
     let isCardLink = false
     let isReactivation = false
 
-    if (payment.external_reference?.startsWith('reactivation_tenant_')) {
-      const parts = payment.external_reference.split('_')
-      // ['reactivation', 'tenant', '{tenantId}', '{timestamp}']
-      if (parts.length >= 3) {
-        tenantId = parts[2]
+    const extRef = payment.external_reference || ''
+
+    if (extRef.startsWith('reactivation_tenant_')) {
+      const match = extRef.match(/^reactivation_tenant_([0-9a-fA-F-]+)(?:_(\d+))?$/)
+      if (match) {
+        tenantId = match[1]
         isReactivation = true
+      } else {
+        const parts = extRef.split('_')
+        if (parts.length >= 3) {
+          tenantId = parts[2]
+          isReactivation = true
+        }
       }
-    } else if (payment.external_reference?.startsWith('saas_preapproval_')) {
-      tenantId = payment.external_reference.replace('saas_preapproval_', '')
-    } else if (payment.external_reference?.startsWith('saas_tenant_')) {
-      const parts = payment.external_reference.split('_')
-      // ['saas', 'tenant', '{tenantId}', 'inv', '{invoiceId}', '{timestamp}']
-      if (parts.length >= 5) {
-        tenantId = parts[2]
-        invoiceId = parts[4]
+    } else if (extRef.startsWith('saas_preapproval_')) {
+      tenantId = extRef.replace('saas_preapproval_', '')
+    } else if (extRef.startsWith('saas_tenant_')) {
+      // Formato: saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp} o saas_tenant_${tenantId}_inv_${invoiceId}
+      const match = extRef.match(/^saas_tenant_([0-9a-fA-F-]+)_inv_(.+?)(?:_(\d{10,}))?$/)
+      if (match) {
+        tenantId = match[1]
+        invoiceId = match[2]
+      } else {
+        const parts = extRef.split('_')
+        if (parts.length >= 5) {
+          tenantId = parts[2]
+          invoiceId = parts.slice(4).join('_')
+        }
       }
-    } else if (payment.external_reference?.startsWith('card_link_')) {
-      const parts = payment.external_reference.split('_')
-      // ['card', 'link', '{tenantId}', '{timestamp}']
-      if (parts.length >= 3) {
-        tenantId = parts[2]
+    } else if (extRef.startsWith('card_link_')) {
+      const match = extRef.match(/^card_link_([0-9a-fA-F-]+)(?:_(\d+))?$/)
+      if (match) {
+        tenantId = match[1]
         isCardLink = true
+      } else {
+        const parts = extRef.split('_')
+        if (parts.length >= 3) {
+          tenantId = parts[2]
+          isCardLink = true
+        }
       }
     }
 
@@ -400,14 +419,28 @@ export async function POST(request: NextRequest) {
       console.log(`[Billing Webhook] ✅ Tenant ${tenantId} REACTIVADO con éxito a estado ACTIVE`)
     }
 
-    // C. Registrar en historial de suscripciones
-    const periodStart = nowIso.split('T')[0]
-    const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+    // C. Registrar en historial de suscripciones preservando el plan contratado
+    let currentPlan = 'STANDARD'
+    try {
+      const { data: existingSub } = await supabase
+        .from('saas_subscriptions')
+        .select('plan')
+        .eq('tenant_id', tenantId)
+        .order('billing_period_start', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (existingSub?.plan) {
+        currentPlan = existingSub.plan
+      }
+    } catch {}
+
+    const periodStart = getArgentinaTodayIso()
+    const periodEnd = getArgentinaTodayIso(new Date(Date.now() + 30 * 86400000))
     await supabase
       .from('saas_subscriptions')
       .upsert({
         tenant_id: tenantId,
-        plan: 'STANDARD',
+        plan: currentPlan,
         status: 'active',
         billing_period_start: periodStart,
         billing_period_end: periodEnd,

@@ -14,6 +14,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { checkAndReleaseOverdueRecurringSlots } from '@/actions/recurring-slots.actions'
+import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -38,6 +39,11 @@ async function handleDunning(request: NextRequest) {
   try {
     const supabase = await createServiceClient()
     const now = new Date()
+    const todayIso = getArgentinaTodayIso(now)
+    const [currentYearStr, currentMonthStr, currentDayStr] = todayIso.split('-')
+    const currentYear = Number(currentYearStr)
+    const currentMonth = Number(currentMonthStr)
+    const currentDay = Number(currentDayStr)
 
     // 2. Obtener todos los tenants registrados
     const { data: tenants, error: tenantsErr } = await supabase
@@ -117,12 +123,10 @@ async function handleDunning(request: NextRequest) {
       // Ciclo mensual de cobro a los clubes: 15 días gratis de trial, y desde el día 16 se factura cada 30 días
       // en la misma fecha ancla de cada mes (ej. si el trial termina el 24 de octubre, se factura los 24 de cada mes)
       if (now >= trialEnd) {
-        const currentMonth = now.getMonth() + 1
-        const currentYear = now.getFullYear()
         const anchorDay = trialEnd.getDate()
         const lastDayOfCurrentMonth = new Date(currentYear, currentMonth, 0).getDate()
         const effectiveAnchorDay = Math.min(anchorDay, lastDayOfCurrentMonth)
-        const isAnchorDateReached = now.getDate() >= effectiveAnchorDay
+        const isAnchorDateReached = currentDay >= effectiveAnchorDay
 
         // Verificar si ya existe factura emitida para el período mensual actual
         const { data: currentPeriodInvoices } = await supabase
@@ -224,27 +228,36 @@ async function handleDunning(request: NextRequest) {
         continue
       }
 
-      // Calcular días de mora respecto a due_date
-      const dueDate = new Date(oldestInv.due_date)
-      const diffMs = now.getTime() - dueDate.getTime()
-      const daysOverdue = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-
+      // Calcular días de mora respecto a due_date usando la fecha civil oficial de Argentina
+      const cleanDueDate = oldestInv.due_date.split('T')[0]
       let targetStatus: TenantSubscriptionStatus = 'ACTIVE'
       let isActive = true
+      let daysOverdue = 0
 
-      if (daysOverdue >= 15) {
-        targetStatus = 'LOCKED'
-        isActive = false
-      } else if (daysOverdue >= 13) {
-        targetStatus = 'PARTIALLY_SUSPENDED'
+      if (todayIso <= cleanDueDate) {
+        // La factura aún no venció: el club permanece activo y sin penalizaciones
+        targetStatus = tenant.subscription_status === 'TRIAL' ? 'TRIAL' : 'ACTIVE'
         isActive = true
-      } else if (daysOverdue >= 8) {
-        targetStatus = 'GRACE_PERIOD'
-        isActive = true
+        daysOverdue = 0
       } else {
-        // Días 0 a 7 desde la fecha de cobro mensual
-        targetStatus = 'PAYMENT_PENDING'
-        isActive = true
+        const dueMs = parseArgentinaDate(cleanDueDate).getTime()
+        const todayMs = parseArgentinaDate(todayIso).getTime()
+        daysOverdue = Math.max(1, Math.round((todayMs - dueMs) / (1000 * 60 * 60 * 24)))
+
+        if (daysOverdue >= 15) {
+          targetStatus = 'LOCKED'
+          isActive = false
+        } else if (daysOverdue >= 13) {
+          targetStatus = 'PARTIALLY_SUSPENDED'
+          isActive = true
+        } else if (daysOverdue >= 8) {
+          targetStatus = 'GRACE_PERIOD'
+          isActive = true
+        } else {
+          // Días 1 a 7 desde la fecha de vencimiento mensual
+          targetStatus = 'PAYMENT_PENDING'
+          isActive = true
+        }
       }
 
       // Actualizar si el estado cambió

@@ -14,6 +14,15 @@ export function PwaInstallBanner() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
+    // Si la app ya está corriendo instalada como PWA standalone, no mostrar banner
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as unknown as { standalone?: boolean })?.standalone === true
+
+    if (isStandalone) {
+      return
+    }
+
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)

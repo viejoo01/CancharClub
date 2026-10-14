@@ -53,6 +53,13 @@ export function WaitlistModal({
   })
   const [loading, setLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [lastSlotKey, setLastSlotKey] = useState(`${isOpen}-${timeSlot}-${courtId}-${date}`)
+
+  const currentSlotKey = `${isOpen}-${timeSlot}-${courtId}-${date}`
+  if (lastSlotKey !== currentSlotKey) {
+    setLastSlotKey(currentSlotKey)
+    setIsSuccess(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

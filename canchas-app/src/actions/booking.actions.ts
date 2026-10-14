@@ -748,7 +748,7 @@ export async function createManualBooking(
     }
 
     // 1.1 Prevenir colisión simultánea con reservas en memoria o checkouts online activos
-    const dayStr = startsAtDate.toISOString().split('T')[0]
+    const dayStr = getArgentinaTodayIso(startsAtDate)
     const memoryBookings = getVenueBookings(effectiveTenantId, dayStr)
     const isAlreadyBookedInMemory = memoryBookings.some((b) => {
       const matchCourt = b.court_id === payload.court_id
@@ -767,8 +767,10 @@ export async function createManualBooking(
     // Protección antifraude: Si el usuario es administrador de turno / canchero (TENANT_STAFF),
     // se asegura que el precio total de la cancha corresponda estrictamente a la tarifa oficial fijada por el dueño.
     if (!isOwner && authCheck.user?.role === 'TENANT_STAFF') {
-      const dayOfWeek = startsAtDate.getDay()
-      const timeStr = `${String(startsAtDate.getHours()).padStart(2, '0')}:${String(startsAtDate.getMinutes()).padStart(2, '0')}:00`
+      const timeStr = `${getArgentinaTimeStr(startsAtDate)}:00`
+      const argIso = getArgentinaTodayIso(startsAtDate)
+      const [y, m, d] = argIso.split('-').map(Number)
+      const dayOfWeek = new Date(y, m - 1, d).getDay()
 
       const { data: priceRules } = await supabase
         .from('price_rules')
@@ -1754,7 +1756,7 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
       const rawId = String(b.id || '')
       const shortCode = rawId.slice(-6).toUpperCase()
 
-      let dateIso = new Date().toISOString().split('T')[0]
+      let dateIso = getArgentinaTodayIso()
       let dateFormatted = ''
       let timeFormatted = '19:00'
 
@@ -1774,7 +1776,7 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
             }
             const d = new Date(startsAt)
             if (!isNaN(d.getTime())) {
-              dateIso = d.toISOString().split('T')[0]
+              dateIso = getArgentinaTodayIso(d)
               let df = d.toLocaleDateString('es-AR', {
                 timeZone: 'America/Argentina/Buenos_Aires',
                 weekday: 'long',
@@ -1854,7 +1856,7 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
     }
 
     // 2. Fallback a venues si es un demo booking
-    const today = new Date().toISOString().split('T')[0]
+    const today = getArgentinaTodayIso()
     const venueBookings = [
       ...getVenueBookings('venue-main', today),
       ...getVenueBookings('padel-norte', today)
@@ -1884,9 +1886,9 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           googleMapsUrl: 'https://maps.google.com/?q=Av.+Aconquija+2100,+Yerba+Buena',
           courtName,
           sport: 'Pádel',
-          date: foundVenue.starts_at ? foundVenue.starts_at.split('T')[0] : new Date().toISOString().split('T')[0],
-          dateFormatted: foundVenue.starts_at ? new Date(foundVenue.starts_at).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'Hoy',
-          time: foundVenue.starts_at ? foundVenue.starts_at.substring(11, 16) : '19:00',
+          date: foundVenue.starts_at ? getArgentinaTodayIso(new Date(foundVenue.starts_at)) : getArgentinaTodayIso(),
+          dateFormatted: foundVenue.starts_at ? new Date(foundVenue.starts_at).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'Hoy',
+          time: foundVenue.starts_at ? getArgentinaTimeStr(new Date(foundVenue.starts_at)) : '19:00',
           customerName: foundVenue.customer_name || 'Jugador',
           totalAmount: total,
           depositAmount: deposit,
@@ -1932,6 +1934,26 @@ export async function cancelBookingByPlayer(
 
     if (booking.status?.toLowerCase().includes('cancel')) {
       return { success: false, error: 'Esta reserva ya fue cancelada previamente.' }
+    }
+
+    if (['completed', 'no_show'].includes(booking.status?.toLowerCase() || '')) {
+      return { success: false, error: 'No es posible cancelar una reserva que ya fue finalizada o registrada.' }
+    }
+
+    // Verificar que el turno sea futuro y no haya comenzado
+    if (booking.booked_at) {
+      const match = String(booking.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (match && match[1]) {
+        const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
+        const isoNormalized = rawStart.endsWith('+00') ? rawStart.replace('+00', 'Z') : rawStart
+        const slotStart = new Date(isoNormalized)
+        if (!isNaN(slotStart.getTime()) && slotStart.getTime() <= Date.now()) {
+          return {
+            success: false,
+            error: 'No es posible cancelar el turno porque el horario del partido ya comenzó o ha transcurrido.'
+          }
+        }
+      }
     }
 
     // 2. Verificar que pertenezca al jugador de forma obligatoria y estricta

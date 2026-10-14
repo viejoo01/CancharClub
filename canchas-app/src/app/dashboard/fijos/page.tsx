@@ -29,7 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { formatARS, buildWhatsAppLink } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink, getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 import { 
   getRecurringSlots, 
   createRecurringSlot, 
@@ -67,7 +67,7 @@ export default function TurnosFijosPage() {
   const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => cachedDbCourts || [])
 
   // Form states (Alta)
-  const [courtId, setCourtId] = useState('')
+  const [courtId, setCourtId] = useState(() => cachedDbCourts?.[0]?.id || '')
   const [dayOfWeek, setDayOfWeek] = useState(1) // Lunes
   const [startTime, setStartTime] = useState('20:00')
   const [endTime, setEndTime] = useState('21:30')
@@ -197,7 +197,7 @@ export default function TurnosFijosPage() {
       if (courtsList && courtsList.length > 0) {
         cachedDbCourts = courtsList
         setDbCourts(courtsList)
-        setCourtId(courtsList[0].id)
+        setCourtId((prev) => prev || courtsList[0].id)
       }
     })
     // Load recurring slots
@@ -261,11 +261,17 @@ export default function TurnosFijosPage() {
       return
     }
 
+    const activeCourtId = courtId || dbCourts[0]?.id
+    if (!activeCourtId) {
+      toast.error('Seleccioná una cancha para el turno fijo')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await createRecurringSlot({
         tenant_id: tenantId!,
-        court_id: courtId,
+        court_id: activeCourtId,
         day_of_week: Number(dayOfWeek),
         start_time: startTime,
         end_time: endTime,
@@ -494,10 +500,11 @@ export default function TurnosFijosPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        const d = new Date()
+                        const todayArg = getArgentinaTodayIso()
+                        const d = parseArgentinaDate(`${todayArg}T12:00:00`)
                         const diff = (slot.day_of_week - d.getDay() + 7) % 7
                         d.setDate(d.getDate() + diff)
-                        const nextDate = d.toISOString().split('T')[0]
+                        const nextDate = getArgentinaTodayIso(d)
                         const rruleDays = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 
                         downloadIcs({

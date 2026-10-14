@@ -367,6 +367,8 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         })
         if (fullAddr) q.set('address', fullAddr)
         if (club.googleMapsUrl) q.set('mapsUrl', club.googleMapsUrl)
+        if (res.wa_url) q.set('waUrl', res.wa_url)
+        if (res.wa_is_simulated) q.set('waSimulated', '1')
         return `/reserva/${res.booking_id}/confirmado?${q.toString()}`
       }
 

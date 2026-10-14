@@ -506,8 +506,10 @@ export interface CheckoutResponse {
     cuit?: string
     whatsapp_phone?: string
   }
+  wa_url?: string
+  wa_is_simulated?: boolean
   error?: string
-  error_code?: 'SLOT_UNAVAILABLE' | 'LOCK_FAILED' | 'MP_ERROR' | 'VALIDATION_ERROR' | 'CLUB_SUSPENDED_DUNNING' | 'CLUB_PENDING_ACTIVATION' | 'SLOT_IN_PAST' | 'PLAYER_RESTRICTED' | 'WAITLIST_PRIORITY_ACTIVE'
+  error_code?: 'SLOT_UNAVAILABLE' | 'LOCK_FAILED' | 'MP_ERROR' | 'VALIDATION_ERROR' | 'CLUB_SUSPENDED_DUNNING' | 'CLUB_PENDING_ACTIVATION' | 'SLOT_IN_PAST' | 'PLAYER_RESTRICTED' | 'WAITLIST_PRIORITY_ACTIVE' | 'DB_INSERT_FAILED'
 }
 
 /** Notificación de webhook de Mercado Pago */

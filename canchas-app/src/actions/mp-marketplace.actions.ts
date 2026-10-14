@@ -187,3 +187,99 @@ export async function simulateMpConnectionForDemo(tenantId: string): Promise<{ s
     return { success: false, error: 'Error al simular conexión' }
   }
 }
+
+/**
+ * Renueva el access_token de Mercado Pago para un club utilizando su mp_refresh_token.
+ * Previene la caída por expiración a los 180 días.
+ */
+export async function refreshTenantMpToken(tenantId: string): Promise<string | null> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, mp_access_token, mp_refresh_token')
+      .eq('id', tenantId)
+      .maybeSingle()
+
+    if (!tenant?.mp_refresh_token) {
+      return tenant?.mp_access_token || null
+    }
+
+    const clientId = process.env.MP_CLIENT_ID
+    const clientSecret = process.env.MP_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      return tenant.mp_access_token || null
+    }
+
+    const response = await fetch('https://api.mercadopago.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_secret: clientSecret,
+        client_id: clientId,
+        grant_type: 'refresh_token',
+        refresh_token: tenant.mp_refresh_token,
+      }),
+    })
+
+    const data = await response.json()
+    if (response.ok && data.access_token) {
+      await supabase
+        .from('tenants')
+        .update({
+          mp_access_token: data.access_token,
+          mp_refresh_token: data.refresh_token || tenant.mp_refresh_token,
+          mp_connected_at: new Date().toISOString(),
+        })
+        .eq('id', tenantId)
+
+      return data.access_token
+    } else {
+      console.warn('[refreshTenantMpToken] Error de renovación en Mercado Pago:', data)
+      return tenant.mp_access_token || null
+    }
+  } catch (err) {
+    console.error('[refreshTenantMpToken] Error inesperado:', err)
+    return null
+  }
+}
+
+/**
+ * Obtiene el access_token del club, renovándolo de forma transparente si tiene más de 150 días de antigüedad
+ * para evitar que falle a los 180 días.
+ */
+export async function getOrRefreshTenantMpToken(tenantId: string): Promise<string | null> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, mp_access_token, mp_refresh_token, mp_connected_at')
+      .eq('id', tenantId)
+      .maybeSingle()
+
+    if (!tenant?.mp_access_token) return null
+
+    // Si es un token de prueba/simulado, no requiere refresh
+    if (tenant.mp_access_token.startsWith('TEST-') || tenant.mp_access_token.startsWith('sim_')) {
+      return tenant.mp_access_token
+    }
+
+    // Verificar antigüedad del token: si tiene más de 150 días (12.960.000.000 ms), renovar preventivamente
+    const connectedAtMs = tenant.mp_connected_at ? new Date(tenant.mp_connected_at).getTime() : 0
+    const ageMs = Date.now() - connectedAtMs
+    const MS_150_DAYS = 150 * 24 * 60 * 60 * 1000
+
+    if (tenant.mp_refresh_token && (connectedAtMs === 0 || ageMs > MS_150_DAYS)) {
+      const refreshed = await refreshTenantMpToken(tenantId)
+      if (refreshed) return refreshed
+    }
+
+    return tenant.mp_access_token
+  } catch (err) {
+    console.error('[getOrRefreshTenantMpToken] Error:', err)
+    return null
+  }
+}

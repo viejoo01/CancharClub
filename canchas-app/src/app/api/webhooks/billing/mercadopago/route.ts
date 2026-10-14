@@ -8,7 +8,12 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import type { MercadoPagoWebhookNotification, MercadoPagoPayment } from '@/types/database'
-import { recordAutoDebitAlertInternal, confirmCardSetupFromMercadoPagoPayment } from '@/actions/saas-billing.actions'
+import {
+  recordAutoDebitAlertInternal,
+  confirmCardSetupFromMercadoPagoPayment,
+  confirmPreapprovalSubscriptionFromMercadoPago,
+  applyReactivationPaymentInternal,
+} from '@/actions/saas-billing.actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -149,8 +154,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Falta data.id en la notificación' }, { status: 400 })
     }
 
-    // 2. Consultar el pago en Mercado Pago
     const platformAccessToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+
+    // 1.1 Si el evento es una suscripción recurrente / preapproval directo de Mercado Pago
+    if (notification.type === 'subscription_preapproval') {
+      const preapprovalId = String(paymentId)
+      if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
+        try {
+          const preRes = await fetch(`https://api.mercadopago.com/preapproval/${preapprovalId}`, {
+            headers: {
+              Authorization: `Bearer ${platformAccessToken}`,
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+          })
+          if (preRes.ok) {
+            const preData = await preRes.json()
+            let pTenantId: string | null = null
+            if (preData?.external_reference?.startsWith('saas_preapproval_')) {
+              pTenantId = preData.external_reference.replace('saas_preapproval_', '')
+            }
+            if (pTenantId && (preData.status === 'authorized' || preData.status === 'pending')) {
+              await confirmPreapprovalSubscriptionFromMercadoPago(pTenantId, preapprovalId, { skipAuth: true })
+              return NextResponse.json({ received: true, preapproval: true, tenant_id: pTenantId, status: preData.status })
+            }
+          }
+        } catch (subErr) {
+          console.error('[Billing Webhook] Error resolviendo preapproval:', subErr)
+        }
+      }
+      return NextResponse.json({ received: true, preapproval_processed: true, id: preapprovalId })
+    }
+
+    // 2. Consultar el pago en Mercado Pago
     let payment: MercadoPagoPayment | null = null
 
     if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
@@ -178,13 +214,26 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Identificar Tenant e Invoice mediante external_reference
-    // Formato generado: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
-    // O vinculación de tarjeta: `card_link_${tenantId}_${timestamp}`
+    // Formatos posibles:
+    // - Reactivación: `reactivation_tenant_${tenantId}_${timestamp}`
+    // - Débito recurrente: `saas_preapproval_${tenantId}`
+    // - Factura puntual: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
+    // - Vinculación de tarjeta: `card_link_${tenantId}_${timestamp}`
     let tenantId: string | null = null
     let invoiceId: string | null = null
     let isCardLink = false
+    let isReactivation = false
 
-    if (payment.external_reference?.startsWith('saas_tenant_')) {
+    if (payment.external_reference?.startsWith('reactivation_tenant_')) {
+      const parts = payment.external_reference.split('_')
+      // ['reactivation', 'tenant', '{tenantId}', '{timestamp}']
+      if (parts.length >= 3) {
+        tenantId = parts[2]
+        isReactivation = true
+      }
+    } else if (payment.external_reference?.startsWith('saas_preapproval_')) {
+      tenantId = payment.external_reference.replace('saas_preapproval_', '')
+    } else if (payment.external_reference?.startsWith('saas_tenant_')) {
       const parts = payment.external_reference.split('_')
       // ['saas', 'tenant', '{tenantId}', 'inv', '{invoiceId}', '{timestamp}']
       if (parts.length >= 5) {
@@ -237,6 +286,30 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`[Billing Webhook] Vinculación de tarjeta para club ${resolvedTenantId} en estado '${payment.status}'`)
         return NextResponse.json({ received: true, card_linked: false, status: payment.status })
+      }
+    }
+
+    // 3.0.1 Si es una reactivación de club pausado con recargos por mora
+    if (isReactivation) {
+      if (payment.status === 'approved') {
+        console.log(`[Billing Webhook] ✅ Pago de reactivación para club ${resolvedTenantId} aprobado (Pago #${payment.id})`)
+        await applyReactivationPaymentInternal({
+          tenantId: resolvedTenantId,
+          totalPaid: Number(payment.transaction_amount) || 0,
+          daysOverdue: 0,
+          surchargeAmount: 0,
+          paymentMethod: 'MERCADO_PAGO',
+          notes: `Reactivación acreditada vía Webhook MP #${payment.id}`,
+        })
+        return NextResponse.json({
+          received: true,
+          reactivated: true,
+          tenant_id: resolvedTenantId,
+          payment_id: payment.id,
+        })
+      } else {
+        console.log(`[Billing Webhook] Reactivación para club ${resolvedTenantId} en estado '${payment.status}'`)
+        return NextResponse.json({ received: true, reactivated: false, status: payment.status })
       }
     }
 

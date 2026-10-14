@@ -1129,6 +1129,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
       result = await preApprovalClient.create({
         body: {
           reason: 'CancharClub', // Nombre exacto solicitado para el resumen de tarjeta
+          external_reference: `saas_preapproval_${tenantId}`,
           auto_recurring: {
             frequency: 1,
             frequency_type: 'months',
@@ -1150,6 +1151,7 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
         result = await preApprovalClient.create({
           body: {
             reason: 'CancharClub',
+            external_reference: `saas_preapproval_${tenantId}`,
             auto_recurring: {
               frequency: 1,
               frequency_type: 'months',
@@ -2718,10 +2720,10 @@ export async function getClubReactivationDetails(tenantIdParam?: string, overrid
 }
 
 /**
- * Registra el pago de reactivación de un club (cuota base + recargo por mora 3%/día),
+ * Función interna para aplicar el pago de reactivación de un club,
  * levantando la pausa inmediatamente a ACTIVE y dejando al día el balance y la facturación.
  */
-export async function recordReactivationPaymentAction(params: {
+export async function applyReactivationPaymentInternal(params: {
   tenantId: string
   totalPaid: number
   daysOverdue: number
@@ -2729,11 +2731,6 @@ export async function recordReactivationPaymentAction(params: {
   paymentMethod: 'MERCADO_PAGO' | 'TRANSFERENCIA' | 'SIMULADO'
   notes?: string
 }) {
-  const superCheck = await assertSuperadmin()
-  if (!superCheck.authorized) {
-    return { success: false, error: superCheck.error || 'No autorizado' }
-  }
-
   const serviceClient = await createServiceClient()
   const { tenantId, totalPaid, daysOverdue, surchargeAmount, paymentMethod, notes } = params
 
@@ -2809,6 +2806,90 @@ export async function recordReactivationPaymentAction(params: {
 }
 
 /**
+ * Registra el pago de reactivación por parte del SUPERADMIN (ej: transferencia manual)
+ */
+export async function recordReactivationPaymentAction(params: {
+  tenantId: string
+  totalPaid: number
+  daysOverdue: number
+  surchargeAmount: number
+  paymentMethod: 'MERCADO_PAGO' | 'TRANSFERENCIA' | 'SIMULADO'
+  notes?: string
+}) {
+  const superCheck = await assertSuperadmin()
+  if (!superCheck.authorized) {
+    return { success: false, error: superCheck.error || 'No autorizado' }
+  }
+
+  return applyReactivationPaymentInternal(params)
+}
+
+/**
+ * Verifica en Mercado Pago el pago de reactivación y reactiva el club si está aprobado.
+ * Acción invocable por el propio administrador del club tras completar el pago en MP.
+ */
+export async function verifyAndApplyReactivationPaymentAction(params: {
+  tenantId: string
+  paymentId: string
+}) {
+  const { tenantId, paymentId } = params
+  const auth = await assertTenantAdmin(tenantId)
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
+  }
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    // En modo simulación
+    return applyReactivationPaymentInternal({
+      tenantId,
+      totalPaid: 15,
+      daysOverdue: 0,
+      surchargeAmount: 0,
+      paymentMethod: 'SIMULADO',
+      notes: `Reactivación de prueba (Simulada ID: ${paymentId})`,
+    })
+  }
+
+  try {
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+      headers: {
+        Authorization: `Bearer ${mpToken}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!res.ok) {
+      return { success: false, error: 'No se pudo verificar el pago en Mercado Pago' }
+    }
+
+    const payment = await res.json()
+    if (payment.status !== 'approved') {
+      return { success: false, error: `El pago aún no está aprobado (Estado: ${payment.status})` }
+    }
+
+    const extRef = String(payment.external_reference || '')
+    if (!extRef.includes(tenantId)) {
+      return { success: false, error: 'El pago no corresponde a este club' }
+    }
+
+    const details = await getClubReactivationDetails(tenantId)
+    return applyReactivationPaymentInternal({
+      tenantId,
+      totalPaid: Number(payment.transaction_amount) || details.reactivation.totalAmount,
+      daysOverdue: details.reactivation.daysOverdue,
+      surchargeAmount: details.reactivation.surchargeAmount,
+      paymentMethod: 'MERCADO_PAGO',
+      notes: `Reactivación acreditada vía Mercado Pago #${payment.id}`,
+    })
+  } catch (err) {
+    console.error('[verifyAndApplyReactivationPaymentAction] Error:', err)
+    return { success: false, error: 'Error al validar reactivación con Mercado Pago' }
+  }
+}
+
+/**
  * Genera la preferencia de Mercado Pago específica para la reactivación con el 3% diario incluido.
  */
 export async function createReactivationPreferenceAction(tenantId: string, overrideDays?: number) {
@@ -2859,6 +2940,7 @@ export async function createReactivationPreferenceAction(tenantId: string, overr
           failure: `${appUrl}/dashboard/plan?reactivation_error=true`,
         },
         auto_return: 'approved',
+        notification_url: `${appUrl}/api/webhooks/billing/mercadopago`,
         statement_descriptor: 'CANCHARCLUB',
       }
     })

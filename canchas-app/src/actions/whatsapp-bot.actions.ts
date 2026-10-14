@@ -59,9 +59,15 @@ export async function getWhatsAppBotConfig(tenantId: string): Promise<WhatsAppBo
       .limit(1)
 
     if (data && data.length > 0 && data[0].new_data) {
+      const saved = data[0].new_data as WhatsAppBotConfig
+      const hasRealKeys = Boolean(
+        (saved.api_key && saved.phone_number_id) ||
+        (process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID)
+      )
       return {
         ...defaultConfig,
-        ...(data[0].new_data as WhatsAppBotConfig),
+        ...saved,
+        provider: hasRealKeys ? 'META_CLOUD' : 'SIMULATED',
         tenant_id: tenantId,
       }
     }
@@ -241,7 +247,10 @@ ${clubAddress}💵 *Total:* ${formatARS(totalArs)}
 ¡Te esperamos! Te recordamos llegar 10 minutos antes.
 _Comprobante automático emitido por CancharClub._`
 
-    const sendRes = await sendWhatsAppMessage(phone, message)
+    const sendRes = await sendWhatsAppMessage(phone, message, {
+      token: config.api_key,
+      phoneId: config.phone_number_id,
+    })
 
     await logAutomatedMessage(booking.tenant_id, {
       recipient_phone: phone,
@@ -283,6 +292,8 @@ export async function testWhatsAppBotMessage(
       return { success: false, isSimulated: false, waUrl: '', error: 'Número de WhatsApp inválido' }
     }
 
+    const config = await getWhatsAppBotConfig(tenantId)
+
     const testMessage = 
 `🤖 *CANCHARCLUB — PRUEBA DE BOT WHATSAPP*
 
@@ -294,7 +305,10 @@ Tu bot de automatización de CancharClub está activo y listo para despachar:
 
 Fecha y hora: ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}`
 
-    const sendRes = await sendWhatsAppMessage(cleanPhone, testMessage)
+    const sendRes = await sendWhatsAppMessage(cleanPhone, testMessage, {
+      token: config.api_key,
+      phoneId: config.phone_number_id,
+    })
 
     await logAutomatedMessage(tenantId, {
       recipient_phone: cleanPhone,

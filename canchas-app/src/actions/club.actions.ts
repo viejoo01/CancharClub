@@ -765,6 +765,7 @@ export async function createPriceRule(payload: {
     time_from: timeFromFormatted,
     time_to: timeToFormatted,
     price_cents: priceCents,
+    deposit_pct: payload.deposit_pct !== undefined ? Number(payload.deposit_pct) : 50,
     priority: 1,
     is_active: true,
   }))
@@ -891,6 +892,9 @@ export async function updatePriceRule(payload: {
     time_from: timeFromFormatted,
     time_to: timeToFormatted,
     price_cents: priceCents,
+  }
+  if (payload.deposit_pct !== undefined) {
+    updateData.deposit_pct = Number(payload.deposit_pct)
   }
   if (payload.court_id !== undefined) {
     if (payload.court_id && !payload.court_id.startsWith('sport:')) {
@@ -1934,7 +1938,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
     // 3. Consultar reglas de precios activas del tenant
     const { data: priceRules } = await supabase
       .from('price_rules')
-      .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, priority, is_active')
+      .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, deposit_pct, priority, is_active')
       .eq('tenant_id', tenant.id)
       .eq('is_active', true)
       .order('priority', { ascending: false })
@@ -1949,7 +1953,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       timeFrom: (r.time_from || '00:00:00').substring(0, 5),
       timeTo: (r.time_to?.startsWith('24:00') ? '00:00' : (r.time_to || '23:59:59').substring(0, 5)),
       priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
-      depositPct: 50,
+      depositPct: Number(r.deposit_pct) || 50,
     }))
 
     const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)
@@ -1974,7 +1978,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             features,
             slotDurationMinutes: c.slot_duration_minutes || (c.sport?.includes('FUTBOL') ? 60 : 90),
             pricePerHour,
-            depositPercentage: 0.5,
+            depositPercentage: (courtRules[0]?.depositPct ? courtRules[0].depositPct / 100 : 0.5),
           }
         })
       : []
@@ -2006,10 +2010,14 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       equipment_rental: false,
     }
     let locationReference = ''
+    let dynamicPricing: import('@/config/clubs-catalog').ClubData['dynamicPricing'] = undefined
 
     if (tenant.description) {
       try {
         const parsed = JSON.parse(tenant.description)
+        if (parsed.dynamic_pricing) {
+          dynamicPricing = parsed.dynamic_pricing
+        }
         if (parsed.opening_time || parsed.closing_time) {
           schedule = {
             opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
@@ -2101,6 +2109,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       highlightBadge,
       isHighlightActive,
       socialLinks,
+      dynamicPricing,
     }
   } catch (err) {
     console.error('[getClubPublicData] Exception:', err)
@@ -2171,13 +2180,25 @@ export async function getClubOccupiedSlots(
 
       const { data: dbBookings } = await supabase
         .from('bookings')
-        .select('court_id, booked_at, status, courts(id, name)')
+        .select('id, court_id, booked_at, status, lock_expires_at, courts(id, name)')
         .eq('tenant_id', tenantId)
         .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
         .not('status', 'in', '("cancelled")')
 
       if (dbBookings && dbBookings.length > 0) {
+        const nowMs = Date.now()
+        const expiredPendingIds: string[] = []
+
         for (const b of dbBookings) {
+          // Si es un checkout en 'pending_deposit' cuyo candado expiró (ej. > 7 minutos), ignorar este turno para que la cancha quede libre
+          if (b.status === 'pending_deposit' && b.lock_expires_at) {
+            const expMs = new Date(b.lock_expires_at).getTime()
+            if (!isNaN(expMs) && expMs < nowMs) {
+              if (b.id) expiredPendingIds.push(b.id)
+              continue
+            }
+          }
+
           if (b.booked_at) {
             const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
             if (match && match[1]) {
@@ -2195,6 +2216,21 @@ export async function getClubOccupiedSlots(
                 }
               }
             }
+          }
+        }
+
+        // Auto-cancelación no bloqueante en base de datos para no acumular registros huérfanos
+        if (expiredPendingIds.length > 0) {
+          try {
+            await supabase
+              .from('bookings')
+              .update({
+                status: 'cancelled',
+                staff_notes: 'Candado de checkout expirado (auto-liberado por el sistema)'
+              })
+              .in('id', expiredPendingIds)
+          } catch (cleanErr) {
+            console.warn('[getOccupiedSlotsForDate] Limpieza background de turnos expirados notice:', cleanErr)
           }
         }
       }

@@ -187,22 +187,66 @@ export async function POST(request: NextRequest) {
   console.log(`[MP Webhook] Procesando payment_id: ${paymentId}`)
 
   // ── Consultar el pago en la API de MP ─────────────────────────────────────
-  // Usamos el access_token de la plataforma o del club
-  const platformToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN || ''
-  let payment = platformToken ? await fetchMPPayment(paymentId, platformToken) : null
+  let payment: MercadoPagoPayment | null = null
 
-  // Si falló con el token de la plataforma, intentar con tokens de clubes activos
+  // 1. Atribución directa por query params (?tenant_id=... o ?booking_id=...)
+  const queryTenantId = request.nextUrl.searchParams.get('tenant_id')
+  const queryBookingId = request.nextUrl.searchParams.get('booking_id')
+
+  if (queryTenantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queryTenantId)) {
+    const { data: tenantDirect } = await supabase
+      .from('tenants')
+      .select('mp_access_token')
+      .eq('id', queryTenantId)
+      .maybeSingle()
+
+    if (tenantDirect?.mp_access_token && tenantDirect.mp_access_token.length > 10) {
+      payment = await fetchMPPayment(paymentId, tenantDirect.mp_access_token)
+    }
+  }
+
+  // 2. Si no se resolvió y vino booking_id en la URL, consultar el club de esa reserva
+  if (!payment && queryBookingId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queryBookingId)) {
+    const { data: bData } = await supabase
+      .from('bookings')
+      .select('tenant_id')
+      .eq('id', queryBookingId)
+      .maybeSingle()
+
+    if (bData?.tenant_id) {
+      const { data: tFromB } = await supabase
+        .from('tenants')
+        .select('mp_access_token')
+        .eq('id', bData.tenant_id)
+        .maybeSingle()
+
+      if (tFromB?.mp_access_token && tFromB.mp_access_token.length > 10) {
+        payment = await fetchMPPayment(paymentId, tFromB.mp_access_token)
+      }
+    }
+  }
+
+  // 3. Si aún no se resolvió, probar con el token de la plataforma (Superadmin)
+  const platformToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN || ''
+  if (!payment && platformToken && !platformToken.startsWith('TEST-0000000000000000')) {
+    payment = await fetchMPPayment(paymentId, platformToken)
+  }
+
+  // 4. Fallback exhaustivo: buscar entre todos los clubes activos con token configurado (sin límite artificial de 10)
   if (!payment) {
     const { data: clubTenants } = await supabase
       .from('tenants')
-      .select('mp_access_token')
+      .select('id, mp_access_token')
       .not('mp_access_token', 'is', null)
-      .limit(10)
+      .limit(100)
 
     for (const t of clubTenants ?? []) {
       if (t.mp_access_token && t.mp_access_token.length > 10) {
         payment = await fetchMPPayment(paymentId, t.mp_access_token)
-        if (payment) break
+        if (payment) {
+          console.log(`[MP Webhook] Pago ${paymentId} resuelto mediante token del club ${t.id}`)
+          break
+        }
       }
     }
   }
@@ -231,6 +275,7 @@ export async function POST(request: NextRequest) {
     customer_email?: string | null
     booked_at?: string | null
     court_id?: string | null
+    mp_payment_id?: string | null
   } | null = null
 
   if (bookingIdCandidate) {
@@ -238,7 +283,7 @@ export async function POST(request: NextRequest) {
     if (isUUID) {
       const { data } = await supabase
         .from('bookings')
-        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, staff_deposit_amount_cents, customer_name, customer_email, booked_at, court_id')
+        .select('id, tenant_id, status, redis_lock_key, staff_notes, price_total_cents, deposit_cents, staff_deposit_amount_cents, customer_name, customer_email, booked_at, court_id, mp_payment_id')
         .eq('id', bookingIdCandidate)
         .maybeSingle()
       booking = data
@@ -254,8 +299,54 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Idempotencia: si ya procesamos este payment_id específico, ignorar ─────
-  if (booking.staff_notes && booking.staff_notes.includes(`MP-ID:${paymentId}`)) {
+  if (
+    booking.mp_payment_id === String(paymentId) ||
+    (booking.staff_notes && booking.staff_notes.includes(`MP-ID:${paymentId}`))
+  ) {
     return NextResponse.json({ received: true, idempotent: true })
+  }
+
+  // ── Detección de pago tardío sobre turno ya ocupado / cancelado ─────────────
+  if (payment.status === 'approved' && booking.status === 'cancelled') {
+    const { data: occupant } = await supabase
+      .from('bookings')
+      .select('id, customer_name')
+      .eq('tenant_id', booking.tenant_id)
+      .eq('court_id', booking.court_id || '')
+      .eq('booked_at', booking.booked_at || '')
+      .in('status', ['confirmed', 'deposit_paid'])
+      .neq('id', booking.id)
+      .maybeSingle()
+
+    if (occupant) {
+      console.warn(`[MP Webhook] ALERTA COLISIÓN: Turno ocupado por ${occupant.customer_name} al acreditarse pago tardío #${paymentId}`)
+      await supabase
+        .from('bookings')
+        .update({
+          mp_payment_id: String(payment.id),
+          staff_notes: `${booking.staff_notes || ''} | [ALERTA PAGO TARDÍO: Seña acreditada $${payment.transaction_amount} pero el horario ya fue tomado por ${occupant.customer_name}. Requiere reprogramación o reintegro.]`,
+        })
+        .eq('id', booking.id)
+
+      recordClubNotification({
+        tenantId: booking.tenant_id,
+        type: 'PAYMENT_RECEIVED',
+        category: 'PAYMENTS',
+        title: '⚠️ Pago Tardío — Turno Ya Ocupado',
+        message: `El cliente ${booking.customer_name || 'Desconocido'} abonó $${payment.transaction_amount} pero el turno fue ocupado por ${occupant.customer_name}.`,
+        metadata: {
+          booking_id: booking.id,
+          payment_id: String(payment.id),
+          amount_ars: payment.transaction_amount,
+        },
+      }).catch(() => {})
+
+      return NextResponse.json({
+        received: true,
+        warning: 'slot_already_occupied_after_timeout',
+        booking_id: booking.id,
+      })
+    }
   }
 
   // ── Determinar el nuevo estado según el estado del pago en MP ─────────────
@@ -288,6 +379,7 @@ export async function POST(request: NextRequest) {
     const updatePayload: Record<string, unknown> = {
       status: newStatus,
       staff_notes: updatedNotes,
+      mp_payment_id: String(payment.id),
     }
 
     if (newStatus === 'confirmed') {
@@ -320,6 +412,22 @@ export async function POST(request: NextRequest) {
       console.error('[MP Webhook] Error actualizando booking:', updateError)
       return NextResponse.json({ error: 'DB update failed' }, { status: 500 })
     }
+
+    // Registrar en audit_log para trazabilidad financiera
+    try {
+      await supabase.from('audit_log').insert({
+        tenant_id: booking.tenant_id,
+        action: 'PAYMENT_PROCESSED',
+        table_name: 'bookings',
+        record_id: booking.id,
+        new_data: {
+          payment_id: String(payment.id),
+          status: payment.status,
+          amount: payment.transaction_amount,
+          customer_name: booking.customer_name,
+        },
+      })
+    } catch {}
 
     console.log(`[MP Webhook] Booking ${booking.id} → ${newStatus}`)
 

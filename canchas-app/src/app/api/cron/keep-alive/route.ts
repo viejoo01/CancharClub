@@ -3,6 +3,7 @@
 // Ejecuta un SELECT liviano que despierta la base de datos Supabase y renueva el contador de 7 días.
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { verifyCronRequest } from '@/lib/cron-auth'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -19,21 +20,10 @@ export async function POST(request: NextRequest) {
 async function handleKeepAlive(request: NextRequest) {
   const startTime = Date.now()
 
-  // 1. Verificación opcional de seguridad con CRON_SECRET si está configurado en .env
-  // Trimear y remover comillas accidentales para evitar problemas al copiar desde paneles de configuración
-  const rawSecret = (process.env.CRON_SECRET ?? '').trim()
-  const cronSecret = rawSecret.replace(/^["']|["']$/g, '').trim()
-
-  if (cronSecret.length > 0) {
-    const rawAuth = request.headers.get('authorization')?.trim() ?? ''
-    const isBearer = rawAuth.toLowerCase().startsWith('bearer ')
-    const tokenFromHeader = (isBearer ? rawAuth.slice(7) : rawAuth).replace(/^["']|["']$/g, '').trim()
-    const querySecret = (request.nextUrl.searchParams.get('secret') ?? '').replace(/^["']|["']$/g, '').trim()
-
-    const isValid = tokenFromHeader === cronSecret || querySecret === cronSecret
-    if (!isValid) {
-      return NextResponse.json({ error: 'Unauthorized cron invocation' }, { status: 401 })
-    }
+  // 1. Verificación segura con verifyCronRequest
+  const cronAuth = verifyCronRequest(request)
+  if (!cronAuth.authorized) {
+    return NextResponse.json({ error: cronAuth.error || 'Unauthorized cron invocation' }, { status: 401 })
   }
 
   try {

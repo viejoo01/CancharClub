@@ -104,6 +104,10 @@ export function computeNextDueDate(
 
 /**
  * Calcula la cuota mensual SaaS completa para un club.
+ * Regla de negocio solicitada:
+ * La mensualidad es estrictamente proporcional al valor de la cancha más cara del club (P_max)
+ * multiplicada por el factor de canchas de su plan (ej: si la cancha vale $30.000 y tiene 4 canchas, es $30.000 x 2,5 = $75.000).
+ * No hay precio base fijo; depende exclusivamente de la tarifa real de cada club.
  */
 export function calculateClubSaaSFee(
   courtsCount: number,
@@ -114,9 +118,10 @@ export function calculateClubSaaSFee(
 ): ClubSaaSPricing {
   const safeCourts = Math.max(1, courtsCount)
   const isConfigured = hasPriceConfigured !== undefined 
-    ? hasPriceConfigured 
+    ? (hasPriceConfigured && highestSlotPriceArs > 0)
     : highestSlotPriceArs > 0
-  const safePrice = isConfigured ? Math.max(0, highestSlotPriceArs) : 0
+  
+  const safePrice = Math.max(0, highestSlotPriceArs)
   const multiplier = calculateSaaSMultiplier(safeCourts)
   const monthlyFeeArs = isConfigured ? Math.round(safePrice * multiplier) : 0
   const plan = getPlanByCourtsCount(safeCourts)
@@ -137,9 +142,9 @@ export function calculateClubSaaSFee(
     monthlyFeeArs,
     formulaDescription: isConfigured
       ? (safeCourts >= 5 
-          ? `3 turnos de $${safePrice.toLocaleString('es-AR')} (Tope máximo garantizado para ${safeCourts} canchas)`
+          ? `3 turnos de $${safePrice.toLocaleString('es-AR')} (Tope máximo para ${safeCourts} canchas)`
           : `${multiplier} turno${multiplier > 1 ? 's' : ''} de $${safePrice.toLocaleString('es-AR')} (${safeCourts} cancha${safeCourts > 1 ? 's' : ''})`)
-      : 'Esperando carga de precios',
+      : 'Esperando configuración de precios del club',
     nextDueDate,
     planId: plan.id,
     planName: plan.name,

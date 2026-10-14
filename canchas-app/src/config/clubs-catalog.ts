@@ -366,6 +366,17 @@ export interface ClubData {
   highlightBadge?: string
   isHighlightActive?: boolean
   socialLinks?: ClubSocialLinks
+  dynamicPricing?: {
+    enable_last_minute?: boolean
+    last_minute_discount_pct?: number
+    last_minute_hours_threshold?: number
+    enable_happy_hour?: boolean
+    happy_hour_discount_pct?: number
+    happy_hour_from?: string
+    happy_hour_to?: string
+    enable_peak_surge?: boolean
+    peak_surge_pct?: number
+  }
 }
 
 export const CLUBS_DATABASE: ClubData[] = []
@@ -518,6 +529,36 @@ export function generateClubSlots(
           if (timeFallback) {
             totalPrice = timeFallback.priceArs
             depositPct = (timeFallback.depositPct || 50) / 100
+          }
+        }
+      }
+
+      if (club.dynamicPricing) {
+        const dp = club.dynamicPricing
+        if (dp.enable_happy_hour && dp.happy_hour_from && dp.happy_hour_to) {
+          if (time >= dp.happy_hour_from && time < dp.happy_hour_to) {
+            const discount = Math.max(0, Math.min(80, Number(dp.happy_hour_discount_pct) || 20))
+            totalPrice = Math.round(totalPrice * (1 - discount / 100))
+          }
+        }
+        if (dp.enable_peak_surge) {
+          if (time >= '18:00' && time < '23:00') {
+            const surge = Math.max(0, Math.min(100, Number(dp.peak_surge_pct) || 15))
+            totalPrice = Math.round(totalPrice * (1 + surge / 100))
+          }
+        }
+        if (dp.enable_last_minute && targetDate) {
+          const now = new Date()
+          const todayIso = now.toISOString().split('T')[0]
+          if (targetDate === todayIso) {
+            const [slotH, slotM] = time.split(':').map(Number)
+            const slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), slotH, slotM)
+            const hoursDiff = (slotDate.getTime() - now.getTime()) / (1000 * 60 * 60)
+            const threshold = Number(dp.last_minute_hours_threshold) || 3
+            if (hoursDiff > 0 && hoursDiff <= threshold) {
+              const discount = Math.max(0, Math.min(80, Number(dp.last_minute_discount_pct) || 25))
+              totalPrice = Math.round(totalPrice * (1 - discount / 100))
+            }
           }
         }
       }

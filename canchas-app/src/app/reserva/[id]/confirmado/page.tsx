@@ -137,7 +137,8 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
     ? `¡Hola ${clubName}! 👋\nAcabo de reservar por la app:\n🏟️ *${courtName}*\n📅 Fecha: ${date}\n🕐 Horario: ${time} hs\n👤 Nombre: ${customerName}\n🔖 Reserva #${shortCode}\n💳 Monto seña: ${formatARS(deposit)}\n\nAdjunto el comprobante de la transferencia bancaria.`
     : `¡Hola ${clubName}! 👋\nAcabo de reservar por la app:\n🏟️ *${courtName}*\n📅 Fecha: ${date}\n🕐 Horario: ${time} hs\n👤 Nombre: ${customerName}\n🔖 Reserva #${shortCode}\n💳 Seña abonada por Mercado Pago: ${formatARS(deposit)}\n\n¡Nos vemos en la cancha!`
 
-  const waUrl = buildWhatsAppLink(phoneClub, message)
+  const explicitWaUrl = searchParams.get('waUrl')
+  const waUrl = explicitWaUrl || buildWhatsAppLink(phoneClub, message)
 
   const teamMessage = `⚽ *¡Hay partido en CancharClub!* 🎾\n\n` +
     `🏟️ *Club:* ${clubName}\n` +
@@ -319,8 +320,8 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
           rel="noreferrer"
           className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-950/40 transition-colors"
         >
-          <MessageCircle className="w-4 h-4" />
-          <span>{isTransfer ? 'Enviar Comprobante por WhatsApp' : 'Avisar al Club por WhatsApp'}</span>
+          <MessageCircle className="w-5 h-5 text-white" />
+          <span>{isTransfer ? '📲 Enviar Comprobante por WhatsApp' : '📲 Abrir Comprobante en WhatsApp'}</span>
         </a>
 
         <a

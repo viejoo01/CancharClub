@@ -43,23 +43,59 @@ export function buildWaMeLink(phone: string, text: string): string {
   const norm = normalizePhoneForWhatsApp(phone)
   return `https://wa.me/${norm}?text=${encodeURIComponent(text)}`
 }
+export interface WhatsAppCredentials {
+  token?: string
+  phoneId?: string
+}
 
 /**
  * Envío de mensaje por WhatsApp:
- * 1. Si existen variables de entorno de Meta Graph API, intenta el despacho directo.
+ * 1. Si existen variables de entorno de Meta Graph API o credenciales por club, intenta el despacho directo.
  * 2. Si no están configuradas (modo local/demo o sin API paga), opera en modo simulado
  *    y entrega el enlace wa.me para despacho manual o por frontend.
  */
 export async function sendWhatsAppMessage(
   toPhone: string,
-  messageText: string
+  messageText: string,
+  credentials?: WhatsAppCredentials
 ): Promise<WhatsAppSendResult> {
   const normalizedPhone = normalizePhoneForWhatsApp(toPhone)
   const waUrl = buildWaMeLink(normalizedPhone, messageText)
 
-  const token = process.env.WHATSAPP_API_TOKEN || process.env.META_WA_TOKEN
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  const token = credentials?.token || process.env.WHATSAPP_API_TOKEN || process.env.META_WA_TOKEN
+  const phoneId = credentials?.phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID
+  const gatewayUrl = process.env.WHATSAPP_GATEWAY_URL || process.env.WA_GATEWAY_URL
 
+  // 1. Si existe un gateway HTTP externo configurado (Evolution API, Baileys, etc.)
+  if (gatewayUrl) {
+    try {
+      const gRes = await fetch(gatewayUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.WHATSAPP_GATEWAY_KEY ? { 'apikey': process.env.WHATSAPP_GATEWAY_KEY, 'Authorization': `Bearer ${process.env.WHATSAPP_GATEWAY_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          number: normalizedPhone,
+          phone: normalizedPhone,
+          text: messageText,
+          message: messageText,
+        }),
+      })
+      if (gRes.ok) {
+        return {
+          success: true,
+          isSimulated: false,
+          waUrl,
+          messageId: `gw_${Date.now()}`,
+        }
+      }
+    } catch (gwErr) {
+      console.warn('[WhatsApp:Gateway Error]', gwErr)
+    }
+  }
+
+  // 2. Si no están configuradas las credenciales de Meta Graph API
   if (!token || !phoneId) {
     console.log(`[WhatsApp:Simulado] Para: ${normalizedPhone}\nMensaje: ${messageText}`)
     return {

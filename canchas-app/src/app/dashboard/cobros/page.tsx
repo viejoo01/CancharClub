@@ -8,7 +8,9 @@ import {
   Save, 
   Loader2,
   CheckCircle2, 
-  ShieldAlert
+  ShieldAlert,
+  Zap,
+  Clock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,6 +42,9 @@ export default function CobrosConfigPage() {
   const [alias, setAlias] = useState(() => cachedCobrosSettings?.alias || '')
   const [cuit, setCuit] = useState(() => cachedCobrosSettings?.cuit || '')
   const [whatsappPhone, setWhatsappPhone] = useState(() => cachedCobrosSettings?.whatsappPhone || '')
+  const [transferConfirmationMode, setTransferConfirmationMode] = useState<'MANUAL' | 'AUTO'>(
+    () => cachedCobrosSettings?.transferConfirmationMode || 'MANUAL'
+  )
 
   // Estado de persistencia y borrador
   const [isSavedInDb, setIsSavedInDb] = useState(() => Boolean(cachedCobrosSettings?.accountHolder && (cachedCobrosSettings?.alias || cachedCobrosSettings?.cbu)))
@@ -74,6 +79,7 @@ export default function CobrosConfigPage() {
               setAlias(settings.alias || '')
               setCuit(settings.cuit || '')
               setWhatsappPhone(settings.whatsappPhone || '')
+              setTransferConfirmationMode(settings.transferConfirmationMode || 'MANUAL')
             } else if (draft && (draft.accountHolder || draft.alias || draft.bankName || draft.cbu)) {
               setBankName(draft.bankName || '')
               setAccountHolder(draft.accountHolder || '')
@@ -81,6 +87,7 @@ export default function CobrosConfigPage() {
               setAlias(draft.alias || '')
               setCuit(draft.cuit || '')
               setWhatsappPhone(draft.whatsappPhone || '')
+              setTransferConfirmationMode(settings.transferConfirmationMode || 'MANUAL')
               setHasUnsavedChanges(true)
             } else {
               setBankName(settings.bankName || '')
@@ -89,6 +96,7 @@ export default function CobrosConfigPage() {
               setAlias(settings.alias || '')
               setCuit(settings.cuit || '')
               setWhatsappPhone(settings.whatsappPhone || '')
+              setTransferConfirmationMode(settings.transferConfirmationMode || 'MANUAL')
             }
           }
         }
@@ -155,6 +163,7 @@ export default function CobrosConfigPage() {
         cuit,
         whatsappPhone,
         paymentMethods: ['TRANSFER'],
+        transferConfirmationMode,
       })
 
       if (res.success) {
@@ -173,6 +182,9 @@ export default function CobrosConfigPage() {
           setAlias(res.savedData.alias ?? alias)
           setCuit(res.savedData.cuit ?? cuit)
           setWhatsappPhone(res.savedData.whatsappPhone ?? whatsappPhone)
+          if (res.savedData.transferConfirmationMode) {
+            setTransferConfirmationMode(res.savedData.transferConfirmationMode)
+          }
         }
         toast.success('¡Datos bancarios guardados en la base de datos!', {
           description: 'Los jugadores verán estos datos para transferir la seña al reservar.',
@@ -365,6 +377,85 @@ export default function CobrosConfigPage() {
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs text-slate-200 focus:border-emerald-500"
                   required
                 />
+              </div>
+            </div>
+
+            {/* ─── MODO DE CONFIRMACIÓN DE TRANSFERENCIAS ─── */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-3">
+              <div>
+                <Label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Modo de Confirmación de Reservas por Transferencia</span>
+                </Label>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Elegí cómo procesa el sistema las reservas cuando un cliente abona la seña mediante transferencia:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Opción 1: Confirmar manualmente */}
+                <div
+                  onClick={() => {
+                    setTransferConfirmationMode('MANUAL')
+                    setHasUnsavedChanges(true)
+                  }}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                    transferConfirmationMode === 'MANUAL'
+                      ? 'bg-emerald-950/30 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-md'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                        transferConfirmationMode === 'MANUAL' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-white">
+                        Confirmar la reserva manualmente
+                      </span>
+                    </div>
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[9px]">
+                      Recomendado
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed pl-9">
+                    El turno queda en <strong>&quot;Seña Pendiente&quot;</strong>. El cliente envía el comprobante y el club lo confirma con un clic desde el calendario. Protege los horarios pico de reservas falsas.
+                  </p>
+                </div>
+
+                {/* Opción 2: Siempre confirmar automáticamente */}
+                <div
+                  onClick={() => {
+                    setTransferConfirmationMode('AUTO')
+                    setHasUnsavedChanges(true)
+                  }}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                    transferConfirmationMode === 'AUTO'
+                      ? 'bg-emerald-950/30 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-md'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                        transferConfirmationMode === 'AUTO' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-white">
+                        Siempre confirmar automáticamente
+                      </span>
+                    </div>
+                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/40 text-[9px]">
+                      Al Instante
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed pl-9">
+                    El turno queda <strong>&quot;Confirmado&quot;</strong> al instante en el calendario apenas se solicita. Mayor agilidad, pero requiere supervisión de comprobantes en WhatsApp.
+                  </p>
+                </div>
               </div>
             </div>
 

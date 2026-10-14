@@ -189,7 +189,7 @@ export async function middleware(request: NextRequest) {
       // En desarrollo sin DB puede admitir cookies demo; en producción se verifica estrictamente la BD
       const requiresCardCheck = isProdEnv || isPendingActivation || (!cookieHasCard || !cookieCardLast4)
 
-      if (requiresCardCheck && profileData && profileData.role !== 'SUPERADMIN') {
+      if (requiresCardCheck && profileData && (profileData.role === 'TENANT_ADMIN' || profileData.role === 'ADMIN')) {
         const tenantData = profileData.tenants
         let metaCardLinked = false
         if (tenantData?.description) {

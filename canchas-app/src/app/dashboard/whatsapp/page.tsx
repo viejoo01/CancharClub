@@ -11,7 +11,9 @@ import {
   Smartphone, 
   ShieldCheck, 
   Loader2, 
-  RefreshCw
+  RefreshCw,
+  Key,
+  AlertTriangle
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -57,6 +59,9 @@ export default function WhatsAppBotPage() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testPhone, setTestPhone] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [phoneNumberId, setPhoneNumberId] = useState('')
+  const [savingCreds, setSavingCreds] = useState(false)
 
   useEffect(() => {
     if (!tenantId) return
@@ -72,6 +77,8 @@ export default function WhatsAppBotPage() {
           cachedWhatsAppLogs.set(tenantId, logList)
           setConfig(cfg)
           setLogs(logList)
+          setApiKey(cfg.api_key || '')
+          setPhoneNumberId(cfg.phone_number_id || '')
         }
       })
       .catch(() => {})
@@ -80,6 +87,33 @@ export default function WhatsAppBotPage() {
       isMounted = false
     }
   }, [tenantId])
+
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!tenantId) return
+    setSavingCreds(true)
+    try {
+      const res = await saveWhatsAppBotConfig(tenantId, {
+        api_key: apiKey.trim(),
+        phone_number_id: phoneNumberId.trim(),
+      })
+      if (res.success) {
+        setConfig(res.config)
+        cachedWhatsAppConfig.set(tenantId, res.config)
+        if (res.config.provider === 'META_CLOUD') {
+          toast.success('¡Credenciales de WhatsApp Meta Cloud API activas!')
+        } else {
+          toast.success('Configuración guardada')
+        }
+      } else {
+        toast.error(res.error || 'Error al guardar credenciales')
+      }
+    } catch {
+      toast.error('Error al guardar credenciales')
+    } finally {
+      setSavingCreds(false)
+    }
+  }
 
   const handleToggle = async (key: keyof WhatsAppBotConfig) => {
     if (!config || !tenantId) return
@@ -143,16 +177,36 @@ export default function WhatsAppBotPage() {
               <Bot className="w-7 h-7 text-emerald-400" />
               Automatización de WhatsApp Bot
             </h1>
-            <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs font-semibold gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              100% OPERATIVO
-            </Badge>
+            {config?.provider === 'META_CLOUD' ? (
+              <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs font-semibold gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                CONECTADO (META CLOUD API)
+              </Badge>
+            ) : (
+              <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs font-semibold gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                MODO SIMULADO (SIN TOKEN API)
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Notificaciones automáticas desatendidas: confirmá turnos, avisá 2 horas antes y cubrí cancelaciones al instante.
           </p>
         </div>
       </div>
+
+      {/* ─── AVISO DE ESTADO ─── */}
+      {config?.provider === 'SIMULATED' && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <strong className="block text-white">Bot en Modo Simulado / Enlace Directo</strong>
+            <p className="text-slate-300 leading-relaxed">
+              El sistema procesa y genera las confirmaciones y enlaces de WhatsApp, pero para que los mensajes se envíen <strong>de forma 100% automática y silenciosa desde el servidor al celular del jugador</strong> (sin requerir que abras WhatsApp Web), necesitás ingresar tu <strong>Token de Meta Cloud API</strong> y tu <strong>Phone Number ID</strong> abajo.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ─── ESTADO Y AUTOMATIZACIONES ACTIVAS ─── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -181,7 +235,7 @@ export default function WhatsAppBotPage() {
             </div>
             <CardTitle className="text-base text-white mt-2">Confirmación Inmediata</CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Apenas el jugador abona la seña o el club aprueba el turno, el bot le envía el comprobante con fecha, cancha, saldo restante y ubicación.
+              Apenas el jugador reserva online o abona la seña, el bot despacha el comprobante con fecha, cancha, saldo restante y dirección.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -216,7 +270,7 @@ export default function WhatsAppBotPage() {
             </div>
             <CardTitle className="text-base text-white mt-2">Recordatorio 2 Horas Antes</CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Reduce la tasa de inasistencia (no-show) enviando un aviso con recordatorio de horario exacto y recordatorio de puntualidad.
+              Reduce el ausentismo (no-show) enviando un aviso con recordatorio de horario exacto y puntualidad.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -251,7 +305,7 @@ export default function WhatsAppBotPage() {
             </div>
             <CardTitle className="text-base text-white mt-2">Alerta Lista de Espera</CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Si alguien cancela un turno pico, el bot le avisa al primero de la lista con prioridad exclusiva de 10 minutos para tomar el turno.
+              Si alguien cancela un turno, el bot le avisa al primero de la lista con prioridad exclusiva de 10 minutos.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -262,10 +316,63 @@ export default function WhatsAppBotPage() {
         </Card>
       </div>
 
-      {/* ─── PRUEBA EN VIVO Y MONITOREO ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* ─── CONFIGURACIÓN DE CREDENCIALES Y PRUEBA ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Card: Credenciales de WhatsApp Meta Cloud API */}
+        <Card className="bg-slate-900 border-slate-800 shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-base text-white flex items-center gap-2">
+              <Key className="w-5 h-5 text-emerald-400" />
+              Conexión WhatsApp Cloud API (Meta)
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Conectá tu cuenta de Meta Developers para envíos 100% desatendidos a los celulares de los clientes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSaveCredentials} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Phone Number ID (Meta Cloud)</Label>
+                <Input
+                  type="text"
+                  placeholder="Ej: 104589234857291"
+                  value={phoneNumberId}
+                  onChange={(e) => setPhoneNumberId(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-sm"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Identificador del número de teléfono asignado en tu panel de Meta Developers / WhatsApp Cloud.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">API Access Token (Meta / WhatsApp)</Label>
+                <Input
+                  type="password"
+                  placeholder="EAABw..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-sm"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Token permanente de System User de Meta Cloud API con permisos de <code className="text-emerald-400">whatsapp_business_messaging</code>.
+                </p>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={savingCreds}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 text-sm h-10 cursor-pointer shadow-lg shadow-emerald-950/30"
+              >
+                {savingCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                <span>Guardar Credenciales del Bot</span>
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
         {/* Formulario de Test de Mensajería */}
-        <Card className="bg-slate-900 border-slate-800 lg:col-span-1 shadow-lg">
+        <Card className="bg-slate-900 border-slate-800 shadow-lg">
           <CardHeader>
             <CardTitle className="text-base text-white flex items-center gap-2">
               <Smartphone className="w-5 h-5 text-emerald-400" />
@@ -295,7 +402,7 @@ export default function WhatsAppBotPage() {
               <Button
                 type="submit"
                 disabled={testing}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 text-sm h-10 cursor-pointer shadow-lg shadow-emerald-950/30"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold gap-2 text-sm h-10 cursor-pointer shadow-lg"
               >
                 {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span>Enviar WhatsApp de Prueba</span>
@@ -305,17 +412,19 @@ export default function WhatsAppBotPage() {
             <div className="mt-6 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs text-slate-400">
               <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                 <ShieldCheck className="w-4 h-4" />
-                <span>Modo de Operación Híbrido</span>
+                <span>Modo Híbrido Automático</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                El bot opera mediante integración directa en la nube de Meta y fallback inteligente a enlace instantáneo para que ninguna confirmación se pierda jamás.
+                Si las credenciales de Meta están cargadas, el despacho es 100% silencioso y directo a los celulares. Si aún no tenés API de Meta, el sistema genera el enlace wa.me para que no se pierda ninguna confirmación.
               </p>
             </div>
           </CardContent>
         </Card>
+      </div>
 
-        {/* Historial de Mensajes Enviados */}
-        <Card className="bg-slate-900 border-slate-800 lg:col-span-2 shadow-lg">
+      {/* ─── HISTORIAL DE MENSAJES ENVIADOS ─── */}
+      <div className="grid grid-cols-1 gap-6">
+        <Card className="bg-slate-900 border-slate-800 shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <div>
               <CardTitle className="text-base text-white flex items-center gap-2">
@@ -350,7 +459,7 @@ export default function WhatsAppBotPage() {
                 <p className="text-xs text-slate-600">Apenas se confirme una reserva o envíes un test, aparecerán aquí.</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-800 max-h-[380px] overflow-y-auto pr-1">
+              <div className="divide-y divide-slate-800 max-h-95 overflow-y-auto pr-1">
                 {logs.map((log) => (
                   <div key={log.id} className="py-3 flex items-start justify-between gap-3 text-xs">
                     <div className="space-y-1">

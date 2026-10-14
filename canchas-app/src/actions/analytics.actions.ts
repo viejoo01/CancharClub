@@ -69,6 +69,7 @@ export interface DailyCashReport {
   totalTransfer: number
   totalMP: number
   totalOther: number
+  totalCredit?: number
   entries: DailyCashEntry[]
 }
 
@@ -173,7 +174,9 @@ export async function getDailyCashReport(
         let method = 'CASH'
         if (rawMeth.includes('TRANSFER')) method = 'TRANSFER'
         else if (rawMeth.includes('MERCADO') || rawMeth.includes('MP') || rawMeth.includes('QR')) method = 'MERCADOPAGO'
+        else if (rawMeth.includes('CORRIENTE') || rawMeth.includes('FIADO') || rawMeth.includes('DEUDA') || rawMeth.includes('CREDIT')) method = 'CUENTA_CORRIENTE'
         else if (rawMeth.includes('CASH') || rawMeth.includes('EFECTIVO')) method = 'CASH'
+        else if (rawMeth.includes('CARD') || rawMeth.includes('TARJETA')) method = 'OTHER'
 
         const fullMatchText = m[0].toLowerCase()
         const isSaldoRestante = fullMatchText.includes('saldo restante') || notes.toLowerCase().includes('saldo restante')
@@ -231,6 +234,8 @@ export async function getDailyCashReport(
           initialMethod = 'TRANSFER'
         } else if (rawMethod.includes('mercado') || rawMethod.includes('mp') || lowerNotes.includes('mercado')) {
           initialMethod = 'MERCADOPAGO'
+        } else if (rawMethod.includes('corriente') || rawMethod.includes('fiado') || lowerNotes.includes('fiado') || lowerNotes.includes('cuenta corriente')) {
+          initialMethod = 'CUENTA_CORRIENTE'
         }
 
         const isFull = initialDeposit >= totalPriceArs && totalPriceArs > 0
@@ -267,10 +272,16 @@ export async function getDailyCashReport(
       let method = 'CASH'
       const rawMethod = String(order.payment_method || '').toUpperCase()
       const rawNotes = String(order.notes || '').toUpperCase()
-      if (rawMethod.includes('TRANSFER') || rawNotes.includes('TRANSFER')) {
+      const rawStatus = String(order.payment_status || '').toUpperCase()
+
+      if (rawStatus === 'UNPAID' || rawStatus === 'PENDING' || rawMethod.includes('CORRIENTE') || rawMethod.includes('FIADO') || rawNotes.includes('FIADO') || rawNotes.includes('CUENTA CORRIENTE')) {
+        method = 'CUENTA_CORRIENTE'
+      } else if (rawMethod.includes('TRANSFER') || rawNotes.includes('TRANSFER')) {
         method = 'TRANSFER'
       } else if (rawMethod.includes('QR') || rawMethod.includes('MERCADO') || rawMethod.includes('MP') || rawNotes.includes('MP')) {
         method = 'MERCADOPAGO'
+      } else if (rawMethod.includes('CARD') || rawMethod.includes('TARJETA')) {
+        method = 'OTHER'
       }
 
       const courtLabel = order.court_name && order.court_name !== 'NONE'
@@ -339,12 +350,13 @@ export async function getDailyCashReport(
   const totalCash     = entries.filter(e => e.payment_method === 'CASH').reduce((s, e) => s + e.amount_ars, 0)
   const totalTransfer = entries.filter(e => e.payment_method === 'TRANSFER').reduce((s, e) => s + e.amount_ars, 0)
   const totalMP       = entries.filter(e => e.payment_method === 'MERCADOPAGO').reduce((s, e) => s + e.amount_ars, 0)
+  const totalCredit   = entries.filter(e => e.payment_method === 'CUENTA_CORRIENTE').reduce((s, e) => s + e.amount_ars, 0)
   const totalOther    = entries
-    .filter(e => !['CASH', 'TRANSFER', 'MERCADOPAGO'].includes(e.payment_method))
+    .filter(e => !['CASH', 'TRANSFER', 'MERCADOPAGO', 'CUENTA_CORRIENTE'].includes(e.payment_method))
     .reduce((s, e) => s + e.amount_ars, 0)
   const totalGeneral  = totalCash + totalTransfer + totalMP + totalOther
 
-  return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, entries }
+  return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, totalCredit, entries }
 }
 
 export interface BlindAuditRecord {

@@ -26,6 +26,7 @@ export interface TenantPaymentSettings {
   mpConnected: boolean
   mpCollectorId?: string | null
   mpPublicKey?: string | null
+  transferConfirmationMode: 'MANUAL' | 'AUTO'
 }
 
 const paymentSettingsCache = new Map<string, { data: TenantPaymentSettings; expiresAt: number }>()
@@ -55,7 +56,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
     const supabase = await createServiceClient()
     const { data: tenant, error } = await supabase
       .from('tenants')
-      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id, subscription_status')
+      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, mp_access_token, mp_public_key, mp_collector_id, subscription_status, description')
       .eq('id', effectiveTenantId)
       .maybeSingle()
 
@@ -72,6 +73,14 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
 
     const cleanWhatsapp = tenant.phone_whatsapp || ''
 
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {}
+    }
+    const transferConfirmationMode: 'MANUAL' | 'AUTO' = meta.transfer_confirmation_mode === 'AUTO' ? 'AUTO' : 'MANUAL'
+
     const result: TenantPaymentSettings = {
       tenantId: tenant.id,
       clubName: tenant.name || 'Mi Club',
@@ -85,6 +94,7 @@ export async function getTenantPaymentSettings(tenantId?: string | null): Promis
       mpConnected,
       mpCollectorId: tenant.mp_collector_id,
       mpPublicKey: tenant.mp_public_key,
+      transferConfirmationMode,
     }
 
     paymentSettingsCache.set(effectiveTenantId, { data: result, expiresAt: Date.now() + 60000 })
@@ -109,6 +119,7 @@ export async function saveTenantBankSettings(
     cuit?: string
     whatsappPhone?: string
     paymentMethods?: ('TRANSFER' | 'MERCADOPAGO')[]
+    transferConfirmationMode?: 'MANUAL' | 'AUTO'
   }
 ): Promise<{ 
   success: boolean
@@ -122,6 +133,7 @@ export async function saveTenantBankSettings(
     cuit?: string
     whatsappPhone?: string
     paymentMethods: ('TRANSFER' | 'MERCADOPAGO')[]
+    transferConfirmationMode?: 'MANUAL' | 'AUTO'
   }
 }> {
   try {
@@ -137,6 +149,24 @@ export async function saveTenantBankSettings(
     }
 
     const supabase = await createServiceClient()
+
+    // Leer description actual para mergear configuración
+    const { data: currentTenant } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    let tenantMeta: Record<string, unknown> = {}
+    if (currentTenant?.description) {
+      try {
+        tenantMeta = JSON.parse(currentTenant.description)
+      } catch {}
+    }
+
+    if (data.transferConfirmationMode) {
+      tenantMeta.transfer_confirmation_mode = data.transferConfirmationMode
+    }
 
     // Normalizar métodos de pago para persistencia
     const inputMethods = data.paymentMethods || ['TRANSFER']
@@ -165,10 +195,11 @@ export async function saveTenantBankSettings(
         bank_cuit: cleanCuit,
         phone_whatsapp: cleanWhatsapp,
         payment_methods: finalMethods,
+        description: JSON.stringify(tenantMeta),
         updated_at: new Date().toISOString(),
       })
       .eq('id', effectiveTenantId)
-      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods')
+      .select('id, name, bank_name, bank_account_holder, bank_cbu, bank_alias, bank_cuit, phone_whatsapp, payment_methods, description')
 
     const updatedRows = initialRows
 
@@ -201,6 +232,7 @@ export async function saveTenantBankSettings(
         cuit: saved.bank_cuit || '',
         whatsappPhone: saved.phone_whatsapp || '',
         paymentMethods: inputMethods,
+        transferConfirmationMode: (tenantMeta.transfer_confirmation_mode === 'AUTO' ? 'AUTO' : 'MANUAL'),
       },
     }
   } catch (err: unknown) {

@@ -996,17 +996,16 @@ export default function CantinaPage() {
         setCuentaCorrientePhone('')
       }
 
-      // Descontar automáticamente el stock de los productos vendidos y persistir en Supabase
+      // Descontar automáticamente el stock en memoria para retroalimentación instantánea de la UI
+      // (La persistencia atómica y segura con lock por club ya se gestionó en createCourtOrder)
       setProducts(prev => {
-        const updated = prev.map(p => {
+        return prev.map(p => {
           const soldItem = cart.find(c => c.product.id === p.id)
-          if (soldItem) {
+          if (soldItem && !activeLinkedOrder) {
             return { ...p, stock: Math.max(0, p.stock - soldItem.quantity) }
           }
           return p
         })
-        saveCantinaProducts(tenantId!, updated).catch(err => console.warn('Sync stock error:', err))
-        return updated
       })
 
       // 2. Notificar éxito interno

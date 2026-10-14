@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
             failure: `${baseUrl}/reserva/${payload.booking_id}/error`,
           },
           auto_return: 'approved',
-          notification_url: `${baseUrl}/api/webhooks/mercadopago`,
+          notification_url: `${baseUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(payload.tenant_id)}&booking_id=${encodeURIComponent(payload.booking_id)}`,
           expires: true,
           expiration_date_from: new Date().toISOString(),
           expiration_date_to: new Date(Date.now() + 420_000).toISOString(), // 7 minutos de bloqueo

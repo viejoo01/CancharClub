@@ -15,6 +15,37 @@ const cantinaProductsCache = new Map<string, { data: CantinaProduct[]; timestamp
 const cantinaSuppliersCache = new Map<string, { data: CantinaSupplier[]; timestamp: number }>()
 const CANTINA_CACHE_TTL_MS = 60000
 
+// Mutex secuencial por tenant para garantizar concurrencia atómica estricta en stock e inventario
+const tenantStockLocks = new Map<string, Promise<unknown>>()
+
+export async function withTenantStockLock<T>(tenantId: string, task: () => Promise<T>): Promise<T> {
+  const cleanId = tenantId.trim()
+  const previousLock = tenantStockLocks.get(cleanId) || Promise.resolve()
+
+  let releaseLock: () => void
+  const currentLock = new Promise<void>((resolve) => {
+    releaseLock = resolve
+  })
+
+  tenantStockLocks.set(cleanId, currentLock)
+
+  try {
+    await previousLock.catch(() => {})
+    return await task()
+  } finally {
+    releaseLock!()
+    if (tenantStockLocks.get(cleanId) === currentLock) {
+      tenantStockLocks.delete(cleanId)
+    }
+  }
+}
+
+export interface StockDelta {
+  productId?: string
+  name?: string
+  delta: number
+}
+
 export async function invalidateCantinaCache(tenantId?: string) {
   if (tenantId) {
     cantinaProductsCache.delete(tenantId)
@@ -153,23 +184,16 @@ export async function createCourtOrder(
         return { success: false, error: auditRes.error.message }
       }
 
-      // Descontar inventario automáticamente
+      // Descontar inventario automáticamente mediante delta atómico con mutex por club
       try {
-        const currentProducts = await getCantinaProducts(payload.tenant_id)
-        let stockChanged = false
-        const updatedProducts = currentProducts.map(p => {
-          const ordered = payload.items.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
-          if (ordered && ordered.quantity > 0) {
-            stockChanged = true
-            return { ...p, stock: Math.max(0, p.stock - ordered.quantity) }
-          }
-          return p
-        })
-        if (stockChanged) {
-          await saveCantinaProducts(payload.tenant_id, updatedProducts)
-        }
+        const deltas = payload.items.map(i => ({
+          productId: i.product_id,
+          name: i.name,
+          delta: -Math.abs(i.quantity),
+        }))
+        await atomicModifyStock(payload.tenant_id, deltas)
       } catch (stockErr) {
-        console.warn('[createCourtOrder] Fallback stock deduction notice:', stockErr)
+        console.warn('[createCourtOrder] Fallback atomic stock deduction notice:', stockErr)
       }
 
       revalidatePath('/dashboard/cantina')
@@ -209,23 +233,16 @@ export async function createCourtOrder(
       createdOrder.payment_status = statusPayment
     }
 
-    // Descontar inventario automáticamente del catálogo del club
+    // Descontar inventario automáticamente del catálogo del club mediante delta atómico
     try {
-      const currentProducts = await getCantinaProducts(payload.tenant_id)
-      let stockChanged = false
-      const updatedProducts = currentProducts.map(p => {
-        const ordered = payload.items.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
-        if (ordered && ordered.quantity > 0) {
-          stockChanged = true
-          return { ...p, stock: Math.max(0, p.stock - ordered.quantity) }
-        }
-        return p
-      })
-      if (stockChanged) {
-        await saveCantinaProducts(payload.tenant_id, updatedProducts)
-      }
+      const deltas = payload.items.map(i => ({
+        productId: i.product_id,
+        name: i.name,
+        delta: -Math.abs(i.quantity),
+      }))
+      await atomicModifyStock(payload.tenant_id, deltas)
     } catch (stockErr) {
-      console.warn('[createCourtOrder] Stock deduction notice:', stockErr)
+      console.warn('[createCourtOrder] Atomic stock deduction notice:', stockErr)
     }
 
     revalidatePath('/dashboard/cantina')
@@ -306,22 +323,30 @@ export async function updateOrderStatus(
       try {
         const orderItems = order?.items as OrderItem[] | undefined
         if (Array.isArray(orderItems) && orderItems.length > 0) {
-          const currentProducts = await getCantinaProducts(orderTenantId)
-          let restored = false
-          const updatedProducts = currentProducts.map(p => {
-            const item = orderItems.find(i => i.product_id === p.id || i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
-            if (item && item.quantity > 0) {
-              restored = true
-              return { ...p, stock: p.stock + item.quantity }
-            }
-            return p
-          })
-          if (restored) {
-            await saveCantinaProducts(orderTenantId, updatedProducts)
-          }
+          const deltas = orderItems.map(i => ({
+            productId: i.product_id,
+            name: i.name,
+            delta: Math.abs(i.quantity),
+          }))
+          await atomicModifyStock(orderTenantId, deltas)
         }
       } catch (cancelErr) {
         console.warn('[updateOrderStatus] Restoring stock notice:', cancelErr)
+      }
+    } else if (status !== 'CANCELLED' && previousStatus === 'CANCELLED' && orderTenantId) {
+      // Si se reactiva un pedido previamente cancelado, volver a descontar el stock
+      try {
+        const orderItems = order?.items as OrderItem[] | undefined
+        if (Array.isArray(orderItems) && orderItems.length > 0) {
+          const deltas = orderItems.map(i => ({
+            productId: i.product_id,
+            name: i.name,
+            delta: -Math.abs(i.quantity),
+          }))
+          await atomicModifyStock(orderTenantId, deltas)
+        }
+      } catch (reErr) {
+        console.warn('[updateOrderStatus] Re-deducting stock notice:', reErr)
       }
     }
 
@@ -477,6 +502,120 @@ const DEMO_PRODUCT_NAMES = new Set([
   'papas fritas / mani snack'
 ])
 
+export async function fetchFreshCantinaProducts(cleanTenantId: string): Promise<CantinaProduct[]> {
+  const cleanId = cleanTenantId.trim()
+  if (!cleanId) return []
+
+  const supabase = await createServiceClient()
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('new_data')
+    .eq('tenant_id', cleanId)
+    .eq('action', 'CANTINA_PRODUCT_CATALOG')
+    .eq('table_name', 'cantina_products')
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (error || !data || data.length === 0 || !data[0].new_data) {
+    return []
+  }
+
+  const catalog = data[0].new_data as { products: CantinaProduct[] }
+  let productsList: CantinaProduct[] = []
+  if (Array.isArray(catalog.products)) {
+    productsList = catalog.products.filter(
+      p => !DEMO_PRODUCT_IDS.has(p.id) && !DEMO_PRODUCT_NAMES.has(p.name?.toLowerCase().trim())
+    )
+  }
+  return productsList
+}
+
+async function saveCantinaProductsDirect(
+  cleanTenantId: string,
+  products: CantinaProduct[]
+): Promise<void> {
+  const cleanId = cleanTenantId.trim()
+  const supabase = await createServiceClient()
+
+  const { data: existing } = await supabase
+    .from('audit_log')
+    .select('id')
+    .eq('tenant_id', cleanId)
+    .eq('action', 'CANTINA_PRODUCT_CATALOG')
+    .eq('table_name', 'cantina_products')
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (existing && existing.length > 0) {
+    const updateRes = await supabase
+      .from('audit_log')
+      .update({
+        new_data: { products, updated_at: new Date().toISOString() }
+      })
+      .eq('id', existing[0].id)
+
+    if (updateRes.error) throw updateRes.error
+  } else {
+    const insertRes = await supabase.from('audit_log').insert({
+      tenant_id: cleanId,
+      action: 'CANTINA_PRODUCT_CATALOG',
+      table_name: 'cantina_products',
+      record_id: cleanId,
+      new_data: { products, updated_at: new Date().toISOString() }
+    })
+
+    if (insertRes.error) throw insertRes.error
+  }
+
+  cantinaProductsCache.set(cleanId, { data: products, timestamp: Date.now() })
+  revalidatePath('/dashboard/cantina')
+}
+
+export async function atomicModifyStock(
+  tenantId: string,
+  deltas: StockDelta[]
+): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
+  const cleanTenantId = tenantId.trim()
+  if (!cleanTenantId || !Array.isArray(deltas) || deltas.length === 0) {
+    return { success: true, products: [] }
+  }
+
+  return withTenantStockLock(cleanTenantId, async () => {
+    try {
+      cantinaProductsCache.delete(cleanTenantId)
+      const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
+      if (currentProducts.length === 0) {
+        return { success: true, products: [] }
+      }
+
+      let hasChanges = false
+      const updatedProducts = currentProducts.map(p => {
+        const itemDelta = deltas.find(d =>
+          (d.productId && d.productId === p.id) ||
+          (d.name && d.name.trim().toLowerCase() === p.name.trim().toLowerCase())
+        )
+        if (itemDelta && itemDelta.delta !== 0) {
+          hasChanges = true
+          const nextStock = Math.max(0, (p.stock || 0) + itemDelta.delta)
+          return { ...p, stock: nextStock }
+        }
+        return p
+      })
+
+      if (hasChanges) {
+        await saveCantinaProductsDirect(cleanTenantId, updatedProducts)
+        return { success: true, products: updatedProducts }
+      }
+
+      return { success: true, products: currentProducts }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al modificar stock atómico'
+      console.error('[atomicModifyStock] Error:', msg)
+      return { success: false, products: [], error: msg }
+    }
+  })
+}
+
 export async function getCantinaProducts(tenantId: string): Promise<CantinaProduct[]> {
   try {
     if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
@@ -489,28 +628,7 @@ export async function getCantinaProducts(tenantId: string): Promise<CantinaProdu
       return cached.data
     }
 
-    const supabase = await createServiceClient()
-    const { data, error } = await supabase
-      .from('audit_log')
-      .select('new_data')
-      .eq('tenant_id', cleanTenantId)
-      .eq('action', 'CANTINA_PRODUCT_CATALOG')
-      .eq('table_name', 'cantina_products')
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (error || !data || data.length === 0 || !data[0].new_data) {
-      return []
-    }
-
-    const catalog = data[0].new_data as { products: CantinaProduct[] }
-    let productsList: CantinaProduct[] = []
-    if (Array.isArray(catalog.products)) {
-      productsList = catalog.products.filter(
-        p => !DEMO_PRODUCT_IDS.has(p.id) && !DEMO_PRODUCT_NAMES.has(p.name?.toLowerCase().trim())
-      )
-    }
-
+    const productsList = await fetchFreshCantinaProducts(cleanTenantId)
     cantinaProductsCache.set(cleanTenantId, { data: productsList, timestamp: Date.now() })
     return productsList
   } catch (err) {
@@ -524,48 +642,17 @@ export async function saveCantinaProducts(
   products: CantinaProduct[]
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
-    cantinaProductsCache.delete(tenantId.trim())
+    const cleanTenantId = tenantId.trim()
+    cantinaProductsCache.delete(cleanTenantId)
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
       return { success: false, products, error: auth.error || 'Sin permisos sobre este club' }
     }
 
-    const supabase = await createServiceClient()
-    
-    // Verificar si ya existe el registro del catálogo
-    const { data: existing } = await supabase
-      .from('audit_log')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('action', 'CANTINA_PRODUCT_CATALOG')
-      .eq('table_name', 'cantina_products')
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (existing && existing.length > 0) {
-      const updateRes = await supabase
-        .from('audit_log')
-        .update({
-          new_data: { products, updated_at: new Date().toISOString() }
-        })
-        .eq('id', existing[0].id)
-
-      if (updateRes.error) throw updateRes.error
-    } else {
-      const insertRes = await supabase.from('audit_log').insert({
-        tenant_id: tenantId,
-        action: 'CANTINA_PRODUCT_CATALOG',
-        table_name: 'cantina_products',
-        record_id: tenantId,
-        new_data: { products, updated_at: new Date().toISOString() }
-      })
-
-      if (insertRes.error) throw insertRes.error
-    }
-
-    cantinaProductsCache.set(tenantId.trim(), { data: products, timestamp: Date.now() })
-    revalidatePath('/dashboard/cantina')
-    return { success: true, products }
+    return await withTenantStockLock(cleanTenantId, async () => {
+      await saveCantinaProductsDirect(cleanTenantId, products)
+      return { success: true, products }
+    })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Error al guardar productos'
     console.error('[saveCantinaProducts] Error:', errorMsg)
@@ -580,16 +667,36 @@ export async function updateProductStock(
   isDelta = false
 ): Promise<{ success: boolean; products: CantinaProduct[]; error?: string }> {
   try {
-    const currentProducts = await getCantinaProducts(tenantId)
-    const updated = currentProducts.map(p => {
-      if (p.id === productId) {
-        const newStock = isDelta ? Math.max(0, p.stock + amount) : Math.max(0, amount)
-        return { ...p, stock: newStock }
-      }
-      return p
-    })
+    const cleanTenantId = tenantId.trim()
+    if (!cleanTenantId) return { success: false, products: [], error: 'Tenant inválido' }
 
-    return await saveCantinaProducts(tenantId, updated)
+    if (isDelta) {
+      return await atomicModifyStock(cleanTenantId, [{ productId, delta: amount }])
+    }
+
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, products: [], error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    return await withTenantStockLock(cleanTenantId, async () => {
+      cantinaProductsCache.delete(cleanTenantId)
+      const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
+      let found = false
+      const updated = currentProducts.map(p => {
+        if (p.id === productId) {
+          found = true
+          return { ...p, stock: Math.max(0, amount) }
+        }
+        return p
+      })
+
+      if (found) {
+        await saveCantinaProductsDirect(cleanTenantId, updated)
+        return { success: true, products: updated }
+      }
+      return { success: true, products: currentProducts }
+    })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Error al actualizar stock'
     return { success: false, products: [], error: errorMsg }
@@ -606,27 +713,32 @@ export async function saveSingleProduct(
       return { success: false, products: [], error: auth.error || 'Sin permisos sobre este club' }
     }
 
+    const cleanTenantId = tenantId.trim()
     const { getCurrentUserProfile } = await import('@/lib/auth-security')
     const currentUser = await getCurrentUserProfile()
     const isOwner = currentUser?.role === 'TENANT_ADMIN' || currentUser?.role === 'SUPERADMIN'
 
-    const currentProducts = await getCantinaProducts(tenantId)
-    const existingIndex = currentProducts.findIndex(p => p.id === product.id)
-    let updated: CantinaProduct[]
-    if (existingIndex >= 0) {
-      const existingProduct = currentProducts[existingIndex]
-      // Protección contra fraude: Si el usuario no es Dueño del Club (ej. administrador de turno / canchero), se mantiene estrictamente el precio oficial fijado
-      const protectedPrice = (!isOwner && currentUser) ? existingProduct.price : product.price
-      const sanitizedProduct: CantinaProduct = {
-        ...product,
-        price: protectedPrice,
+    return await withTenantStockLock(cleanTenantId, async () => {
+      cantinaProductsCache.delete(cleanTenantId)
+      const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
+      const existingIndex = currentProducts.findIndex(p => p.id === product.id)
+      let updated: CantinaProduct[]
+      if (existingIndex >= 0) {
+        const existingProduct = currentProducts[existingIndex]
+        // Protección contra fraude: Si el usuario no es Dueño del Club (ej. administrador de turno / canchero), se mantiene estrictamente el precio oficial fijado
+        const protectedPrice = (!isOwner && currentUser) ? existingProduct.price : product.price
+        const sanitizedProduct: CantinaProduct = {
+          ...product,
+          price: protectedPrice,
+        }
+        updated = [...currentProducts]
+        updated[existingIndex] = sanitizedProduct
+      } else {
+        updated = [product, ...currentProducts]
       }
-      updated = [...currentProducts]
-      updated[existingIndex] = sanitizedProduct
-    } else {
-      updated = [product, ...currentProducts]
-    }
-    return await saveCantinaProducts(tenantId, updated)
+      await saveCantinaProductsDirect(cleanTenantId, updated)
+      return { success: true, products: updated }
+    })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Error al guardar producto'
     return { success: false, products: [], error: errorMsg }
@@ -643,9 +755,14 @@ export async function deleteProduct(
       return { success: false, products: [], error: auth.error || 'Sin permisos sobre este club' }
     }
 
-    const currentProducts = await getCantinaProducts(tenantId)
-    const updated = currentProducts.filter(p => p.id !== productId)
-    return await saveCantinaProducts(tenantId, updated)
+    const cleanTenantId = tenantId.trim()
+    return await withTenantStockLock(cleanTenantId, async () => {
+      cantinaProductsCache.delete(cleanTenantId)
+      const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
+      const updated = currentProducts.filter(p => p.id !== productId)
+      await saveCantinaProductsDirect(cleanTenantId, updated)
+      return { success: true, products: updated }
+    })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Error al eliminar producto'
     return { success: false, products: [], error: errorMsg }

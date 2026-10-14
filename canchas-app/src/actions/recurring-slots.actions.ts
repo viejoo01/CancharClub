@@ -615,22 +615,85 @@ export async function generateMonthlyBookingsForSlot(
   }
 }
 
-/** 
- * Liberación automática de turnos fijos vencidos
- * Si la fecha actual supera el payment_due_day y el abonado no registró el pago,
- * se liberan las reservas del mes para la grilla pública.
+/**
+ * Registra el cobro de la mensualidad de un turno fijo.
+ * Guarda la marca [LAST_PAID:YYYY-MM] en notes para garantizar que el motor
+ * de liberación automática sepa que el cliente pagó este mes.
  */
-export async function checkAndReleaseOverdueRecurringSlots(
-  tenantId: string
-): Promise<{ success: boolean; releasedCount: number; details: string[]; error?: string }> {
+export async function registerRecurringSlotPaymentAction(
+  tenantId: string,
+  slotId: string,
+  period?: string
+): Promise<{ success: boolean; error?: string; period?: string }> {
   try {
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
-      return { success: false, releasedCount: 0, details: [], error: auth.error }
+      return { success: false, error: auth.error }
+    }
+    const supabase = await createServiceClient()
+    const now = new Date()
+    const targetPeriod = period || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+    const { data: slot, error: fetchErr } = await supabase
+      .from('recurring_slots')
+      .select('id, notes')
+      .eq('id', slotId)
+      .eq('tenant_id', tenantId)
+      .single()
+
+    if (fetchErr || !slot) {
+      return { success: false, error: 'Turno fijo no encontrado' }
+    }
+
+    let currentNotes = slot.notes || ''
+    // Remover marcas previas del mismo o distinto período para mantener notes limpio
+    currentNotes = currentNotes.replace(/\[LAST_PAID:[0-9]{4}-[0-9]{2}\]/g, '').trim()
+    const updatedNotes = currentNotes ? `${currentNotes} [LAST_PAID:${targetPeriod}]` : `[LAST_PAID:${targetPeriod}]`
+
+    const { error: updateErr } = await supabase
+      .from('recurring_slots')
+      .update({
+        notes: updatedNotes,
+        status: 'ACTIVE',
+        updated_at: now.toISOString(),
+      })
+      .eq('id', slotId)
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/fijos')
+    return { success: true, period: targetPeriod }
+  } catch (err) {
+    console.error('[registerRecurringSlotPaymentAction] Error:', err)
+    return { success: false, error: 'Error al registrar pago de turno fijo' }
+  }
+}
+
+/** 
+ * Liberación automática de turnos fijos vencidos
+ * Si la fecha actual supera el payment_due_day Y el abonado no registró el pago del mes actual,
+ * se liberan ÚNICAMENTE las reservas FUTURAS del mes para la grilla pública.
+ * Nunca cancela turnos pasados ni turnos de abonados que ya pagaron.
+ */
+export async function checkAndReleaseOverdueRecurringSlots(
+  tenantId: string,
+  options?: { skipAuth?: boolean }
+): Promise<{ success: boolean; releasedCount: number; details: string[]; error?: string }> {
+  try {
+    if (!options?.skipAuth) {
+      const auth = await assertTenantMember(tenantId)
+      if (!auth.authorized) {
+        return { success: false, releasedCount: 0, details: [], error: auth.error }
+      }
     }
     const supabase = await createServiceClient()
     const today = new Date()
     const currentDayOfMonth = today.getDate()
+    const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    const todayIsoDate = today.toISOString().split('T')[0]
 
     // Buscar slots activos cuyo día de corte ya venció este mes
     const { data: slots } = await supabase
@@ -645,18 +708,48 @@ export async function checkAndReleaseOverdueRecurringSlots(
 
     if (slots && slots.length > 0) {
       for (const slot of slots) {
-        // Buscar reservas del mes futuro/actual para este cliente
-        const { data: pendingBookings } = await supabase
+        // BLINDAJE: Si el abonado ya pagó la cuota de este mes ([LAST_PAID:YYYY-MM]), omitir
+        if (slot.notes && slot.notes.includes(`[LAST_PAID:${currentPeriod}]`)) {
+          continue
+        }
+
+        // Buscar reservas estrictamente FUTURAS vinculadas a este turno fijo
+        let pendingBookings: Array<{ id: string; booked_at: unknown; staff_notes?: string | null }> = []
+
+        const { data: bySlotId } = await supabase
           .from('bookings')
-          .select('id, booked_at, customer_name, staff_notes')
+          .select('id, booked_at, staff_notes')
           .eq('tenant_id', tenantId)
-          .eq('court_id', slot.court_id)
-          .ilike('staff_notes', `%${slot.customer_name}%`)
+          .eq('recurring_slot_id', slot.id)
           .not('status', 'in', '("cancelled")')
+
+        if (bySlotId && bySlotId.length > 0) {
+          pendingBookings = bySlotId
+        } else {
+          // Fallback para reservas creadas antes de la columna recurring_slot_id
+          const { data: byNotes } = await supabase
+            .from('bookings')
+            .select('id, booked_at, staff_notes')
+            .eq('tenant_id', tenantId)
+            .eq('court_id', slot.court_id)
+            .ilike('staff_notes', `%ABONO FIJO%${slot.customer_name}%`)
+            .not('status', 'in', '("cancelled")')
+
+          if (byNotes) {
+            pendingBookings = byNotes
+          }
+        }
 
         if (pendingBookings && pendingBookings.length > 0) {
           for (const b of pendingBookings) {
-            const cancellationNote = `Liberado por falta de pago de abono mensual (venció día ${slot.payment_due_day})`
+            // Validar que la reserva sea del día de hoy o futura, nunca cancelar el pasado
+            const bookedAtStr = String(b.booked_at || '')
+            const startDateStr = bookedAtStr.slice(1, 11) // ej: [2026-10-15...
+            if (startDateStr && startDateStr < todayIsoDate) {
+              continue // Omitir turnos que ya se jugaron en el pasado
+            }
+
+            const cancellationNote = `Liberado por falta de pago del abono de ${currentPeriod} (venció día ${slot.payment_due_day})`
             const updatedNotes = b.staff_notes ? `${b.staff_notes} | ${cancellationNote}` : cancellationNote
             await supabase
               .from('bookings')

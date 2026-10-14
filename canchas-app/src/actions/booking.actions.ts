@@ -18,6 +18,7 @@ import {
   parseArgentinaDate,
   getArgentinaTimeStr,
   getArgentinaDateStr,
+  getArgentinaTodayIso,
 } from '@/lib/utils'
 import type {
   CreateBookingPayload,
@@ -37,6 +38,8 @@ import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-securit
 import { isPlayerBlocked } from './players.actions'
 import { recordClubNotification } from './notifications.actions'
 import { invalidateCalendarBookingsCache } from './club.actions'
+import { resolveOfficialSlotPrice } from '@/lib/booking-pricing.server'
+import { getOrRefreshTenantMpToken, refreshTenantMpToken } from './mp-marketplace.actions'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -139,7 +142,7 @@ export async function initiateOnlineCheckout(
     const endsAt = computeEndsAt(payload.starts_at, courtSlotDuration)
     const startsAtIso = slotStartDate.toISOString()
     const endsAtIso = parseArgentinaDate(endsAt).toISOString()
-    const dayStr = startsAtIso.split('T')[0]
+    const dayStr = getArgentinaTodayIso(slotStartDate)
 
     // 1.1 Resolver Court UUID y clave de bloqueo canónica
     const supabase = await createServiceClient()
@@ -153,7 +156,7 @@ export async function initiateOnlineCheckout(
 
     // 1.5 GESTIÓN DE PRIORIDAD EXCLUSIVA DE LISTA DE ESPERA (10 MINUTOS)
     let isWaitlistClaimValid = false
-    const slotHourMin = `${String(slotStartDate.getHours()).padStart(2, '0')}:${String(slotStartDate.getMinutes()).padStart(2, '0')}`
+    const slotHourMin = getArgentinaTimeStr(slotStartDate)
 
     if (payload.claim_id) {
       const waitlistCheck = await verifyWaitlistClaim(payload.claim_id)
@@ -244,15 +247,83 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    // Automatización 24hs: Cuando el jugador pulsa "Confirmar Seña", el turno queda cerrado y reservado automáticamente en el sistema
+    // 2.2 RECALCULAR PRECIO OFICIAL EN EL SERVIDOR (Protección contra manipulación de precios)
+    let finalTotalArs = Number(payload.total_amount_ars) || 0
+    let finalDepositArs = Number(payload.deposit_amount_ars) || 0
+
+    if (effectiveCourtId && effectiveTenantId) {
+      try {
+        const official = await resolveOfficialSlotPrice({
+          tenantId: effectiveTenantId,
+          courtId: effectiveCourtId,
+          startsAt: payload.starts_at,
+        })
+        if (official && official.totalAmountArs > 0) {
+          finalTotalArs = official.totalAmountArs
+          if (payload.deposit_amount_ars <= 0) {
+            finalDepositArs = 0
+          } else {
+            finalDepositArs = Math.min(finalTotalArs, official.depositAmountArs)
+          }
+        }
+      } catch (priceErr) {
+        console.warn('[initiateOnlineCheckout] Error recalculando precio oficial:', priceErr)
+      }
+    }
+
+    // Modo de confirmación de transferencia configurable por el club:
+    // 'MANUAL' -> pasa a 'pending_deposit' (requiere comprobante y aprobación del club)
+    // 'AUTO'   -> pasa a 'confirmed' de inmediato
     const isTransfer = payload.payment_method === 'TRANSFER' || !payload.payment_method
-    const isFullyCovered = payload.deposit_amount_ars === 0
-    const initialStatus = (isTransfer || isFullyCovered) ? 'confirmed' : 'pending_deposit'
+    const isFullyCovered = finalDepositArs === 0
+
+    let transferConfirmationMode: 'MANUAL' | 'AUTO' = 'MANUAL'
+    if (isTransfer && effectiveTenantId) {
+      try {
+        const { data: tRow } = await supabase
+          .from('tenants')
+          .select('description')
+          .eq('id', effectiveTenantId)
+          .maybeSingle()
+        if (tRow?.description) {
+          const meta = JSON.parse(tRow.description)
+          if (meta.transfer_confirmation_mode === 'AUTO') {
+            transferConfirmationMode = 'AUTO'
+          }
+        }
+      } catch (err) {
+        console.warn('[initiateOnlineCheckout] Error leyendo transfer_confirmation_mode:', err)
+      }
+    }
+
+    let initialStatus = 'pending_deposit'
+    if (isFullyCovered) {
+      initialStatus = 'confirmed'
+    } else if (isTransfer) {
+      initialStatus = transferConfirmationMode === 'AUTO' ? 'confirmed' : 'pending_deposit'
+    }
+
     const paymentLabel = payload.payment_method === 'MERCADOPAGO' ? 'Mercado Pago' : 'Transferencia'
     const customerNotesPart = payload.customer_notes?.trim() ? ` - ${payload.customer_notes.trim()}` : ''
-    const noteText = `Reserva Online 24hs - Seña: $${payload.deposit_amount_ars} (${paymentLabel})${customerNotesPart}`
+    const noteText = `Reserva Online 24hs - Seña: $${finalDepositArs} (${paymentLabel})${customerNotesPart}`
 
     let dbInsertSuccess = false
+
+    // 2.3 LIMPIEZA PREVENTIVA: Si existe una reserva huérfana en 'pending_deposit' cuyo candado ya venció, cancelarla
+    try {
+      await supabase
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          staff_notes: 'Candado de checkout expirado — liberado para nuevo intento online'
+        })
+        .eq('court_id', effectiveCourtId)
+        .eq('status', 'pending_deposit')
+        .filter('booked_at', 'ov', bookingRange)
+        .lt('lock_expires_at', new Date().toISOString())
+    } catch (cleanupErr) {
+      console.warn('[initiateOnlineCheckout] Limpieza preventiva notice:', cleanupErr)
+    }
 
     const { error: insertError } = await supabase
       .from('bookings')
@@ -263,8 +334,8 @@ export async function initiateOnlineCheckout(
         booked_at: bookingRange,
         status: initialStatus,
         sport: sportEnum,
-        price_total_cents: Math.round(payload.total_amount_ars * 100),
-        deposit_cents: Math.round(payload.deposit_amount_ars * 100),
+        price_total_cents: Math.round(finalTotalArs * 100),
+        deposit_cents: Math.round(finalDepositArs * 100),
         payment_method: payload.payment_method === 'MERCADOPAGO' ? 'mercadopago' : 'bank_transfer',
         customer_name: payload.customer_name,
         customer_phone: payload.customer_phone,
@@ -275,6 +346,7 @@ export async function initiateOnlineCheckout(
       })
 
     if (insertError) {
+      await releaseBookingLock(lockKey, bookingId)
       const isExclusionConflict =
         insertError.code === '23P01' ||
         insertError.message?.toLowerCase().includes('exclusion') ||
@@ -282,17 +354,20 @@ export async function initiateOnlineCheckout(
         insertError.message?.toLowerCase().includes('solapamiento')
 
       if (isExclusionConflict) {
-        await releaseBookingLock(lockKey, bookingId)
         return {
           success: false,
           error: 'Este turno ya no está disponible. Por favor elegí otro horario.',
           error_code: 'SLOT_UNAVAILABLE',
         }
       }
-      console.warn('[initiateOnlineCheckout] DB insert notice (continuing):', insertError.message)
-    } else {
-      dbInsertSuccess = true
+      console.error('[initiateOnlineCheckout] Error crítico al insertar booking en BD:', insertError.message)
+      return {
+        success: false,
+        error: 'No se pudo registrar la reserva en la base de datos. Por favor reintentá.',
+        error_code: 'DB_INSERT_FAILED',
+      }
     }
+    dbInsertSuccess = true
 
     if (dbInsertSuccess && payload.claim_id && isWaitlistClaimValid) {
       await markWaitlistAsClaimed(payload.claim_id)
@@ -309,10 +384,10 @@ export async function initiateOnlineCheckout(
       ends_at: endsAtIso,
       status: 'CONFIRMED',
       origin: 'ONLINE_PORTAL',
-      total_amount_ars: payload.total_amount_ars,
-      deposit_amount_ars: payload.deposit_amount_ars,
-      total_paid: payload.deposit_amount_ars,
-      balance_due: Math.max(0, payload.total_amount_ars - payload.deposit_amount_ars),
+      total_amount_ars: finalTotalArs,
+      deposit_amount_ars: finalDepositArs,
+      total_paid: finalDepositArs,
+      balance_due: Math.max(0, finalTotalArs - finalDepositArs),
       internal_notes: noteText,
       courts: {
         name: payload.court_name || 'Cancha',
@@ -369,7 +444,10 @@ export async function initiateOnlineCheckout(
     // SI EL JUGADOR SELECCIONÓ MERCADO PAGO:
     if (payload.payment_method === 'MERCADOPAGO') {
       // SEGURIDAD: Solo se utiliza el token vinculado por el CLUB. NUNCA el del Superadmin.
-      const mpToken = tenant?.mp_access_token
+      let mpToken = await getOrRefreshTenantMpToken(effectiveTenantId)
+      if (!mpToken) {
+        mpToken = tenant?.mp_access_token || null
+      }
 
       if (!mpToken) {
         return {
@@ -386,8 +464,8 @@ export async function initiateOnlineCheckout(
           mp_preference_id: `sim_pref_${Date.now()}`,
           mp_init_point: undefined,
           payment_type: 'MERCADOPAGO',
-          total_amount_ars: payload.total_amount_ars,
-          deposit_amount_ars: payload.deposit_amount_ars,
+          total_amount_ars: finalTotalArs,
+          deposit_amount_ars: finalDepositArs,
           lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
         }
       }
@@ -403,7 +481,7 @@ export async function initiateOnlineCheckout(
                 id: bookingId,
                 title: `Seña Turno ${courtName} - ${tenant?.name || 'Club'}`,
                 quantity: 1,
-                unit_price: payload.deposit_amount_ars,
+                unit_price: finalDepositArs,
                 currency_id: 'ARS',
               },
             ],
@@ -420,7 +498,7 @@ export async function initiateOnlineCheckout(
               pending: `${appUrl}/reserva/${bookingId}/pendiente`,
             },
             auto_return: 'approved',
-            notification_url: `${appUrl}/api/webhooks/mercadopago`,
+            notification_url: `${appUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(effectiveTenantId)}&booking_id=${encodeURIComponent(bookingId)}`,
             statement_descriptor: 'CANCHA SEÑA',
             expires: true,
             expiration_date_from: new Date().toISOString(),
@@ -453,6 +531,77 @@ export async function initiateOnlineCheckout(
         }
       } catch (mpErr: unknown) {
         console.error('[initiateOnlineCheckout] Error creating MP preference:', mpErr)
+
+        // Auto-recuperación si el token expiró (401 Unauthorized / invalid_token)
+        const errMsg = String(mpErr).toLowerCase()
+        if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('invalid') || errMsg.includes('token')) {
+          try {
+            console.log('[initiateOnlineCheckout] Intentando refresh de token ante error 401 para tenant:', effectiveTenantId)
+            const refreshedToken = await refreshTenantMpToken(effectiveTenantId)
+            if (refreshedToken && refreshedToken !== mpToken) {
+              const retryConfig = new MercadoPagoConfig({ accessToken: refreshedToken })
+              const retryClient = new Preference(retryConfig)
+              const retryPref = await retryClient.create({
+                body: {
+                  items: [
+                    {
+                      id: bookingId,
+                      title: `Seña Turno ${courtName} - ${tenant?.name || 'Club'}`,
+                      quantity: 1,
+                      unit_price: finalDepositArs,
+                      currency_id: 'ARS',
+                    },
+                  ],
+                  payer: {
+                    name: payload.customer_name,
+                    email: (payload.customer_email && payload.customer_email.includes('@'))
+                      ? payload.customer_email
+                      : undefined,
+                  },
+                  external_reference: bookingId,
+                  back_urls: {
+                    success: `${appUrl}/reserva/${bookingId}/confirmado`,
+                    failure: `${appUrl}/reserva/${bookingId}/error`,
+                    pending: `${appUrl}/reserva/${bookingId}/pendiente`,
+                  },
+                  auto_return: 'approved',
+                  notification_url: `${appUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(effectiveTenantId)}&booking_id=${encodeURIComponent(bookingId)}`,
+                  statement_descriptor: 'CANCHA SEÑA',
+                  expires: true,
+                  expiration_date_from: new Date().toISOString(),
+                  expiration_date_to: new Date(Date.now() + 420_000).toISOString(),
+                }
+              })
+
+              const retryPrefId = retryPref.id
+              const retryInitPoint = retryPref.init_point || retryPref.sandbox_init_point || undefined
+
+              if (dbInsertSuccess) {
+                await supabase
+                  .from('bookings')
+                  .update({
+                    status: 'pending_deposit',
+                    staff_notes: noteText ? `${noteText} | [MP Pref: ${retryPrefId}]` : `[MP Pref: ${retryPrefId}]`,
+                  })
+                  .eq('id', bookingId)
+              }
+
+              return {
+                success: true,
+                booking_id: bookingId,
+                mp_preference_id: retryPrefId,
+                mp_init_point: retryInitPoint,
+                payment_type: 'MERCADOPAGO',
+                total_amount_ars: payload.total_amount_ars,
+                deposit_amount_ars: payload.deposit_amount_ars,
+                lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+              }
+            }
+          } catch (retryErr) {
+            console.error('[initiateOnlineCheckout] Reintento tras refresh falló:', retryErr)
+          }
+        }
+
         await releaseBookingLock(lockKey, bookingId)
         return {
           success: false,
@@ -461,6 +610,32 @@ export async function initiateOnlineCheckout(
         }
       }
     }
+
+    // Despacho de WhatsApp Bot automático (confirmación inmediata de reserva online al teléfono del cliente)
+    let waConfirmRes: { isSimulated?: boolean; waUrl?: string; success: boolean } | undefined
+    if (payload.customer_phone && payload.customer_phone.trim().length >= 6) {
+      try {
+        waConfirmRes = await sendAutomatedBookingConfirmation(bookingId)
+      } catch (waErr) {
+        console.warn('[initiateOnlineCheckout] WhatsApp bot dispatch warning:', waErr)
+      }
+    }
+
+    // Registrar en el historial de notificaciones y alertas del club
+    void recordClubNotification({
+      tenantId: effectiveTenantId,
+      type: 'BOOKING_CREATED',
+      category: 'BOOKINGS',
+      title: '📅 Nueva Reserva Online Recibida',
+      message: `${payload.customer_name || 'Jugador'} registró una reserva online para ${courtName}. Monto seña: $${payload.deposit_amount_ars.toLocaleString('es-AR')}.`,
+      metadata: {
+        booking_id: bookingId,
+        customer_name: payload.customer_name,
+        customer_phone: payload.customer_phone,
+        amount_ars: payload.deposit_amount_ars,
+        court_name: courtName,
+      },
+    })
 
     // FLUJO POR DEFECTO: TRANSFERENCIA BANCARIA DIRECTA A LA CUENTA DEL CLUB
     // Automatización 24hs: El turno ya quedó bloqueado e impactado en la grilla oficial
@@ -474,6 +649,8 @@ export async function initiateOnlineCheckout(
       total_amount_ars: payload.total_amount_ars,
       deposit_amount_ars: payload.deposit_amount_ars,
       lock_expires_at: new Date(Date.now() + 420_000).toISOString(),
+      wa_url: waConfirmRes?.waUrl,
+      wa_is_simulated: waConfirmRes?.isSimulated,
     }
   } catch (error) {
     console.error('[initiateOnlineCheckout] Error:', error)

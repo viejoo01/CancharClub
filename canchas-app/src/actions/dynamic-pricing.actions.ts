@@ -26,20 +26,45 @@ export interface OccupancyInsight {
 }
 
 export async function getDynamicPricingSettings(tenantId?: string): Promise<DynamicPricingConfig> {
-  if (tenantId) {
-    // Configuración específica del club
-  }
-  return {
-    enable_last_minute: true,
-    last_minute_discount_pct: 25,
+  const defaultConfig: DynamicPricingConfig = {
+    enable_last_minute: false,
+    last_minute_discount_pct: 20,
     last_minute_hours_threshold: 3,
-    enable_happy_hour: true,
+    enable_happy_hour: false,
     happy_hour_discount_pct: 20,
     happy_hour_from: '12:00',
     happy_hour_to: '17:00',
     enable_peak_surge: false,
     peak_surge_pct: 15,
   }
+
+  try {
+    const targetTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!targetTenantId) return defaultConfig
+
+    const supabase = await createServiceClient()
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    if (tenant?.description) {
+      try {
+        const meta = JSON.parse(tenant.description)
+        if (meta?.dynamic_pricing) {
+          return {
+            ...defaultConfig,
+            ...meta.dynamic_pricing,
+          }
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[getDynamicPricingSettings] Error reading settings:', err)
+  }
+
+  return defaultConfig
 }
 
 export async function saveDynamicPricingSettings(
@@ -61,30 +86,47 @@ export async function saveDynamicPricingSettings(
       }
     }
 
-    if (config) {
-      // Configuración recibida para futura persistencia en tabla de reglas
+    if (!config) {
+      return { success: false, error: 'No se recibieron datos de configuración' }
     }
 
     const supabase = await createServiceClient()
-    const { error } = await (supabase.from('tenants') as unknown as {
-      update: (data: Record<string, unknown>) => {
-        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', targetTenantId)
+      .maybeSingle()
+
+    let meta: Record<string, unknown> = {}
+    if (tenant?.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = { raw_notes: tenant.description }
       }
-    })
+    }
+
+    meta.dynamic_pricing = config
+
+    const { error } = await supabase
+      .from('tenants')
       .update({
-        updated_at: new Date().toISOString()
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', targetTenantId)
 
     if (error) {
-      console.warn('Fallback: guardado local de config dinámica')
+      console.error('[saveDynamicPricingSettings] DB Error:', error)
+      return { success: false, error: error.message }
     }
 
     revalidatePath('/dashboard/precios')
+    revalidatePath('/dashboard')
     revalidatePath('/club/[slug]', 'page')
     return { success: true }
   } catch (err: unknown) {
-    return { success: false, error: err instanceof Error ? err.message : 'Error al guardar' }
+    return { success: false, error: err instanceof Error ? err.message : 'Error al guardar configuración dinámica' }
   }
 }
 

@@ -214,6 +214,40 @@ export function isFeatureAllowedForPlan(planId: SaaSPlanId, feature: SaaSFeature
 }
 
 /**
+ * Mensaje oficial exigido cuando un club intenta exceder el límite de canchas según su plan.
+ */
+export const COURT_LIMIT_EXCEEDED_MESSAGE = 'Limite de canchas segun su plan mensual, actualiza el plan para agregar mas'
+
+/**
+ * Retorna el número máximo de canchas permitidas para un club según su plan mensual contratado.
+ * Retorna `null` si el plan permite varias canchas sin límite estricto (ej. GRANDE_5_PLUS o 5+ canchas).
+ */
+export function getMaxCourtsAllowedForPlan(
+  planId?: SaaSPlanId | string | null,
+  baseSlotsPlan?: number | null
+): number | null {
+  // Plan de 5 o más canchas: permitido crear varias canchas
+  if (planId === 'GRANDE_5_PLUS' || (baseSlotsPlan !== undefined && baseSlotsPlan !== null && Number(baseSlotsPlan) >= 5)) {
+    return null
+  }
+
+  // Si tiene un número específico de slots/canchas contratado (ej. 1, 2, 3, 4)
+  if (baseSlotsPlan !== undefined && baseSlotsPlan !== null && Number(baseSlotsPlan) > 0) {
+    const slots = Number(baseSlotsPlan)
+    if (slots >= 5) return null
+    return slots
+  }
+
+  // Según el identificador del plan
+  if (planId === 'CHICO_1') return 1
+  if (planId === 'MEDIANO_2') return 2
+  if (planId === 'CONSOLIDADO_3_4') return 4
+
+  // Fallback por defecto si no está especificado
+  return 2
+}
+
+/**
  * Retorna el plan de mayor jerarquía entre dos planes SaaS.
  */
 export function getHigherPlan(p1?: SaaSPlanId | null, p2?: SaaSPlanId | null): SaaSPlanId {

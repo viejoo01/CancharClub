@@ -24,7 +24,7 @@ import {
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
 import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
-import { getPlanByCourtsCount } from '@/config/saas-plans'
+import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE, type SaaSPlanId } from '@/config/saas-plans'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -100,6 +100,37 @@ export async function createCourt(payload: {
   }
 
   const supabase = await createServiceClient()
+
+  // 1. SEGURO: Validar límite máximo de canchas según el plan mensual del club
+  const { data: tenantData } = await supabase
+    .from('tenants')
+    .select('id, plan_id, base_slots_plan, description')
+    .eq('id', effectiveTenantId)
+    .single()
+
+  let resolvedPlanId: SaaSPlanId | string | null = tenantData?.plan_id || null
+  if (!resolvedPlanId && tenantData?.description) {
+    try {
+      const meta = JSON.parse(tenantData.description)
+      if (meta.plan_id) resolvedPlanId = meta.plan_id
+    } catch {}
+  }
+
+  const { data: existingCourts } = await supabase
+    .from('courts')
+    .select('id, is_active')
+    .eq('tenant_id', effectiveTenantId)
+
+  const currentCourtsCount = existingCourts?.length || 0
+  const maxAllowed = getMaxCourtsAllowedForPlan(resolvedPlanId, tenantData?.base_slots_plan)
+
+  if (maxAllowed !== null && currentCourtsCount >= maxAllowed) {
+    return {
+      success: false,
+      error: COURT_LIMIT_EXCEEDED_MESSAGE,
+    }
+  }
+
   const durationMinutes = payload.slot_duration_minutes || (payload.slot_duration === 'MIN_60' ? 60 : payload.slot_duration === 'MIN_120' ? 120 : 90)
   const hasLights = payload.has_lights !== undefined ? payload.has_lights : (payload.has_lighting !== undefined ? payload.has_lighting : true)
   const sportEnum = normalizeSportEnum(payload.sport)
@@ -127,25 +158,19 @@ export async function createCourt(payload: {
     return { success: false, error: error.message }
   }
 
-  // Sincronizar automáticamente el plan y base_slots_plan en la tabla tenants
+  // Mantener actualizado base_slots_plan si estaba vacío o menor, sin alterar el plan_id contratado
   try {
-    const { data: allCourts } = await supabase
-      .from('courts')
-      .select('id')
-      .eq('tenant_id', effectiveTenantId)
-      .eq('is_active', true)
-    
-    const activeCount = allCourts?.length || 1
-    const newPlan = getPlanByCourtsCount(activeCount)
-    await supabase
-      .from('tenants')
-      .update({
-        plan_id: newPlan.id,
-        base_slots_plan: activeCount,
-      })
-      .eq('id', effectiveTenantId)
+    const newTotal = currentCourtsCount + 1
+    if (!tenantData?.base_slots_plan || Number(tenantData.base_slots_plan) < newTotal) {
+      await supabase
+        .from('tenants')
+        .update({
+          base_slots_plan: newTotal,
+        })
+        .eq('id', effectiveTenantId)
+    }
   } catch (syncErr) {
-    console.warn('[createCourt] Error auto-syncing tenant plan:', syncErr)
+    console.warn('[createCourt] Error updating base_slots_plan:', syncErr)
   }
 
   revalidatePath('/dashboard/canchas')
@@ -170,7 +195,7 @@ export async function updateCourt(courtId: string, payload: Partial<{
   // 1. Obtener la cancha y su tenant_id real de la base de datos
   const { data: court, error: courtFetchErr } = await supabase
     .from('courts')
-    .select('id, tenant_id')
+    .select('id, tenant_id, is_active')
     .eq('id', courtId)
     .maybeSingle()
 
@@ -183,6 +208,40 @@ export async function updateCourt(courtId: string, payload: Partial<{
   if (!auth.authorized) {
     return { success: false, error: auth.error || 'Sin permisos para editar canchas de este club.' }
   }
+
+  // 3. SEGURO: Si se está reactivando una cancha inactiva, validar que no exceda el límite del plan mensual
+  if (payload.is_active === true && court.is_active === false && court.tenant_id) {
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('id, plan_id, base_slots_plan, description')
+      .eq('id', court.tenant_id)
+      .single()
+
+    let resolvedPlanId: SaaSPlanId | string | null = tenantData?.plan_id || null
+    if (!resolvedPlanId && tenantData?.description) {
+      try {
+        const meta = JSON.parse(tenantData.description)
+        if (meta.plan_id) resolvedPlanId = meta.plan_id
+      } catch {}
+    }
+
+    const { data: activeCourts } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('tenant_id', court.tenant_id)
+      .eq('is_active', true)
+
+    const activeCount = activeCourts?.length || 0
+    const maxAllowed = getMaxCourtsAllowedForPlan(resolvedPlanId, tenantData?.base_slots_plan)
+
+    if (maxAllowed !== null && activeCount >= maxAllowed) {
+      return {
+        success: false,
+        error: COURT_LIMIT_EXCEEDED_MESSAGE,
+      }
+    }
+  }
+
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString()
   }
@@ -226,17 +285,15 @@ export async function updateCourt(courtId: string, payload: Partial<{
           .eq('tenant_id', courtRow.tenant_id)
           .eq('is_active', true)
         const activeCount = allCourts?.length || 1
-        const newPlan = getPlanByCourtsCount(activeCount)
         await supabase
           .from('tenants')
           .update({
-            plan_id: newPlan.id,
             base_slots_plan: activeCount,
           })
           .eq('id', courtRow.tenant_id)
       }
     } catch (syncErr) {
-      console.warn('[updateCourt] Error auto-syncing tenant plan:', syncErr)
+      console.warn('[updateCourt] Error updating base_slots_plan:', syncErr)
     }
   }
 
@@ -356,7 +413,7 @@ export async function deleteCourt(
       return { success: false, error: courtErr.message }
     }
 
-    // Sincronizar automáticamente el plan y base_slots_plan tras eliminar una cancha
+    // Sincronizar automáticamente base_slots_plan tras eliminar una cancha (sin alterar plan_id)
     try {
       const { data: allCourts } = await supabase
         .from('courts')
@@ -365,16 +422,14 @@ export async function deleteCourt(
         .eq('is_active', true)
 
       const activeCount = allCourts?.length || 1
-      const newPlan = getPlanByCourtsCount(activeCount)
       await supabase
         .from('tenants')
         .update({
-          plan_id: newPlan.id,
           base_slots_plan: activeCount,
         })
         .eq('id', tenantId)
     } catch (syncErr) {
-      console.warn('[deleteCourt] Error auto-syncing tenant plan:', syncErr)
+      console.warn('[deleteCourt] Error syncing base_slots_plan:', syncErr)
     }
 
     revalidatePath('/dashboard/canchas')

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, Pencil, Clock, Trash2, Megaphone, Share2, MapPin } from 'lucide-react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, Pencil, Clock, Trash2, Megaphone, Share2, MapPin, AlertTriangle } from 'lucide-react'
 import { InstagramIcon, FacebookIcon, TikTokIcon } from '@/components/icons/social-icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -34,7 +36,8 @@ import { ClubServicesLocationModal } from '@/components/dashboard/club-services-
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
-import { useTenantId } from '@/hooks/use-tenant-id'
+import { useTenantId, useTenantPlan } from '@/hooks/use-tenant-id'
+import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE } from '@/config/saas-plans'
 import { createClient } from '@/lib/supabase/client'
 
 interface Court {
@@ -78,8 +81,13 @@ let cachedServicesLocation: ClubServicesAndLocationData | null = null
 
 export default function CanchasPage() {
   const tenantId = useTenantId()
+  const router = useRouter()
+  const { planId, plan } = useTenantPlan()
   const [courts, setCourts] = useState<Court[]>(() => cachedCourts || [])
   const [courtsLoading, setCourtsLoading] = useState(() => !cachedCourts)
+  const maxCourts = getMaxCourtsAllowedForPlan(planId)
+  const totalCourtsCount = courts.length
+  const isLimitReached = maxCourts !== null && totalCourtsCount >= maxCourts
   const [clubSlug, setClubSlug] = useState('club')
   const [schedule, setSchedule] = useState<ClubScheduleConfig>(() => cachedSchedule || DEFAULT_CLUB_SCHEDULE)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
@@ -297,6 +305,16 @@ export default function CanchasPage() {
 
   const handleToggleActive = async (courtId: string, current: boolean) => {
     const nextState = !current
+    if (nextState && isLimitReached) {
+      toast.warning(COURT_LIMIT_EXCEEDED_MESSAGE, {
+        description: `Tu plan actual (${plan.name}) tiene un tope de ${maxCourts} ${maxCourts === 1 ? 'cancha' : 'canchas'}. Actualizá tu plan para habilitar más canchas.`,
+        action: {
+          label: 'Ver Planes',
+          onClick: () => router.push('/dashboard/plan'),
+        },
+      })
+      return
+    }
     setCourts(prev => prev.map(c => c.id === courtId ? { ...c, is_active: nextState } : c))
     try {
       const res = await updateCourt(courtId, { is_active: nextState })
@@ -374,6 +392,17 @@ export default function CanchasPage() {
     e.preventDefault()
     if (!name.trim()) return
 
+    if (isLimitReached) {
+      toast.warning(COURT_LIMIT_EXCEEDED_MESSAGE, {
+        description: `Tu plan actual (${plan.name}) tiene un tope de ${maxCourts} ${maxCourts === 1 ? 'cancha' : 'canchas'}. Actualizá el plan para agregar más.`,
+        action: {
+          label: 'Ver Planes',
+          onClick: () => router.push('/dashboard/plan'),
+        },
+      })
+      return
+    }
+
     if (!tenantId) {
       toast.error('Error: no se pudo determinar el club activo')
       return
@@ -429,10 +458,24 @@ export default function CanchasPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white">
-            Gestión de Canchas
-          </h2>
-          <p className="text-xs text-slate-400">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xl font-bold tracking-tight text-white">
+              Gestión de Canchas
+            </h2>
+            <Badge
+              variant="outline"
+              className={`text-xs ${
+                isLimitReached
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 font-semibold'
+                  : 'border-slate-700 bg-slate-800 text-slate-300'
+              }`}
+            >
+              {maxCourts !== null
+                ? `${totalCourtsCount} de ${maxCourts} permitidas`
+                : `${totalCourtsCount} canchas (Plan 5+ canchas)`}
+            </Badge>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
             Configurá las canchas disponibles, deportes, duración flexible de turnos y códigos QR de cantina.
           </p>
         </div>
@@ -485,14 +528,61 @@ export default function CanchasPage() {
           </Button>
 
           <Button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 h-10 shrink-0 cursor-pointer"
+            onClick={() => {
+              if (isLimitReached) {
+                toast.warning(COURT_LIMIT_EXCEEDED_MESSAGE, {
+                  description: `Tu plan actual (${plan.name}) tiene un tope de ${maxCourts} ${maxCourts === 1 ? 'cancha' : 'canchas'}. Actualizá el plan para agregar más.`,
+                  action: {
+                    label: 'Actualizar Plan',
+                    onClick: () => router.push('/dashboard/plan'),
+                  },
+                })
+                return
+              }
+              setIsModalOpen(true)
+            }}
+            className={
+              isLimitReached
+                ? 'bg-slate-800 hover:bg-slate-750 text-slate-300 border border-amber-500/30 font-semibold gap-2 h-10 shrink-0 cursor-pointer shadow-none'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-lg shadow-emerald-950/40 h-10 shrink-0 cursor-pointer'
+            }
+            title={isLimitReached ? COURT_LIMIT_EXCEEDED_MESSAGE : 'Nueva Cancha'}
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Nueva Cancha</span>
+            {isLimitReached && (
+              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 font-normal">
+                Tope alcanzado
+              </span>
+            )}
           </Button>
         </div>
       </div>
+
+      {/* Banner de Seguro de Límite de Canchas según Plan Mensual */}
+      {isLimitReached && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-950/20">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">
+                {COURT_LIMIT_EXCEEDED_MESSAGE}
+              </p>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Tenés <strong>{totalCourtsCount} de {maxCourts} {maxCourts === 1 ? 'cancha permitida' : 'canchas permitidas'}</strong> con tu <strong>{plan.name}</strong>. Para dar de alta más canchas, pasá al siguiente plan mensual del club.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard/plan"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 transition-colors shadow-md shadow-emerald-950/40"
+          >
+            Actualizar Plan →
+          </Link>
+        </div>
+      )}
 
       {/* Banner de Horario Operativo del Club */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
@@ -940,6 +1030,23 @@ export default function CanchasPage() {
           </DialogHeader>
 
           <form onSubmit={handleCreateCourt} className="space-y-4 py-2">
+            {isLimitReached && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <p className="font-bold text-amber-300">{COURT_LIMIT_EXCEEDED_MESSAGE}</p>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    Tu plan actual ({plan.name}) admite hasta {maxCourts} {maxCourts === 1 ? 'cancha' : 'canchas'}.
+                  </p>
+                  <Link
+                    href="/dashboard/plan"
+                    className="inline-flex items-center gap-1 font-bold text-emerald-400 hover:underline pt-0.5"
+                  >
+                    Ir a Mi Plan para actualizar →
+                  </Link>
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="courtName">Nombre de la Cancha *</Label>
               <Input
@@ -1017,8 +1124,8 @@ export default function CanchasPage() {
               <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : 'Guardar Cancha'}
+              <Button type="submit" disabled={loading || isLimitReached} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : isLimitReached ? 'Límite alcanzado' : 'Guardar Cancha'}
               </Button>
             </DialogFooter>
           </form>

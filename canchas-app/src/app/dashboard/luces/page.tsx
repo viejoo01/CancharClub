@@ -37,6 +37,7 @@ import {
   getCourtLightConfigs, 
   saveCourtLightConfig,
   testPhysicalRelayPulse,
+  getLightMetricsAction,
   type RelayType,
   type CloudLightConfig
 } from '@/actions/lights.actions'
@@ -78,6 +79,10 @@ export default function LucesPage() {
   const [preMinutes, setPreMinutes] = useState(5)
   const [postMinutes, setPostMinutes] = useState(5)
   const [savingConfig, setSavingConfig] = useState(false)
+  const [metrics, setMetrics] = useState<{ hoursSaved: number; estimatedSavingsArs: number }>({
+    hoursSaved: 0,
+    estimatedSavingsArs: 0,
+  })
 
   useEffect(() => {
     if (!tenantId) return
@@ -87,32 +92,44 @@ export default function LucesPage() {
     async function loadData() {
       try {
         const supabase = createClient()
-        const [{ data: courtsData }, savedConfigs] = await Promise.all([
+        const [{ data: courtsData }, savedConfigs, lightMetrics] = await Promise.all([
           supabase
             .from('courts')
             .select('id, name, has_lights, light_is_on')
             .eq('tenant_id', activeTenantId)
             .eq('is_active', true)
             .order('display_order', { ascending: true }),
-          getCourtLightConfigs(activeTenantId)
+          getCourtLightConfigs(activeTenantId),
+          getLightMetricsAction(activeTenantId)
         ])
 
         if (!isMounted) return
 
+        if (lightMetrics) {
+          setMetrics(lightMetrics)
+        }
+
         if (courtsData && courtsData.length > 0) {
           const items: CourtUIItem[] = courtsData.map((c: { id: string; name: string; has_lights?: boolean | null; light_is_on?: boolean | null }) => {
             const saved = savedConfigs[c.id] || {}
+            const hasRelay = Boolean(saved.relay_ip_or_id || saved.cloud_config?.deviceId || saved.cloud_config?.webhookUrl)
             return {
               court_id: c.id,
               court_name: c.name,
               is_on: Boolean(c.light_is_on ?? saved.is_on ?? false),
-              is_auto_mode: saved.is_auto_mode ?? true,
+              is_auto_mode: saved.is_auto_mode ?? false,
               pre_turn_minutes: saved.pre_turn_minutes ?? 5,
               post_turn_minutes: saved.post_turn_minutes ?? 5,
               relay_type: saved.relay_type ?? 'SHELLY_CLOUD',
-              relay_ip_or_id: saved.relay_ip_or_id ?? 'Shelly Pro 4PM / Cloud',
+              relay_ip_or_id: hasRelay
+                ? (saved.relay_ip_or_id || (saved.cloud_config?.deviceId ? `Shelly ID: ${saved.cloud_config.deviceId}` : 'Relé configurado'))
+                : 'Sin relé vinculado',
               cloud_config: saved.cloud_config,
-              last_state_change: c.light_is_on ? 'Encendido manual' : 'Apagado automático (sin turno)',
+              last_state_change: c.light_is_on 
+                ? 'Encendido manual' 
+                : hasRelay 
+                ? 'Apagado automático (sin turno)' 
+                : 'Sin actividad registrada',
             }
           })
           cachedCourts = items
@@ -333,8 +350,10 @@ export default function LucesPage() {
               <Leaf className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-extrabold text-emerald-400 mt-1">
-              46.5 hs
-              <span className="text-xs text-slate-400 font-normal ml-2">apagado por turno vacío</span>
+              {metrics.hoursSaved} hs
+              <span className="text-xs text-slate-400 font-normal ml-2">
+                {metrics.hoursSaved > 0 ? 'apagado por turno vacío' : 'sin turnos inactivos'}
+              </span>
             </div>
           </Card>
 
@@ -344,8 +363,10 @@ export default function LucesPage() {
               <DollarSign className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-extrabold text-emerald-400 mt-1">
-              {formatARS(139500)}
-              <span className="text-xs text-slate-400 font-normal ml-2">/mes</span>
+              {formatARS(metrics.estimatedSavingsArs)}
+              <span className="text-xs text-slate-400 font-normal ml-2">
+                {metrics.estimatedSavingsArs > 0 ? '/mes' : 'acumulado'}
+              </span>
             </div>
           </Card>
         </div>

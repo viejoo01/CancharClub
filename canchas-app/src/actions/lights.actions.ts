@@ -406,3 +406,51 @@ export async function getCourtPhysicalWebhookUrl(tenantId: string, courtId: stri
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.cancharclub.com.ar'
   return `${baseUrl}/api/iot/lights?tenantId=${tenantId}&courtId=${courtId}`
 }
+
+export interface LightMetricsData {
+  hoursSaved: number
+  estimatedSavingsArs: number
+}
+
+/**
+ * Obtiene métricas reales de ahorro energético para el club.
+ * Para un club nuevo o sin automatización de reflectores registrada, retorna 0 hs y $ 0.
+ */
+export async function getLightMetricsAction(tenantId: string): Promise<LightMetricsData> {
+  try {
+    if (!tenantId) return { hoursSaved: 0, estimatedSavingsArs: 0 }
+
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { hoursSaved: 0, estimatedSavingsArs: 0 }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: logs } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'LIGHT_ENERGY_SAVED')
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    let totalMinutes = 0
+    if (logs && logs.length > 0) {
+      for (const log of logs) {
+        const minutes = Number((log.new_data as { minutes_saved?: number })?.minutes_saved) || 0
+        totalMinutes += minutes
+      }
+    }
+
+    const hours = Math.round((totalMinutes / 60) * 10) / 10
+    const costPerHour = 3000
+    const savings = Math.round(hours * costPerHour)
+
+    return {
+      hoursSaved: hours,
+      estimatedSavingsArs: savings,
+    }
+  } catch {
+    return { hoursSaved: 0, estimatedSavingsArs: 0 }
+  }
+}

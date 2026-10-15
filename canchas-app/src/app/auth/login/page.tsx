@@ -53,8 +53,10 @@ function LoginForm() {
 
     setIsLoading(true)
 
+    const finalEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@club.com`
+
     const formData = new FormData()
-    formData.append('email', cleanEmail)
+    formData.append('email', finalEmail)
     formData.append('password', cleanPassword)
 
     try {
@@ -122,7 +124,7 @@ function LoginForm() {
                   const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9._@-]/g, '')
                   setEmailPrefix(cleaned)
                 }}
-                placeholder="tuclub o usuario"
+                placeholder="nombre@club.com"
                 className="w-full h-12 pl-4 pr-28 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all font-mono"
                 required
               />

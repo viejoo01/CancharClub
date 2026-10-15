@@ -39,8 +39,11 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
 
     setIsLoading(true)
 
+    const cleanEmail = email.trim().toLowerCase()
+    const finalEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@club.com`
+
     const formData = new FormData()
-    formData.append('email', email.trim().toLowerCase())
+    formData.append('email', finalEmail)
     formData.append('password', password.trim())
 
     try {
@@ -84,15 +87,22 @@ export function ClubLoginModal({ open, onOpenChange, onOpenRegister }: ClubLogin
               <label className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
                 Email o Usuario de acceso
               </label>
-              <input
-                type="text"
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nombre@club.com o usuario"
-                className="w-full h-12 px-4 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all font-mono"
-                required
-              />
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase().replace(/[^a-z0-9._@-]/g, ''))}
+                  placeholder="nombre@club.com"
+                  className="w-full h-12 pl-4 pr-28 rounded-xl sm:rounded-2xl border border-stone-200 dark:border-slate-800 bg-[#f9fafb] dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#5046e5] focus:border-transparent transition-all font-mono"
+                  required
+                />
+                {!email.includes('@') && (
+                  <div className="absolute right-2 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs select-none border border-indigo-500/20 font-mono pointer-events-none">
+                    @club.com
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-1.5">

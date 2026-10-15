@@ -252,12 +252,7 @@ export default function EquipoPage() {
               <UserCheck className="w-5 h-5 text-sky-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-white text-sm">Encargado</p>
-                <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/30 text-[10px]">
-                  TENANT_STAFF
-                </Badge>
-              </div>
+              <p className="font-semibold text-white text-sm">Encargado</p>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                 Acceso operativo del club: <strong>Calendario de Turnos</strong>, <strong>Caja Diaria</strong>, <strong>Turnos Fijos</strong>, <strong>Cantina</strong>, <strong>Control de Luces</strong> y <strong>Torneos</strong> (según las funciones contratadas en el plan del club). No puede alterar reglas de precios, canchas ni facturación general.
               </p>
@@ -271,12 +266,7 @@ export default function EquipoPage() {
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-white text-sm">Administrador del Club</p>
-                <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px]">
-                  TENANT_ADMIN
-                </Badge>
-              </div>
+              <p className="font-semibold text-white text-sm">Administrador del Club</p>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                 Control administrativo total: creación y edición de <strong>Canchas</strong>, definición de <strong>Reglas de Precios</strong>, reportes avanzados de ocupación, gestión de personal y configuración de cuentas de cobro.
               </p>

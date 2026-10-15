@@ -2521,8 +2521,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-white tracking-tight">Dueño del Club</h4>
-                      <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 border border-emerald-500/30 font-mono">
-                        TENANT_ADMIN
+                      <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 border border-emerald-500/30">
+                        Administrador
                       </Badge>
                     </div>
                     <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
@@ -2556,8 +2556,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-white tracking-tight">Encargado / Mostrador</h4>
-                      <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 border border-amber-500/30 font-mono">
-                        TENANT_STAFF
+                      <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 border border-amber-500/30">
+                        Encargado
                       </Badge>
                     </div>
                     <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
@@ -3898,7 +3898,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <ShieldCheck className="w-4 h-4" />
                   2. Credenciales del Dueño (Admin Total)
                 </span>
-                <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">TENANT_ADMIN</Badge>
+                <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">Administrador</Badge>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -3961,7 +3961,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <Coffee className="w-4 h-4" />
                   3. Credenciales del Encargado (Mostrador)
                 </span>
-                <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">TENANT_STAFF</Badge>
+                <Badge className="bg-amber-500/20 text-amber-300 text-[10px]">Encargado</Badge>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">

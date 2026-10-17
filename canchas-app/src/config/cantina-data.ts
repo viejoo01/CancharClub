@@ -8,9 +8,9 @@ export interface CantinaCategory {
 }
 
 export const DEFAULT_CANTINA_CATEGORIES: CantinaCategory[] = [
-  { id: 'BEBIDAS', name: 'Bebidas', emoji: '🥤' },
-  { id: 'EQUIPAMIENTO', name: 'Equipamiento', emoji: '🎾' },
-  { id: 'SNACKS', name: 'Snacks', emoji: '🍿' },
+  { id: 'BEBIDAS', name: 'Bebidas' },
+  { id: 'EQUIPAMIENTO', name: 'Equipamiento' },
+  { id: 'SNACKS', name: 'Snacks' },
 ]
 
 export interface CantinaProduct {

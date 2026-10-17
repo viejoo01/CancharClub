@@ -374,7 +374,7 @@ export default function CantinaPage() {
     try {
       const data = await getCantinaCategories(tenantId)
       if (data && data.length > 0) {
-        setCategories(data)
+        setCategories(data.map(c => ({ id: c.id, name: c.name })))
       } else {
         setCategories(DEFAULT_CANTINA_CATEGORIES)
       }
@@ -392,15 +392,6 @@ export default function CantinaPage() {
     if (catIdOrName === 'SNACKS') return 'Snacks'
     if (catIdOrName === 'ALL') return 'Todas'
     return catIdOrName
-  }, [categories])
-
-  const getCategoryEmoji = useCallback((catIdOrName: string) => {
-    const match = categories.find(c => c.id === catIdOrName || c.name.toLowerCase() === catIdOrName.toLowerCase())
-    if (match?.emoji) return match.emoji
-    if (catIdOrName === 'BEBIDAS') return '🥤'
-    if (catIdOrName === 'EQUIPAMIENTO') return '🎾'
-    if (catIdOrName === 'SNACKS') return '🍿'
-    return '🏷️'
   }, [categories])
 
   const openCategoriesModal = () => {
@@ -423,10 +414,6 @@ export default function CantinaPage() {
       return
     }
 
-    const emojis = ['🥤', '🍿', '🎾', '🥪', '🍺', '🍫', '☕', '🍕', '🍦', '🧊', '👕', '🏷️']
-    const existingEmojis = new Set(categories.map(c => c.emoji))
-    const availableEmoji = emojis.find(em => !existingEmojis.has(em)) || '🏷️'
-
     const slugId = trimmed
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -437,7 +424,6 @@ export default function CantinaPage() {
     const newCat: CantinaCategory = {
       id: slugId,
       name: trimmed,
-      emoji: availableEmoji,
     }
 
     const updated = [...categories, newCat]
@@ -1663,14 +1649,13 @@ export default function CantinaPage() {
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
                     selectedCategory === cat.id
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  {cat.emoji && <span>{cat.emoji}</span>}
-                  <span>{cat.name}</span>
+                  {cat.name}
                 </button>
               ))}
             </div>
@@ -1779,9 +1764,8 @@ export default function CantinaPage() {
 
                           {/* Categoría */}
                           <td className="p-3.5">
-                            <Badge className="text-[10px] font-semibold bg-slate-800/90 text-slate-200 border-slate-700/80 gap-1.5 px-2 py-0.5">
-                              <span>{getCategoryEmoji(p.category)}</span>
-                              <span>{getCategoryName(p.category)}</span>
+                            <Badge className="text-[10px] font-semibold bg-slate-800/90 text-slate-200 border-slate-700/80 px-2 py-0.5">
+                              {getCategoryName(p.category)}
                             </Badge>
                           </td>
 
@@ -2119,14 +2103,13 @@ export default function CantinaPage() {
                   <button
                     key={cat.id}
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
                       selectedCategory === cat.id
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'
                     }`}
                   >
-                    {cat.emoji && <span>{cat.emoji}</span>}
-                    <span>{cat.name}</span>
+                    {cat.name}
                   </button>
                 ))}
               </div>
@@ -2165,16 +2148,14 @@ export default function CantinaPage() {
               <div className="space-y-6">
                 {groupedProducts.map((group) => {
                   const catLabel = getCategoryName(group.category)
-                  const catEmoji = getCategoryEmoji(group.category)
 
                   return (
                     <div key={group.category} className="space-y-2">
                       {/* Cabecera de Categoría */}
                       <div className="flex items-center justify-between px-1">
                         <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 rounded-lg border text-xs font-bold tracking-wider uppercase bg-slate-900 text-emerald-300 border-slate-800 flex items-center gap-1.5 shadow-sm">
-                            <span>{catEmoji}</span>
-                            <span>{catLabel}</span>
+                          <span className="px-2.5 py-1 rounded-lg border text-xs font-bold tracking-wider uppercase bg-slate-900 text-emerald-300 border-slate-800 shadow-sm">
+                            {catLabel}
                           </span>
                           <span className="text-xs text-slate-400 font-medium">
                             ({group.items.length} {group.items.length === 1 ? 'artículo' : 'artículos'})
@@ -2700,7 +2681,7 @@ export default function CantinaPage() {
                 >
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.emoji ? `${c.emoji} ` : ''}{c.name}
+                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -3323,7 +3304,7 @@ export default function CantinaPage() {
                       <option value="ALL">Todas las Categorías (General)</option>
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.emoji ? `${c.emoji} ` : ''}{c.name}
+                          {c.name}
                         </option>
                       ))}
                     </select>
@@ -3495,7 +3476,6 @@ export default function CantinaPage() {
                       >
                         {isEditing ? (
                           <div className="flex items-center gap-2 flex-1">
-                            <span className="text-base shrink-0">{cat.emoji || '🏷️'}</span>
                             <Input
                               value={editingCategoryName}
                               onChange={(e) => setEditingCategoryName(e.target.value)}
@@ -3531,15 +3511,12 @@ export default function CantinaPage() {
                           </div>
                         ) : (
                           <>
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="text-base shrink-0">{cat.emoji || '🏷️'}</span>
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-slate-200 truncate">
-                                  {cat.name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 font-mono">
-                                  {productCount} {productCount === 1 ? 'producto' : 'productos'}
-                                </div>
+                            <div className="min-w-0 pl-1.5">
+                              <div className="text-xs font-bold text-slate-200 truncate">
+                                {cat.name}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {productCount} {productCount === 1 ? 'producto' : 'productos'}
                               </div>
                             </div>
 

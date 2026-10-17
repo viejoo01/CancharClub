@@ -25,6 +25,7 @@ import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } f
 import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
 import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE, type SaaSPlanId } from '@/config/saas-plans'
+import { syncPreapprovalAmountIfNeeded } from '@/actions/saas-billing.actions'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -173,6 +174,13 @@ export async function createCourt(payload: {
     console.warn('[createCourt] Error updating base_slots_plan:', syncErr)
   }
 
+  // Sincronizar cuota en Mercado Pago si el club ya tiene tarjeta vinculada
+  try {
+    syncPreapprovalAmountIfNeeded(effectiveTenantId).catch(syncErr => {
+      console.warn('[createCourt] Error syncing preapproval amount:', syncErr)
+    })
+  } catch {}
+
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/plan')
@@ -296,6 +304,15 @@ export async function updateCourt(courtId: string, payload: Partial<{
       console.warn('[updateCourt] Error updating base_slots_plan:', syncErr)
     }
   }
+
+  // Sincronizar cuota en Mercado Pago si el club ya tiene tarjeta vinculada
+  try {
+    if (court.tenant_id) {
+      syncPreapprovalAmountIfNeeded(court.tenant_id).catch(syncErr => {
+        console.warn('[updateCourt] Error syncing preapproval amount:', syncErr)
+      })
+    }
+  } catch {}
 
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
@@ -431,6 +448,13 @@ export async function deleteCourt(
     } catch (syncErr) {
       console.warn('[deleteCourt] Error syncing base_slots_plan:', syncErr)
     }
+
+    // Sincronizar cuota en Mercado Pago tras eliminar cancha
+    try {
+      syncPreapprovalAmountIfNeeded(tenantId).catch(syncErr => {
+        console.warn('[deleteCourt] Error syncing preapproval amount:', syncErr)
+      })
+    } catch {}
 
     revalidatePath('/dashboard/canchas')
     revalidatePath('/dashboard')
@@ -878,6 +902,13 @@ export async function createPriceRule(payload: {
     console.warn('[createPriceRule] High-water mark notice:', hwmErr)
   }
 
+  // Sincronizar cuota mensual en Mercado Pago con la tarifa de canchas recién cargada
+  try {
+    syncPreapprovalAmountIfNeeded(effectiveTenantId).catch(syncErr => {
+      console.warn('[createPriceRule] Error syncing preapproval amount:', syncErr)
+    })
+  } catch {}
+
   await invalidatePriceRulesCache(effectiveTenantId)
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard/plan')
@@ -1012,6 +1043,13 @@ export async function updatePriceRule(payload: {
     console.warn('[updatePriceRule] High-water mark notice:', hwmErr)
   }
 
+  // Sincronizar cuota mensual en Mercado Pago con la tarifa modificada
+  try {
+    syncPreapprovalAmountIfNeeded(effectiveTenantId).catch(syncErr => {
+      console.warn('[updatePriceRule] Error syncing preapproval amount:', syncErr)
+    })
+  } catch {}
+
   await invalidatePriceRulesCache(effectiveTenantId)
   revalidatePath('/dashboard/precios')
   revalidatePath('/dashboard/plan')
@@ -1053,6 +1091,14 @@ export async function deletePriceRule(ruleId: string, tenantId?: string | null) 
     if (error) {
       return { success: false, error: error.message }
     }
+
+    // Sincronizar cuota mensual en Mercado Pago tras eliminar tarifa
+    try {
+      syncPreapprovalAmountIfNeeded(effectiveTenantId).catch(syncErr => {
+        console.warn('[deletePriceRule] Error syncing preapproval amount:', syncErr)
+      })
+    } catch {}
+
     await invalidatePriceRulesCache(effectiveTenantId)
     revalidatePath('/dashboard/precios')
     revalidatePath('/dashboard/plan')

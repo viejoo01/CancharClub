@@ -15,12 +15,10 @@ import {
   Sparkles,
   ShieldCheck,
   RefreshCw,
-  ExternalLink,
 } from 'lucide-react'
 import { SAAS_PLANS, type SaaSPlanId } from '@/config/saas-plans'
 import { 
   validateAndRegisterCardWithMercadoPago,
-  setupMonthlySubscriptionPreapproval 
 } from '@/actions/saas-billing.actions'
 import {
   isValidLuhn,
@@ -58,7 +56,6 @@ export function PlanActivationModal({
   const [cardCvv, setCardCvv] = useState('')
   const [cardDni, setCardDni] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isOpeningMp, setIsOpeningMp] = useState(false)
 
   // Escuchar eventos globales para abrir este modal si el usuario intenta interactuar con funciones bloqueadas
   useEffect(() => {
@@ -178,26 +175,6 @@ export function PlanActivationModal({
       toast.error('Ocurrió un error al verificar la tarjeta con Mercado Pago')
     } finally {
       setIsSubmitting(false)
-    }
-  }
-
-  const handleOpenMpPortal = async () => {
-    setIsOpeningMp(true)
-    try {
-      const activeTenant = tenantId || '00000000-0000-0000-0000-000000000001'
-      const res = await setupMonthlySubscriptionPreapproval(activeTenant)
-      if (res.success && res.initPoint) {
-        toast.info('Abriendo portal de Mercado Pago Subscriptions...', {
-          description: 'Cargá tu tarjeta en la pasarela segura para activar tu prueba gratis.'
-        })
-        window.location.assign(res.initPoint)
-      } else {
-        toast.error('No se pudo conectar con Mercado Pago. Podés cargar la tarjeta directamente en el formulario superior.')
-      }
-    } catch {
-      toast.error('Error al inicializar la pasarela de Mercado Pago')
-    } finally {
-      setIsOpeningMp(false)
     }
   }
 
@@ -382,6 +359,17 @@ export function PlanActivationModal({
             </div>
           </div>
 
+          {/* Nota de validación técnica y cálculo dinámico */}
+          <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-[11px] text-slate-300 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Protección de Prueba 15 Días Bonificados ($0 Hoy)</span>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Para validar con la red bancaria que la tarjeta está activa, se realiza una micro-validación técnica de $15 que se reintegra en el acto. Tu cuota mensual se calculará automáticamente según las tarifas de tus canchas.
+            </p>
+          </div>
+
           {/* Botón Principal: Validar Tarjeta y Empezar 15 Días Gratis */}
           <button
             type="submit"
@@ -401,28 +389,6 @@ export function PlanActivationModal({
             )}
           </button>
         </form>
-
-        {/* Separador o enlace alternativo a portal de Mercado Pago */}
-        <div className="pt-2 border-t border-slate-800 text-center">
-          <button
-            type="button"
-            onClick={handleOpenMpPortal}
-            disabled={isOpeningMp}
-            className="text-xs text-slate-400 hover:text-emerald-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer py-1"
-          >
-            {isOpeningMp ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Conectando con Mercado Pago...</span>
-              </>
-            ) : (
-              <>
-                <span>¿Preferís cargarla en el portal oficial de Mercado Pago?</span>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-              </>
-            )}
-          </button>
-        </div>
       </DialogContent>
     </Dialog>
   )

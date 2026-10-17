@@ -32,7 +32,6 @@ import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { 
-  setupCardLinkingCheckoutPreference,
   confirmCardSetupFromMercadoPagoPayment,
   confirmPreapprovalSubscriptionFromMercadoPago,
   validateAndRegisterCardWithMercadoPago,
@@ -201,8 +200,6 @@ export default function ClubPlanPage() {
   const isTrial = !planDetails?.trialForfeited && Boolean(planDetails?.isTrial || planDetails?.pricing?.isTrial || planDetails?.subscriptionStatus === 'TRIAL')
   const trialDaysRemaining = planDetails?.trialForfeited ? 0 : (planDetails?.trialDaysRemaining ?? planDetails?.pricing?.trialDaysRemaining ?? 15)
 
-  const [subscribing, setSubscribing] = useState(false)
-
   // Modal de carga de tarjeta Mercado Pago
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
   const [cardNumber, setCardNumber] = useState('')
@@ -307,26 +304,8 @@ export default function ClubPlanPage() {
     }
   }, [tenantId, planDetails?.tenantId])
 
-  const handleSetupAutoDebit = async () => {
-    setSubscribing(true)
-    try {
-      const activeTenant = tenantId || planDetails?.tenantId || '00000000-0000-0000-0000-000000000001'
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.cancharclub.com.ar'
-      const returnUrl = `${origin}/dashboard/plan`
-      const res = await setupCardLinkingCheckoutPreference(activeTenant, returnUrl)
-      if (res.success && res.initPoint) {
-        toast.info('Abriendo app de Mercado Pago...', {
-          description: 'Elegí una de tus tarjetas ya guardadas en Mercado Pago para tu abono mensual.'
-        })
-        window.location.assign(res.initPoint)
-      } else {
-        setShowSubscriptionModal(true)
-      }
-    } catch {
-      toast.error('Error al configurar débito automático')
-    } finally {
-      setSubscribing(false)
-    }
+  const handleSetupAutoDebit = () => {
+    setShowSubscriptionModal(true)
   }
 
   const handleConfirmCardSubscription = async (e: React.FormEvent) => {
@@ -1035,20 +1014,10 @@ export default function ClubPlanPage() {
             {!isAutoDebitActive ? (
               <Button
                 onClick={handleSetupAutoDebit}
-                disabled={subscribing}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-600/20 py-5 cursor-pointer"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-600/20 py-5 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                {subscribing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin mr-1.5" />
-                    Conectando con Mercado Pago...
-                  </>
-                ) : (
-                  <>
-                    <CreditCard className="w-4 h-4 mr-1.5" />
-                    Cargar Tarjeta de Débito / Crédito ($0 hoy)
-                  </>
-                )}
+                <CreditCard className="w-4 h-4 mr-1.5" />
+                <span>Cargar Tarjeta de Débito / Crédito ($0 hoy)</span>
               </Button>
             ) : (
               <div className="space-y-2">
@@ -1149,20 +1118,10 @@ export default function ClubPlanPage() {
             ) : (
               <Button
                 onClick={handleSetupAutoDebit}
-                disabled={subscribing}
-                className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-6 py-6 text-xs shadow-lg shadow-indigo-950/50 gap-2"
+                className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-6 py-6 text-xs shadow-lg shadow-indigo-950/50 flex items-center justify-center gap-2 cursor-pointer"
               >
-                {subscribing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Conectando con Mercado Pago...</span>
-                  </>
-                ) : (
-                  <>
-                    <CreditCard className="w-4 h-4" />
-                    <span>Adherir a Débito Automático</span>
-                  </>
-                )}
+                <CreditCard className="w-4 h-4" />
+                <span>Adherir a Débito Automático</span>
               </Button>
             )}
           </div>

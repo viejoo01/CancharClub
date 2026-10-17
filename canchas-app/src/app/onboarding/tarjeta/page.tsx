@@ -11,7 +11,6 @@ import {
   RefreshCw,
   LogOut,
   Building2,
-  ExternalLink,
   Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,7 +18,6 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import {
-  setupCardLinkingCheckoutPreference,
   confirmCardSetupFromMercadoPagoPayment,
   confirmPreapprovalSubscriptionFromMercadoPago,
   validateAndRegisterCardWithMercadoPago,
@@ -59,7 +57,6 @@ function OnboardingCardContent() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [mpLoading, setMpLoading] = useState(false)
   const [planDetails, setPlanDetails] = useState<ClubPlanDetails | null>(null)
 
   // Campos de la tarjeta
@@ -257,37 +254,6 @@ function OnboardingCardContent() {
     }
   }
 
-  const handleMercadoPagoApp = async () => {
-    if (!planDetails?.tenantId) return
-    setMpLoading(true)
-    try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.cancharclub.com.ar'
-      const returnUrl = `${origin}/onboarding/tarjeta`
-      // Generar preferencia de Checkout Pro para abrir la app oficial de Mercado Pago
-      const res = await setupCardLinkingCheckoutPreference(planDetails.tenantId, returnUrl)
-      if (res.success && res.initPoint) {
-        toast.info('Abriendo app de Mercado Pago...', {
-          description: 'Elegí una de tus tarjetas ya guardadas en Mercado Pago para activar tu club.',
-        })
-        window.location.href = res.initPoint
-      } else if (res.isSimulated) {
-        toast.success('¡Modo de prueba activado!', {
-          description: 'Tu club fue activado con 15 días gratis.'
-        })
-        router.push('/dashboard')
-      } else {
-        toast.error('No se pudo abrir la app de Mercado Pago', {
-          description: res.error || 'Probá ingresando tu tarjeta a continuación.'
-        })
-        setMpLoading(false)
-      }
-    } catch (err) {
-      console.error('Error in handleMercadoPagoApp:', err)
-      toast.error('Ocurrió un error al conectar con Mercado Pago')
-      setMpLoading(false)
-    }
-  }
-
   const handleLogout = async () => {
     await logout()
   }
@@ -403,62 +369,29 @@ function OnboardingCardContent() {
           </div>
         </div>
 
-        {/* Opción 1: Adhesión Automática con Mercado Pago Oficial (Abre App nativa) */}
-        <div className="w-full mb-6 p-5 sm:p-6 rounded-3xl bg-linear-to-r from-sky-950/60 via-slate-900 to-emerald-950/50 border-2 border-sky-500/40 shadow-2xl relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-sky-300 bg-sky-500/20 border border-sky-500/40 px-2.5 py-0.5 rounded-full">
-                  Recomendado
-                </span>
-                <span className="text-sm font-extrabold text-white">
-                  Vincular con tu App de Mercado Pago
-                </span>
+        {/* Tarjeta Visual + Formulario Seguro */}
+        <Card className="w-full bg-slate-900/90 border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl backdrop-blur-md">
+          {/* Encabezado de la Tarjeta */}
+          <div className="mb-6 pb-4 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <CreditCard className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
-                Abrí la app de Mercado Pago en tu celular y elegí una de tus tarjetas ya guardadas, como si fuera una compra. <strong className="text-emerald-400">Hoy pagás $0</strong> (15 días de prueba bonificados) y tu tarjeta queda registrada en tu perfil para los débitos mensuales.
-              </p>
-              <div className="pt-2 flex items-start gap-2 text-[11px] sm:text-xs text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5 max-w-lg">
-                <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  <strong className="text-amber-300">Nota:</strong> Se cobrarán <strong>$15 (quince pesos argentinos)</strong>, que es el pago mínimo propuesto por Mercado Pago para poder vincular la tarjeta, pero esos <strong>$15 (quince pesos argentinos) serán reintegrados de inmediato</strong> a tu cuenta.
-                </span>
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-white">
+                  Vinculación Directa de Tarjeta (Débito o Crédito)
+                </h2>
+                <p className="text-[11px] sm:text-xs text-slate-400">
+                  Procesada de forma cifrada y segura con Mercado Pago
+                </p>
               </div>
             </div>
-
-            <Button
-              type="button"
-              disabled={mpLoading || submitting}
-              onClick={handleMercadoPagoApp}
-              className="h-12 px-5 sm:px-6 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-sky-950/80 shrink-0 gap-2 cursor-pointer transition-all"
-            >
-              {mpLoading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                  <span>Abriendo Mercado Pago...</span>
-                </>
-              ) : (
-                <>
-                  <span>Abrir App de Mercado Pago</span>
-                  <ExternalLink className="w-4 h-4 text-slate-950" />
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full">
+                15 Días Gratis ($0 Hoy)
+              </span>
+            </div>
           </div>
-        </div>
-
-        {/* Separador de Opciones */}
-        <div className="relative w-full my-4 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-800" />
-          </div>
-          <div className="relative bg-slate-950 px-4 text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-            O cargá tu tarjeta directamente abajo
-          </div>
-        </div>
-
-        {/* Tarjeta Visual + Formulario */}
-        <Card className="w-full bg-slate-900/90 border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl backdrop-blur-md">
           {/* Previsualización visual de Tarjeta */}
           <div className="mb-6 relative h-44 sm:h-48 w-full max-w-md mx-auto rounded-2xl p-5 bg-linear-to-tr from-slate-950 via-slate-900 to-indigo-950 border border-indigo-500/40 shadow-2xl shadow-indigo-950/50 flex flex-col justify-between text-white overflow-hidden font-mono select-none">
             <div className="flex items-center justify-between">
@@ -578,7 +511,7 @@ function OnboardingCardContent() {
             </div>
 
             {/* Garantía y Transparencia */}
-            <div className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 text-xs text-slate-300 space-y-1">
+            <div className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 text-xs text-slate-300 space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-emerald-400 text-xs">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 <span>Débito Automático Oficial con Protección de Prueba</span>
@@ -594,6 +527,12 @@ function OnboardingCardContent() {
                   </>
                 )}
               </p>
+              <div className="pt-1.5 flex items-start gap-2 text-[11px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
+                <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="text-amber-300">Validación de tarjeta:</strong> Para verificar con la red bancaria que la tarjeta está activa, Mercado Pago efectúa una validación técnica de <strong>$15</strong> que es <strong>reintegrada en el acto</strong> a tu cuenta.
+                </span>
+              </div>
             </div>
 
             {/* Botón Principal de Envío */}

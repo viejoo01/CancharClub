@@ -108,7 +108,7 @@ export async function getDailyCashReport(
     .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
     .eq('tenant_id', effectiveTenantId)
     .or(`booked_at.ov.[${dayStart},${dayEnd}],created_at.gte.${dayStart},updated_at.gte.${dayStart}`)
-    .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+    .neq('status', 'cancelled')
 
   const entries: DailyCashEntry[] = []
 
@@ -531,7 +531,7 @@ export async function getOccupancyReport(tenantId: string): Promise<OccupancyRep
         .from('bookings')
         .select('booked_at, price_total_cents')
         .eq('tenant_id', effectiveTenantId)
-        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+        .neq('status', 'cancelled')
         .order('created_at', { ascending: false })
         .limit(600),
     ])

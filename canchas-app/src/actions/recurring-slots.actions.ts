@@ -358,7 +358,7 @@ export async function deleteRecurringSlot(
         })
         .eq('tenant_id', targetTenantId)
         .eq('recurring_slot_id', slotId)
-        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+        .neq('status', 'cancelled')
 
       // También cancelar reservas asociadas identificadas por notas
       if (slotCustomerName && slotCourtId) {
@@ -371,7 +371,7 @@ export async function deleteRecurringSlot(
           .eq('tenant_id', targetTenantId)
           .eq('court_id', slotCourtId)
           .ilike('staff_notes', `%ABONO FIJO: ${slotCustomerName}%`)
-          .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+          .neq('status', 'cancelled')
       }
     }
 
@@ -516,7 +516,7 @@ export async function generateMonthlyBookingsForSlot(
         .eq('tenant_id', slot.tenant_id)
         .eq('court_id', slot.court_id)
         .filter('booked_at', 'ov', bookingRange)
-        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+        .neq('status', 'cancelled')
         .limit(1)
         .maybeSingle()
 
@@ -726,7 +726,7 @@ export async function checkAndReleaseOverdueRecurringSlots(
           .select('id, booked_at, staff_notes')
           .eq('tenant_id', tenantId)
           .eq('recurring_slot_id', slot.id)
-          .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+          .neq('status', 'cancelled')
 
         if (bySlotId && bySlotId.length > 0) {
           pendingBookings = bySlotId
@@ -738,7 +738,7 @@ export async function checkAndReleaseOverdueRecurringSlots(
             .eq('tenant_id', tenantId)
             .eq('court_id', slot.court_id)
             .ilike('staff_notes', `%ABONO FIJO%${slot.customer_name}%`)
-            .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+            .neq('status', 'cancelled')
 
           if (byNotes) {
             pendingBookings = byNotes

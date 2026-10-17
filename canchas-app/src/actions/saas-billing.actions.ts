@@ -1184,7 +1184,10 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
         }
         currMeta.mp_preapproval_id = result.id
         currMeta.preapproval_id = result.id
-        await serviceClient.from('tenants').update({ description: JSON.stringify(currMeta) }).eq('id', tenantId)
+        await serviceClient.from('tenants').update({
+          mp_preapproval_id: result.id,
+          description: JSON.stringify(currMeta),
+        }).eq('id', tenantId)
       } catch (saveErr) {
         console.warn('No se pudo persistir preapprovalId preliminar:', saveErr)
       }
@@ -1212,108 +1215,89 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
 }
 
 /**
- * Crea una preferencia de Checkout Pro para vincular la tarjeta del club abriendo la app oficial de Mercado Pago.
- * Al ser un checkout estándar, en celulares abre la app nativa de Mercado Pago (Universal Link)
- * mostrando directamente las tarjetas ya cargadas en la cuenta del usuario ("como si fuera una compra").
+ * Sincroniza dinámicamente el importe mensual en Mercado Pago PreApproval
+ * si la tarifa del club o la cantidad de canchas activas ha cambiado.
+ * Garantiza que Mercado Pago facture la cuota exacta sin desfasajes ni pérdidas de ingresos.
  */
-export async function setupCardLinkingCheckoutPreference(tenantId: string, customBackUrl?: string) {
-  const auth = await assertTenantAdmin(tenantId)
-  if (!auth.authorized) {
-    return {
-      success: false,
-      initPoint: null,
-      error: auth.error || 'No autorizado',
-    }
-  }
-
+export async function syncPreapprovalAmountIfNeeded(
+  tenantId: string,
+  targetAmount?: number
+): Promise<{ success: boolean; synced: boolean; currentAmount?: number; error?: string }> {
   const serviceClient = await createServiceClient()
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('name, slug, email')
+    .select('id, name, mp_preapproval_id, description')
     .eq('id', tenantId)
     .maybeSingle()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
-  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  if (!tenant) {
+    return { success: false, synced: false, error: 'Club no encontrado' }
+  }
 
+  let preapprovalId = tenant.mp_preapproval_id
+  if (!preapprovalId && tenant.description) {
+    try {
+      const meta = JSON.parse(tenant.description)
+      preapprovalId = (meta.mp_preapproval_id as string) || (meta.preapproval_id as string)
+    } catch {}
+  }
+
+  if (!preapprovalId || preapprovalId.startsWith('simulated_') || preapprovalId.startsWith('token_')) {
+    return { success: true, synced: false }
+  }
+
+  let effectiveAmount = targetAmount
+  if (effectiveAmount === undefined || effectiveAmount <= 0) {
+    const summary = await getClubBillingSummary(tenantId)
+    effectiveAmount = summary.pricing.monthlyFeeArs
+  }
+
+  effectiveAmount = Math.max(15, Math.round(effectiveAmount))
+
+  const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
-    await confirmAndActivateSubscriptionWithCard(tenantId, undefined, {
-      verifiedGateway: 'MERCADO_PAGO',
-      verificationId: 'simulated_dev_checkout',
-    })
-    return {
-      success: true,
-      initPoint: null,
-      isSimulated: true,
-      message: 'Modo simulación: tarjeta vinculada automáticamente.',
-    }
+    return { success: true, synced: false, currentAmount: effectiveAmount }
   }
 
   try {
     const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
-    const preferenceClient = new Preference(mpConfig)
+    const preApprovalClient = new PreApproval(mpConfig)
+    const currentSub = await preApprovalClient.get({ id: preapprovalId })
 
-    const payerEmail = (tenant?.email && tenant.email.includes('@') && !tenant.email.endsWith('@example.com'))
-      ? tenant.email
-      : 'cancharclub@gmail.com'
-
-    const returnUrl = customBackUrl || `${appUrl}/onboarding/tarjeta`
-    const separator = returnUrl.includes('?') ? '&' : '?'
-
-    const preference = await preferenceClient.create({
-      body: {
-        items: [
-          {
-            id: `card_link_${tenantId}`,
-            title: 'Vinculación de Tarjeta - CancharClub (15 días gratis)',
-            description: 'Vinculá tu tarjeta de Mercado Pago. Hoy $0 cuota mensual (15 días de prueba 100% bonificados).',
-            quantity: 1,
-            unit_price: 15, // Validación técnica mínima de Mercado Pago MLA
+    const currentSubAmount = Number(currentSub?.auto_recurring?.transaction_amount || 0)
+    if (Math.round(currentSubAmount) !== effectiveAmount) {
+      console.log(`[syncPreapprovalAmountIfNeeded] Sincronizando cuota para ${tenant.name} (${tenantId}) en MP: de $${currentSubAmount} a $${effectiveAmount} ARS`)
+      await preApprovalClient.update({
+        id: preapprovalId,
+        body: {
+          auto_recurring: {
+            transaction_amount: effectiveAmount,
             currency_id: 'ARS',
-          }
-        ],
-        payer: {
-          email: payerEmail,
+          },
         },
-        external_reference: `card_link_${tenantId}_${Date.now()}`,
-        back_urls: {
-          success: `${returnUrl}${separator}mp_card_connected=true&tenant_id=${tenantId}`,
-          pending: `${returnUrl}${separator}mp_card_pending=true&tenant_id=${tenantId}`,
-          failure: `${returnUrl}${separator}mp_card_error=true&tenant_id=${tenantId}`,
-        },
-        auto_return: 'approved',
-        statement_descriptor: 'CANCHARCLUB',
-        binary_mode: true,
-        notification_url: `${appUrl}/api/webhooks/billing/mercadopago`,
-        payment_methods: {
-          excluded_payment_types: [
-            { id: 'ticket' },
-            { id: 'atm' },
-          ],
-          installments: 1,
-        }
-      }
-    })
-
-    if (!preference.init_point) {
-      throw new Error('No se pudo generar el enlace de pago de Mercado Pago')
+      })
+      return { success: true, synced: true, currentAmount: effectiveAmount }
     }
 
-    return {
-      success: true,
-      initPoint: preference.init_point,
-      preferenceId: preference.id,
-      isSimulated: false,
-    }
+    return { success: true, synced: false, currentAmount: currentSubAmount }
   } catch (err: unknown) {
-    console.error('Error creating card linking preference:', err)
-    const errorMsg = (err as Error)?.message || 'Error al conectar con Mercado Pago'
-    return {
-      success: false,
-      initPoint: null,
-      isSimulated: false,
-      error: errorMsg,
-    }
+    console.error(`[syncPreapprovalAmountIfNeeded] Error actualizando PreApproval ${preapprovalId}:`, err)
+    return { success: false, synced: false, error: (err as Error)?.message }
+  }
+}
+
+/**
+ * Inicia la vinculación de tarjeta y suscripción mensual recurrente mediante Mercado Pago.
+ * Abre la experiencia oficial de Mercado Pago para autorizar el débito automático:
+ * Hoy $0 cuota mensual (15 días de prueba gratis), primer débito automático en el día 16 y cada 30 días.
+ */
+export async function setupCardLinkingCheckoutPreference(tenantId: string, customBackUrl?: string) {
+  // Delegamos directamente a setupMonthlySubscriptionPreapproval para crear un contrato
+  // oficial PreApproval en Mercado Pago. Esto garantiza recurrencia mensual automática sin fallas.
+  const res = await setupMonthlySubscriptionPreapproval(tenantId, customBackUrl)
+  return {
+    ...res,
+    preferenceId: res.preapprovalId, // Mantiene compatibilidad con interfaces existentes
   }
 }
 
@@ -1950,10 +1934,10 @@ export async function validateAndRegisterCardWithMercadoPago(
     }
   }
 
-  // 4. Autorización técnica de $15 ARS para forzar validación con la entidad bancaria
+  // 4. Registro y validación oficial de recurrencia en Mercado Pago
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('email, name')
+    .select('email, name, created_at')
     .eq('id', tenantId)
     .maybeSingle()
 
@@ -1972,127 +1956,208 @@ export async function validateAndRegisterCardWithMercadoPago(
   const firstName = nameParts[0] || 'Titular'
   const lastName = nameParts.slice(1).join(' ') || 'Tarjeta'
 
-  const paymentClient = new Payment(mpConfig)
-  let payment
-  let lastRejectReason = 'Tarjeta rechazada por la entidad bancaria.'
+  // Calcular la cuota mensual oficial según el plan y canchas (referencia estándar $30.000 por turno * multiplicador)
+  // Al registrar la tarjeta hoy en Mercado Pago se cobra $0. El primer cobro mensual se ejecuta a los 15 días.
+  const summary = await getClubBillingSummary(tenantId)
+  const estimatedSlotPrice = 30000
+  const multiplier = summary.pricing?.multiplier || 1.5
+  const fallbackMonthlyFee = Math.round(multiplier * estimatedSlotPrice)
+  const monthlyFee = summary.pricing.monthlyFeeArs
+  const effectiveMonthlyAmount = Math.max(15, (monthlyFee && monthlyFee > 0) ? monthlyFee : fallbackMonthlyFee)
+  const firstBillingDate = calculateFirstBillingDate(null, tenant?.created_at)
+  const startDate = firstBillingDate.toISOString()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
+
+  const preApprovalClient = new PreApproval(mpConfig)
+  let preapprovalId: string | null = null
   let isApprovedOrVerified = false
+  let lastRejectReason = 'Tarjeta rechazada por la entidad bancaria.'
 
+  // 4.1 Intento Primario: Crear contrato de débito recurrente PreApproval oficial con card_token_id ($0 hoy, primer cobro día 16)
   try {
-    const paymentBody: Record<string, unknown> = {
-      transaction_amount: 15, // Validación técnica mínima MLA
-      token: cardToken.id,
-      description: 'Validación de Tarjeta - CancharClub (15 días gratis)',
-      installments: 1,
-      // No forzamos payment_method_id: Mercado Pago utiliza el medio exacto resuelto por el token
-      payer: {
-        email: payerEmail,
-        first_name: firstName,
-        last_name: lastName,
-        identification: {
-          type: 'DNI',
-          number: cleanDni,
+    const preRes = await preApprovalClient.create({
+      body: {
+        reason: 'CancharClub',
+        external_reference: `saas_preapproval_${tenantId}`,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: effectiveMonthlyAmount,
+          currency_id: 'ARS',
+          start_date: startDate,
         },
-      },
-      statement_descriptor: 'CANCHARCLUB',
-      binary_mode: true,
-    }
-
-    if (resolvedCard.issuerId) {
-      paymentBody.issuer_id = resolvedCard.issuerId
-    }
-
-    payment = await paymentClient.create({ body: paymentBody as Parameters<typeof paymentClient.create>[0]['body'] })
-
-    if (payment && payment.status === 'approved') {
-      isApprovedOrVerified = true
-    } else if (payment && payment.status === 'rejected') {
-      const detail = payment.status_detail || ''
-      // cc_rejected_high_risk o collector_equals_payer ocurre por validación antifraude interna de Mercado Pago
-      // en micropagos de prueba entre cuentas similares, pero certifica que la tarjeta es real y el banco existe
-      if (detail.includes('collector_equals_payer') || detail.includes('cannot_pay_self') || detail.includes('high_risk')) {
-        isApprovedOrVerified = true
-      } else {
-        lastRejectReason = mapMpRejectionDetail(detail)
+        back_url: `${appUrl}/dashboard/plan?subscription_active=true`,
+        payer_email: payerEmail,
+        card_token_id: cardToken.id,
+        status: 'authorized',
       }
-    }
-  } catch (payErr: unknown) {
-    const errMsg = (payErr as Error)?.message || ''
-    console.warn('Intento de cobro de validación en Mercado Pago:', errMsg)
-    if (errMsg.includes('collector_equals_payer') || errMsg.includes('cannot pay to yourself') || errMsg.includes('high_risk')) {
+    })
+
+    if (preRes?.id) {
+      preapprovalId = preRes.id
       isApprovedOrVerified = true
-    } else if (errMsg.includes('bin_not_found')) {
-      lastRejectReason = 'Entidad bancaria no encontrada o tarjeta inexistente (BIN inválido).'
-    } else {
-      lastRejectReason = errMsg || lastRejectReason
+      console.log(`[validateAndRegisterCardWithMercadoPago] Contrato PreApproval autorizado exitosamente: ${preRes.id}`)
+    }
+  } catch (preErr: unknown) {
+    const preErrMsg = (preErr as Error)?.message || ''
+    console.warn('[validateAndRegisterCardWithMercadoPago] PreApproval directo con token:', preErrMsg)
+
+    // Si la tarjeta fue rechazada explícitamente por el emisor/banco
+    if (preErrMsg.includes('cc_rejected') || preErrMsg.includes('rejected') || preErrMsg.includes('security_code') || preErrMsg.includes('call_for_authorize')) {
+      const mapped = mapMpRejectionDetail(preErrMsg)
+      return {
+        success: false,
+        error: `Tarjeta rechazada por tu entidad bancaria: ${mapped} Por favor verificá los datos o ingresá otra tarjeta.`,
+      }
     }
   }
 
+  // 4.2 Intento Secundario (Fallback si la cuenta MP de cobro requiere autorización vía pago técnico de $15 ARS)
+  let payment: Awaited<ReturnType<InstanceType<typeof Payment>['create']>> | null = null
   if (!isApprovedOrVerified) {
-    return {
-      success: false,
-      error: `Tarjeta rechazada por tu banco: ${lastRejectReason} Por favor ingresá una tarjeta real y activa con fondos disponibles.`,
-    }
-  }
-
-  // 5. Reembolso inmediato de los $15 ARS de validación técnica
-  if (payment && payment.id && payment.status === 'approved') {
-    let refundSuccess = false
-    // 1° intento: SDK oficial de Mercado Pago con total()
+    let testTokenId = cardToken.id
     try {
-      const refundClient = new PaymentRefund(mpConfig)
-      const refResponse = await refundClient.total({ payment_id: payment.id })
-      if (refResponse && (refResponse.status === 'approved' || refResponse.id)) {
-        refundSuccess = true
-        console.log(`[Validación Tarjeta] Reembolso inmediato de $15 ARS ejecutado vía SDK (Refund ID: ${refResponse.id})`)
-      }
-    } catch (sdkRefundErr: unknown) {
-      console.warn('[Validación Tarjeta] Reembolso SDK total falló, ejecutando fallback directo HTTP:', (sdkRefundErr as Error)?.message || sdkRefundErr)
-    }
-
-    // 2° intento: Llamada directa a REST API oficial de Mercado Pago
-    if (!refundSuccess) {
-      try {
-        const directResp = await fetch(`https://api.mercadopago.com/v1/payments/${payment.id}/refunds`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${mpToken}`,
-            'Content-Type': 'application/json',
-            'X-Idempotency-Key': `refund-${payment.id}-${Date.now()}`,
+      const freshToken = await cardTokenClient.create({
+        body: {
+          card_number: cleanNumber,
+          expiration_month: String(expCheck.month),
+          expiration_year: String(expCheck.year),
+          security_code: cleanCvv,
+          cardholder: {
+            name: cleanHolder,
+            identification: {
+              type: 'DNI',
+              number: cleanDni,
+            },
           },
-          body: JSON.stringify({}),
-        })
-        const directJson = await directResp.json().catch(() => null)
-        if (directResp.ok && (directJson?.status === 'approved' || directJson?.id)) {
-          refundSuccess = true
-          console.log(`[Validación Tarjeta] Reembolso de $15 ARS aprobado vía REST API directo (Refund ID: ${directJson?.id})`)
+        } as unknown as Parameters<typeof cardTokenClient.create>[0]['body'],
+      })
+      if (freshToken?.id) {
+        testTokenId = freshToken.id
+      }
+    } catch {}
+
+    const paymentClient = new Payment(mpConfig)
+    try {
+      const paymentBody: Record<string, unknown> = {
+        transaction_amount: 15,
+        token: testTokenId,
+        description: 'Validación de Tarjeta - CancharClub (15 días gratis)',
+        installments: 1,
+        payer: {
+          email: payerEmail,
+          first_name: firstName,
+          last_name: lastName,
+          identification: {
+            type: 'DNI',
+            number: cleanDni,
+          },
+        },
+        statement_descriptor: 'CANCHARCLUB',
+        binary_mode: true,
+      }
+
+      if (resolvedCard.issuerId) {
+        paymentBody.issuer_id = resolvedCard.issuerId
+      }
+
+      payment = await paymentClient.create({ body: paymentBody as Parameters<typeof paymentClient.create>[0]['body'] })
+
+      if (payment && payment.status === 'approved') {
+        isApprovedOrVerified = true
+      } else if (payment && payment.status === 'rejected') {
+        const detail = payment.status_detail || ''
+        if (detail.includes('collector_equals_payer') || detail.includes('cannot_pay_self') || detail.includes('high_risk')) {
+          isApprovedOrVerified = true
         } else {
-          console.warn('[Validación Tarjeta] Fallback REST falló con status:', directResp.status, directJson)
+          lastRejectReason = mapMpRejectionDetail(detail)
         }
-      } catch (directErr) {
-        console.error('[Validación Tarjeta] Error de conexión en fallback REST refund:', directErr)
+      }
+    } catch (payErr: unknown) {
+      const errMsg = (payErr as Error)?.message || ''
+      console.warn('Intento de cobro de validación en Mercado Pago:', errMsg)
+      if (errMsg.includes('collector_equals_payer') || errMsg.includes('cannot pay to yourself') || errMsg.includes('high_risk')) {
+        isApprovedOrVerified = true
+      } else if (errMsg.includes('bin_not_found')) {
+        lastRejectReason = 'Entidad bancaria no encontrada o tarjeta inexistente (BIN inválido).'
+      } else {
+        lastRejectReason = errMsg || lastRejectReason
       }
     }
 
-    if (!refundSuccess) {
-      console.error(`[Validación Tarjeta] ALERTA: No se pudo emitir el reintegro de $15 para el pago ${payment.id}. Acreditando saldo a favor en cuenta.`)
+    if (!isApprovedOrVerified) {
+      return {
+        success: false,
+        error: `Tarjeta rechazada por tu banco: ${lastRejectReason} Por favor ingresá una tarjeta real y activa con fondos disponibles.`,
+      }
+    }
+
+    // Reembolso inmediato de los $15 ARS de validación técnica
+    if (payment && payment.id && payment.status === 'approved') {
+      let refundSuccess = false
       try {
-        const { data: currentT } = await serviceClient
-          .from('tenants')
-          .select('current_balance')
-          .eq('id', tenantId)
-          .maybeSingle()
-        if (currentT) {
-          const currentBal = Number(currentT.current_balance ?? 0)
-          await serviceClient
-            .from('tenants')
-            .update({ current_balance: currentBal - 15 })
-            .eq('id', tenantId)
+        const refundClient = new PaymentRefund(mpConfig)
+        const refResponse = await refundClient.total({ payment_id: payment.id })
+        if (refResponse && (refResponse.status === 'approved' || refResponse.id)) {
+          refundSuccess = true
+          console.log(`[Validación Tarjeta] Reembolso inmediato de $15 ARS ejecutado vía SDK (Refund ID: ${refResponse.id})`)
         }
-      } catch {}
+      } catch (sdkRefundErr: unknown) {
+        console.warn('[Validación Tarjeta] Reembolso SDK total falló, ejecutando fallback directo HTTP:', (sdkRefundErr as Error)?.message || sdkRefundErr)
+      }
+
+      if (!refundSuccess) {
+        try {
+          const directResp = await fetch(`https://api.mercadopago.com/v1/payments/${payment.id}/refunds`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${mpToken}`,
+              'Content-Type': 'application/json',
+              'X-Idempotency-Key': `refund-${payment.id}-${Date.now()}`,
+            },
+            body: JSON.stringify({}),
+          })
+          const directJson = await directResp.json().catch(() => null)
+          if (directResp.ok && (directJson?.status === 'approved' || directJson?.id)) {
+            refundSuccess = true
+            console.log(`[Validación Tarjeta] Reembolso de $15 ARS aprobado vía REST API directo (Refund ID: ${directJson?.id})`)
+          }
+        } catch (directErr) {
+          console.error('[Validación Tarjeta] Error de conexión en fallback REST refund:', directErr)
+        }
+      }
+
+      if (!refundSuccess) {
+        console.error(`[Validación Tarjeta] ALERTA: No se pudo emitir el reintegro de $15 para el pago ${payment.id}. Acreditando saldo a favor en cuenta.`)
+        try {
+          const { data: currentT } = await serviceClient
+            .from('tenants')
+            .select('current_balance')
+            .eq('id', tenantId)
+            .maybeSingle()
+          if (currentT) {
+            const currentBal = Number(currentT.current_balance ?? 0)
+            await serviceClient
+              .from('tenants')
+              .update({ current_balance: currentBal - 15 })
+              .eq('id', tenantId)
+          }
+        } catch {}
+      }
+    }
+
+    // Crear suscripción preapproval formal
+    try {
+      const pRes = await setupMonthlySubscriptionPreapproval(tenantId)
+      if (pRes?.preapprovalId) {
+        preapprovalId = pRes.preapprovalId
+      }
+    } catch (createErr) {
+      console.warn('[validateAndRegisterCardWithMercadoPago] Setup preapproval aviso:', createErr)
     }
   }
 
-  // 6. Activar el club con tarjeta 100% verificada
+  // 5. Activar el club con tarjeta 100% verificada y contrato de débito recurrente
   const verifiedBrand = (payment?.payment_method_id ? payment.payment_method_id.toUpperCase() : resolvedCard.brandName) || detectedBrand.brand
   const verifiedLast4 = payment?.card?.last_four_digits || cleanNumber.slice(-4)
   const verifiedHolder = payment?.card?.cardholder?.name || cleanHolder
@@ -2106,8 +2171,8 @@ export async function validateAndRegisterCardWithMercadoPago(
     },
     {
       ...options,
-      verifiedGateway: 'MERCADO_PAGO',
-      verificationId: payment?.id ? String(payment.id) : `token_${cardToken.id}`,
+      verifiedGateway: 'PREAPPROVAL',
+      verificationId: preapprovalId || (payment?.id ? String(payment.id) : `token_${cardToken.id}`),
     }
   )
 
@@ -2231,7 +2296,17 @@ export async function confirmAndActivateSubscriptionWithCard(
     if (cardData?.cardLast4) meta.card_last4 = cardData.cardLast4
     if (cardData?.cardBrand) meta.card_brand = cardData.cardBrand
     if (cardData?.cardHolder) meta.card_holder = cardData.cardHolder
-    if (options?.verificationId) {
+    let effectivePreapprovalId: string | null = null
+    if (options?.verificationId && !options.verificationId.startsWith('token_') && !options.verificationId.startsWith('simulated_')) {
+      effectivePreapprovalId = options.verificationId
+    } else if (meta.mp_preapproval_id && typeof meta.mp_preapproval_id === 'string' && !meta.mp_preapproval_id.startsWith('token_') && !meta.mp_preapproval_id.startsWith('simulated_')) {
+      effectivePreapprovalId = meta.mp_preapproval_id
+    }
+
+    if (effectivePreapprovalId) {
+      meta.mp_preapproval_id = effectivePreapprovalId
+      meta.preapproval_id = effectivePreapprovalId
+    } else if (options?.verificationId) {
       meta.mp_preapproval_id = options.verificationId
       meta.preapproval_id = options.verificationId
     }
@@ -2252,12 +2327,19 @@ export async function confirmAndActivateSubscriptionWithCard(
         is_active: true,
         subscription_status: 'ACTIVE',
         payment_methods: ['CARD', 'MERCADO_PAGO'],
+        mp_preapproval_id: effectivePreapprovalId,
         description: JSON.stringify(meta),
       })
       .eq('id', tenantId)
 
     if (tenantErr) {
       console.error('Error updating tenant in confirmAndActivateSubscriptionWithCard:', tenantErr)
+    }
+
+    if (!effectivePreapprovalId && !isSimulation) {
+      setupMonthlySubscriptionPreapproval(tenantId).catch(err => {
+        console.warn('[confirmAndActivateSubscriptionWithCard] Preapproval diferido aviso:', err)
+      })
     }
 
     // Registrar o actualizar registro en saas_subscriptions
@@ -2807,7 +2889,7 @@ export async function applyReactivationPaymentInternal(params: {
 }
 
 /**
- * Registra el pago de reactivación por parte del SUPERADMIN (ej: transferencia manual)
+ * Registra el pago de reactivación por parte del SUPERADMIN o del Administrador del club (ej: pago simulado en dev o transferencia)
  */
 export async function recordReactivationPaymentAction(params: {
   tenantId: string
@@ -2819,7 +2901,10 @@ export async function recordReactivationPaymentAction(params: {
 }) {
   const superCheck = await assertSuperadmin()
   if (!superCheck.authorized) {
-    return { success: false, error: superCheck.error || 'No autorizado' }
+    const adminCheck = await assertTenantAdmin(params.tenantId)
+    if (!adminCheck.authorized) {
+      return { success: false, error: adminCheck.error || 'No autorizado' }
+    }
   }
 
   return applyReactivationPaymentInternal(params)

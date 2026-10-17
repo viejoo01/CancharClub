@@ -31,7 +31,9 @@ import {
   History,
   Phone,
   Truck,
-  Save
+  Save,
+  Tags,
+  Settings2
 } from 'lucide-react'
 import { Card, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -61,10 +63,13 @@ import {
   deleteProduct,
   getCantinaSuppliers,
   saveCantinaSuppliers,
+  getCantinaCategories,
+  saveCantinaCategories,
   type CourtOrder,
   type OrderStatus,
   type CantinaPaymentMethod,
   type CantinaSupplier,
+  type CantinaCategory,
 } from '@/actions/cantina.actions'
 import {
   getCustomerAccounts,
@@ -73,7 +78,11 @@ import {
   type CustomerAccount,
 } from '@/actions/cuenta-corriente.actions'
 import { buildDebtWhatsAppReminder } from '@/lib/cuenta-corriente-utils'
-import { type CantinaProduct, DEFAULT_CANTINA_SUPPLIERS } from '@/config/cantina-data'
+import { 
+  type CantinaProduct, 
+  DEFAULT_CANTINA_SUPPLIERS,
+  DEFAULT_CANTINA_CATEGORIES 
+} from '@/config/cantina-data'
 import { useTenantId, useTenantSlug, useUserRole } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 import { getTenantClubInfo } from '@/actions/club.actions'
@@ -84,6 +93,7 @@ export type Product = CantinaProduct
 // Cache en memoria a nivel módulo para apertura instantánea (0ms)
 const cantinaProductsClientCache: { current: CantinaProduct[] } = { current: [] }
 const cantinaSuppliersClientCache: { current: CantinaSupplier[] } = { current: DEFAULT_CANTINA_SUPPLIERS }
+const cantinaCategoriesClientCache: { current: CantinaCategory[] } = { current: DEFAULT_CANTINA_CATEGORIES }
 const cantinaAccountsClientCache: { current: CustomerAccount[] } = { current: [] }
 
 // Singleton reutilizable para el contexto de audio (previene memory leaks y bloqueos del navegador)
@@ -181,6 +191,10 @@ export default function CantinaPage() {
 
   // Catálogo de Productos y Estado de Inventario
   const [products, setProducts] = useState<CantinaProduct[]>(() => cantinaProductsClientCache.current)
+  const productsRef = useRef(products)
+  useEffect(() => {
+    productsRef.current = products
+  }, [products])
   const [, setProductsLoading] = useState(false)
 
   // Modales y Control de Inventario
@@ -193,7 +207,7 @@ export default function CantinaPage() {
   const [editingProduct, setEditingProduct] = useState<CantinaProduct | null>(null)
   const [productForm, setProductForm] = useState<{
     name: string
-    category: 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
+    category: string
     price: number
     stock: number
   }>({
@@ -320,6 +334,14 @@ export default function CantinaPage() {
   const [editingPhoneSupplierId, setEditingPhoneSupplierId] = useState<string | null>(null)
   const [quickPhoneInput, setQuickPhoneInput] = useState<string>('')
 
+  // Categorías de Cantina
+  const [categories, setCategories] = useState<CantinaCategory[]>(() => cantinaCategoriesClientCache.current)
+  const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
+  const [editingCategoryName, setEditingCategoryName] = useState('')
+  const [savingCategories, setSavingCategories] = useState(false)
+
   // Sincronizar caches en memoria del cliente para navegación instantánea (0ms)
   useEffect(() => {
     if (products.length > 0) cantinaProductsClientCache.current = products
@@ -330,6 +352,10 @@ export default function CantinaPage() {
   }, [suppliers])
 
   useEffect(() => {
+    if (categories.length > 0) cantinaCategoriesClientCache.current = categories
+  }, [categories])
+
+  useEffect(() => {
     if (accounts.length > 0) cantinaAccountsClientCache.current = accounts
   }, [accounts])
 
@@ -338,20 +364,179 @@ export default function CantinaPage() {
     try {
       const data = await getCantinaSuppliers(tenantId)
       setSuppliers(data || DEFAULT_CANTINA_SUPPLIERS)
-      setSupplierFormList(data || DEFAULT_CANTINA_SUPPLIERS)
     } catch (err) {
       console.warn('[loadSuppliers] Error:', err)
     }
   }, [tenantId])
 
+  const loadCategories = useCallback(async () => {
+    if (!tenantId) return
+    try {
+      const data = await getCantinaCategories(tenantId)
+      if (data && data.length > 0) {
+        setCategories(data)
+      } else {
+        setCategories(DEFAULT_CANTINA_CATEGORIES)
+      }
+    } catch (err) {
+      console.warn('[loadCategories] Error:', err)
+    }
+  }, [tenantId])
+
+  const getCategoryName = useCallback((catIdOrName: string) => {
+    if (!catIdOrName) return 'Varios'
+    const match = categories.find(c => c.id === catIdOrName || c.name.toLowerCase() === catIdOrName.toLowerCase())
+    if (match) return match.name
+    if (catIdOrName === 'BEBIDAS') return 'Bebidas'
+    if (catIdOrName === 'EQUIPAMIENTO') return 'Equipamiento'
+    if (catIdOrName === 'SNACKS') return 'Snacks'
+    if (catIdOrName === 'ALL') return 'Todas'
+    return catIdOrName
+  }, [categories])
+
+  const getCategoryEmoji = useCallback((catIdOrName: string) => {
+    const match = categories.find(c => c.id === catIdOrName || c.name.toLowerCase() === catIdOrName.toLowerCase())
+    if (match?.emoji) return match.emoji
+    if (catIdOrName === 'BEBIDAS') return '🥤'
+    if (catIdOrName === 'EQUIPAMIENTO') return '🎾'
+    if (catIdOrName === 'SNACKS') return '🍿'
+    return '🏷️'
+  }, [categories])
+
+  const openCategoriesModal = () => {
+    setNewCategoryName('')
+    setEditingCategoryId(null)
+    setEditingCategoryName('')
+    setIsCategoriesModalOpen(true)
+  }
+
+  const handleCreateCategory = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) {
+      toast.error('Ingresá el nombre de la categoría')
+      return
+    }
+
+    if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error('Ya existe una categoría con ese nombre')
+      return
+    }
+
+    const emojis = ['🥤', '🍿', '🎾', '🥪', '🍺', '🍫', '☕', '🍕', '🍦', '🧊', '👕', '🏷️']
+    const existingEmojis = new Set(categories.map(c => c.emoji))
+    const availableEmoji = emojis.find(em => !existingEmojis.has(em)) || '🏷️'
+
+    const slugId = trimmed
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '_')
+      .replace(/^_+|_+$/g, '') || `CAT_${Date.now()}`
+
+    const newCat: CantinaCategory = {
+      id: slugId,
+      name: trimmed,
+      emoji: availableEmoji,
+    }
+
+    const updated = [...categories, newCat]
+    setCategories(updated)
+    setNewCategoryName('')
+
+    if (tenantId) {
+      setSavingCategories(true)
+      try {
+        const res = await saveCantinaCategories(tenantId, updated)
+        if (!res.success) throw new Error(res.error)
+        toast.success(`¡Categoría "${trimmed}" creada correctamente!`)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al guardar categoría'
+        toast.error(msg)
+        loadCategories()
+      } finally {
+        setSavingCategories(false)
+      }
+    }
+  }
+
+  const handleStartEditCategory = (cat: CantinaCategory) => {
+    setEditingCategoryId(cat.id)
+    setEditingCategoryName(cat.name)
+  }
+
+  const handleSaveEditCategory = async (catId: string) => {
+    const trimmed = editingCategoryName.trim()
+    if (!trimmed) {
+      toast.error('El nombre no puede estar vacío')
+      return
+    }
+
+    if (categories.some(c => c.id !== catId && c.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error('Ya existe otra categoría con ese nombre')
+      return
+    }
+
+    const updated = categories.map(c => c.id === catId ? { ...c, name: trimmed } : c)
+    setCategories(updated)
+    setEditingCategoryId(null)
+    setEditingCategoryName('')
+
+    if (tenantId) {
+      setSavingCategories(true)
+      try {
+        const res = await saveCantinaCategories(tenantId, updated)
+        if (!res.success) throw new Error(res.error)
+        toast.success('¡Categoría renombrada!')
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al renombrar categoría'
+        toast.error(msg)
+        loadCategories()
+      } finally {
+        setSavingCategories(false)
+      }
+    }
+  }
+
+  const handleDeleteCategory = async (cat: CantinaCategory) => {
+    const count = products.filter(p => p.category === cat.id || p.category === cat.name).length
+    if (count > 0) {
+      toast.error(`No podés eliminar "${cat.name}" porque tiene ${count} ${count === 1 ? 'producto asociado' : 'productos asociados'}. Reasigna o elimina los productos primero.`)
+      return
+    }
+
+    if (!confirm(`¿Estás seguro de eliminar la categoría "${cat.name}"?`)) {
+      return
+    }
+
+    const updated = categories.filter(c => c.id !== cat.id)
+    setCategories(updated)
+
+    if (tenantId) {
+      setSavingCategories(true)
+      try {
+        const res = await saveCantinaCategories(tenantId, updated)
+        if (!res.success) throw new Error(res.error)
+        toast.success(`Categoría "${cat.name}" eliminada`)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error al eliminar categoría'
+        toast.error(msg)
+        loadCategories()
+      } finally {
+        setSavingCategories(false)
+      }
+    }
+  }
+
   const handleSaveSuppliers = async (updatedList: CantinaSupplier[]) => {
     if (!tenantId) return
     setSavingSuppliers(true)
     try {
-      setSuppliers(updatedList)
-      setSupplierFormList(updatedList)
       const res = await saveCantinaSuppliers(tenantId, updatedList)
       if (!res.success) throw new Error(res.error)
+      const saved = res.suppliers || updatedList
+      setSuppliers(saved)
+      setSupplierFormList(saved.map(s => ({ ...s })))
       toast.success('¡Proveedores guardados correctamente!')
       setIsSuppliersModalOpen(false)
     } catch (err: unknown) {
@@ -366,7 +551,7 @@ export default function CantinaPage() {
   const handleQuickSaveSupplierPhone = async (supplierId: string, newPhone: string) => {
     const updated = suppliers.map(s => s.id === supplierId ? { ...s, phone: newPhone.trim() } : s)
     setSuppliers(updated)
-    setSupplierFormList(updated)
+    setSupplierFormList(updated.map(s => ({ ...s })))
     setEditingPhoneSupplierId(null)
     setQuickPhoneInput('')
     if (tenantId) {
@@ -377,6 +562,12 @@ export default function CantinaPage() {
         toast.error('Error al guardar el número')
       }
     }
+  }
+
+  const openSuppliersModal = () => {
+    const list = suppliers.length > 0 ? suppliers : DEFAULT_CANTINA_SUPPLIERS
+    setSupplierFormList(list.map(s => ({ ...s })))
+    setIsSuppliersModalOpen(true)
   }
 
   // Carga de Productos desde Supabase
@@ -454,7 +645,7 @@ export default function CantinaPage() {
     setEditingProduct(null)
     setProductForm({
       name: '',
-      category: 'BEBIDAS',
+      category: categories[0]?.id || 'BEBIDAS',
       price: 2500,
       stock: 24,
     })
@@ -556,7 +747,6 @@ export default function CantinaPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
   const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
-  const [courts, setCourts] = useState<Array<{ id: string; name: string; sport: string }>>([])
   const [clubSlug, setClubSlug] = useState<string>('')
   const effectiveClubSlug = clubSlug || contextSlug || ''
 
@@ -573,7 +763,7 @@ export default function CantinaPage() {
 
     const newItems: Array<{ product: Product; quantity: number }> = []
     order.items.forEach((it, idx) => {
-      const match = products.find(
+      const match = productsRef.current.find(
         (p) => p.name.toLowerCase() === it.name.toLowerCase() || p.id === it.product_id
       )
       if (match) {
@@ -596,7 +786,7 @@ export default function CantinaPage() {
     toast.success(`¡Carrito cargado con el pedido de ${order.customer_name}!`, {
       description: `${order.court_name} • ${order.payment_method === 'TRANSFER' ? 'Pagado con Transferencia' : 'Abona en Efectivo'}`
     })
-  }, [products])
+  }, [])
 
   const loadOrders = useCallback(async (isInitial = false) => {
     setOrdersLoading(true)
@@ -638,6 +828,7 @@ export default function CantinaPage() {
       loadProducts()
       loadAccounts()
       loadSuppliers()
+      loadCategories()
       if (tenantId) {
         getTenantClubInfo(tenantId).then((info) => {
           if (info) {
@@ -646,16 +837,6 @@ export default function CantinaPage() {
             if (info.bankAlias) setBankAlias(info.bankAlias)
           }
         })
-        const supabase = createClient()
-        supabase
-          .from('courts')
-          .select('id, name, sport')
-          .eq('tenant_id', tenantId)
-          .eq('is_active', true)
-          .order('display_order', { ascending: true })
-          .then(({ data }: { data: unknown }) => {
-            if (Array.isArray(data)) setCourts(data as Array<{ id: string; name: string; sport: string }>)
-          })
       }
     }, 0)
 
@@ -750,7 +931,7 @@ export default function CantinaPage() {
         createClient().removeChannel(supabaseChannel)
       }
     }
-  }, [loadOrders, loadOrderIntoCart, loadProducts, loadAccounts, loadSuppliers, tenantId])
+  }, [tenantId, loadOrders, loadOrderIntoCart, loadProducts, loadAccounts, loadSuppliers, loadCategories])
 
   // Datos para Alerta Predictiva de Stock memoizados (calculado sobre productos reales con bajo stock)
   const weekendPredictions = useMemo(() => {
@@ -843,14 +1024,17 @@ export default function CantinaPage() {
   const filteredProducts = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
     return products.filter(p => {
-      const matchesCat = selectedCategory === 'ALL' || p.category === selectedCategory
+      const matchesCat =
+        selectedCategory === 'ALL' ||
+        p.category === selectedCategory ||
+        (p.category && getCategoryName(p.category).toLowerCase() === getCategoryName(selectedCategory).toLowerCase())
       const matchesSearch = !term || p.name.toLowerCase().includes(term)
       return matchesCat && matchesSearch
     })
-  }, [products, selectedCategory, searchTerm])
+  }, [products, selectedCategory, searchTerm, getCategoryName])
 
   const groupedProducts = useMemo(() => {
-    const categoryOrder = ['BEBIDAS', 'EQUIPAMIENTO', 'SNACKS']
+    const categoryOrder = categories.map(c => c.id)
     const map = new Map<string, CantinaProduct[]>()
 
     filteredProducts.forEach(p => {
@@ -874,7 +1058,7 @@ export default function CantinaPage() {
       category: cat,
       items: map.get(cat)!
     }))
-  }, [filteredProducts])
+  }, [filteredProducts, categories])
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -950,7 +1134,7 @@ export default function CantinaPage() {
         }))
         const res = await createCourtOrder({
           tenant_id: tenantId!,
-          court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta Mostrador'),
+          court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta en mostrador'),
           customer_name: clientName,
           items,
           total_ars: effectiveTotal,
@@ -967,7 +1151,7 @@ export default function CantinaPage() {
             court_id: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta Mostrador'),
+            court_name: assignToCourt !== 'NONE' ? assignToCourt : (isCuentaCorriente ? 'A Cuenta Corriente' : 'Venta en mostrador'),
             customer_name: clientName,
             items,
             total_ars: effectiveTotal,
@@ -1149,10 +1333,7 @@ export default function CantinaPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
-                setIsSuppliersModalOpen(true)
-              }}
+              onClick={openSuppliersModal}
               className="bg-slate-900/90 hover:bg-slate-800 border-amber-500/40 text-amber-300 hover:text-white text-xs font-semibold rounded-xl gap-1.5 h-9"
             >
               <Phone className="w-3.5 h-3.5 text-amber-400" />
@@ -1467,17 +1648,29 @@ export default function CantinaPage() {
           {/* Barra de Acciones: Filtros, Buscador y Botones Principales */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pb-1">
-              {['ALL', 'BEBIDAS', 'EQUIPAMIENTO', 'SNACKS'].map((cat) => (
+              <button
+                key="ALL"
+                onClick={() => setSelectedCategory('ALL')}
+                className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                Todos
+              </button>
+              {categories.map((cat) => (
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
-                    selectedCategory === cat
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 ${
+                    selectedCategory === cat.id
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  {cat === 'ALL' ? 'Todos' : cat === 'BEBIDAS' ? 'Bebidas' : cat === 'EQUIPAMIENTO' ? 'Equipamiento' : 'Snacks'}
+                  {cat.emoji && <span>{cat.emoji}</span>}
+                  <span>{cat.name}</span>
                 </button>
               ))}
             </div>
@@ -1496,10 +1689,17 @@ export default function CantinaPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
-                  setIsSuppliersModalOpen(true)
-                }}
+                onClick={openCategoriesModal}
+                className="bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200 text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0"
+              >
+                <Tags className="w-4 h-4 text-emerald-400" />
+                <span className="hidden md:inline">Categorías</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openSuppliersModal}
                 className="bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200 text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0"
               >
                 <Truck className="w-4 h-4 text-sky-400" />
@@ -1579,14 +1779,9 @@ export default function CantinaPage() {
 
                           {/* Categoría */}
                           <td className="p-3.5">
-                            <Badge className={`text-[10px] font-semibold ${
-                              p.category === 'BEBIDAS'
-                                ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-                                : p.category === 'EQUIPAMIENTO'
-                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                            }`}>
-                              {p.category}
+                            <Badge className="text-[10px] font-semibold bg-slate-800/90 text-slate-200 border-slate-700/80 gap-1.5 px-2 py-0.5">
+                              <span>{getCategoryEmoji(p.category)}</span>
+                              <span>{getCategoryName(p.category)}</span>
                             </Badge>
                           </td>
 
@@ -1909,17 +2104,29 @@ export default function CantinaPage() {
             {/* Filtros y Buscador */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-momentum pb-1">
-                {['ALL', 'BEBIDAS', 'EQUIPAMIENTO', 'SNACKS'].map((cat) => (
+                <button
+                  key="ALL"
+                  onClick={() => setSelectedCategory('ALL')}
+                  className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
+                    selectedCategory === 'ALL'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  Todos
+                </button>
+                {categories.map((cat) => (
                   <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all ${
-                      selectedCategory === cat
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-3 py-1.5 min-h-9 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 ${
+                      selectedCategory === cat.id
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'
                     }`}
                   >
-                    {cat === 'ALL' ? 'Todos' : cat === 'BEBIDAS' ? 'Bebidas' : cat === 'EQUIPAMIENTO' ? 'Equipamiento' : 'Snacks'}
+                    {cat.emoji && <span>{cat.emoji}</span>}
+                    <span>{cat.name}</span>
                   </button>
                 ))}
               </div>
@@ -1957,31 +2164,17 @@ export default function CantinaPage() {
             ) : (
               <div className="space-y-6">
                 {groupedProducts.map((group) => {
-                  const catLabel =
-                    group.category === 'BEBIDAS'
-                      ? 'Bebidas'
-                      : group.category === 'EQUIPAMIENTO'
-                      ? 'Equipamiento'
-                      : group.category === 'SNACKS'
-                      ? 'Snacks'
-                      : group.category
-
-                  const catBadgeStyle =
-                    group.category === 'BEBIDAS'
-                      ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
-                      : group.category === 'EQUIPAMIENTO'
-                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
-                      : group.category === 'SNACKS'
-                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  const catLabel = getCategoryName(group.category)
+                  const catEmoji = getCategoryEmoji(group.category)
 
                   return (
                     <div key={group.category} className="space-y-2">
                       {/* Cabecera de Categoría */}
                       <div className="flex items-center justify-between px-1">
                         <div className="flex items-center gap-2">
-                          <span className={`px-2.5 py-1 rounded-lg border text-xs font-bold tracking-wider uppercase ${catBadgeStyle}`}>
-                            {catLabel}
+                          <span className="px-2.5 py-1 rounded-lg border text-xs font-bold tracking-wider uppercase bg-slate-900 text-emerald-300 border-slate-800 flex items-center gap-1.5 shadow-sm">
+                            <span>{catEmoji}</span>
+                            <span>{catLabel}</span>
                           </span>
                           <span className="text-xs text-slate-400 font-medium">
                             ({group.items.length} {group.items.length === 1 ? 'artículo' : 'artículos'})
@@ -2160,10 +2353,7 @@ export default function CantinaPage() {
                         onChange={(e) => setAssignToCourt(e.target.value)}
                         className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                       >
-                        <option value="NONE">Venta Inmediata de Mostrador</option>
-                        {courts.map((court) => (
-                          <option key={court.id} value={court.name}>{court.name}</option>
-                        ))}
+                        <option value="NONE">Venta en mostrador</option>
                       </select>
                     </div>
 
@@ -2492,15 +2682,27 @@ export default function CantinaPage() {
             {/* Categoría y Precio */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 block">Categoría *</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 block">Categoría *</label>
+                  <button
+                    type="button"
+                    onClick={openCategoriesModal}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold transition-colors"
+                  >
+                    <Settings2 className="w-3 h-3" />
+                    <span>Gestionar</span>
+                  </button>
+                </div>
                 <select
                   value={productForm.category}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, category: e.target.value as 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS' }))}
+                  onChange={(e) => setProductForm(prev => ({ ...prev, category: e.target.value }))}
                   className="w-full h-10 rounded-xl bg-slate-950 border border-slate-800 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="BEBIDAS">Bebidas</option>
-                  <option value="EQUIPAMIENTO">Equipamiento</option>
-                  <option value="SNACKS">Snacks</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji ? `${c.emoji} ` : ''}{c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -3038,8 +3240,7 @@ export default function CantinaPage() {
               variant="outline"
               onClick={() => {
                 setIsRestockOrderModalOpen(false)
-                setSupplierFormList(suppliers.length > 0 ? [...suppliers] : [...DEFAULT_CANTINA_SUPPLIERS])
-                setIsSuppliersModalOpen(true)
+                openSuppliersModal()
               }}
               className="text-xs text-amber-300 border-amber-500/40 hover:bg-amber-500/10 rounded-xl gap-1.5"
             >
@@ -3086,9 +3287,14 @@ export default function CantinaPage() {
                     <Input
                       value={sup.name}
                       onChange={(e) => {
-                        const updated = [...supplierFormList]
-                        updated[idx] = { ...updated[idx], name: e.target.value }
-                        setSupplierFormList(updated)
+                        const val = e.target.value
+                        setSupplierFormList(prev => {
+                          const updated = [...prev]
+                          if (updated[idx]) {
+                            updated[idx] = { ...updated[idx], name: val }
+                          }
+                          return updated
+                        })
                       }}
                       placeholder="Ej: Distribuidora Quilmes"
                       className="h-9 text-xs bg-slate-900 border-slate-800 rounded-xl"
@@ -3103,16 +3309,23 @@ export default function CantinaPage() {
                     <select
                       value={sup.category}
                       onChange={(e) => {
-                        const updated = [...supplierFormList]
-                        updated[idx] = { ...updated[idx], category: e.target.value as CantinaSupplier['category'] }
-                        setSupplierFormList(updated)
+                        const val = e.target.value
+                        setSupplierFormList(prev => {
+                          const updated = [...prev]
+                          if (updated[idx]) {
+                            updated[idx] = { ...updated[idx], category: val }
+                          }
+                          return updated
+                        })
                       }}
                       className="w-full h-9 rounded-xl bg-slate-900 border border-slate-800 px-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                     >
-                      <option value="BEBIDAS">Bebidas</option>
-                      <option value="EQUIPAMIENTO">Equipamiento</option>
-                      <option value="SNACKS">Snacks & Kiosco</option>
-                      <option value="ALL">Todas (General)</option>
+                      <option value="ALL">Todas las Categorías (General)</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.emoji ? `${c.emoji} ` : ''}{c.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -3124,9 +3337,14 @@ export default function CantinaPage() {
                     <Input
                       value={sup.phone}
                       onChange={(e) => {
-                        const updated = [...supplierFormList]
-                        updated[idx] = { ...updated[idx], phone: e.target.value }
-                        setSupplierFormList(updated)
+                        const val = e.target.value
+                        setSupplierFormList(prev => {
+                          const updated = [...prev]
+                          if (updated[idx]) {
+                            updated[idx] = { ...updated[idx], phone: val }
+                          }
+                          return updated
+                        })
                       }}
                       placeholder="Ej: 5493815009988"
                       className="h-9 text-xs bg-slate-900 border-slate-800 rounded-xl font-mono"
@@ -3140,8 +3358,7 @@ export default function CantinaPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        const updated = supplierFormList.filter((_, i) => i !== idx)
-                        setSupplierFormList(updated)
+                        setSupplierFormList(prev => prev.filter((_, i) => i !== idx))
                       }}
                       className="h-9 w-9 p-0 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                     >
@@ -3159,7 +3376,7 @@ export default function CantinaPage() {
                 setSupplierFormList(prev => [
                   ...prev,
                   {
-                    id: `sup_${Date.now()}`,
+                    id: `sup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                     name: 'Nuevo Proveedor',
                     category: 'ALL',
                     phone: '',
@@ -3196,6 +3413,176 @@ export default function CantinaPage() {
                   <span>Guardar Proveedores</span>
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Dedicado: Gestionar Categorías */}
+      <Dialog open={isCategoriesModalOpen} onOpenChange={setIsCategoriesModalOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white p-6 rounded-2xl shadow-2xl">
+          <DialogHeader className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Tags className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-white">Gestionar Categorías</DialogTitle>
+                <DialogDescription className="text-xs text-slate-400">
+                  Crea, renombra o elimina categorías para tus productos de cantina.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 my-2">
+            {/* Input para agregar nueva categoría */}
+            <form onSubmit={handleCreateCategory} className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+              <label className="text-[11px] font-semibold text-slate-300 block">
+                Agregar Nueva Categoría
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Ej: Sandwiches, Postres, Merchandising..."
+                  className="bg-slate-900 border-slate-800 text-xs text-white h-9 rounded-xl flex-1 placeholder:text-slate-600 focus:border-emerald-500"
+                />
+                <Button
+                  type="submit"
+                  disabled={!newCategoryName.trim() || savingCategories}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-1.5 h-9 shrink-0 px-3"
+                >
+                  {savingCategories ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Agregar</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+
+            {/* Listado de Categorías Existentes */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-bold text-slate-300">
+                  Categorías Activas ({categories.length})
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {products.length} productos en catálogo
+                </span>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
+                {categories.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-500 bg-slate-950/40 rounded-xl border border-slate-800/60">
+                    No hay categorías creadas
+                  </div>
+                ) : (
+                  categories.map((cat) => {
+                    const productCount = products.filter(
+                      p => p.category === cat.id || p.category === cat.name
+                    ).length
+                    const isEditing = editingCategoryId === cat.id
+
+                    return (
+                      <div
+                        key={cat.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 transition-all gap-2"
+                      >
+                        {isEditing ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <span className="text-base shrink-0">{cat.emoji || '🏷️'}</span>
+                            <Input
+                              value={editingCategoryName}
+                              onChange={(e) => setEditingCategoryName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleSaveEditCategory(cat.id)
+                                } else if (e.key === 'Escape') {
+                                  setEditingCategoryId(null)
+                                }
+                              }}
+                              autoFocus
+                              className="h-8 text-xs bg-slate-900 border-emerald-500/60 text-white rounded-lg flex-1"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={savingCategories || !editingCategoryName.trim()}
+                              onClick={() => handleSaveEditCategory(cat.id)}
+                              className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shrink-0"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingCategoryId(null)}
+                              className="h-8 px-2 text-slate-400 hover:text-white rounded-lg shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="text-base shrink-0">{cat.emoji || '🏷️'}</span>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-slate-200 truncate">
+                                  {cat.name}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {productCount} {productCount === 1 ? 'producto' : 'productos'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleStartEditCategory(cat)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                                title="Renombrar categoría"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={savingCategories}
+                                onClick={() => handleDeleteCategory(cat)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"
+                                title={productCount > 0 ? 'No se puede eliminar: tiene productos asignados' : 'Eliminar categoría'}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-400/80 hover:text-rose-400" />
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-2">
+            <Button
+              type="button"
+              onClick={() => setIsCategoriesModalOpen(false)}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl h-9"
+            >
+              Listo
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -14,6 +14,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { checkAndReleaseOverdueRecurringSlots } from '@/actions/recurring-slots.actions'
+import { syncPreapprovalAmountIfNeeded } from '@/actions/saas-billing.actions'
 import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -201,6 +202,12 @@ async function handleDunning(request: NextRequest) {
               amount: Number(newInv.amount) || 0,
             }
           }
+
+          // Sincronizar dinámicamente el monto del débito recurrente en Mercado Pago
+          // si las tarifas del club o cantidad de canchas activas cambiaron
+          syncPreapprovalAmountIfNeeded(tenant.id, dueAmount).catch(syncErr => {
+            console.warn(`[SaaS Dunning] Aviso al sincronizar cuota en Mercado Pago para ${tenant.id}:`, syncErr)
+          })
         }
       }
 

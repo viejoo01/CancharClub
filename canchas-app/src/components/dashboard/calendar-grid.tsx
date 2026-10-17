@@ -308,15 +308,17 @@ export function CalendarGrid({
   }, [initialBookings])
 
   // Cargar turnos reales de la base de datos para la fecha seleccionada con caché local instantáneo (0ms)
-  const fetchBookingsForDate = useCallback(async (dateToFetch: string) => {
+  const fetchBookingsForDate = useCallback(async (dateToFetch: string, force = false) => {
     if (!tenantId) return
     const cacheKey = `${tenantId}_${dateToFetch}`
+    if (force) {
+      clientBookingsCache.delete(cacheKey)
+    }
     const cached = clientBookingsCache.get(cacheKey)
 
-    // Si ya existe en caché reciente (20s), mostrar al instante (0ms de latencia visual)
-    if (cached && Date.now() - cached.timestamp < 20_000) {
+    // Si ya existe en caché reciente (20s) y no es forzado, mostrar al instante (0ms de latencia visual)
+    if (!force && cached && Date.now() - cached.timestamp < 20_000) {
       setLoadedBookings(cached.bookings)
-      setOptimisticBookings([])
     }
 
     try {
@@ -325,7 +327,18 @@ export function CalendarGrid({
         const bookingsList = fresh as CalendarBooking[]
         clientBookingsCache.set(cacheKey, { bookings: bookingsList, timestamp: Date.now() })
         setLoadedBookings(bookingsList)
-        setOptimisticBookings([])
+        setOptimisticBookings((prev) =>
+          prev.filter(
+            (ob) =>
+              !bookingsList.some(
+                (b) =>
+                  b.id === ob.id ||
+                  (b.court_id === ob.court_id &&
+                    (b.starts_at === ob.starts_at ||
+                      formatTimeArgentina(b.starts_at) === formatTimeArgentina(ob.starts_at)))
+              )
+          )
+        )
         setSelectedBooking((prev) => {
           if (!prev) return null
           const updated = bookingsList.find((b) => b.id === prev.id)
@@ -1091,11 +1104,13 @@ export function CalendarGrid({
           preselectedDate={selectedDate}
           preselectedTime={quickBookSlot?.time || '19:00'}
           preselectedCourtId={quickBookSlot?.courtId}
-          onSuccess={() => {
+          onSuccess={(newBooking) => {
             setIsQuickBookOpen(false)
             setQuickBookSlot(null)
-            setOptimisticBookings([])
-            fetchBookingsForDate(selectedDate)
+            if (newBooking) {
+              setOptimisticBookings((prev) => [newBooking, ...prev.filter((b) => b.id !== newBooking.id)])
+            }
+            fetchBookingsForDate(selectedDate, true)
             onRefresh?.()
             router.refresh()
           }}

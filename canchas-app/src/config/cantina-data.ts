@@ -1,10 +1,22 @@
 // src/config/cantina-data.ts
 // Catálogo base y tipos de productos para Cantina & Kiosco
 
+export interface CantinaCategory {
+  id: string
+  name: string
+  emoji?: string
+}
+
+export const DEFAULT_CANTINA_CATEGORIES: CantinaCategory[] = [
+  { id: 'BEBIDAS', name: 'Bebidas', emoji: '🥤' },
+  { id: 'EQUIPAMIENTO', name: 'Equipamiento', emoji: '🎾' },
+  { id: 'SNACKS', name: 'Snacks', emoji: '🍿' },
+]
+
 export interface CantinaProduct {
   id: string
   name: string
-  category: 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
+  category: string
   price: number
   stock: number
   emoji?: string
@@ -16,7 +28,7 @@ export const INITIAL_CANTINA_PRODUCTS: CantinaProduct[] = []
 export interface CantinaSupplier {
   id: string
   name: string
-  category: 'ALL' | 'BEBIDAS' | 'EQUIPAMIENTO' | 'SNACKS'
+  category: string
   phone: string
   notes?: string
 }

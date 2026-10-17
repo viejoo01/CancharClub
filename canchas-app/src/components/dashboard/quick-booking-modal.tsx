@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { Loader2, Lock } from 'lucide-react'
 import { getArgentinaTodayIso, isSlotTimeInPast } from '@/lib/utils'
 import { useUserRole } from '@/hooks/use-tenant-id'
+import type { CalendarBooking } from './calendar-grid'
 
 export interface QuickBookingPriceRule {
   id?: string
@@ -96,7 +97,7 @@ interface QuickBookingModalProps {
   preselectedDate?: string
   preselectedTime?: string
   preselectedCourtId?: string
-  onSuccess?: () => void
+  onSuccess?: (newBooking?: CalendarBooking) => void
 }
 
 export function QuickBookingModal({
@@ -205,42 +206,45 @@ export function QuickBookingModal({
 
       toast.success('¡Turno registrado exitosamente!')
 
+      const selectedCourt = courts.find(c => c.id === courtId)
+      const slotDur: 'MIN_60' | 'MIN_90' | 'MIN_120' = durationMinutes === 60 ? 'MIN_60' : durationMinutes === 120 ? 'MIN_120' : 'MIN_90'
+      const newBookingObj: CalendarBooking = {
+        id: res.booking_id || `booking_${Date.now()}`,
+        court_id: courtId,
+        customer_name: customerName,
+        customer_phone: customerPhone || undefined,
+        starts_at: startsAt,
+        ends_at: new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString(),
+        status: deposit >= total && total > 0 ? 'FULLY_PAID' : (deposit > 0 ? 'CONFIRMED' : 'PENDING_DEPOSIT'),
+        origin: 'PHONE',
+        total_amount_ars: total,
+        deposit_amount_ars: deposit,
+        total_paid: deposit,
+        balance_due: Math.max(0, total - deposit),
+        internal_notes: fullNotes || null,
+        courts: {
+          name: selectedCourt?.name || 'Cancha',
+          sport: selectedCourt?.sport || 'PADEL',
+          slot_duration: slotDur,
+        }
+      }
+
       // Emitir en BroadcastChannel para sincronización instantánea en grilla y portal de jugadores (0ms)
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const bc = new BroadcastChannel('canchar_bookings')
-          const selectedCourt = courts.find(c => c.id === courtId)
           bc.postMessage({
             type: 'BOOKING_CONFIRMED',
             court_id: courtId,
             starts_at: startsAt,
-            booking: {
-              id: res.booking_id || `booking_${Date.now()}`,
-              court_id: courtId,
-              customer_name: customerName,
-              customer_phone: customerPhone || undefined,
-              starts_at: startsAt,
-              ends_at: new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString(),
-              status: deposit >= total && total > 0 ? 'FULLY_PAID' : (deposit > 0 ? 'CONFIRMED' : 'PENDING_DEPOSIT'),
-              origin: 'PHONE',
-              total_amount_ars: total,
-              deposit_amount_ars: deposit,
-              total_paid: deposit,
-              balance_due: Math.max(0, total - deposit),
-              internal_notes: fullNotes || null,
-              courts: {
-                name: selectedCourt?.name || 'Cancha',
-                sport: selectedCourt?.sport || 'PADEL',
-                slot_duration: durationMinutes === 60 ? 'MIN_60' : 'MIN_90',
-              }
-            }
+            booking: newBookingObj
           })
           bc.close()
         }
       } catch {}
 
       onClose()
-      onSuccess?.()
+      onSuccess?.(newBookingObj)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error inesperado'
       toast.error(msg)

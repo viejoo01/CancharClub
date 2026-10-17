@@ -23,6 +23,7 @@ import type {
   MercadoPagoWebhookNotification,
   MercadoPagoPayment,
 } from '@/types/database'
+import { handleBillingWebhook } from '@/app/api/webhooks/billing/mercadopago/route'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -153,6 +154,18 @@ export async function POST(request: NextRequest) {
   }
 
   const queryType = request.nextUrl.searchParams.get('type') || request.nextUrl.searchParams.get('topic')
+
+  // Si es un evento de suscripciones SaaS / abonos mensuales de clubes, enrutar directamente al motor de billing
+  const isSubscriptionEvent =
+    notification.type === 'subscription_authorized_payment' ||
+    notification.type === 'subscription_preapproval' ||
+    (typeof queryType === 'string' && queryType.includes('subscription'))
+
+  if (isSubscriptionEvent) {
+    console.log('[MP Webhook] Evento de suscripción SaaS detectado en webhook general. Enrutando a handleBillingWebhook...')
+    return handleBillingWebhook(request, rawBody)
+  }
+
   // Solo procesar notificaciones de tipo "payment"
   const isPaymentEvent =
     notification.type === 'payment' ||
@@ -260,6 +273,17 @@ export async function POST(request: NextRequest) {
 
   // ── Buscar el booking por external_reference (o id de ítem) ──────────────
   const externalRef = payment.external_reference
+
+  // Si el pago corresponde a facturación mensual SaaS, reactivación o vinculación de club
+  if (
+    externalRef?.startsWith('saas_') ||
+    externalRef?.startsWith('card_link_') ||
+    externalRef?.startsWith('reactivation_')
+  ) {
+    console.log('[MP Webhook] Pago de facturación SaaS detectado por external_reference. Enrutando a handleBillingWebhook...')
+    return handleBillingWebhook(request, rawBody)
+  }
+
   const rawCandidate = externalRef || (payment as unknown as { additional_info?: { items?: Array<{ id?: string }> } })?.additional_info?.items?.[0]?.id
   // Extraer UUID eliminando de forma segura el prefijo oficial 'cancharclub_booking_'
   const bookingIdCandidate = rawCandidate ? rawCandidate.replace(/^cancharclub_booking_/, '').trim() : ''

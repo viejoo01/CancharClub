@@ -131,7 +131,7 @@ export async function executeRainCancellation(params: {
       .eq('tenant_id', effectiveTenantId)
       .in('court_id', params.courtIds)
       .filter('booked_at', 'ov', `[${new Date(startWindow).toISOString()},${new Date(endWindow).toISOString()}]`)
-      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .neq('status', 'cancelled')
 
     if (fetchErr) {
       console.warn('[executeRainCancellation] Fetch warning:', fetchErr.message)
@@ -162,7 +162,7 @@ export async function executeRainCancellation(params: {
       .select('id, court_id, booked_at, status')
       .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${new Date(searchStartIso).toISOString()},${new Date(searchEndIso).toISOString()}]`)
-      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .neq('status', 'cancelled')
 
     // Parsear rangos de reservas futuras
     interface ParsedBookingRange {
@@ -520,7 +520,7 @@ export async function confirmRainReschedule(params: {
       .select('id')
       .eq('court_id', params.newCourtId)
       .filter('booked_at', 'ov', bookingRange)
-      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .neq('status', 'cancelled')
       .maybeSingle()
 
     if (existingConflict) {

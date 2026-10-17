@@ -8,11 +8,18 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
-import { type CantinaProduct, type CantinaSupplier, DEFAULT_CANTINA_SUPPLIERS } from '@/config/cantina-data'
+import { 
+  type CantinaProduct, 
+  type CantinaSupplier, 
+  type CantinaCategory,
+  DEFAULT_CANTINA_SUPPLIERS,
+  DEFAULT_CANTINA_CATEGORIES 
+} from '@/config/cantina-data'
 
 // Cache en memoria en el servidor (TTL 60s)
 const cantinaProductsCache = new Map<string, { data: CantinaProduct[]; timestamp: number }>()
 const cantinaSuppliersCache = new Map<string, { data: CantinaSupplier[]; timestamp: number }>()
+const cantinaCategoriesCache = new Map<string, { data: CantinaCategory[]; timestamp: number }>()
 const CANTINA_CACHE_TTL_MS = 60000
 
 // Mutex secuencial por tenant para garantizar concurrencia atómica estricta en stock e inventario
@@ -861,4 +868,101 @@ export async function saveCantinaSuppliers(
     return { success: false, suppliers, error: errorMsg }
   }
 }
+
+// ─── GESTIÓN DE CATEGORÍAS DE CANTINA ────────────────────────────────────────
+
+export async function getCantinaCategories(tenantId: string): Promise<CantinaCategory[]> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) return DEFAULT_CANTINA_CATEGORIES
+
+    const cleanTenantId = tenantId.trim()
+    const cached = cantinaCategoriesCache.get(cleanTenantId)
+    if (cached && Date.now() - cached.timestamp < CANTINA_CACHE_TTL_MS) {
+      return cached.data
+    }
+
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', cleanTenantId)
+      .eq('action', 'CANTINA_CATEGORIES')
+      .eq('table_name', 'cantina_categories')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (error || !data || data.length === 0 || !data[0].new_data) {
+      return DEFAULT_CANTINA_CATEGORIES
+    }
+
+    const payload = data[0].new_data as { categories: CantinaCategory[] }
+    let categoriesList = DEFAULT_CANTINA_CATEGORIES
+    if (Array.isArray(payload.categories) && payload.categories.length > 0) {
+      categoriesList = payload.categories
+    }
+
+    cantinaCategoriesCache.set(cleanTenantId, { data: categoriesList, timestamp: Date.now() })
+    return categoriesList
+  } catch (err) {
+    console.error('[getCantinaCategories] Error:', err)
+    return DEFAULT_CANTINA_CATEGORIES
+  }
+}
+
+export async function saveCantinaCategories(
+  tenantId: string,
+  categories: CantinaCategory[]
+): Promise<{ success: boolean; categories: CantinaCategory[]; error?: string }> {
+  try {
+    const cleanId = tenantId.trim()
+    cantinaCategoriesCache.delete(cleanId)
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, categories: [], error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: existing } = await supabase
+      .from('audit_log')
+      .select('id')
+      .eq('tenant_id', cleanId)
+      .eq('action', 'CANTINA_CATEGORIES')
+      .eq('table_name', 'cantina_categories')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      const updateRes = await supabase
+        .from('audit_log')
+        .update({
+          new_data: { categories, updated_at: new Date().toISOString() }
+        })
+        .eq('id', existing[0].id)
+
+      if (updateRes.error) throw updateRes.error
+    } else {
+      const insertRes = await supabase.from('audit_log').insert({
+        tenant_id: cleanId,
+        action: 'CANTINA_CATEGORIES',
+        table_name: 'cantina_categories',
+        record_id: cleanId,
+        new_data: { categories, updated_at: new Date().toISOString() }
+      })
+
+      if (insertRes.error) throw insertRes.error
+    }
+
+    cantinaCategoriesCache.set(cleanId, { data: categories, timestamp: Date.now() })
+    revalidatePath('/dashboard/cantina')
+    return { success: true, categories }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Error al guardar categorías'
+    console.error('[saveCantinaCategories] Error:', errorMsg)
+    return { success: false, categories, error: errorMsg }
+  }
+}
+
+export type { CantinaCategory }
+
 

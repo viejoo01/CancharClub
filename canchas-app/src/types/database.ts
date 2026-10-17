@@ -119,6 +119,8 @@ export interface Tenant {
   bank_alias?: string | null
   bank_cuit?: string | null
   payment_methods?: ('TRANSFER' | 'MERCADOPAGO')[]
+  description?: string | null
+  mp_preapproval_id?: string | null
   created_at: string
   updated_at: string
 }

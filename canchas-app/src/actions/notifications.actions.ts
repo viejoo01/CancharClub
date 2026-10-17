@@ -480,7 +480,7 @@ export async function getClubNotificationsAction(params?: {
     }
 
     // 8. Aplicar estado de lectura a todas las notificaciones
-    const notificationsWithReadState = rawNotifications.map(n => {
+    notificationsWithReadState = rawNotifications.map(n => {
       const createdTime = new Date(n.created_at).getTime()
       const isMarkedMassive = markedAllReadAt !== null && createdTime <= markedAllReadAt
       const isIndividuallyRead = readIds.has(n.id)

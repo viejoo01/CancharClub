@@ -503,7 +503,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
       `)
       .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .neq('status', 'cancelled')
       .order('created_at', { ascending: true })
 
     if (error) {
@@ -1095,7 +1095,7 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
       `)
       .eq('tenant_id', effectiveTenantId)
       .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-      .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+      .neq('status', 'cancelled')
 
     if (error) {
       console.warn('[getDailyCashSummary] Error querying bookings:', error.message)
@@ -2243,7 +2243,7 @@ export async function getClubOccupiedSlots(
         .select('id, court_id, booked_at, status, lock_expires_at, courts(id, name)')
         .eq('tenant_id', tenantId)
         .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
-        .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+        .neq('status', 'cancelled')
 
       if (dbBookings && dbBookings.length > 0) {
         const nowMs = Date.now()

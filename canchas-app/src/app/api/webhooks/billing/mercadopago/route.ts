@@ -110,24 +110,37 @@ async function fetchSaaSPayment(
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function handleBillingWebhook(request: NextRequest, preReadRawBody?: string): Promise<NextResponse> {
   const startTime = Date.now()
 
   try {
-    const rawBody = await request.text()
+    const rawBody = preReadRawBody !== undefined ? preReadRawBody : await request.text()
     const webhookSecret = process.env.MP_WEBHOOK_SECRET
     const xSignature = request.headers.get('x-signature')
+    const xRequestId = request.headers.get('x-request-id')
+    const isProd = process.env.NODE_ENV === 'production'
 
-    // 1. Verificación de Firma (si viene x-signature y secret está configurado)
-    if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
+    // 1. Verificación de Firma Criptográfica Estricta (Blindaje anti-spoofing)
+    if (isProd) {
+      if (!webhookSecret) {
+        console.error('[Billing Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
+        return NextResponse.json({ error: 'Webhook secret no configurado' }, { status: 500 })
+      }
+      if (!xSignature || !xRequestId) {
+        console.warn('[Billing Webhook] Petición rechazada en producción: Faltan cabeceras x-signature o x-request-id')
+        return NextResponse.json({ error: 'Cabeceras de firma requeridas' }, { status: 401 })
+      }
       const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
       if (!isValid) {
         console.warn('[Billing Webhook] Firma X-Signature inválida — rechazando petición')
         return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
       }
-    } else if (process.env.NODE_ENV === 'production' && !webhookSecret) {
-      console.error('[Billing Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
-      return NextResponse.json({ error: 'Webhook secret no configurado' }, { status: 500 })
+    } else if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
+      const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
+      if (!isValid) {
+        console.warn('[Billing Webhook] Firma X-Signature inválida — rechazando petición')
+        return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
+      }
     }
 
     let notification: MercadoPagoWebhookNotification
@@ -156,9 +169,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Falta data.id en la notificación' }, { status: 400 })
     }
 
+    const supabase = getSupabase()
+
+    // 2. ESCUDO DE IDEMPOTENCIA: Verificar si esta transacción ya fue procesada
+    const { data: alreadyProcessed } = await supabase
+      .from('processed_payments')
+      .select('payment_id, processed_at')
+      .eq('payment_id', String(paymentId))
+      .maybeSingle()
+
+    if (alreadyProcessed) {
+      console.log(`[Billing Webhook] Idempotencia: Evento ${paymentId} ya procesado (${alreadyProcessed.processed_at}). Descartando duplicado.`)
+      return NextResponse.json({ received: true, already_processed: true, payment_id: paymentId })
+    }
+
     const platformAccessToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
 
-    // 1.1 Si el evento es una suscripción recurrente / preapproval directo de Mercado Pago
+    // ─── 3. CASO 1: SUSCRIPCIÓN PREAPPROVAL CREADA / AUTORIZADA ─────────────────
     if (notification.type === 'subscription_preapproval') {
       const preapprovalId = String(paymentId)
       if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
@@ -188,7 +215,194 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, preapproval_processed: true, id: preapprovalId })
     }
 
-    // 2. Consultar el pago en Mercado Pago
+    // ─── 4. CASO 2: DÉBITO AUTOMÁTICO RECURRENTE (subscription_authorized_payment) ─
+    if (notification.type === 'subscription_authorized_payment') {
+      const authorizedPaymentId = String(paymentId)
+
+      if (!platformAccessToken || platformAccessToken.startsWith('TEST-0000000000000000')) {
+        console.log(`[Billing Webhook] Modo mock para authorized_payment: ${authorizedPaymentId}`)
+        return NextResponse.json({ received: true, mock: true, authorized_payment_id: authorizedPaymentId })
+      }
+
+      // Consultar endpoint oficial de facturas de suscripción de Mercado Pago
+      const authRes = await fetch(`https://api.mercadopago.com/authorized_payments/${authorizedPaymentId}`, {
+        headers: {
+          Authorization: `Bearer ${platformAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      })
+
+      if (!authRes.ok) {
+        console.error(`[Billing Webhook] Error consultando authorized_payments/${authorizedPaymentId}: HTTP ${authRes.status}`)
+        return NextResponse.json({ error: 'No se pudo obtener el detalle de la factura de suscripción' }, { status: 404 })
+      }
+
+      const authData = await authRes.json()
+      const preapprovalId = authData.preapproval_id ? String(authData.preapproval_id) : null
+
+      if (!preapprovalId) {
+        console.error('[Billing Webhook] Pago recurrente sin preapproval_id:', authorizedPaymentId)
+        return NextResponse.json({ error: 'Falta preapproval_id en el pago autorizado' }, { status: 400 })
+      }
+
+      // Buscar el club por mp_preapproval_id indexado
+      let { data: tenantRecord } = await supabase
+        .from('tenants')
+        .select('id, name, slug, subscription_status, current_balance, description')
+        .eq('mp_preapproval_id', preapprovalId)
+        .maybeSingle()
+
+      if (!tenantRecord) {
+        // Fallback por description si fue migrado
+        const { data: fallbackList } = await supabase
+          .from('tenants')
+          .select('id, name, slug, subscription_status, current_balance, description')
+          .ilike('description', `%${preapprovalId}%`)
+          .limit(1)
+        if (fallbackList && fallbackList.length > 0) {
+          tenantRecord = fallbackList[0]
+        }
+      }
+
+      if (!tenantRecord) {
+        console.error(`[Billing Webhook] Club no encontrado para preapproval_id: ${preapprovalId}`)
+        return NextResponse.json({ error: 'Club no encontrado para la suscripción recurrente' }, { status: 404 })
+      }
+
+      const resolvedTenantId = tenantRecord.id
+      const isApproved =
+        authData.payment?.status === 'approved' ||
+        authData.payment?.status_detail === 'accredited' ||
+        authData.status === 'authorized' ||
+        authData.status === 'approved'
+
+      const nowIso = new Date().toISOString()
+      const amountNum = Number(authData.amount) || Number(authData.transaction_amount) || 0
+      const amountCents = Math.round(amountNum * 100)
+
+      if (isApproved) {
+        console.log(`[Billing Webhook] ✅ Débito automático recurrente APROBADO para ${tenantRecord.name} (#${authorizedPaymentId} - $${amountNum} ARS)`)
+
+        // 1. Idempotencia: Guardar en processed_payments
+        await supabase
+          .from('processed_payments')
+          .upsert({
+            payment_id: authorizedPaymentId,
+            source: 'saas',
+            tenant_id: resolvedTenantId,
+            amount_cents: amountCents,
+            processed_at: nowIso,
+          }, { onConflict: 'payment_id' })
+
+        // 2. Saldar o crear la factura mensual en tenant_invoices
+        const now = new Date()
+        const currentMonth = now.getMonth() + 1
+        const currentYear = now.getFullYear()
+
+        const { data: unpaidInv } = await supabase
+          .from('tenant_invoices')
+          .select('id')
+          .eq('tenant_id', resolvedTenantId)
+          .in('status', ['UNPAID', 'DRAFT'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (unpaidInv) {
+          await supabase
+            .from('tenant_invoices')
+            .update({
+              status: 'PAID',
+              paid_at: nowIso,
+              amount: amountNum > 0 ? amountNum : undefined,
+              mp_payment_id: String(authData.payment?.id || authorizedPaymentId),
+              notes: `Débito mensual automático acreditado PreApproval #${preapprovalId}`,
+            })
+            .eq('id', unpaidInv.id)
+        } else {
+          await supabase
+            .from('tenant_invoices')
+            .insert({
+              tenant_id: resolvedTenantId,
+              month: currentMonth,
+              year: currentYear,
+              amount: amountNum,
+              status: 'PAID',
+              reference_slot_price: 30000,
+              slots_multiplier: 1.5,
+              due_date: getArgentinaTodayIso(),
+              paid_at: nowIso,
+              mp_payment_id: String(authData.payment?.id || authorizedPaymentId),
+              notes: `Débito mensual automático recurrente PreApproval #${preapprovalId}`,
+            })
+        }
+
+        // 3. Reactivar club a ACTIVE y saldo en cero
+        await supabase
+          .from('tenants')
+          .update({
+            is_active: true,
+            subscription_status: 'ACTIVE',
+            current_balance: 0,
+            mp_preapproval_id: preapprovalId,
+            updated_at: nowIso,
+          })
+          .eq('id', resolvedTenantId)
+
+        // 4. Historial saas_subscriptions
+        const periodStart = getArgentinaTodayIso()
+        const periodEnd = getArgentinaTodayIso(new Date(Date.now() + 30 * 86400000))
+        await supabase
+          .from('saas_subscriptions')
+          .upsert({
+            tenant_id: resolvedTenantId,
+            plan: 'STANDARD',
+            status: 'active',
+            billing_period_start: periodStart,
+            billing_period_end: periodEnd,
+            reference_slot_price_cents: amountCents,
+            plan_multiplier: 1.5,
+            minimum_fee_cents: 0,
+            paid_at: nowIso,
+            payment_notes: `Débito automático recurrente MP #${preapprovalId} (Factura #${authorizedPaymentId})`,
+          }, { onConflict: 'tenant_id,billing_period_start' })
+
+        // 5. Notificación formal de débito realizado
+        await recordAutoDebitAlertInternal(supabase, {
+          tenantId: resolvedTenantId,
+          type: 'SUCCESS',
+          timestamp: nowIso,
+          detail: `Mercado Pago: Pago mensual debitado exitosamente ($${amountNum.toLocaleString('es-AR')}).`,
+        })
+
+        return NextResponse.json({
+          received: true,
+          authorized_payment: true,
+          tenant_id: resolvedTenantId,
+          status: 'ACTIVE',
+          amount: amountNum,
+        })
+      } else {
+        console.warn(`[Billing Webhook] Débito recurrente rechazada o pendiente para ${tenantRecord.name} (Estado: ${authData.status})`)
+        await recordAutoDebitAlertInternal(supabase, {
+          tenantId: resolvedTenantId,
+          type: 'FAILED',
+          timestamp: nowIso,
+          detail: `Mercado Pago: Intento de débito mensual fallido (Estado: ${authData.status || 'rechazado'}).`,
+        })
+
+        return NextResponse.json({
+          received: true,
+          authorized_payment: true,
+          tenant_id: resolvedTenantId,
+          status: authData.status,
+          alert: 'FAILED',
+        })
+      }
+    }
+
+    // ─── 5. CASO 3: PAGOS PUNTUALES, REACTIVACIONES O CHECKOUT PRO (type: payment) 
     let payment: MercadoPagoPayment | null = null
 
     if (platformAccessToken && !platformAccessToken.startsWith('TEST-0000000000000000')) {
@@ -215,12 +429,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se pudo obtener el detalle del pago' }, { status: 404 })
     }
 
-    // 3. Identificar Tenant e Invoice mediante external_reference
-    // Formatos posibles:
-    // - Reactivación: `reactivation_tenant_${tenantId}_${timestamp}`
-    // - Débito recurrente: `saas_preapproval_${tenantId}`
-    // - Factura puntual: `saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp}`
-    // - Vinculación de tarjeta: `card_link_${tenantId}_${timestamp}`
+    // Identificar Tenant e Invoice mediante external_reference
     let tenantId: string | null = null
     let invoiceId: string | null = null
     let isCardLink = false
@@ -243,7 +452,6 @@ export async function POST(request: NextRequest) {
     } else if (extRef.startsWith('saas_preapproval_')) {
       tenantId = extRef.replace('saas_preapproval_', '')
     } else if (extRef.startsWith('saas_tenant_')) {
-      // Formato: saas_tenant_${tenantId}_inv_${invoiceId}_${timestamp} o saas_tenant_${tenantId}_inv_${invoiceId}
       const match = extRef.match(/^saas_tenant_([0-9a-fA-F-]+)_inv_(.+?)(?:_(\d{10,}))?$/)
       if (match) {
         tenantId = match[1]
@@ -269,9 +477,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const supabase = getSupabase()
-
-    // BLINDAJE MULTI-TENANT: Validar que el tenant_id sea un UUID legítimo y exista en el sistema
+    // BLINDAJE MULTI-TENANT: Validar que el tenant_id sea un UUID legítimo y exista
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId || '')
     if (!tenantId || !isUUID) {
       console.error('[Billing Webhook] Referencia externa inválida o tenant_id no especificado:', payment.external_reference)
@@ -290,8 +496,11 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedTenantId = tenantRecord.id
+    const nowIso = new Date().toISOString()
+    const payAmountNum = Number(payment.transaction_amount) || 0
+    const payAmountCents = Math.round(payAmountNum * 100)
 
-    // 3.0 Si es una vinculación de tarjeta oficial desde la App de Mercado Pago
+    // Vinculación de tarjeta oficial
     if (isCardLink) {
       const isCardLinkApproved =
         payment.status === 'approved' ||
@@ -304,23 +513,34 @@ export async function POST(request: NextRequest) {
         await confirmCardSetupFromMercadoPagoPayment(resolvedTenantId, String(payment.id), { skipAuth: true })
         return NextResponse.json({ received: true, card_linked: true, tenant_id: resolvedTenantId })
       } else {
-        console.log(`[Billing Webhook] Vinculación de tarjeta para club ${resolvedTenantId} en estado '${payment.status}'`)
         return NextResponse.json({ received: true, card_linked: false, status: payment.status })
       }
     }
 
-    // 3.0.1 Si es una reactivación de club pausado con recargos por mora
+    // Pago de reactivación de club pausado con recargos por mora
     if (isReactivation) {
       if (payment.status === 'approved') {
         console.log(`[Billing Webhook] ✅ Pago de reactivación para club ${resolvedTenantId} aprobado (Pago #${payment.id})`)
+        
+        await supabase
+          .from('processed_payments')
+          .upsert({
+            payment_id: String(payment.id),
+            source: 'reactivation',
+            tenant_id: resolvedTenantId,
+            amount_cents: payAmountCents,
+            processed_at: nowIso,
+          }, { onConflict: 'payment_id' })
+
         await applyReactivationPaymentInternal({
           tenantId: resolvedTenantId,
-          totalPaid: Number(payment.transaction_amount) || 0,
+          totalPaid: payAmountNum,
           daysOverdue: 0,
           surchargeAmount: 0,
           paymentMethod: 'MERCADO_PAGO',
           notes: `Reactivación acreditada vía Webhook MP #${payment.id}`,
         })
+
         return NextResponse.json({
           received: true,
           reactivated: true,
@@ -328,12 +548,11 @@ export async function POST(request: NextRequest) {
           payment_id: payment.id,
         })
       } else {
-        console.log(`[Billing Webhook] Reactivación para club ${resolvedTenantId} en estado '${payment.status}'`)
         return NextResponse.json({ received: true, reactivated: false, status: payment.status })
       }
     }
 
-    // 3.1 Validación antifraude de monto pagado contra la factura emitida
+    // Validación antifraude de monto pagado contra la factura emitida
     if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
       const { data: dbInvoice } = await supabase
         .from('tenant_invoices')
@@ -342,47 +561,52 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       if (dbInvoice) {
-        const paidAmount = Number(payment.transaction_amount) || 0
         const expectedAmount = Number(dbInvoice.amount) || 0
-
-        if (expectedAmount > 0 && paidAmount < expectedAmount * 0.99) {
-          console.error(`[Billing Webhook] ALERTA DE FRAUDE: Monto abonado ($${paidAmount}) menor al de la factura ($${expectedAmount})`)
+        if (expectedAmount > 0 && payAmountNum < expectedAmount * 0.99) {
+          console.error(`[Billing Webhook] ALERTA DE FRAUDE: Monto abonado ($${payAmountNum}) menor al de la factura ($${expectedAmount})`)
           await recordAutoDebitAlertInternal(supabase, {
             tenantId: resolvedTenantId,
             type: 'FAILED',
-            timestamp: new Date().toISOString(),
-            detail: `Intento de pago insuficiente: Pagó $${paidAmount} pero la factura era de $${expectedAmount}`,
+            timestamp: nowIso,
+            detail: `Intento de pago insuficiente: Pagó $${payAmountNum} pero la factura era de $${expectedAmount}`,
           })
           return NextResponse.json({ error: 'Monto pagado insuficiente' }, { status: 400 })
         }
       }
     }
 
-    // 4. Si el cobro no se aprobó o falló -> Registrar alerta de intento fallido con mensaje exacto requerido
+    // Si el cobro no se aprobó -> Registrar alerta de intento fallido
     if (payment.status !== 'approved') {
-      console.log(`[Billing Webhook] Pago ${paymentId} en estado '${payment.status}' — registrando alerta de cobro fallido para tenant ${resolvedTenantId}`)
+      console.log(`[Billing Webhook] Pago ${paymentId} en estado '${payment.status}' para tenant ${resolvedTenantId}`)
       await recordAutoDebitAlertInternal(supabase, {
         tenantId: resolvedTenantId,
         type: 'FAILED',
-        timestamp: payment.date_approved || new Date().toISOString(),
+        timestamp: payment.date_approved || nowIso,
         detail: `Mercado Pago: Estado ${payment.status} (${payment.status_detail || 'No aprobado'})`,
       })
       return NextResponse.json({ received: true, status: payment.status, alert: 'FAILED' })
     }
 
-    // 5. Si el débito automático fue aprobado -> Registrar alerta de pago mensual realizado
-    console.log(`[Billing Webhook] Pago ${paymentId} APROBADO — registrando alerta de pago realizado para tenant ${resolvedTenantId}`)
+    // Pago puntual aprobado: Idempotencia en processed_payments
+    await supabase
+      .from('processed_payments')
+      .upsert({
+        payment_id: String(payment.id),
+        source: 'saas',
+        tenant_id: resolvedTenantId,
+        amount_cents: payAmountCents,
+        processed_at: nowIso,
+      }, { onConflict: 'payment_id' })
+
+    // Registrar alerta de pago mensual realizado
     await recordAutoDebitAlertInternal(supabase, {
       tenantId: resolvedTenantId,
       type: 'SUCCESS',
-      timestamp: payment.date_approved || new Date().toISOString(),
-      detail: `Mercado Pago: Pago #${payment.id} acreditado exitosamente`,
+      timestamp: payment.date_approved || nowIso,
+      detail: `Mercado Pago: Pago #${payment.id} acreditado exitosamente ($${payAmountNum.toLocaleString('es-AR')})`,
     })
 
-    // 6. Transacción de Reactivación Inmediata en Base de Datos
-    const nowIso = new Date().toISOString()
-
-    // A. Actualizar Factura como PAID
+    // Actualizar Factura como PAID
     if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
       await supabase
         .from('tenant_invoices')
@@ -393,40 +617,33 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', invoiceId)
     } else {
-      // Buscar factura pendiente del tenant y marcarla
       await supabase
         .from('tenant_invoices')
         .update({
           status: 'PAID',
           paid_at: nowIso,
         })
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', resolvedTenantId)
         .in('status', ['UNPAID', 'DRAFT'])
     }
 
-    // B. Reactivar Inmediatamente el Tenant a 'ACTIVE'
-    const { error: tenantError } = await supabase
+    // Reactivar Tenant a 'ACTIVE'
+    await supabase
       .from('tenants')
       .update({
         is_active: true,
         subscription_status: 'ACTIVE',
         current_balance: 0,
       })
-      .eq('id', tenantId)
+      .eq('id', resolvedTenantId)
 
-    if (tenantError) {
-      console.error(`[Billing Webhook] Error reactivando tenant ${tenantId}:`, tenantError)
-    } else {
-      console.log(`[Billing Webhook] ✅ Tenant ${tenantId} REACTIVADO con éxito a estado ACTIVE`)
-    }
-
-    // C. Registrar en historial de suscripciones preservando el plan contratado
+    // Registrar en historial de suscripciones
     let currentPlan = 'STANDARD'
     try {
       const { data: existingSub } = await supabase
         .from('saas_subscriptions')
         .select('plan')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', resolvedTenantId)
         .order('billing_period_start', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -440,12 +657,12 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('saas_subscriptions')
       .upsert({
-        tenant_id: tenantId,
+        tenant_id: resolvedTenantId,
         plan: currentPlan,
         status: 'active',
         billing_period_start: periodStart,
         billing_period_end: periodEnd,
-        reference_slot_price_cents: Math.round((payment.transaction_amount || 45000) * 100),
+        reference_slot_price_cents: payAmountCents,
         plan_multiplier: 1.5,
         minimum_fee_cents: 0,
         paid_at: nowIso,
@@ -453,12 +670,12 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'tenant_id,billing_period_start' })
 
     const duration = Date.now() - startTime
-    console.log(`[Billing Webhook] Procesado con éxito en ${duration}ms para Tenant: ${tenantId}`)
+    console.log(`[Billing Webhook] Procesado con éxito en ${duration}ms para Tenant: ${resolvedTenantId}`)
 
     return NextResponse.json({
       received: true,
       reactivated: true,
-      tenant_id: tenantId,
+      tenant_id: resolvedTenantId,
       status: 'ACTIVE',
       payment_id: payment.id,
       duration_ms: duration,
@@ -470,4 +687,8 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+export async function POST(request: NextRequest) {
+  return handleBillingWebhook(request)
 }

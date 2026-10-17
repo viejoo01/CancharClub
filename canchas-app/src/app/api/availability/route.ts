@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     .select('booked_at, status, lock_expires_at')
     .eq('court_id', courtId)
     .filter('booked_at', 'ov', `[${windowStartIso},${windowEndIso}]`)
-    .not('status', 'in', '("cancelled","CANCELLED_USER","CANCELLED_CLUB","RAIN_CANCELLED")')
+    .neq('status', 'cancelled')
 
   // 6. Consultar bloqueos manuales de cancha si existen
   let courtBlocks: Array<{ block_range?: string | null; reason?: string | null }> = []

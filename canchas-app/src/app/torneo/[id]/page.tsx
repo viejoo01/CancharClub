@@ -21,6 +21,7 @@ import {
 } from '@/actions/tournament.actions'
 import type { TournamentMatch, TournamentTeam } from '@/types/database'
 import { toast } from 'sonner'
+import { buildWhatsAppLink } from '@/lib/utils'
 
 export default function PublicTournamentPage({
   params,
@@ -82,7 +83,7 @@ export default function PublicTournamentPage({
       toast.success('¡Enlace copiado al portapapeles!')
 
       const waText = `¡Seguí el fixture y los resultados en vivo del torneo *${tournament?.name}* acá!: ${url}`
-      window.open(`https://wa.me/?text=${encodeURIComponent(waText)}`, '_blank')
+      window.open(buildWhatsAppLink(null, waText), '_blank')
     }
   }
 

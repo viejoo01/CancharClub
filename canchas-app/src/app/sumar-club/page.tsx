@@ -22,13 +22,16 @@ import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import { SAAS_PLANS_LIST, type SaaSPlanId } from '@/config/saas-plans'
+import { buildWhatsAppLink } from '@/lib/utils'
 
 export default function SumarClubLandingPage() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
   const [selectedPlanId, setSelectedPlanId] = useState<SaaSPlanId>('MEDIANO_2')
 
-  const whatsappUrl =
-    'https://wa.me/543816839320?text=Hola%20me%20llamo%20...%20quisiera%20agregar%20mi%20club%20a%20CancharClub%2C%20me%20podr%C3%ADas%20comentar%20un%20poco%20m%C3%A1s%20sobre%20c%C3%B3mo%20funciona%20el%20sistema%3F'
+  const whatsappUrl = buildWhatsAppLink(
+    '543816839320',
+    'Hola me llamo ... quisiera agregar mi club a CancharClub, me podrías comentar un poco más sobre cómo funciona el sistema?'
+  )
   const emailUrl =
     'mailto:cancharclub@gmail.com?subject=Quiero%20sumar%20mi%20club%20a%20CancharClub&body=Hola%20me%20llamo%20...%20quisiera%20agregar%20mi%20club%20a%20CancharClub%2C%20me%20podr%C3%ADas%20comentar%20un%20poco%20m%C3%A1s%20sobre%20c%C3%B3mo%20funciona%20el%20sistema%3F'
 

@@ -5,7 +5,7 @@
 // ==============================================================================
 
 import { siteConfig } from '@/config/site'
-import { formatARS } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 
 export interface WhatsAppSendResult {
   success: boolean
@@ -37,11 +37,10 @@ export function normalizePhoneForWhatsApp(phone: string): string {
 }
 
 /**
- * Genera el enlace directo wa.me con mensaje pre-cargado
+ * Genera el enlace directo con mensaje pre-cargado (usa api.whatsapp.com para preservar emojis UTF-8)
  */
 export function buildWaMeLink(phone: string, text: string): string {
-  const norm = normalizePhoneForWhatsApp(phone)
-  return `https://wa.me/${norm}?text=${encodeURIComponent(text)}`
+  return buildWhatsAppLink(phone, text)
 }
 export interface WhatsAppCredentials {
   token?: string

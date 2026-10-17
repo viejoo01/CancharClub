@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast, sportLabel } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast, sportLabel, buildWhatsAppLink } from '@/lib/utils'
 import { initiateOnlineCheckout } from '@/actions/booking.actions'
 import { 
   getPlayerWalletBalance, 
@@ -833,7 +833,10 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
                 className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 gap-1.5"
               >
                 <a
-                  href={`https://wa.me/${club.whatsappPhone}?text=${encodeURIComponent(`Hola! Quisiera reservar el turno de las ${time} hs en ${courtName} para la fecha ${date}.`)}`}
+                  href={buildWhatsAppLink(
+                    club.whatsappPhone,
+                    `Hola! Quisiera reservar el turno de las ${time} hs en ${courtName} para la fecha ${date}.`
+                  )}
                   target="_blank"
                   rel="noreferrer"
                 >

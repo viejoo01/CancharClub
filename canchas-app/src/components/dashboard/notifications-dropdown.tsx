@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { buildWhatsAppLink } from '@/lib/utils'
 import { useClubNotifications } from '@/hooks/use-club-notifications'
 import type { NotificationCategory, NotificationType } from '@/types/notifications'
 import {
@@ -408,7 +409,7 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
                         {phone && (
                           <a
-                            href={`https://wa.me/${phone.replace(/[^\d]/g, '')}`}
+                            href={buildWhatsAppLink(phone)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}

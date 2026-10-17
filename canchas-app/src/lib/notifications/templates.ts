@@ -6,6 +6,7 @@
 // ==============================================================================
 
 import { siteConfig } from '@/config/site'
+import { buildWhatsAppLink } from '@/lib/utils'
 
 /**
  * Parámetros para la confirmación de reserva al jugador
@@ -105,11 +106,10 @@ export function formatWhatsAppPhone(phone: string): string {
 }
 
 /**
- * Crea un enlace directo `https://wa.me/...` con mensaje codificado
+ * Crea un enlace directo `https://api.whatsapp.com/send/...` con mensaje codificado
  */
 export function createWhatsAppShareUrl(phone: string, text: string): string {
-  const cleanPhone = formatWhatsAppPhone(phone)
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+  return buildWhatsAppLink(phone, text)
 }
 
 // ------------------------------------------------------------------------------

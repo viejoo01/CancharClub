@@ -35,6 +35,7 @@ import { useClubNotifications } from '@/hooks/use-club-notifications'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import type { ClubNotification, NotificationCategory, NotificationType } from '@/types/notifications'
 import { toast } from 'sonner'
+import { buildWhatsAppLink } from '@/lib/utils'
 import Link from 'next/link'
 
 function formatFullDate(isoString: string): string {
@@ -710,7 +711,7 @@ export default function NotificationsPage() {
                   <div className="flex items-center gap-2">
                     {phone && (
                       <a
-                        href={`https://wa.me/${phone.replace(/[^\d]/g, '')}`}
+                        href={buildWhatsAppLink(phone)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-xs font-semibold text-emerald-300 hover:bg-emerald-900 hover:text-white transition-colors shadow-xs"

@@ -149,7 +149,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
     (googleMapsUrl ? `📍 *Cómo llegar (Google Maps):* ${googleMapsUrl}\n` : '') +
     `\n👉 *Comprobante y detalles:* ${typeof window !== 'undefined' ? window.location.href : ''}\n\n` +
     `¡Avisen quién va y quién falta!`
-  const teamWaUrl = `https://wa.me/?text=${encodeURIComponent(teamMessage)}`
+  const teamWaUrl = buildWhatsAppLink(null, teamMessage)
 
   const handleShare = () => {
     if (navigator.share) {

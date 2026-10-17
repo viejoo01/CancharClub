@@ -30,7 +30,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { formatARS } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import { lookupPlayerBookings, cancelBookingByPlayer, type PlayerBookingDetail } from '@/actions/booking.actions'
 
 export default function MisReservasPage() {
@@ -430,9 +430,10 @@ export default function MisReservasPage() {
 
                       {booking.clubPhone && (
                         <a
-                          href={`https://wa.me/${booking.clubPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          href={buildWhatsAppLink(
+                            booking.clubPhone,
                             `Hola! Tengo una consulta sobre mi reserva ${booking.code} para ${booking.courtName}.`
-                          )}`}
+                          )}
                           target="_blank"
                           rel="noreferrer"
                           className="h-10 px-3 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-800"

@@ -3,7 +3,7 @@
 // Utilidades de formato y links de WhatsApp para Cuentas Corrientes
 // ==============================================================================
 
-import { formatARS } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import type { CustomerAccount } from '@/actions/cuenta-corriente.actions'
 
 export function buildDebtWhatsAppReminder(
@@ -11,8 +11,7 @@ export function buildDebtWhatsAppReminder(
   clubName: string,
   bankAlias?: string
 ): string {
-  const cleanPhone = account.customer_phone.replace(/[^\d]/g, '')
-  if (!cleanPhone) return ''
+  if (!account.customer_phone) return ''
 
   const lastCharges = (account.movements || [])
     .filter(m => m.type === 'CHARGE')
@@ -37,5 +36,5 @@ export function buildDebtWhatsAppReminder(
 
   message += `¡Muchas gracias!`
 
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`
+  return buildWhatsAppLink(account.customer_phone, message)
 }

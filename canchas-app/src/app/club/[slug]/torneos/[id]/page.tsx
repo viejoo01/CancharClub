@@ -17,6 +17,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getTournamentById, type TournamentWithDetails } from '@/actions/tournament.actions'
+import { buildWhatsAppLink } from '@/lib/utils'
 
 export default function PublicTournamentPage() {
   const params = useParams()
@@ -66,7 +67,7 @@ export default function PublicTournamentPage() {
     if (!tournament) return
     const currentUrl = typeof window !== 'undefined' ? window.location.href : ''
     const text = `¡Seguí en vivo el fixture y los resultados de ${tournament.name}! ${currentUrl}`
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+    window.open(buildWhatsAppLink(null, text), '_blank')
   }
 
   return (

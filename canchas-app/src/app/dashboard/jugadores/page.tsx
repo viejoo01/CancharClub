@@ -19,7 +19,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS } from '@/lib/utils'
+import { formatARS, buildWhatsAppLink } from '@/lib/utils'
 import {
   getPlayersReputation,
   getPlayerHistory,
@@ -366,9 +366,10 @@ export default function JugadoresPage() {
                       .toUpperCase()
 
                     const waUrl = player.phone
-                      ? `https://wa.me/${player.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                      ? buildWhatsAppLink(
+                          player.phone,
                           `¡Hola ${player.name}! Te contactamos desde el club.`
-                        )}`
+                        )
                       : ''
 
                     return (

@@ -17,7 +17,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatARS, getArgentinaTodayIso } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, buildWhatsAppLink } from '@/lib/utils'
 import { getOccupancyReport, type OccupancyReportData, type PricingRecommendation } from '@/actions/analytics.actions'
 import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
@@ -168,7 +168,7 @@ export default function ReportesPage() {
       `¡Reservá tu cancha ahora antes de que se agoten los turnos!\n` +
       `👉 ${window.location.origin}/club/${clubSlug || 'reservas'}`
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+    window.open(buildWhatsAppLink(null, text), '_blank')
   }
 
   return (

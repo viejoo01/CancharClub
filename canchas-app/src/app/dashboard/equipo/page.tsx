@@ -28,6 +28,7 @@ import {
   type StaffRole,
 } from '@/actions/staff.actions'
 import { toast } from 'sonner'
+import { buildWhatsAppLink } from '@/lib/utils'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { ResetStaffPasswordModal } from '@/components/dashboard/reset-staff-password-modal'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
@@ -319,9 +320,10 @@ export default function EquipoPage() {
                       .toUpperCase()
 
                     const waInvite = member.phone
-                      ? `https://wa.me/${member.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                      ? buildWhatsAppLink(
+                          member.phone,
                           `¡Hola ${member.full_name}! Te damos la bienvenida al panel de gestión de CancharClub. Podés ingresar con tu cuenta en: https://cancharclub.com.ar/dashboard`
-                        )}`
+                        )
                       : ''
 
                     return (

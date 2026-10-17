@@ -43,7 +43,7 @@ import {
   deleteTeam,
   type TournamentWithDetails 
 } from '@/actions/tournament.actions'
-import { getArgentinaTodayIso } from '@/lib/utils'
+import { getArgentinaTodayIso, buildWhatsAppLink } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
@@ -770,7 +770,7 @@ export default function TorneosDashboardPage() {
                               <div className="flex items-center gap-1 shrink-0">
                                 {t.phone && (
                                   <a
-                                    href={`https://wa.me/${t.phone.replace(/[^0-9]/g, '')}`}
+                                    href={buildWhatsAppLink(t.phone)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     title="Contactar por WhatsApp"

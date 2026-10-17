@@ -214,9 +214,36 @@ export function formatARS(amount: number): string {
 
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
 
-export function buildWhatsAppLink(phone: string, message: string): string {
-  const cleaned = phone.replace(/\D/g, '')
-  return `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`
+export function normalizePhoneForWhatsApp(phone: string): string {
+  if (!phone) return ''
+  let cleaned = phone.replace(/\D/g, '')
+  if (!cleaned) return ''
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1)
+  }
+  if (cleaned.startsWith('15') && cleaned.length === 10) {
+    cleaned = cleaned.slice(2)
+  }
+  if (cleaned.startsWith('549')) {
+    return cleaned
+  }
+  if (cleaned.startsWith('54')) {
+    return `549${cleaned.slice(2)}`
+  }
+  return `549${cleaned}`
+}
+
+export function buildWhatsAppLink(phone?: string | null, message?: string | null): string {
+  const norm = phone ? normalizePhoneForWhatsApp(phone) : ''
+  const base = 'https://api.whatsapp.com/send/'
+  const params: string[] = []
+  if (norm) {
+    params.push(`phone=${norm}`)
+  }
+  if (message) {
+    params.push(`text=${encodeURIComponent(message)}`)
+  }
+  return params.length > 0 ? `${base}?${params.join('&')}` : base
 }
 
 export function buildBookingWhatsAppMessage(params: {

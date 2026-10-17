@@ -31,7 +31,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/utils'
+import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, buildWhatsAppLink } from '@/lib/utils'
 import { WaitlistModal } from '@/components/public/waitlist-modal'
 import { PlayerBookingsModal } from '@/components/public/player-bookings-modal'
 import { toast } from 'sonner'
@@ -753,7 +753,7 @@ export default function ClubPublicPage({
                 </div>
 
                 <a
-                  href={`https://wa.me/${club.whatsappPhone}`}
+                  href={buildWhatsAppLink(club.whatsappPhone)}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-bold text-xs"
@@ -1208,7 +1208,7 @@ export default function ClubPublicPage({
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-5 rounded-2xl shadow-lg shadow-emerald-950/40"
               >
                 <a
-                  href={`https://wa.me/${club.whatsappPhone}?text=${encodeURIComponent(`¡Hola ${club.name}! Quisiera consultar disponibilidad y reservar una cancha para hoy.`)}`}
+                  href={buildWhatsAppLink(club.whatsappPhone, `¡Hola ${club.name}! Quisiera consultar disponibilidad y reservar una cancha para hoy.`)}
                   target="_blank"
                   rel="noreferrer"
                 >

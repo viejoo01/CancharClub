@@ -18,11 +18,11 @@ export const siteConfig = {
 
   // Enlaces de contacto y canales de atención
   links: {
-    whatsapp: 'https://wa.me/5493816001122',
+    whatsapp: 'https://api.whatsapp.com/send/?phone=5493816001122',
     whatsappSupport: (customMessage?: string) => {
-      const base = 'https://wa.me/5493816001122'
+      const base = 'https://api.whatsapp.com/send/?phone=5493816001122'
       if (!customMessage) return base
-      return `${base}?text=${encodeURIComponent(customMessage)}`
+      return `${base}&text=${encodeURIComponent(customMessage)}`
     },
     instagram: 'https://instagram.com/cancharclub',
     twitter: 'https://x.com/cancharclub',

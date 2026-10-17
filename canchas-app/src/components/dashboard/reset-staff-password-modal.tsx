@@ -17,6 +17,7 @@ import {
 import { updateStaffPassword, type StaffMember } from '@/actions/staff.actions'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { buildWhatsAppLink } from '@/lib/utils'
 
 interface ResetStaffPasswordModalProps {
   isOpen: boolean
@@ -97,7 +98,7 @@ export function ResetStaffPasswordModal({
     : ''
 
   const waUrl = member.phone && savedPassword
-    ? `https://wa.me/${member.phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMessage)}`
+    ? buildWhatsAppLink(member.phone, waMessage)
     : ''
 
   return (

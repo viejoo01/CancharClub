@@ -14,6 +14,8 @@ import {
   Loader2,
   Receipt,
   CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
   Lock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -454,10 +456,25 @@ export default function CajaPage() {
                   ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
                   : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
               }`}>
-                <div className="text-xs uppercase tracking-wider font-bold">
-                  {auditResult.status === 'EXACT' && '✅ Caja Cuadrada Perfecta'}
-                  {auditResult.status === 'OVER' && '⚠️ Sobrante de Efectivo'}
-                  {auditResult.status === 'SHORT' && '🚨 Faltante de Efectivo'}
+                <div className="text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-1.5">
+                  {auditResult.status === 'EXACT' && (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Caja Cuadrada Perfecta</span>
+                    </>
+                  )}
+                  {auditResult.status === 'OVER' && (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      <span>Sobrante de Efectivo</span>
+                    </>
+                  )}
+                  {auditResult.status === 'SHORT' && (
+                    <>
+                      <AlertCircle className="w-4 h-4 text-rose-400" />
+                      <span>Faltante de Efectivo</span>
+                    </>
+                  )}
                 </div>
                 <div className="text-2xl font-black">
                   {auditResult.diff === 0 ? '$0 de Diferencia' : (auditResult.diff > 0 ? `+${formatARS(auditResult.diff)}` : formatARS(auditResult.diff))}

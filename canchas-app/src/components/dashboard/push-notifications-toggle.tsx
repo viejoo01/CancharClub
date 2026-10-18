@@ -78,7 +78,7 @@ export function PushNotificationsToggle() {
           if (event.data?.type === 'BOOKING_CONFIRMED' || event.data?.type === 'NEW_BOOKING') {
             if (Notification.permission === 'granted') {
               try {
-                new Notification('⚽ ¡Nueva Reserva Confirmada!', {
+                new Notification('Nueva Reserva Confirmada', {
                   body: event.data.customer_name 
                     ? `${event.data.customer_name} confirmó su turno en el club.`
                     : 'Ingresó una nueva reserva en el calendario.',
@@ -121,7 +121,7 @@ export function PushNotificationsToggle() {
         }
 
         try {
-          new Notification('🔔 ¡Notificaciones de Mostrador Activas!', {
+          new Notification('Notificaciones de Mostrador Activas', {
             body: 'CancharClub te avisará al instante con sonido cuando un jugador reserve un turno.',
             icon: '/icon-192.png',
           })
@@ -142,7 +142,7 @@ export function PushNotificationsToggle() {
     }
     if (permission === 'granted') {
       try {
-        new Notification('🔔 Prueba de Alerta - CancharClub', {
+        new Notification('Prueba de Alerta - CancharClub', {
           body: 'El sistema de avisos y notificaciones en tiempo real está 100% operativo.',
           icon: '/icon-192.png',
         })

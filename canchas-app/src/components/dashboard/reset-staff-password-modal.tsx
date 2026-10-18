@@ -13,6 +13,7 @@ import {
   X,
   ShieldCheck,
   UserCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import { updateStaffPassword, type StaffMember } from '@/actions/staff.actions'
 import { toast } from 'sonner'
@@ -230,12 +231,14 @@ export function ResetStaffPasswordModal({
                 </button>
               </div>
               {newPassword && newPassword.length < 8 ? (
-                <p className="text-[11px] text-amber-400 mt-1">
-                  ⚠️ Mínimo 8 caracteres (faltan {8 - newPassword.length}).
+                <p className="text-[11px] text-amber-400 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Mínimo 8 caracteres (faltan {8 - newPassword.length}).</span>
                 </p>
               ) : newPassword.length >= 8 ? (
-                <p className="text-[11px] text-emerald-400 mt-1">
-                  ✓ Contraseña válida ({newPassword.length} caracteres).
+                <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span>Contraseña válida ({newPassword.length} caracteres).</span>
                 </p>
               ) : null}
             </div>

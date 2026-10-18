@@ -406,6 +406,24 @@ export async function deleteCourt(
       console.warn('[deleteCourt] Warning deleting price rules:', prErr)
     }
 
+    // 6.5 Limpiar pagos relacionales asociados a las reservas de esta cancha (evita violación de FK 23503)
+    try {
+      const { data: courtBookings } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('court_id', courtId)
+
+      if (courtBookings && courtBookings.length > 0) {
+        const bIds = courtBookings.map(b => b.id)
+        await supabase
+          .from('booking_payments')
+          .delete()
+          .in('booking_id', bIds)
+      }
+    } catch (payCleanupErr) {
+      console.warn('[deleteCourt] Notice cleaning booking_payments:', payCleanupErr)
+    }
+
     // 7. Eliminar TODAS las reservas asociadas a esta cancha
     // (Crucial: evita la violación de FK "bookings_court_id_fkey" en PostgreSQL)
     const { error: bookingsErr } = await supabase
@@ -2668,7 +2686,8 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
         .select('id, court_id, customer_name, customer_phone, customer_email, booked_at, status, price_total_cents, deposit_cents, created_at')
         .eq('tenant_id', effectiveTenantId)
         .gte('created_at', sixtyDaysAgo)
-        .limit(1000),
+        .order('created_at', { ascending: false })
+        .limit(10000),
       supabase
         .from('court_orders')
         .select('total_ars')

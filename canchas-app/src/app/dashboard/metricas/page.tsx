@@ -13,6 +13,8 @@ import {
   Layers, 
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
+  Sparkles,
   Info,
   Trophy,
   Loader2
@@ -225,8 +227,9 @@ export default function MetricasPage() {
         </div>
 
         {/* Tabla / Matriz Heatmap */}
-        <div className="flex items-center justify-between text-xs text-slate-400 sm:hidden mt-4">
-          <span>👉 Deslizá horizontalmente para ver todas las horas</span>
+        <div className="flex items-center gap-1.5 text-xs text-slate-400 sm:hidden mt-4">
+          <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>Deslizá horizontalmente para ver todas las horas</span>
         </div>
         <div className="mt-2 sm:mt-6 overflow-x-auto touch-momentum">
           <div className="min-w-162.5 space-y-2">
@@ -370,8 +373,9 @@ export default function MetricasPage() {
             </div>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed">
-            💡 <strong>Análisis automático:</strong> Los datos se actualizan en tiempo real con cada reserva confirmada y cada pedido despachado en cantina.
+          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span><strong>Análisis automático:</strong> Los datos se actualizan en tiempo real con cada reserva confirmada y cada pedido despachado en cantina.</span>
           </div>
         </Card>
       </div>

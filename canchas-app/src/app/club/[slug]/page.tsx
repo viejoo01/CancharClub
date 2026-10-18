@@ -26,7 +26,8 @@ import {
   Navigation,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  Layers
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1435,8 +1436,9 @@ export default function ClubPublicPage({
                     {club.exactAddress || club.address}, {club.city}{club.province ? `, ${club.province}` : ''}
                   </p>
                   {club.addressReference && (
-                    <p className="text-[11px] text-emerald-400/90 mt-1 flex items-center gap-1 font-medium">
-                      <span>💡 Referencia:</span>
+                    <p className="text-[11px] text-emerald-400/90 mt-1 flex items-center gap-1.5 font-medium">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Referencia:</span>
                       <span className="italic">{club.addressReference}</span>
                     </p>
                   )}
@@ -1450,26 +1452,28 @@ export default function ClubPublicPage({
                   <button
                     type="button"
                     onClick={() => setMapViewMode('hybrid')}
-                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                       mapViewMode === 'hybrid'
                         ? 'bg-emerald-600 text-white shadow-xs font-bold'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     title="Vista satelital de Google Maps"
                   >
-                    🛰️ Satélite
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Satélite</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setMapViewMode('roadmap')}
-                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                       mapViewMode === 'roadmap'
                         ? 'bg-emerald-600 text-white shadow-xs font-bold'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     title="Vista callejera de Google Maps"
                   >
-                    🗺️ Mapa
+                    <Navigation className="w-3.5 h-3.5" />
+                    <span>Mapa</span>
                   </button>
                 </div>
 

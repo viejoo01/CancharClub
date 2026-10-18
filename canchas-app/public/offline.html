@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modo Offline — CancharClub</title>
+  <style>
+    :root {
+      --bg-color: #020617;
+      --card-bg: #0f172a;
+      --card-inner: #1e293b;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #10b981;
+      --accent-hover: #059669;
+      --accent-light: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --blue: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 24px 16px 80px 16px;
+    }
+
+    .main-wrap {
+      max-width: 840px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--accent-light);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-weight: 900;
+      font-size: 18px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+    }
+
+    .brand-title span {
+      color: var(--accent);
+    }
+
+    .badge-offline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+    }
+
+    .dot-red {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--red);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      margin-bottom: 20px;
+    }
+
+    .header-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .date-label {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .sync-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--card-inner);
+      border: 1px solid var(--border-color);
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .turns-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .turn-item {
+      background: var(--card-inner);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .turn-time {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--accent);
+      min-width: 110px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .turn-court {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .turn-player {
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .turn-phone {
+      font-size: 12px;
+      color: var(--blue);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .turn-phone:hover {
+      text-decoration: underline;
+    }
+
+    .turn-status {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    .status-confirmed {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+
+    .status-deposit {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: #7dd3fc;
+    }
+
+    .status-pending {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fde68a;
+    }
+
+    .fallback-box {
+      text-align: center;
+      padding: 36px 20px;
+    }
+
+    .fallback-box h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .fallback-box p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-width: 440px;
+      margin: 0 auto 24px auto;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background-color: var(--accent);
+      color: #020617;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 12px 24px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border-color);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      z-index: 100;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="main-wrap">
+    <div class="top-bar">
+      <div class="brand-group">
+        <div class="logo-badge">C</div>
+        <div>
+          <div class="brand-title">Canchar<span>Club</span></div>
+          <div style="font-size: 11px; color: var(--text-muted);">Soporte de Contingencia Mostrador</div>
+        </div>
+      </div>
+      <div class="badge-offline">
+        <div class="dot-red"></div>
+        <span>Sin Conexión a Internet</span>
+      </div>
+    </div>
+
+    <!-- Contenedor dinámico según presencia de snapshot local -->
+    <div id="snapshot-container"></div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="status-text">
+      <div class="dot-red"></div>
+      <span>Reintentando reconexión automática en tiempo real...</span>
+    </div>
+    <button class="btn" style="padding: 8px 18px; font-size: 13px;" onclick="window.location.reload()">
+      Reintentar conexión
+    </button>
+  </div>
+
+  <script>
+    function renderOfflineSchedule() {
+      const container = document.getElementById('snapshot-container');
+      const rawSnapshot = localStorage.getItem('canchar_today_schedule_snapshot');
+
+      if (!rawSnapshot) {
+        container.innerHTML = `
+          <div class="card fallback-box">
+            <h2>Modo Sin Conexión</h2>
+            <p>
+              No pudimos conectar con los servidores del club. Aún no se ha almacenado una copia local de turnos en este navegador. En cuanto se restablezca la señal de red, el sistema se reconectará de forma inmediata.
+            </p>
+            <button class="btn" onclick="window.location.reload()">
+              Reintentar ahora
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      try {
+        const snapshot = JSON.parse(rawSnapshot);
+        const bookings = Array.isArray(snapshot.bookings) ? snapshot.bookings : [];
+        const syncTime = snapshot.updatedAt ? new Date(snapshot.updatedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : 'Reciente';
+
+        let html = `
+          <div class="card">
+            <div class="header-info">
+              <div>
+                <div class="date-label">Turnos del Día (Copia Local de Seguridad)</div>
+                <div class="sync-meta">Fecha: ${snapshot.date || 'Hoy'} &bull; Última sincronización: ${syncTime} hs</div>
+              </div>
+              <div style="font-size: 13px; color: var(--accent); font-weight: 700;">
+                ${bookings.length} ${bookings.length === 1 ? 'turno guardado' : 'turnos guardados'}
+              </div>
+            </div>
+
+            <input 
+              type="text" 
+              id="filter-input" 
+              class="search-input" 
+              placeholder="Buscar por nombre de jugador, cancha o teléfono..."
+              oninput="filterTurns()"
+            />
+
+            <div class="turns-list" id="turns-container">
+        `;
+
+        if (bookings.length === 0) {
+          html += `
+            <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+              No había turnos reservados registrados para este día al momento de la última sincronización.
+            </div>
+          `;
+        } else {
+          // Ordenar cronológicamente por horario de inicio
+          const sorted = [...bookings].sort((a, b) => (a.starts_at || '').localeCompare(b.starts_at || ''));
+          sorted.forEach(b => {
+            const statusClass = b.status === 'confirmed' ? 'status-confirmed' : (b.deposit_amount_ars > 0 ? 'status-deposit' : 'status-pending');
+            const statusLabel = b.status === 'confirmed' ? 'Confirmado' : (b.deposit_amount_ars > 0 ? 'Señado' : 'Pendiente');
+            const phoneLink = b.customer_phone ? `<a class="turn-phone" href="tel:${b.customer_phone}">📞 ${b.customer_phone}</a>` : '';
+
+            html += `
+              <div class="turn-item" data-search="${(b.customer_name + ' ' + b.court_name + ' ' + (b.customer_phone || '')).toLowerCase()}">
+                <div>
+                  <div class="turn-time">${b.time_str || (b.starts_at ? b.starts_at.substring(11, 16) + ' hs' : '--:--')}</div>
+                  <div class="turn-court">${b.court_name || 'Cancha'}</div>
+                </div>
+                <div style="flex: 1; min-width: 160px;">
+                  <div class="turn-player">${b.customer_name || 'Sin nombre'}</div>
+                  ${phoneLink}
+                </div>
+                <div style="text-align: right;">
+                  <span class="turn-status ${statusClass}">${statusLabel}</span>
+                  ${b.balance_due > 0 ? `<div style="font-size: 11px; color: #fca5a5; margin-top: 4px; font-weight: 600;">Resta: $${b.balance_due.toLocaleString('es-AR')}</div>` : ''}
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        html += `
+            </div>
+          </div>
+        `;
+
+        container.innerHTML = html;
+      } catch (err) {
+        console.error('Error parseando snapshot local:', err);
+        container.innerHTML = `
+          <div class="card fallback-box">
+            <h2>Error en copia local</h2>
+            <p>No se pudo interpretar el archivo local. Reintentá la conexión con el servidor.</p>
+            <button class="btn" onclick="window.location.reload()">Reintentar</button>
+          </div>
+        `;
+      }
+    }
+
+    function filterTurns() {
+      const q = (document.getElementById('filter-input')?.value || '').toLowerCase().trim();
+      const items = document.querySelectorAll('.turn-item');
+      items.forEach(el => {
+        const text = el.getAttribute('data-search') || '';
+        el.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    window.addEventListener('online', function() {
+      window.location.reload();
+    });
+
+    renderOfflineSchedule();
+  </script>
+</body>
+</html>

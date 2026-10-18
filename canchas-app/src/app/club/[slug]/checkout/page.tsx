@@ -28,7 +28,6 @@ import { formatARS, getArgentinaTodayIso, getArgentinaTimeStr, isSlotTimeInPast,
 import { initiateOnlineCheckout } from '@/actions/booking.actions'
 import { 
   getPlayerWalletBalance, 
-  applyWalletCreditAction,
   type PlayerWallet
 } from '@/actions/coupons-and-wallet.actions'
 import { toast } from 'sonner'
@@ -183,11 +182,12 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   // Verificación reactiva de Saldo a Favor según el teléfono de WhatsApp
   useEffect(() => {
     const clean = customerPhone.replace(/\D/g, '')
-    if (clean.length >= 8) {
+    const targetTenantId = resolvedTenantId || (club?.id && club.id.length > 10 ? club.id : undefined)
+    if (clean.length >= 8 && targetTenantId) {
       let isMounted = true
       const timer = setTimeout(() => {
         setWalletChecking(true)
-        getPlayerWalletBalance(clean)
+        getPlayerWalletBalance(clean, targetTenantId)
           .then((wallet) => {
             if (isMounted) {
               setPlayerWallet(wallet)
@@ -207,7 +207,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         clearTimeout(timer)
       }
     }
-  }, [customerPhone])
+  }, [customerPhone, resolvedTenantId, club?.id])
 
   // Cálculos dinámicos de montos con Billetera Virtual
   const effectiveTotal = total
@@ -285,17 +285,12 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     try {
       const startsAt = `${date}T${time}:00-03:00`
 
-      // Si se aplicó saldo a favor de la billetera virtual, debitarlo
-      if (walletApplied > 0) {
-        await applyWalletCreditAction(customerPhone, walletApplied)
-      }
-
       const noteDetails = [
         notes,
         walletApplied > 0 ? `[Saldo Billetera: -${formatARS(walletApplied)}]` : '',
       ].filter(Boolean).join(' ')
 
-      // Invocar Server Action para lock + registro de booking con el método elegido
+      // Invocar Server Action para lock + registro de booking con el método elegido y débito atómico de billetera
       const activeClaimToken = effectiveClaimId || claimId || undefined
       const res = await initiateOnlineCheckout(
         {
@@ -312,6 +307,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
           deposit_amount_ars: payableDeposit,
           payment_method: payableDeposit === 0 ? 'TRANSFER' : paymentMethod,
           claim_id: activeClaimToken,
+          wallet_applied_ars: walletApplied > 0 ? walletApplied : undefined,
         },
         (
           courtObj?.slotDurationMinutes === 60

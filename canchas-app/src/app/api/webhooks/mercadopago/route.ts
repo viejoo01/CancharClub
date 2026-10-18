@@ -28,6 +28,9 @@ import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
+// Candado en memoria para mitigar colisiones idénticas simultáneas de webhooks (thundering herd)
+const IN_FLIGHT_WEBHOOKS = new Set<string>()
+
 // Cliente Supabase con service_role para operaciones del webhook
 function getSupabase() {
   return createClient(
@@ -199,7 +202,41 @@ export async function POST(request: NextRequest) {
     console.error('[MP Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')
   }
 
-  console.log(`[MP Webhook] Procesando payment_id: ${paymentId}`)
+  const paymentIdStr = String(paymentId)
+
+  // ── Fast-path idempotencia: Si el evento está en vuelo o ya fue asentado ─────
+  if (IN_FLIGHT_WEBHOOKS.has(paymentIdStr)) {
+    console.log(`[MP Webhook] Evento concurrente en vuelo para payment_id ${paymentIdStr}. Retornando 200 OK inmediatamente.`)
+    return NextResponse.json({ received: true, in_flight: true })
+  }
+
+  // 1. Verificar si ya existe en booking_payments (<15ms, sin llamar a la API externa de MP)
+  const { data: alreadyRecorded } = await supabase
+    .from('booking_payments')
+    .select('id, booking_id')
+    .eq('mp_payment_id', paymentIdStr)
+    .maybeSingle()
+
+  if (alreadyRecorded) {
+    console.log(`[MP Webhook] Fast-path idempotencia: payment_id ${paymentIdStr} ya asentado en booking_payments (${alreadyRecorded.id}). Descartando redundante.`)
+    return NextResponse.json({ received: true, idempotent: true, note: 'already_recorded' })
+  }
+
+  // 2. Verificar si el booking ya tiene este mp_payment_id con estado confirmado
+  const { data: alreadyBooked } = await supabase
+    .from('bookings')
+    .select('id, status')
+    .eq('mp_payment_id', paymentIdStr)
+    .maybeSingle()
+
+  if (alreadyBooked && (alreadyBooked.status === 'confirmed' || alreadyBooked.status === 'deposit_paid')) {
+    console.log(`[MP Webhook] Fast-path idempotencia: booking ${alreadyBooked.id} ya confirmado con mp_payment_id ${paymentIdStr}.`)
+    return NextResponse.json({ received: true, idempotent: true, note: 'booking_already_confirmed' })
+  }
+
+  IN_FLIGHT_WEBHOOKS.add(paymentIdStr)
+  try {
+    console.log(`[MP Webhook] Procesando payment_id: ${paymentIdStr}`)
 
   // ── Consultar el pago en la API de MP ─────────────────────────────────────
   let payment: MercadoPagoPayment | null = null
@@ -241,28 +278,54 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // 2.5 Atribución directa e instantánea mediante el user_id de Mercado Pago (collector_id del club)
+  const incomingCollectorId = notification.user_id ? String(notification.user_id) : request.nextUrl.searchParams.get('user_id')
+  if (!payment && incomingCollectorId) {
+    const { data: tenantByCollector } = await supabase
+      .from('tenants')
+      .select('id, mp_access_token')
+      .eq('mp_collector_id', incomingCollectorId)
+      .maybeSingle()
+
+    if (tenantByCollector?.mp_access_token && tenantByCollector.mp_access_token.length > 10) {
+      payment = await fetchMPPayment(paymentId, tenantByCollector.mp_access_token)
+      if (payment) {
+        console.log(`[MP Webhook] Pago ${paymentId} resuelto inmediatamente por collector_id ${incomingCollectorId} (club ${tenantByCollector.id})`)
+      }
+    }
+  }
+
   // 3. Si aún no se resolvió, probar con el token de la plataforma (Superadmin)
   const platformToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN || ''
   if (!payment && platformToken && !platformToken.startsWith('TEST-0000000000000000')) {
     payment = await fetchMPPayment(paymentId, platformToken)
   }
 
-  // 4. Fallback exhaustivo: buscar entre todos los clubes activos con token configurado (sin límite artificial de 10)
+  // 4. Fallback exhaustivo: buscar concurrentemente en bloques de 5 clubes para evitar timeout de Vercel
   if (!payment) {
     const { data: clubTenants } = await supabase
       .from('tenants')
       .select('id, mp_access_token')
       .not('mp_access_token', 'is', null)
-      .limit(100)
+      .limit(60)
 
-    for (const t of clubTenants ?? []) {
-      if (t.mp_access_token && t.mp_access_token.length > 10) {
-        payment = await fetchMPPayment(paymentId, t.mp_access_token)
-        if (payment) {
-          console.log(`[MP Webhook] Pago ${paymentId} resuelto mediante token del club ${t.id}`)
+    const validTenants = (clubTenants ?? []).filter(t => t.mp_access_token && t.mp_access_token.length > 10)
+    const BATCH_SIZE = 5
+
+    for (let i = 0; i < validTenants.length; i += BATCH_SIZE) {
+      const batch = validTenants.slice(i, i + BATCH_SIZE)
+      const results = await Promise.allSettled(
+        batch.map(t => fetchMPPayment(paymentId, t.mp_access_token!))
+      )
+      for (let j = 0; j < results.length; j++) {
+        const res = results[j]
+        if (res.status === 'fulfilled' && res.value) {
+          payment = res.value
+          console.log(`[MP Webhook] Pago ${paymentId} resuelto mediante token del club ${batch[j].id}`)
           break
         }
       }
+      if (payment) break
     }
   }
 
@@ -362,7 +425,7 @@ export async function POST(request: NextRequest) {
         tenantId: booking.tenant_id,
         type: 'PAYMENT_RECEIVED',
         category: 'PAYMENTS',
-        title: '⚠️ Pago Tardío — Turno Ya Ocupado',
+        title: 'Pago Tardío — Turno Ya Ocupado',
         message: `El cliente ${booking.customer_name || 'Desconocido'} abonó $${payment.transaction_amount} pero el turno fue ocupado por ${occupant.customer_name}.`,
         metadata: {
           booking_id: booking.id,
@@ -441,6 +504,28 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       console.error('[MP Webhook] Error actualizando booking:', updateError)
       return NextResponse.json({ error: 'DB update failed' }, { status: 500 })
+    }
+
+    // Inserción relacional inmutable en booking_payments
+    if (newStatus === 'confirmed') {
+      try {
+        const depositAmt = payment.transaction_amount || 0
+        await supabase.from('booking_payments').insert({
+          tenant_id: booking.tenant_id,
+          booking_id: booking.id,
+          amount_ars: depositAmt,
+          amount_cents: Math.round(Number(depositAmt) * 100),
+          payment_method: 'mercadopago',
+          payment_type: 'DEPOSIT',
+          payment_date: (depositPaidAt || new Date().toISOString()).split('T')[0],
+          registered_at: depositPaidAt || new Date().toISOString(),
+          mp_payment_id: String(payment.id),
+          mp_status: payment.status,
+          notes: 'Seña confirmada vía Mercado Pago',
+        })
+      } catch (insertPayErr) {
+        console.warn('[MP Webhook] Notice inserting into booking_payments:', insertPayErr)
+      }
     }
 
     // Registrar en audit_log para trazabilidad financiera
@@ -537,7 +622,7 @@ export async function POST(request: NextRequest) {
         tenantId: booking.tenant_id,
         type: 'PAYMENT_RECEIVED',
         category: 'PAYMENTS',
-        title: '💳 Seña Acreditada por Mercado Pago',
+        title: 'Seña Acreditada por Mercado Pago',
         message: `Pago de $${depositArs.toLocaleString('es-AR')} de ${booking.customer_name || 'Jugador'} acreditado automáticamente para ${courtName}.`,
         metadata: {
           booking_id: booking.id,
@@ -554,13 +639,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // MP espera 200 para no reintentar
-  return NextResponse.json({
-    received: true,
-    booking_id: booking.id,
-    new_status: newStatus,
-    payment_status: payment.status,
-  })
+    // MP espera 200 para no reintentar
+    return NextResponse.json({
+      received: true,
+      booking_id: booking.id,
+      new_status: newStatus,
+      payment_status: payment.status,
+    })
+  } finally {
+    IN_FLIGHT_WEBHOOKS.delete(paymentIdStr)
+  }
 }
 
 // GET: Endpoint de verificación (MP puede hacer GET para validar el endpoint)

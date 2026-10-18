@@ -91,9 +91,10 @@ export function getInMemoryBookings(): CalendarBooking[] {
 export function getVenueBookings(venueId: string, dateStr: string): CalendarBooking[] {
   const today = dateStr || getArgentinaTodayIso()
 
-  // Reservas dinámicas en memoria para la fecha seleccionada (0ms latencia)
+  // Reservas dinámicas en memoria para la fecha seleccionada con aislamiento estricto por club (0ms latencia)
   const dynamicForDay = IN_MEMORY_VENUE_BOOKINGS.filter((b) => {
     if (String(b.status).toUpperCase().includes('CANCEL')) return false
+    if (b.tenant_id && venueId && b.tenant_id !== venueId) return false
     const d = b.starts_at?.includes('T') ? b.starts_at.split('T')[0] : b.starts_at?.split(' ')[0]
     return d === today
   })

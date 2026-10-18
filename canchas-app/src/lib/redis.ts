@@ -24,6 +24,11 @@ export const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN || 'mock-token',
 })
 
+export function isRedisConfigured(): boolean {
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  return Boolean(url && !url.includes('mock-redis') && process.env.UPSTASH_REDIS_REST_TOKEN)
+}
+
 const LOCK_TTL_MS = (parseInt(process.env.BOOKING_LOCK_TTL_SECONDS || '420')) * 1000
 
 // Registro de candados en memoria de proceso (previene colisiones simultáneas en el mismo servidor)

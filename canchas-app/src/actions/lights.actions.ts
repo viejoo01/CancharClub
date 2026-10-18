@@ -217,18 +217,39 @@ export async function getCourtLightConfigs(tenantId: string): Promise<Record<str
     if (!auth.authorized) return {}
 
     const supabase = await createServiceClient()
-    const { data } = await supabase
-      .from('audit_log')
-      .select('new_data')
-      .eq('tenant_id', tenantId)
-      .eq('action', 'COURT_LIGHT_CONFIG')
-      .order('created_at', { ascending: false })
-      .limit(1)
 
+    // 1. Intentar consultar tabla relacional dedicada court_lights
     let configs: Record<string, Partial<CourtLightConfigData>> = {}
-    if (data && data.length > 0 && data[0].new_data) {
-      configs = (data[0].new_data as { configs: Record<string, Partial<CourtLightConfigData>> }).configs || {}
+    const { data: dbLights, error: dbLightsErr } = await supabase
+      .from('court_lights')
+      .select('*')
+      .eq('tenant_id', tenantId)
+
+    if (!dbLightsErr && dbLights && dbLights.length > 0) {
+      for (const r of dbLights) {
+        configs[r.court_id] = {
+          court_id: r.court_id,
+          is_on: r.is_on,
+          is_auto_mode: r.auto_schedule,
+          relay_type: r.relay_type as RelayType,
+          last_state_change: r.last_state_change || new Date().toISOString(),
+        }
+      }
+    } else {
+      // 2. Fallback retrocompatible a audit_log
+      const { data } = await supabase
+        .from('audit_log')
+        .select('new_data')
+        .eq('tenant_id', tenantId)
+        .eq('action', 'COURT_LIGHT_CONFIG')
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (data && data.length > 0 && data[0].new_data) {
+        configs = (data[0].new_data as { configs: Record<string, Partial<CourtLightConfigData>> }).configs || {}
+      }
     }
+
     lightConfigsCache.set(tenantId, { data: configs, expiresAt: Date.now() + 60000 })
     return configs
   } catch {
@@ -252,6 +273,21 @@ export async function saveCourtLightConfig(
     const current = await getCourtLightConfigs(tenantId)
     current[courtId] = { ...(current[courtId] || {}), ...config }
 
+    // 1. Guardar de forma relacional en tabla court_lights
+    try {
+      await supabase.from('court_lights').upsert({
+        tenant_id: tenantId,
+        court_id: courtId,
+        relay_type: config.relay_type || 'SHELLY_CLOUD',
+        is_on: config.is_on ?? false,
+        auto_schedule: config.is_auto_mode ?? true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'court_id' })
+    } catch (tblErr) {
+      console.warn('[saveCourtLightConfig] Warning upserting court_lights:', tblErr)
+    }
+
+    // 2. Dual-write inmutable a audit_log
     await supabase.from('audit_log').insert({
       tenant_id: tenantId,
       action: 'COURT_LIGHT_CONFIG',
@@ -270,18 +306,24 @@ export async function saveCourtLightConfig(
 }
 
 /**
- * Persistir el estado ON/OFF del relé en la tabla courts (campo light_is_on).
- * Si el campo no existe aún en la BD, falla silenciosamente.
+ * Persistir el estado ON/OFF del relé en la tabla courts (campo light_is_on) y court_lights.
  */
 async function updateLightStateInDB(courtId: string, isOn: boolean): Promise<void> {
   try {
     const supabase = await createServiceClient()
-    await supabase
-      .from('courts')
-      .update({ light_is_on: isOn, light_updated_at: new Date().toISOString() })
-      .eq('id', courtId)
+    const nowIso = new Date().toISOString()
+    await Promise.allSettled([
+      supabase
+        .from('courts')
+        .update({ light_is_on: isOn, light_updated_at: nowIso })
+        .eq('id', courtId),
+      supabase
+        .from('court_lights')
+        .update({ is_on: isOn, last_state_change: nowIso, updated_at: nowIso })
+        .eq('court_id', courtId),
+    ])
   } catch {
-    // Silently ignore — el campo puede no existir aún
+    // Silently ignore
   }
 }
 

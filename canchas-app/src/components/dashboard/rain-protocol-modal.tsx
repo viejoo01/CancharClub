@@ -407,8 +407,9 @@ export function RainProtocolModal({
                                 <CheckCircle2 className="w-3 h-3" /> Reagendado
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[10px] border-sky-800/80 text-sky-400 bg-sky-950/30">
-                                🌧️ Suspendido
+                              <Badge variant="outline" className="text-[10px] border-sky-800/80 text-sky-400 bg-sky-950/30 gap-1 inline-flex items-center">
+                                <CloudRain className="w-3 h-3 text-sky-400" />
+                                <span>Suspendido</span>
                               </Badge>
                             )}
                           </div>

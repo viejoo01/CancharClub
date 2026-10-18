@@ -282,9 +282,19 @@ export async function payCustomerAccount(params: {
     account.movements = [newMovement, ...(account.movements || [])].slice(0, 50)
     account.updated_at = now
 
-    // Impactar en la caja diaria del club
+    // Impactar en la caja diaria del club (registro relacional inmutable en booking_payments con fallback a audit_log)
     try {
       const supabase = await createServiceClient()
+      await supabase.from('booking_payments').insert({
+        tenant_id: effectiveTenantId,
+        amount_cents: Math.round(safeAmount * 100),
+        amount_ars: safeAmount,
+        payment_method: params.paymentMethod,
+        payment_type: 'BALANCE',
+        registered_at: now,
+        notes: `Cobro Cuenta Corriente: ${account.customer_name}${params.notes ? ` - ${params.notes}` : ''}`,
+      })
+
       await supabase.from('audit_log').insert({
         tenant_id: effectiveTenantId,
         action: 'PAYMENT_RECEIVED',
@@ -299,7 +309,9 @@ export async function payCustomerAccount(params: {
           created_at: now,
         }
       })
-    } catch {}
+    } catch (payErr) {
+      console.warn('[payCustomerAccount] Error al registrar pago en auditoría/caja:', payErr)
+    }
 
     await persistCustomerAccounts(effectiveTenantId, accounts)
     revalidatePath('/dashboard/cantina')

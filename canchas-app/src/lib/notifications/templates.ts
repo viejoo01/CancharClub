@@ -136,9 +136,9 @@ export const emailTemplates = {
           </p>
 
           <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin: 24px 0;">
-            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;">🏟️ <strong>Cancha:</strong> ${params.courtName}</p>
-            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;">⏰ <strong>Horario:</strong> ${params.time}</p>
-            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;">📍 <strong>Club:</strong> ${params.clubName}</p>
+            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;"><strong>Cancha:</strong> ${params.courtName}</p>
+            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;"><strong>Horario:</strong> ${params.time}</p>
+            <p style="margin: 8px 0; color: #cbd5e1; font-size: 14px;"><strong>Club:</strong> ${params.clubName}</p>
           </div>
 
           <div style="text-align: center; margin: 32px 0;">
@@ -174,8 +174,8 @@ export const emailTemplates = {
           </p>
 
           <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin: 24px 0;">
-            <p style="margin: 6px 0; color: #cbd5e1; font-size: 14px;">📌 <strong>Concepto:</strong> Abono Mensual ${siteConfig.name} - ${params.clubName}</p>
-            <p style="margin: 6px 0; color: #f59e0b; font-size: 14px;">📅 <strong>Vencimiento ordinario:</strong> Día 7 de este mes</p>
+            <p style="margin: 6px 0; color: #cbd5e1; font-size: 14px;"><strong>Concepto:</strong> Abono Mensual ${siteConfig.name} - ${params.clubName}</p>
+            <p style="margin: 6px 0; color: #f59e0b; font-size: 14px;"><strong>Vencimiento ordinario:</strong> Día 7 de este mes</p>
             <p style="margin: 6px 0; color: #94a3b8; font-size: 13px;">Recordá abonar antes del día 7 para mantener habilitadas tus reservas online sin interrupciones.</p>
           </div>
 

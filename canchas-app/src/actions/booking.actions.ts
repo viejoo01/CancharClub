@@ -34,6 +34,7 @@ import {
 } from './waitlist.actions'
 import { sendAutomatedBookingConfirmation } from './whatsapp-bot.actions'
 import { addVenueBooking, getVenueBookings, cancelVenueBooking } from '@/config/venues-data'
+import { applyWalletCreditAction, refundWalletCreditForBooking } from './coupons-and-wallet.actions'
 import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
 import { isPlayerBlocked } from './players.actions'
 import { recordClubNotification } from './notifications.actions'
@@ -212,11 +213,11 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    // 2.1 PRE-VERIFICACIÓN DE DISPONIBILIDAD (evita colisiones simultáneas)
-    const memoryBookings = getVenueBookings(payload.tenant_id, dayStr)
+    // 2.1 PRE-VERIFICACIÓN DE DISPONIBILIDAD (evita colisiones simultáneas y garantiza aislamiento multi-tenant)
+    const memoryBookings = getVenueBookings(effectiveTenantId, dayStr)
     const isAlreadyBookedInMemory = memoryBookings.some((b) => {
       const cName = Array.isArray(b.courts) ? b.courts[0]?.name : b.courts?.name
-      const matchCourt = b.court_id === payload.court_id || (payload.court_name && cName?.toLowerCase() === payload.court_name.toLowerCase())
+      const matchCourt = b.court_id === payload.court_id || (b.tenant_id === effectiveTenantId && payload.court_name && cName?.toLowerCase() === payload.court_name.toLowerCase())
       return matchCourt && b.starts_at === startsAtIso && !String(b.status).toUpperCase().includes('CANCEL')
     })
     if (isAlreadyBookedInMemory && !isWaitlistClaimValid) {
@@ -373,9 +374,24 @@ export async function initiateOnlineCheckout(
       await markWaitlistAsClaimed(payload.claim_id)
     }
 
-    // Registrar también en memoria para respuesta instantánea (0ms) en la grilla
+    // Débito atómico del saldo a favor de la billetera virtual si fue utilizado en el checkout
+    if (dbInsertSuccess && payload.wallet_applied_ars && payload.wallet_applied_ars > 0 && payload.customer_phone) {
+      try {
+        await applyWalletCreditAction(
+          payload.customer_phone,
+          payload.wallet_applied_ars,
+          effectiveTenantId,
+          bookingId
+        )
+      } catch (walletErr) {
+        console.warn('[initiateOnlineCheckout] Notice applying wallet credit:', walletErr)
+      }
+    }
+
+    // Registrar también en memoria para respuesta instantánea (0ms) en la grilla con aislamiento por club
     addVenueBooking({
       id: bookingId,
+      tenant_id: effectiveTenantId,
       court_id: effectiveCourtId,
       customer_name: payload.customer_name,
       customer_phone: payload.customer_phone,
@@ -626,7 +642,7 @@ export async function initiateOnlineCheckout(
       tenantId: effectiveTenantId,
       type: 'BOOKING_CREATED',
       category: 'BOOKINGS',
-      title: '📅 Nueva Reserva Online Recibida',
+      title: 'Nueva Reserva Online Recibida',
       message: `${payload.customer_name || 'Jugador'} registró una reserva online para ${courtName}. Monto seña: $${payload.deposit_amount_ars.toLocaleString('es-AR')}.`,
       metadata: {
         booking_id: bookingId,
@@ -671,7 +687,7 @@ export async function confirmTransferPaymentAction(
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id')
+      .select('id, tenant_id, deposit_cents, price_total_cents')
       .eq('id', bookingId)
       .single()
 
@@ -683,16 +699,39 @@ export async function confirmTransferPaymentAction(
     }
 
     const ref = referenceNumber ? ` - Ref Transferencia #${referenceNumber}` : ''
+    const now = new Date()
+    const nowIso = now.toISOString()
     await supabase
       .from('bookings')
       .update({
         status: 'confirmed',
-        paid_at: new Date().toISOString(),
+        paid_at: nowIso,
         staff_notes: `Transferencia acreditada/confirmada 24hs${ref}`,
       })
       .eq('id', bookingId)
 
+    // Inserción relacional inmutable en booking_payments para registro en Caja Diaria
+    const depCents = Number(booking.deposit_cents) || 0
+    if (depCents > 0) {
+      try {
+        await supabase.from('booking_payments').insert({
+          tenant_id: booking.tenant_id,
+          booking_id: booking.id,
+          amount_ars: depCents / 100,
+          amount_cents: depCents,
+          payment_method: 'bank_transfer',
+          payment_type: 'DEPOSIT',
+          payment_date: getArgentinaTodayIso(now),
+          registered_at: nowIso,
+          notes: `Transferencia acreditada/confirmada 24hs${ref}`,
+        })
+      } catch (payErr) {
+        console.warn('[confirmTransferPaymentAction] Error inserting into booking_payments:', payErr)
+      }
+    }
+
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/caja')
     return { success: true }
   } catch (err: unknown) {
     console.error('[confirmTransferPaymentAction] Error:', err)
@@ -858,12 +897,34 @@ export async function createManualBooking(
       return { success: false, error: error.message }
     }
 
+    // Inserción relacional inmutable en booking_payments para registro en Caja Diaria
+    if (depositCents > 0) {
+      try {
+        await supabase.from('booking_payments').insert({
+          tenant_id: effectiveTenantId,
+          booking_id: booking.id,
+          amount_ars: depositCents / 100,
+          amount_cents: depositCents,
+          payment_method: mappedPaymentMethod,
+          payment_type: isFullCash ? 'FULL' : 'DEPOSIT',
+          payment_date: getArgentinaTodayIso(now),
+          registered_at: nowIso,
+          received_by_profile_id: validStaffId,
+          notes: isFullCash ? 'Pago total en mostrador' : 'Seña en mostrador',
+        })
+      } catch (payErr) {
+        console.warn('[createManualBooking] Error inserting into booking_payments:', payErr)
+      }
+    }
+
     // Invalidar inmediatamente la caché del calendario para esta fecha
     void invalidateCalendarBookingsCache(effectiveTenantId, dayStr)
+    revalidatePath('/dashboard/caja')
 
-    // Sincronizar en memoria para reflejo instantáneo (0ms) en el portal de jugadores
+    // Sincronizar en memoria para reflejo instantáneo (0ms) en el portal de jugadores con aislamiento de club
     addVenueBooking({
       id: booking.id,
+      tenant_id: effectiveTenantId,
       court_id: payload.court_id,
       customer_name: payload.customer_name?.trim() || 'Cliente Mostrador',
       customer_phone: payload.customer_phone?.trim() || null,
@@ -907,7 +968,7 @@ export async function createManualBooking(
         tenantId: effectiveTenantId,
         type: 'PAYMENT_RECEIVED',
         category: 'PAYMENTS',
-        title: '💰 Pago / Seña Recibida en Mostrador',
+        title: 'Pago / Seña Recibida en Mostrador',
         message: `Se registró un cobro de $${formattedDeposit} (${methodSpanish}) de ${payload.customer_name?.trim() || 'Cliente'} a las ${timeStr} hs.`,
         metadata: {
           booking_id: booking.id,
@@ -1029,13 +1090,34 @@ export async function registerCashPayment(params: {
       return { success: false, error: upErr.message }
     }
 
+    // Inserción relacional inmutable en booking_payments
+    const amountArs = Math.round(effectiveAmountCents / 100)
+    const paymentType = currentDeposit === 0 ? 'DEPOSIT' : 'BALANCE'
+    const todayDate = nowIso.split('T')[0]
+
+    try {
+      await supabase.from('booking_payments').insert({
+        tenant_id: booking.tenant_id,
+        booking_id: params.booking_id,
+        amount_ars: amountArs,
+        amount_cents: effectiveAmountCents,
+        payment_method: methodEnum,
+        payment_type: paymentType,
+        payment_date: todayDate,
+        registered_at: nowIso,
+        notes: params.notes || null,
+      })
+    } catch (insertPayErr) {
+      console.warn('[registerCashPayment] Notice inserting into booking_payments:', insertPayErr)
+    }
+
     // Registrar en el historial de notificaciones y alertas
     const customerDisplayName = booking.customer_name?.trim() || 'Cliente'
     void recordClubNotification({
       tenantId: booking.tenant_id,
       type: 'PAYMENT_RECEIVED',
       category: 'PAYMENTS',
-      title: '💰 Pago / Seña Recibida en Mostrador',
+      title: 'Pago / Seña Recibida en Mostrador',
       message: `Se registró un cobro de $${(effectiveAmountCents / 100).toLocaleString('es-AR')} (${methodSpanish}) de ${customerDisplayName} a las ${timeStr} hs.`,
       metadata: {
         booking_id: booking.id,
@@ -1106,6 +1188,11 @@ export async function cancelBooking(params: {
     // Si la reserva estaba en memoria, marcarla como cancelada para sincronización inmediata
     cancelVenueBooking(params.booking_id)
 
+    // Reintegrar automáticamente saldo a favor si la reserva utilizó créditos de billetera virtual
+    if (booking?.tenant_id) {
+      void refundWalletCreditForBooking(booking.tenant_id, params.booking_id)
+    }
+
     // Liberar candados de Redis / memoria incondicionalmente para habilitar reclamos inmediatos
     if (booking?.redis_lock_key) {
       await forceReleaseBookingLock(booking.redis_lock_key)
@@ -1169,7 +1256,7 @@ export async function cancelBooking(params: {
       tenantId: booking.tenant_id,
       type: 'BOOKING_CANCELLED',
       category: 'ALERTS',
-      title: '❌ Turno Cancelado',
+      title: 'Turno Cancelado',
       message: `El turno de ${customerName} fue cancelado (${params.reason || 'Sin motivo'}).`,
       metadata: {
         booking_id: booking.id,
@@ -1184,7 +1271,7 @@ export async function cancelBooking(params: {
         tenantId: booking.tenant_id,
         type: 'WAITLIST_NOTIFIED',
         category: 'ALERTS',
-        title: '🔔 Alerta de Cupo Enviada a Lista de Espera',
+        title: 'Alerta de Cupo Enviada a Lista de Espera',
         message: `Se notificó a ${waitlistInfo.waitlistCustomerName} con 10 min de prioridad para tomar el turno liberado.`,
         metadata: {
           customer_name: waitlistInfo.waitlistCustomerName,
@@ -2003,6 +2090,11 @@ export async function cancelBookingByPlayer(
 
     // Liberar reserva de memoria en vivo para consistencia instantánea
     cancelVenueBooking(cleanId)
+
+    // Reintegrar automáticamente saldo a favor si la reserva utilizó créditos de billetera virtual
+    if (booking?.tenant_id) {
+      void refundWalletCreditForBooking(booking.tenant_id, cleanId)
+    }
 
     // Liberar candados de Redis / memoria incondicionalmente para habilitar reclamos inmediatos
     if (booking?.redis_lock_key) {

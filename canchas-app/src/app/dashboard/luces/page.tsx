@@ -175,7 +175,7 @@ export default function LucesPage() {
     )
 
     if (res.success) {
-      toast.success(targetState ? '💡 Luces encendidas' : '⚪ Luces apagadas', {
+      toast.success(targetState ? 'Luces encendidas' : 'Luces apagadas', {
         description: res.isMock ? 'Simulación en navegador (modo demo)' : 'Comando despachado al dispositivo IoT'
       })
     } else {
@@ -423,13 +423,23 @@ export default function LucesPage() {
                         <Settings className="w-4 h-4" />
                       </Button>
                       <Badge 
-                        className={`text-[10px] font-bold ${
+                        className={`text-[10px] font-bold flex items-center gap-1.5 ${
                           court.is_on 
                             ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
                             : 'bg-slate-800 text-slate-400 border-slate-700'
                         }`}
                       >
-                        {court.is_on ? '💡 ENCENDIDA' : '⚪ APAGADA'}
+                        {court.is_on ? (
+                          <>
+                            <Lightbulb className="w-3 h-3 text-amber-400" />
+                            <span>ENCENDIDA</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                            <span>APAGADA</span>
+                          </>
+                        )}
                       </Badge>
                     </div>
                   </div>

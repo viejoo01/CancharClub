@@ -589,10 +589,11 @@ export function ClubServicesLocationModal({
                     className="bg-slate-900/90 border-slate-800 text-xs text-white placeholder:text-slate-600 h-9 font-mono"
                   />
                   <div className="text-[11px] text-slate-400 space-y-1">
-                    <p>
-                      💡 <strong>Para mapa embebido oficial de Google Maps:</strong> Buscá tu club en Google Maps, tocá <strong>Compartir</strong> &gt; pestaña <strong>Insertar un mapa</strong> y pegá el código acá.
+                    <p className="flex items-start gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span><strong>Para mapa embebido oficial de Google Maps:</strong> Buscá tu club en Google Maps, tocá <strong>Compartir</strong> &gt; pestaña <strong>Insertar un mapa</strong> y pegá el código acá.</span>
                     </p>
-                    <p className="text-slate-500">
+                    <p className="text-slate-500 pl-5">
                       Si pegás un enlace compartido normal (maps.app.goo.gl), se utilizará para abrir directamente en Google Maps y Waze.
                     </p>
                   </div>
@@ -623,24 +624,26 @@ export function ClubServicesLocationModal({
                       <button
                         type="button"
                         onClick={() => setPreviewMapMode('hybrid')}
-                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
                           previewMapMode === 'hybrid'
                             ? 'bg-emerald-600 text-white shadow-xs font-bold'
                             : 'text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        🛰️ Satélite
+                        <Layers className="w-3 h-3" />
+                        <span>Satélite</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setPreviewMapMode('roadmap')}
-                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                        className={`px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
                           previewMapMode === 'roadmap'
                             ? 'bg-emerald-600 text-white shadow-xs font-bold'
                             : 'text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        🗺️ Mapa
+                        <Compass className="w-3 h-3" />
+                        <span>Mapa</span>
                       </button>
                     </div>
 

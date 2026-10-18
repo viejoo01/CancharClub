@@ -90,11 +90,11 @@ import { getTenantClubInfo } from '@/actions/club.actions'
 
 export type Product = CantinaProduct
 
-// Cache en memoria a nivel módulo para apertura instantánea (0ms)
-const cantinaProductsClientCache: { current: CantinaProduct[] } = { current: [] }
-const cantinaSuppliersClientCache: { current: CantinaSupplier[] } = { current: DEFAULT_CANTINA_SUPPLIERS }
-const cantinaCategoriesClientCache: { current: CantinaCategory[] } = { current: DEFAULT_CANTINA_CATEGORIES }
-const cantinaAccountsClientCache: { current: CustomerAccount[] } = { current: [] }
+// Cache en memoria a nivel módulo indexado por tenant_id para apertura instantánea (0ms) sin filtración entre clubes
+const cantinaProductsClientCache = new Map<string, CantinaProduct[]>()
+const cantinaSuppliersClientCache = new Map<string, CantinaSupplier[]>()
+const cantinaCategoriesClientCache = new Map<string, CantinaCategory[]>()
+const cantinaAccountsClientCache = new Map<string, CustomerAccount[]>()
 
 // Singleton reutilizable para el contexto de audio (previene memory leaks y bloqueos del navegador)
 let sharedAudioCtx: AudioContext | null = null
@@ -160,7 +160,7 @@ export default function CantinaPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
   // Estados para Cuentas Corrientes & Fiados
-  const [accounts, setAccounts] = useState<CustomerAccount[]>(() => cantinaAccountsClientCache.current)
+  const [accounts, setAccounts] = useState<CustomerAccount[]>(() => (tenantId ? cantinaAccountsClientCache.get(tenantId) : null) || [])
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [accountSearch, setAccountSearch] = useState('')
   const [payAccountModalOpen, setPayAccountModalOpen] = useState(false)
@@ -190,7 +190,7 @@ export default function CantinaPage() {
   const [bankAlias, setBankAlias] = useState('')
 
   // Catálogo de Productos y Estado de Inventario
-  const [products, setProducts] = useState<CantinaProduct[]>(() => cantinaProductsClientCache.current)
+  const [products, setProducts] = useState<CantinaProduct[]>(() => (tenantId ? cantinaProductsClientCache.get(tenantId) : null) || [])
   const productsRef = useRef(products)
   useEffect(() => {
     productsRef.current = products
@@ -233,7 +233,9 @@ export default function CantinaPage() {
     setAccountsLoading(true)
     try {
       const data = await getCustomerAccounts(tenantId)
-      setAccounts(data || [])
+      const valid = data || []
+      setAccounts(valid)
+      cantinaAccountsClientCache.set(tenantId, valid)
     } catch (err) {
       console.warn('[loadAccounts] Error:', err)
       setAccounts([])
@@ -326,7 +328,7 @@ export default function CantinaPage() {
   }, [accounts])
 
   // Proveedores de Cantina
-  const [suppliers, setSuppliers] = useState<CantinaSupplier[]>(() => cantinaSuppliersClientCache.current)
+  const [suppliers, setSuppliers] = useState<CantinaSupplier[]>(() => (tenantId ? cantinaSuppliersClientCache.get(tenantId) : null) || DEFAULT_CANTINA_SUPPLIERS)
   const [isSuppliersModalOpen, setIsSuppliersModalOpen] = useState(false)
   const [isRestockOrderModalOpen, setIsRestockOrderModalOpen] = useState(false)
   const [supplierFormList, setSupplierFormList] = useState<CantinaSupplier[]>([])
@@ -335,35 +337,56 @@ export default function CantinaPage() {
   const [quickPhoneInput, setQuickPhoneInput] = useState<string>('')
 
   // Categorías de Cantina
-  const [categories, setCategories] = useState<CantinaCategory[]>(() => cantinaCategoriesClientCache.current)
+  const [categories, setCategories] = useState<CantinaCategory[]>(() => (tenantId ? cantinaCategoriesClientCache.get(tenantId) : null) || DEFAULT_CANTINA_CATEGORIES)
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [editingCategoryName, setEditingCategoryName] = useState('')
   const [savingCategories, setSavingCategories] = useState(false)
 
-  // Sincronizar caches en memoria del cliente para navegación instantánea (0ms)
+  // Resetear estados al cambiar de sede para evitar mostrar datos del club anterior
   useEffect(() => {
-    if (products.length > 0) cantinaProductsClientCache.current = products
-  }, [products])
+    if (!tenantId) return
+    const cachedProds = cantinaProductsClientCache.get(tenantId)
+    setProducts(cachedProds || [])
+
+    const cachedAccounts = cantinaAccountsClientCache.get(tenantId)
+    setAccounts(cachedAccounts || [])
+
+    const cachedSuppliers = cantinaSuppliersClientCache.get(tenantId)
+    setSuppliers(cachedSuppliers || DEFAULT_CANTINA_SUPPLIERS)
+
+    const cachedCategories = cantinaCategoriesClientCache.get(tenantId)
+    setCategories(cachedCategories || DEFAULT_CANTINA_CATEGORIES)
+
+    setCourtOrders([])
+    setCart([])
+  }, [tenantId])
+
+  // Sincronizar caches en memoria del cliente para navegación instantánea (0ms) indexadas por tenantId
+  useEffect(() => {
+    if (tenantId && products.length > 0) cantinaProductsClientCache.set(tenantId, products)
+  }, [tenantId, products])
 
   useEffect(() => {
-    if (suppliers.length > 0) cantinaSuppliersClientCache.current = suppliers
-  }, [suppliers])
+    if (tenantId && suppliers.length > 0) cantinaSuppliersClientCache.set(tenantId, suppliers)
+  }, [tenantId, suppliers])
 
   useEffect(() => {
-    if (categories.length > 0) cantinaCategoriesClientCache.current = categories
-  }, [categories])
+    if (tenantId && categories.length > 0) cantinaCategoriesClientCache.set(tenantId, categories)
+  }, [tenantId, categories])
 
   useEffect(() => {
-    if (accounts.length > 0) cantinaAccountsClientCache.current = accounts
-  }, [accounts])
+    if (tenantId && accounts.length > 0) cantinaAccountsClientCache.set(tenantId, accounts)
+  }, [tenantId, accounts])
 
   const loadSuppliers = useCallback(async () => {
     if (!tenantId) return
     try {
       const data = await getCantinaSuppliers(tenantId)
-      setSuppliers(data || DEFAULT_CANTINA_SUPPLIERS)
+      const valid = data || DEFAULT_CANTINA_SUPPLIERS
+      setSuppliers(valid)
+      cantinaSuppliersClientCache.set(tenantId, valid)
     } catch (err) {
       console.warn('[loadSuppliers] Error:', err)
     }
@@ -374,9 +397,12 @@ export default function CantinaPage() {
     try {
       const data = await getCantinaCategories(tenantId)
       if (data && data.length > 0) {
-        setCategories(data.map(c => ({ id: c.id, name: c.name })))
+        const valid = data.map(c => ({ id: c.id, name: c.name }))
+        setCategories(valid)
+        cantinaCategoriesClientCache.set(tenantId, valid)
       } else {
         setCategories(DEFAULT_CANTINA_CATEGORIES)
+        cantinaCategoriesClientCache.set(tenantId, DEFAULT_CANTINA_CATEGORIES)
       }
     } catch (err) {
       console.warn('[loadCategories] Error:', err)
@@ -562,7 +588,9 @@ export default function CantinaPage() {
     setProductsLoading(true)
     try {
       const data = await getCantinaProducts(tenantId)
-      setProducts(data || [])
+      const valid = data || []
+      setProducts(valid)
+      cantinaProductsClientCache.set(tenantId, valid)
     } catch (err) {
       console.warn('[loadProducts] Error:', err)
       setProducts([])

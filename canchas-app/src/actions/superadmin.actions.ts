@@ -273,6 +273,51 @@ export async function updateTenantPlan(tenantId: string, planId: SaaSPlanId) {
 }
 
 /**
+ * Permite al Superadmin actualizar de forma segura los datos básicos de un club (nombre, slug, ciudad, estado activo)
+ * mediante service_role en el servidor.
+ */
+export async function updateTenantDetailsBySuperadmin(
+  tenantId: string,
+  data: {
+    name?: string
+    slug?: string
+    city?: string
+    is_active?: boolean
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
+    const supabase = await createServiceClient()
+    const updatePayload: Record<string, unknown> = {}
+
+    if (data.name !== undefined) updatePayload.name = data.name.trim()
+    if (data.slug !== undefined) updatePayload.slug = data.slug.trim().toLowerCase()
+    if (data.city !== undefined) updatePayload.city = data.city.trim()
+    if (data.is_active !== undefined) updatePayload.is_active = Boolean(data.is_active)
+
+    const { error } = await supabase
+      .from('tenants')
+      .update(updatePayload)
+      .eq('id', tenantId)
+
+    if (error) {
+      console.error('Error updating tenant details by superadmin:', error)
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/superadmin')
+    revalidatePath('/dashboard')
+    revalidatePath('/')
+    return { success: true }
+  } catch (err) {
+    console.error('updateTenantDetailsBySuperadmin exception:', err)
+    return { success: false, error: 'Error al actualizar datos del club' }
+  }
+}
+
+/**
  * Otorga acceso y poder total a un club activándolo con su plan SaaS correspondiente.
  */
 export async function activateTenantAccess(tenantId: string, planId?: SaaSPlanId) {
@@ -593,6 +638,49 @@ export async function updateUserPasswordBySuperadmin(
   } catch (err) {
     console.error('updateUserPasswordBySuperadmin exception:', err)
     return { success: false, error: 'Error al cambiar contraseña' }
+  }
+}
+
+/**
+ * Permite al Superadmin actualizar el perfil de cualquier usuario de club (nombre, teléfono, rol y club asignado)
+ * mediante el cliente service_role seguro, inmune a restricciones de RLS anónimo del navegador.
+ */
+export async function updateUserProfileBySuperadmin(
+  userId: string,
+  payload: {
+    name?: string
+    phone?: string
+    role?: 'TENANT_ADMIN' | 'TENANT_STAFF'
+    tenantId?: string
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertSuperadmin()
+    if (!auth.authorized) return { success: false, error: auth.error }
+
+    const supabase = await createServiceClient()
+    const updatePayload: Record<string, unknown> = {}
+
+    if (payload.name !== undefined) updatePayload.full_name = payload.name.trim()
+    if (payload.phone !== undefined) updatePayload.phone = payload.phone.trim()
+    if (payload.role !== undefined) updatePayload.role = payload.role
+    if (payload.tenantId !== undefined) updatePayload.tenant_id = payload.tenantId
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Error updating user profile by superadmin:', error)
+      return { success: false, error: error.message }
+    }
+
+    revalidatePath('/superadmin')
+    return { success: true }
+  } catch (err) {
+    console.error('updateUserProfileBySuperadmin exception:', err)
+    return { success: false, error: 'Error al actualizar perfil de usuario' }
   }
 }
 

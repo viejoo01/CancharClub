@@ -77,6 +77,7 @@ function formatTimeArgentina(iso?: string | null): string {
 
 export interface CalendarBooking {
   id: string
+  tenant_id?: string
   court_id: string
   customer_name: string
   customer_phone?: string | null
@@ -105,6 +106,54 @@ interface CourtItem {
 
 // Caché en cliente para cambio instantáneo (0ms) entre fechas
 const clientBookingsCache = new Map<string, { bookings: CalendarBooking[]; timestamp: number }>()
+
+/**
+ * Persiste una copia local ligera en localStorage para que el personal de recepción
+ * pueda consultar turnos, canchas y teléfonos de contacto en modo offline ante cortes de red.
+ */
+function saveOfflineScheduleSnapshot(
+  dateIso: string,
+  tenantId: string | null | undefined,
+  courtsList: CourtItem[],
+  bookingsList: CalendarBooking[]
+) {
+  if (typeof window === 'undefined') return
+  try {
+    const todayIso = new Date().toISOString().split('T')[0]
+    if (dateIso === todayIso || !localStorage.getItem('canchar_today_schedule_snapshot')) {
+      const snapshot = {
+        date: dateIso,
+        updatedAt: new Date().toISOString(),
+        tenantId: tenantId || '',
+        courts: courtsList.map((c) => ({
+          id: c.id,
+          name: c.name,
+          sport: c.sport,
+        })),
+        bookings: bookingsList.map((b) => {
+          const cName = courtsList.find((c) => c.id === b.court_id)?.name || 'Cancha'
+          return {
+            id: b.id,
+            court_id: b.court_id,
+            court_name: cName,
+            starts_at: b.starts_at,
+            ends_at: b.ends_at,
+            time_str: `${formatTimeArgentina(b.starts_at)} - ${formatTimeArgentina(b.ends_at)}`,
+            customer_name: b.customer_name || 'Sin nombre',
+            customer_phone: b.customer_phone || '',
+            status: b.status,
+            total_amount_ars: b.total_amount_ars,
+            deposit_amount_ars: b.deposit_amount_ars,
+            balance_due: b.balance_due,
+          }
+        }),
+      }
+      localStorage.setItem('canchar_today_schedule_snapshot', JSON.stringify(snapshot))
+    }
+  } catch {
+    // Silently ignore localStorage quota limits
+  }
+}
 
 interface CalendarGridProps {
   tenantId: string
@@ -302,10 +351,11 @@ export function CalendarGrid({
 
   // Sincronizar si cambia initialBookings desde el servidor
   useEffect(() => {
-    if (initialBookings) {
+    if (initialBookings && initialBookings.length > 0) {
       setLoadedBookings(initialBookings)
+      saveOfflineScheduleSnapshot(selectedDate, tenantId, activeCourts, initialBookings)
     }
-  }, [initialBookings])
+  }, [initialBookings, selectedDate, tenantId, activeCourts])
 
   // Cargar turnos reales de la base de datos para la fecha seleccionada con caché local instantáneo (0ms)
   const fetchBookingsForDate = useCallback(async (dateToFetch: string, force = false) => {
@@ -327,6 +377,7 @@ export function CalendarGrid({
         const bookingsList = fresh as CalendarBooking[]
         clientBookingsCache.set(cacheKey, { bookings: bookingsList, timestamp: Date.now() })
         setLoadedBookings(bookingsList)
+        saveOfflineScheduleSnapshot(dateToFetch, tenantId, activeCourts, bookingsList)
         setOptimisticBookings((prev) =>
           prev.filter(
             (ob) =>
@@ -348,7 +399,7 @@ export function CalendarGrid({
     } catch (err) {
       console.error('[CalendarGrid] Error fetching bookings:', err)
     }
-  }, [tenantId])
+  }, [tenantId, activeCourts])
 
   // Cargar turnos al cambiar de fecha
   useEffect(() => {

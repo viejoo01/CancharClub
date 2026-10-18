@@ -7,6 +7,7 @@ import {
   Loader2,
   ArrowRight,
   Sparkles,
+  Check,
 } from 'lucide-react'
 import {
   Dialog,
@@ -25,11 +26,16 @@ interface RegisterClubModalProps {
   selectedPlanId?: SaaSPlanId
 }
 
-const SPORTS_OPTIONS = [
-  { id: 'PADEL', label: 'Pádel', icon: '🎾' },
-  { id: 'FUTBOL', label: 'Fútbol', icon: '⚽' },
-  { id: 'TENIS', label: 'Tenis', icon: '🎾' },
-  { id: 'BASQUET', label: 'Básquet', icon: '🏀' },
+interface SportOption {
+  id: string
+  label: string
+}
+
+const SPORTS_OPTIONS: SportOption[] = [
+  { id: 'PADEL', label: 'Pádel' },
+  { id: 'FUTBOL', label: 'Fútbol' },
+  { id: 'TENIS', label: 'Tenis' },
+  { id: 'BASQUET', label: 'Básquet' },
 ]
 
 export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIANO_2' }: RegisterClubModalProps) {
@@ -289,13 +295,13 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
                       key={sport.id}
                       type="button"
                       onClick={() => toggleSport(sport.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border cursor-pointer ${
                         isSelected
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                           : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-300 border-stone-200 dark:border-slate-800 hover:border-slate-300'
                       }`}
                     >
-                      <span>{sport.icon}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
                       <span>{sport.label}</span>
                     </button>
                   )

@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { createManualBooking } from '@/actions/booking.actions'
 import { getClubPriceRules } from '@/actions/club.actions'
 import { toast } from 'sonner'
-import { Loader2, Lock } from 'lucide-react'
+import { Loader2, Lock, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { getArgentinaTodayIso, isSlotTimeInPast } from '@/lib/utils'
 import { useUserRole } from '@/hooks/use-tenant-id'
 import type { CalendarBooking } from './calendar-grid'
@@ -344,8 +344,9 @@ export function QuickBookingModal({
                 required
               />
               {isSlotTimeInPast(date, time) && (
-                <p className="text-[11px] text-amber-400 font-semibold mt-1">
-                  ℹ️ Turno pasado (registro histórico / caja)
+                <p className="text-[11px] text-amber-400 font-semibold mt-1 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 shrink-0" />
+                  <span>Turno pasado (registro histórico / caja)</span>
                 </p>
               )}
             </div>
@@ -484,21 +485,21 @@ export function QuickBookingModal({
             <div className="p-2.5 rounded-lg text-xs bg-slate-950/70 border border-slate-800">
               {Number(depositAmount) === 0 ? (
                 <span className="text-amber-400 flex items-center gap-1.5">
-                  <span>⚠️</span>
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                   <span>
                     El turno se registrará <strong>sin seña previa</strong>. Cobrar el 100% ({Number(totalAmount) > 0 ? `$ ${Number(totalAmount).toLocaleString('es-AR')}` : '$ 0'}) al jugar.
                   </span>
                 </span>
               ) : Number(depositAmount) >= Number(totalAmount) && Number(totalAmount) > 0 ? (
                 <span className="text-emerald-400 flex items-center gap-1.5">
-                  <span>✅</span>
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
                   <span>
                     El turno quedará registrado como <strong>PAGADO TOTAL</strong> ($ {Number(totalAmount).toLocaleString('es-AR')}).
                   </span>
                 </span>
               ) : (
                 <span className="text-emerald-300 flex items-center gap-1.5">
-                  <span>ℹ️</span>
+                  <Info className="w-4 h-4 shrink-0 text-emerald-300" />
                   <span>
                     Seña cobrada: <strong>$ {Number(depositAmount).toLocaleString('es-AR')}</strong>. Restará cobrar: <strong>$ {Math.max(0, Number(totalAmount) - Number(depositAmount)).toLocaleString('es-AR')}</strong> en cancha.
                   </span>

@@ -514,6 +514,31 @@ export async function fetchFreshCantinaProducts(cleanTenantId: string): Promise<
   if (!cleanId) return []
 
   const supabase = await createServiceClient()
+
+  // 1. Prioridad: Consulta relacional a public.products
+  try {
+    const { data: dbProducts, error: prodError } = await supabase
+      .from('products')
+      .select('id, name, category, price_cents, stock, is_active')
+      .eq('tenant_id', cleanId)
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (!prodError && dbProducts && dbProducts.length > 0) {
+      return dbProducts.map((p: { id: string; name: string; category?: string; price_cents?: number; stock?: number; is_active?: boolean }) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category || 'BEBIDAS',
+        price: (p.price_cents ?? 0) / 100,
+        stock: p.stock ?? 0,
+        is_active: p.is_active ?? true,
+      }))
+    }
+  } catch (err) {
+    console.warn('[fetchFreshCantinaProducts] Fallback a audit_log por error en tabla products:', err)
+  }
+
+  // 2. Fallback retroactivo: audit_log (NoSQL blob)
   const { data, error } = await supabase
     .from('audit_log')
     .select('new_data')
@@ -534,6 +559,27 @@ export async function fetchFreshCantinaProducts(cleanTenantId: string): Promise<
       p => !DEMO_PRODUCT_IDS.has(p.id) && !DEMO_PRODUCT_NAMES.has(p.name?.toLowerCase().trim())
     )
   }
+
+  // 3. Migración transparente: Si existen productos en audit_log y la tabla products está vacía,
+  // persistir en background para sincronización relacional permanente
+  if (productsList.length > 0) {
+    try {
+      const rows = productsList.map(p => ({
+        id: p.id,
+        tenant_id: cleanId,
+        name: p.name,
+        category: p.category || 'BEBIDAS',
+        price_cents: Math.round((p.price || 0) * 100),
+        stock: Math.max(0, p.stock || 0),
+        is_active: p.is_active ?? true,
+        updated_at: new Date().toISOString()
+      }))
+      await supabase.from('products').upsert(rows, { onConflict: 'id' })
+    } catch {
+      // Ignorar de forma no bloqueante si la tabla aún se está migrando
+    }
+  }
+
   return productsList
 }
 
@@ -544,34 +590,54 @@ async function saveCantinaProductsDirect(
   const cleanId = cleanTenantId.trim()
   const supabase = await createServiceClient()
 
-  const { data: existing } = await supabase
-    .from('audit_log')
-    .select('id')
-    .eq('tenant_id', cleanId)
-    .eq('action', 'CANTINA_PRODUCT_CATALOG')
-    .eq('table_name', 'cantina_products')
-    .order('created_at', { ascending: false })
-    .limit(1)
+  // 1. Sincronización relacional atómica en tabla products
+  try {
+    if (products.length > 0) {
+      const rows = products.map(p => ({
+        id: p.id,
+        tenant_id: cleanId,
+        name: p.name,
+        category: p.category || 'BEBIDAS',
+        price_cents: Math.round((p.price || 0) * 100),
+        stock: Math.max(0, p.stock || 0),
+        is_active: p.is_active ?? true,
+        updated_at: new Date().toISOString()
+      }))
+      await supabase.from('products').upsert(rows, { onConflict: 'id' })
+    }
+  } catch (err) {
+    console.warn('[saveCantinaProductsDirect] Error en tabla products:', err)
+  }
 
-  if (existing && existing.length > 0) {
-    const updateRes = await supabase
+  // 2. Respaldo retroactivo dual-write en audit_log
+  try {
+    const { data: existing } = await supabase
       .from('audit_log')
-      .update({
+      .select('id')
+      .eq('tenant_id', cleanId)
+      .eq('action', 'CANTINA_PRODUCT_CATALOG')
+      .eq('table_name', 'cantina_products')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('audit_log')
+        .update({
+          new_data: { products, updated_at: new Date().toISOString() }
+        })
+        .eq('id', existing[0].id)
+    } else {
+      await supabase.from('audit_log').insert({
+        tenant_id: cleanId,
+        action: 'CANTINA_PRODUCT_CATALOG',
+        table_name: 'cantina_products',
+        record_id: cleanId,
         new_data: { products, updated_at: new Date().toISOString() }
       })
-      .eq('id', existing[0].id)
-
-    if (updateRes.error) throw updateRes.error
-  } else {
-    const insertRes = await supabase.from('audit_log').insert({
-      tenant_id: cleanId,
-      action: 'CANTINA_PRODUCT_CATALOG',
-      table_name: 'cantina_products',
-      record_id: cleanId,
-      new_data: { products, updated_at: new Date().toISOString() }
-    })
-
-    if (insertRes.error) throw insertRes.error
+    }
+  } catch (auditErr) {
+    console.warn('[saveCantinaProductsDirect] Audit log warning:', auditErr)
   }
 
   cantinaProductsCache.set(cleanId, { data: products, timestamp: Date.now() })
@@ -590,6 +656,7 @@ export async function atomicModifyStock(
   return withTenantStockLock(cleanTenantId, async () => {
     try {
       cantinaProductsCache.delete(cleanTenantId)
+      const supabase = await createServiceClient()
       const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
       if (currentProducts.length === 0) {
         return { success: true, products: [] }
@@ -610,6 +677,26 @@ export async function atomicModifyStock(
       })
 
       if (hasChanges) {
+        // Actualizar atómicamente a nivel de fila en PostgreSQL para evitar carreras
+        for (const d of deltas) {
+          if (!d.delta) continue
+          const target = updatedProducts.find(p =>
+            (d.productId && d.productId === p.id) ||
+            (d.name && d.name.trim().toLowerCase() === p.name.trim().toLowerCase())
+          )
+          if (target) {
+            try {
+              await supabase
+                .from('products')
+                .update({ stock: target.stock, updated_at: new Date().toISOString() })
+                .eq('tenant_id', cleanTenantId)
+                .eq('id', target.id)
+            } catch {
+              // Fallback manejado por saveCantinaProductsDirect
+            }
+          }
+        }
+
         await saveCantinaProductsDirect(cleanTenantId, updatedProducts)
         return { success: true, products: updatedProducts }
       }
@@ -699,6 +786,18 @@ export async function updateProductStock(
       })
 
       if (found) {
+        // Actualización a nivel fila SQL
+        const supabase = await createServiceClient()
+        try {
+          await supabase
+            .from('products')
+            .update({ stock: Math.max(0, amount), updated_at: new Date().toISOString() })
+            .eq('tenant_id', cleanTenantId)
+            .eq('id', productId)
+        } catch {
+          // Fallback en saveCantinaProductsDirect
+        }
+
         await saveCantinaProductsDirect(cleanTenantId, updated)
         return { success: true, products: updated }
       }
@@ -730,19 +829,39 @@ export async function saveSingleProduct(
       const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
       const existingIndex = currentProducts.findIndex(p => p.id === product.id)
       let updated: CantinaProduct[]
+      let sanitizedProduct: CantinaProduct
+
       if (existingIndex >= 0) {
         const existingProduct = currentProducts[existingIndex]
-        // Protección contra fraude: Si el usuario no es Dueño del Club (ej. administrador de turno / canchero), se mantiene estrictamente el precio oficial fijado
         const protectedPrice = (!isOwner && currentUser) ? existingProduct.price : product.price
-        const sanitizedProduct: CantinaProduct = {
+        sanitizedProduct = {
           ...product,
           price: protectedPrice,
         }
         updated = [...currentProducts]
         updated[existingIndex] = sanitizedProduct
       } else {
+        sanitizedProduct = product
         updated = [product, ...currentProducts]
       }
+
+      // Upsert directo en la tabla relacional
+      const supabase = await createServiceClient()
+      try {
+        await supabase.from('products').upsert({
+          id: sanitizedProduct.id,
+          tenant_id: cleanTenantId,
+          name: sanitizedProduct.name,
+          category: sanitizedProduct.category || 'BEBIDAS',
+          price_cents: Math.round(sanitizedProduct.price * 100),
+          stock: Math.max(0, sanitizedProduct.stock || 0),
+          is_active: sanitizedProduct.is_active ?? true,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' })
+      } catch (upsertErr) {
+        console.warn('[saveSingleProduct] Database products upsert warning:', upsertErr)
+      }
+
       await saveCantinaProductsDirect(cleanTenantId, updated)
       return { success: true, products: updated }
     })
@@ -765,6 +884,19 @@ export async function deleteProduct(
     const cleanTenantId = tenantId.trim()
     return await withTenantStockLock(cleanTenantId, async () => {
       cantinaProductsCache.delete(cleanTenantId)
+      const supabase = await createServiceClient()
+
+      // Marcar producto como inactivo en PostgreSQL
+      try {
+        await supabase
+          .from('products')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('tenant_id', cleanTenantId)
+          .eq('id', productId)
+      } catch (delErr) {
+        console.warn('[deleteProduct] Inactive update warning:', delErr)
+      }
+
       const currentProducts = await fetchFreshCantinaProducts(cleanTenantId)
       const updated = currentProducts.filter(p => p.id !== productId)
       await saveCantinaProductsDirect(cleanTenantId, updated)

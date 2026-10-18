@@ -161,7 +161,7 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
       if (res === 'granted') {
         toast.success('¡Notificaciones de escritorio activadas!')
         try {
-          new Notification('🔔 ¡Avisos de CancharClub Activos!', {
+          new Notification('Avisos de CancharClub Activos', {
             body: 'Recibirás avisos de nuevos turnos, señas y alertas en vivo.',
             icon: '/icon-192.png',
           })

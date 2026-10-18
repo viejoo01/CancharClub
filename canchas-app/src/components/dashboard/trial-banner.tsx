@@ -78,7 +78,7 @@ export function TrialBanner({
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-black text-sm sm:text-base text-white tracking-tight flex items-center gap-1.5">
-                🎉 15 Días de Prueba Gratuita en Curso
+                15 Días de Prueba Gratuita en Curso
               </span>
               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-mono text-[11px] px-2 py-0.2 font-bold">
                 {daysRemaining} {daysRemaining === 1 ? 'día restante' : 'días restantes'}

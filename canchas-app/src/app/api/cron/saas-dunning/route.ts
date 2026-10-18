@@ -112,6 +112,14 @@ async function handleDunning(request: NextRequest) {
         console.warn(`[SaaS Dunning] Aviso auditoría turnos fijos para ${tenant.id}:`, fixedErr)
       }
 
+      // B. Roll-forward automático diario de turnos fijos: pre-generar turnos para asegurar la grilla
+      try {
+        const { rollForwardActiveRecurringSlots } = await import('@/actions/recurring-slots.actions')
+        await rollForwardActiveRecurringSlots(tenant.id, { skipAuth: true })
+      } catch (rollErr) {
+        console.warn(`[SaaS Dunning] Aviso roll-forward turnos fijos para ${tenant.id}:`, rollErr)
+      }
+
       // Si aún está dentro del período de prueba gratis de 15 días:
       if (now < trialEnd) {
         if (!tenant.subscription_status || tenant.subscription_status === 'TRIAL') {
@@ -174,6 +182,13 @@ async function handleDunning(request: NextRequest) {
           const pricing = calculateClubSaaSFee(courtsCount, highestSlotArs, tenant.created_at, trialEnd)
           const dueAmount = pricing.monthlyFeeArs
 
+          // Si el club aún no cargó el precio de sus canchas, la cuota proporcional no puede determinarse.
+          // Se pospone la emisión de la factura mensual para no generar cobros de $0 ni mora injustificada.
+          if (dueAmount <= 0 || !pricing.hasPriceConfigured) {
+            console.log(`[SaaS Dunning] Club ${tenant.name || tenant.id}: tarifas de canchas no configuradas. Facturación mensual pospuesta.`)
+            continue
+          }
+
           const isFirstInvoice = tenant.subscription_status === 'TRIAL'
           const noteText = isFirstInvoice
             ? `Primer abono mensual SaaS tras 15 días gratis (${pricing.formulaDescription})`
@@ -211,14 +226,15 @@ async function handleDunning(request: NextRequest) {
         }
       }
 
-      if (!oldestInv) {
-        // El tenant no tiene facturas impagas: si estaba en dunning, regularizar a ACTIVE
+      if (!oldestInv || oldestInv.amount <= 0) {
+        // El tenant no tiene facturas impagas válidas (> 0): si estaba en dunning, regularizar
         const dunningStatuses: TenantSubscriptionStatus[] = ['PAYMENT_PENDING', 'GRACE_PERIOD', 'PARTIALLY_SUSPENDED', 'PAUSED', 'LOCKED']
         if (dunningStatuses.includes(tenant.subscription_status as TenantSubscriptionStatus)) {
+          const targetCleanStatus = now < trialEnd ? 'TRIAL' : 'ACTIVE'
           await supabase
             .from('tenants')
             .update({
-              subscription_status: 'ACTIVE',
+              subscription_status: targetCleanStatus,
               is_active: true,
               updated_at: now.toISOString(),
             })
@@ -228,7 +244,7 @@ async function handleDunning(request: NextRequest) {
             tenantId: tenant.id,
             clubName: tenant.name || tenant.id,
             oldStatus: tenant.subscription_status || 'UNKNOWN',
-            newStatus: 'ACTIVE',
+            newStatus: targetCleanStatus,
             daysOverdue: 0,
           })
         }

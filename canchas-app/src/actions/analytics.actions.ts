@@ -112,7 +112,85 @@ export async function getDailyCashReport(
 
   const entries: DailyCashEntry[] = []
 
+  // 1. Consultar cobros relacionales en booking_payments (máxima precisión contable)
+  const recordedBookingIds = new Set<string>()
+  try {
+    const { data: dbPayments, error: payErr } = await supabase
+      .from('booking_payments')
+      .select(`
+        id,
+        amount_ars,
+        amount_cents,
+        payment_method,
+        payment_type,
+        registered_at,
+        notes,
+        booking_id,
+        bookings (
+          id,
+          customer_name,
+          courts (name)
+        )
+      `)
+      .eq('tenant_id', effectiveTenantId)
+      .gte('registered_at', dayStart)
+      .lte('registered_at', dayEnd)
+      .order('registered_at', { ascending: true })
+
+    if (!payErr && dbPayments && dbPayments.length > 0) {
+      for (const bp of dbPayments) {
+        if (bp.booking_id) recordedBookingIds.add(bp.booking_id)
+        const amt = Number(bp.amount_ars) || Math.round((Number(bp.amount_cents) || 0) / 100)
+        if (amt <= 0) continue
+
+        const bObj = Array.isArray(bp.bookings) ? bp.bookings[0] : bp.bookings
+        const cObj = bObj && typeof bObj === 'object' && 'courts' in bObj
+          ? (Array.isArray((bObj as unknown as { courts: { name?: string }[] }).courts)
+              ? (bObj as unknown as { courts: { name?: string }[] }).courts[0]
+              : (bObj as unknown as { courts: { name?: string } }).courts)
+          : null
+        let courtName = cObj?.name || 'Cancha'
+        let customerName = (bObj as unknown as { customer_name?: string })?.customer_name || 'Cliente'
+
+        if (bp.notes?.toLowerCase().includes('cuenta corriente')) {
+          courtName = 'Cuenta Corriente (Cobro)'
+          const nameMatch = bp.notes.match(/Cuenta Corriente:\s*([^-\n]+)/i)
+          if (nameMatch) {
+            customerName = nameMatch[1].trim()
+          }
+        }
+
+        let method = 'CASH'
+        const rawM = String(bp.payment_method || '').toUpperCase()
+        if (rawM.includes('TRANSFER')) method = 'TRANSFER'
+        else if (rawM.includes('MERCADO') || rawM.includes('MP') || rawM.includes('QR')) method = 'MERCADOPAGO'
+        else if (rawM.includes('CORRIENTE') || rawM.includes('FIADO')) method = 'CUENTA_CORRIENTE'
+        else if (rawM.includes('CARD') || rawM.includes('TARJETA')) method = 'OTHER'
+
+        const pType = bp.payment_type === 'DEPOSIT' ? 'DEPOSIT' : 'BALANCE'
+
+        entries.push({
+          id: `bp-${bp.id}`,
+          customer_name: customerName,
+          court_name: courtName,
+          amount_ars: amt,
+          payment_type: pType,
+          payment_method: method,
+          paid_at: bp.registered_at,
+          notes: bp.notes || 'Cobro registrado',
+          origin: bp.payment_method,
+        })
+      }
+    }
+  } catch (payCatch) {
+    console.warn('[getDailyCashReport] Notice querying booking_payments:', payCatch)
+  }
+
+  // 2. Procesar reservas que aún no tienen cobros asentados formalmente en booking_payments (compatibilidad retroactiva garantizada)
   for (const row of bookingRows ?? []) {
+    // Si esta reserva ya tiene cobros asentados formalmente en booking_payments, evitar duplicación
+    if (recordedBookingIds.has(row.id)) continue
+
     const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
     const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
     let totalDepositArs = Math.round((Number(row.deposit_cents) || 0) / 100)
@@ -326,6 +404,13 @@ export async function getDailyCashReport(
 
       const amt = Number(pData?.amount) || 0
       if (amt <= 0) continue
+
+      // Evitar duplicación si el cobro ya fue procesado mediante booking_payments
+      const isAlreadyInEntries = entries.some(e =>
+        e.court_name.includes('Cuenta Corriente') &&
+        e.amount_ars === amt
+      )
+      if (isAlreadyInEntries) continue
 
       const pMethod = String(pData?.payment_method || '').toUpperCase()
       const resolvedMethod = pMethod === 'TRANSFER' ? 'TRANSFER' : 'CASH'

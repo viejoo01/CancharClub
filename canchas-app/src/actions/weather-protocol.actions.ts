@@ -441,7 +441,7 @@ export async function executeRainCancellation(params: {
       tenantId: effectiveTenantId,
       type: 'WEATHER_ALERT',
       category: 'ALERTS',
-      title: '🌧️ Protocolo Climático Activado',
+      title: 'Protocolo Climático Activado',
       message: `Se cancelaron ${targetBookings.length} turnos por lluvia para el ${params.date} (${params.timeFrom} a ${params.timeTo} hs). Se generaron avisos con propuesta de reagenda y se acreditaron $${totalCreditedArs.toLocaleString('es-AR')} en saldo a favor.`,
       metadata: {
         affected_count: targetBookings.length,

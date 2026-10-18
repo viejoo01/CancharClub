@@ -22,7 +22,8 @@ import {
   Undo2,
   AlertCircle,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  ArrowRight
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { ClubTermsCard } from '@/components/dashboard/club-terms-card'
@@ -1785,8 +1786,9 @@ export default function ClubPlanPage() {
               <p className="text-slate-300">
                 Al haber ejercido el derecho de revocación por arrepentimiento y solicitar nuevamente la reactivación, <strong>se anularán de manera automática e irrevocable todos los días restantes de tu prueba gratuita</strong>.
               </p>
-              <div className="pt-2 border-t border-amber-500/20 text-amber-200 font-medium">
-                👉 <strong>Comenzará a regir el cobro de tu abono mensual</strong> por un valor de <strong>{formatARS(pricing.monthlyFeeArs)}/mes</strong> según la tarifa contratada.
+              <div className="pt-2 border-t border-amber-500/20 text-amber-200 font-medium flex items-start gap-2">
+                <ArrowRight className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span><strong>Comenzará a regir el cobro de tu abono mensual</strong> por un valor de <strong>{formatARS(pricing.monthlyFeeArs)}/mes</strong> según la tarifa contratada.</span>
               </div>
             </div>
 

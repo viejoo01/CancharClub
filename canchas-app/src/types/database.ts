@@ -488,6 +488,7 @@ export interface CreateBookingPayload {
   payment_method?: 'TRANSFER' | 'MERCADOPAGO' | 'CASH'
   duration_minutes?: number
   claim_id?: string
+  wallet_applied_ars?: number
 }
 
 /** Respuesta del Server Action de checkout */

@@ -414,7 +414,8 @@ export async function deleteRecurringSlot(
 export async function generateMonthlyBookingsForSlot(
   slotId: string,
   year?: number,
-  month?: number
+  month?: number,
+  options?: { skipAuth?: boolean }
 ): Promise<{ 
   success: boolean; 
   generatedCount: number; 
@@ -452,9 +453,11 @@ export async function generateMonthlyBookingsForSlot(
       return { success: false, generatedCount: 0, error: 'Turno fijo no encontrado' }
     }
 
-    const auth = await assertTenantMember(slot.tenant_id)
-    if (!auth.authorized) {
-      return { success: false, generatedCount: 0, error: auth.error || 'Sin permisos para generar reservas' }
+    if (!options?.skipAuth) {
+      const auth = await assertTenantMember(slot.tenant_id)
+      if (!auth.authorized) {
+        return { success: false, generatedCount: 0, error: auth.error || 'Sin permisos para generar reservas' }
+      }
     }
 
     const todayArg = getArgentinaTodayIso()
@@ -778,5 +781,60 @@ export async function checkAndReleaseOverdueRecurringSlots(
   } catch (err) {
     console.error('[checkAndReleaseOverdueRecurringSlots] Error:', err)
     return { success: false, releasedCount: 0, details: [] }
+  }
+}
+
+/**
+ * Roll-forward automático diario de turnos fijos (abonados)
+ * Proyecta siempre los turnos del mes en curso y, a partir de la segunda quincena,
+ * pre-genera los turnos del mes entrante para evitar desabastecimiento o sobreventa comercial.
+ */
+export async function rollForwardActiveRecurringSlots(
+  tenantId: string,
+  options?: { skipAuth?: boolean }
+): Promise<{ success: boolean; generatedTotal: number; error?: string }> {
+  try {
+    if (!options?.skipAuth) {
+      const auth = await assertTenantMember(tenantId)
+      if (!auth.authorized) return { success: false, generatedTotal: 0, error: auth.error }
+    }
+
+    const supabase = await createServiceClient()
+    const todayIsoDate = getArgentinaTodayIso()
+    const [tYear, tMonth, tDay] = todayIsoDate.split('-').map(Number)
+
+    // Consultar todos los turnos fijos activos del club
+    const { data: slots, error: fetchErr } = await supabase
+      .from('recurring_slots')
+      .select('id, court_id, day_of_week')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'ACTIVE')
+
+    if (fetchErr || !slots || slots.length === 0) {
+      return { success: true, generatedTotal: 0 }
+    }
+
+    let generatedTotal = 0
+
+    // 1. Asegurar reservas para el mes en curso
+    for (const s of slots) {
+      const resCurr = await generateMonthlyBookingsForSlot(s.id, tYear, tMonth, { skipAuth: true })
+      if (resCurr.success) generatedTotal += resCurr.generatedCount
+    }
+
+    // 2. Si estamos en la segunda quincena (día >= 15), proyectar proactivamente el próximo mes
+    if (tDay >= 15) {
+      const nextMonth = tMonth === 12 ? 1 : tMonth + 1
+      const nextYear = tMonth === 12 ? tYear + 1 : tYear
+      for (const s of slots) {
+        const resNext = await generateMonthlyBookingsForSlot(s.id, nextYear, nextMonth, { skipAuth: true })
+        if (resNext.success) generatedTotal += resNext.generatedCount
+      }
+    }
+
+    return { success: true, generatedTotal }
+  } catch (err) {
+    console.error('[rollForwardActiveRecurringSlots] Error:', err)
+    return { success: false, generatedTotal: 0, error: 'Error interno en roll-forward' }
   }
 }

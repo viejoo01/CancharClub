@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { QrCode, Printer, Copy, Check, Download, Loader2 } from 'lucide-react'
+import { QrCode, Printer, Copy, Check, Download, Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { siteConfig } from '@/config/site'
 import { useTenantSlug, useTenantId } from '@/hooks/use-tenant-id'
@@ -652,8 +652,9 @@ export function CourtQrModal(props: CourtQrModalProps) {
             <span>Imprimir Cartel (A4/Mesa)</span>
           </Button>
         </DialogFooter>
-        <p className="text-[10px] text-center text-slate-500 pt-0.5">
-          ✨ Impresión limpia sin fecha, títulos ni URL del navegador.
+        <p className="text-[10px] text-center text-slate-500 pt-0.5 flex items-center justify-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-slate-400" />
+          <span>Impresión limpia sin fecha, títulos ni URL del navegador.</span>
         </p>
       </DialogContent>
     </Dialog>

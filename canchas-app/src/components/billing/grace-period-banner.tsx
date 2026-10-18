@@ -79,7 +79,7 @@ export function GracePeriodBanner({
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs sm:text-sm text-white">
                 {isPartiallySuspended
-                  ? '⚠️ Club en Pausa por Falta de Pago: Reservas Públicas Deshabilitadas'
+                  ? 'Club en Pausa por Falta de Pago: Reservas Públicas Deshabilitadas'
                   : 'Aviso de Pago Pendiente (Período de Gracia)'}
               </span>
               <Badge className={`text-[10px] uppercase font-mono px-2 py-0.5 ${
@@ -87,7 +87,7 @@ export function GracePeriodBanner({
                   ? 'bg-rose-500/30 text-rose-200 border-rose-500/40 font-bold'
                   : 'bg-amber-500/30 text-amber-300 border-amber-500/40'
               }`}>
-                {isPartiallySuspended ? '⏸️ EN PAUSA' : status}
+                {isPartiallySuspended ? 'EN PAUSA' : status}
               </Badge>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">

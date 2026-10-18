@@ -26,15 +26,24 @@ const PUBLIC_PATHS = [
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request })
-
-  // Cabeceras estrictas anti-caché para que ni dueños ni jugadores vean HTML obsoleto
-  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
-  response.headers.set('Pragma', 'no-cache')
-  response.headers.set('Expires', '0')
-  response.headers.set('Surrogate-Control', 'no-store')
-
   const pathname = request.nextUrl.pathname
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', pathname)
+
+  let response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
+
+  // Cabeceras estrictas anti-caché para páginas dinámicas y panel de administración
+  // Se excluyen /api/availability y recursos estáticos para permitir SWR y absorción de alto tráfico en el CDN
+  if (!pathname.startsWith('/api/availability') && !pathname.startsWith('/_next')) {
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+    response.headers.set('Surrogate-Control', 'no-store')
+  }
 
   // ─── RATE LIMITING (Protección contra ataques de fuerza bruta y spam) ───
   const isRateLimitedRoute = pathname.startsWith('/auth') || (pathname.startsWith('/api') && !pathname.startsWith('/api/webhooks'))
@@ -156,13 +165,13 @@ export async function middleware(request: NextRequest) {
     if (!saSession && user) {
       const { data: profile } = (await supabase
         .from('profiles')
-        .select('role, tenant_id, tenants(subscription_status, is_active, description)')
+        .select('role, tenant_id, tenants(subscription_status, is_active, description, trial_ends_at, created_at)')
         .eq('id', user.id)
         .maybeSingle()) as {
           data: {
             role?: string
             tenant_id?: string
-            tenants?: { subscription_status?: string; is_active?: boolean; description?: string }
+            tenants?: { subscription_status?: string; is_active?: boolean; description?: string; trial_ends_at?: string; created_at?: string }
           } | null
         }
 
@@ -190,6 +199,12 @@ export async function middleware(request: NextRequest) {
       const requiresCardCheck = isProdEnv || isPendingActivation || (!cookieHasCard || !cookieCardLast4)
 
       if (requiresCardCheck && profileData && (profileData.role === 'TENANT_ADMIN' || profileData.role === 'ADMIN')) {
+        // Permitir acceso a la pantalla de planes y soporte incluso si no tiene tarjeta
+        const isExemptPath = pathname.startsWith('/dashboard/plan') || pathname.startsWith('/dashboard/soporte')
+        if (isExemptPath) {
+          return response
+        }
+
         const rawTenants = profileData.tenants
         const tenantData = Array.isArray(rawTenants) ? rawTenants[0] : rawTenants
         let metaCardLinked = false
@@ -200,7 +215,14 @@ export async function middleware(request: NextRequest) {
           } catch {}
         }
 
-        if (!metaCardLinked) {
+        // Si el club se encuentra dentro de su período de prueba de 15 días, NO se lo bloquea
+        let isTrialActive = false
+        const trialEndsAt = tenantData?.trial_ends_at || (tenantData?.created_at ? new Date(new Date(tenantData.created_at).getTime() + 15 * 86400000).toISOString() : null)
+        if (trialEndsAt && new Date(trialEndsAt) > new Date()) {
+          isTrialActive = true
+        }
+
+        if (!metaCardLinked && !isTrialActive) {
           return NextResponse.redirect(new URL('/onboarding/tarjeta', request.url))
         }
       }

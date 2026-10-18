@@ -496,7 +496,10 @@ export function PlayerBookingsModal({
           </DialogHeader>
 
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 space-y-1">
-            <p className="font-semibold">⚠️ Política de Cancelación:</p>
+            <p className="font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>Política de Cancelación:</span>
+            </p>
             <p className="text-[11px] leading-relaxed">
               El horario quedará liberado automáticamente para que otro jugador o la lista de espera pueda reservar.
             </p>

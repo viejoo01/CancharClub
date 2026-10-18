@@ -1,6 +1,6 @@
 import { DashboardLayoutClient } from '@/components/dashboard/dashboard-layout-client'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { GracePeriodBanner } from '@/components/billing/grace-period-banner'
 import { TenantProvider } from '@/hooks/use-tenant-id'
@@ -56,6 +56,9 @@ export default async function DashboardLayout({
   children: React.ReactNode
 }) {
   const cookieStore = await cookies()
+  const headersList = await headers()
+  const currentPath = headersList.get('x-pathname') || ''
+  const isExemptRoute = currentPath.startsWith('/dashboard/plan') || currentPath.startsWith('/dashboard/soporte')
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -444,7 +447,8 @@ export default async function DashboardLayout({
 
   // Si no tiene tarjeta pero está dentro de los 15 días de prueba gratis, NO se lo bloquea.
   // Solo se exige tarjeta a administradores del club (TENANT_ADMIN / ADMIN), no a empleados de recepción (TENANT_STAFF).
-  if (!isSuperadmin && (userRole === 'TENANT_ADMIN' || userRole === 'ADMIN') && tenantId && !hasCard && !isCurrentlyInTrial) {
+  // Se exceptúan rutas de gestión de suscripción y soporte (/dashboard/plan, /dashboard/soporte) para permitir regularización o asistencia.
+  if (!isSuperadmin && (userRole === 'TENANT_ADMIN' || userRole === 'ADMIN') && tenantId && !hasCard && !isCurrentlyInTrial && !isExemptRoute) {
     redirect('/onboarding/tarjeta')
   }
 

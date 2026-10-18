@@ -34,7 +34,10 @@ import {
   AlertTriangle,
   Undo2,
   Download,
-  Radio
+  Radio,
+  Zap,
+  Pause,
+  Clock
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -52,7 +55,6 @@ import {
 import { formatARS, setClientCookie, cn, getArgentinaTodayIso } from '@/lib/utils'
 import { calculateClubSaaSFee, calculateSaaSMultiplier, calculateReactivationFee } from '@/lib/saas-pricing'
 import { SAAS_PLANS, SAAS_PLANS_LIST, getPlanByCourtsCount, type SaaSPlanId } from '@/config/saas-plans'
-import { createClient } from '@/lib/supabase/client'
 import { 
   getSuperadminTenants, 
   activateTenantAccess, 
@@ -61,6 +63,8 @@ import {
   getSuperadminUsers, 
   deleteProfileById, 
   updateUserPasswordBySuperadmin,
+  updateUserProfileBySuperadmin,
+  updateTenantDetailsBySuperadmin,
   createUserBySuperadmin,
   generateUserImpersonationUrl,
   updateTenantSubscriptionStatusAction,
@@ -644,16 +648,15 @@ export default function SuperadminPage() {
       } else {
         await deactivateTenantAccess(editingTenant.id)
       }
-      const supabase = createClient()
-      await supabase
-        .from('tenants')
-        .update({
-          name: editingTenant.name,
-          slug: sanitizedSlug || editingTenant.slug,
-          city: editingTenant.city,
-          is_active: editingTenant.is_active,
-        })
-        .eq('id', editingTenant.id)
+      const tenantRes = await updateTenantDetailsBySuperadmin(editingTenant.id, {
+        name: editingTenant.name,
+        slug: sanitizedSlug || editingTenant.slug,
+        city: editingTenant.city,
+        is_active: editingTenant.is_active,
+      })
+      if (!tenantRes.success) {
+        toast.error('Advertencia al actualizar datos del club: ' + (tenantRes.error || ''))
+      }
     } catch {
       // Ignorar en modo local/demo
     }
@@ -927,17 +930,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         }
       }
 
-      const supabase = createClient()
       const assignedTenant = tenants.find(t => t.id === editingUser.tenantId) || tenants[0]
-      await supabase
-        .from('profiles')
-        .update({
-          full_name: editingUser.name,
-          phone: editingUser.phone,
-          role: editingUser.role,
-          tenant_id: editingUser.tenantId,
-        })
-        .eq('id', editingUser.id)
+      const profRes = await updateUserProfileBySuperadmin(editingUser.id, {
+        name: editingUser.name,
+        phone: editingUser.phone,
+        role: editingUser.role,
+        tenantId: editingUser.tenantId,
+      })
+      if (!profRes.success) {
+        toast.error('Error al actualizar datos de perfil: ' + (profRes.error || ''))
+        return
+      }
 
       const updated: ClubUser = {
         ...editingUser,
@@ -1155,7 +1158,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             className="h-10 px-4 text-xs font-bold bg-linear-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-lg shadow-purple-950/40 rounded-xl cursor-pointer border border-purple-400/25 transition-all"
           >
             <Sparkles className="w-4 h-4 mr-1.5 text-yellow-300 shrink-0" />
-            <span>⚡ Alta Rápida Completa</span>
+            <span>Alta Rápida Completa</span>
           </Button>
         </div>
       </div>
@@ -1310,7 +1313,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-extrabold text-white">
-                  ⚠️ Club con Baja Programada por Arrepentimiento ({cancellationCount} {cancellationCount === 1 ? 'club' : 'clubes'})
+                  Club con Baja Programada por Arrepentimiento ({cancellationCount} {cancellationCount === 1 ? 'club' : 'clubes'})
                 </span>
                 <Badge className="bg-amber-500/30 text-amber-300 border-amber-500/50 text-[10px] font-bold px-2 py-0.5">
                   Baja por Dueño
@@ -1389,8 +1392,9 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               {tenants.length}
             </Badge>
             {cancellationCount > 0 && (
-              <Badge className="text-[10px] px-1.5 py-0 border bg-amber-500/30 text-amber-200 border-amber-400/40 animate-pulse font-bold">
-                ⚠️ {cancellationCount} por cancelar
+              <Badge className="text-[10px] px-1.5 py-0 border bg-amber-500/30 text-amber-200 border-amber-400/40 animate-pulse font-bold flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-amber-300" />
+                <span>{cancellationCount} por cancelar</span>
               </Badge>
             )}
           </button>
@@ -1523,49 +1527,53 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 type="button"
                 onClick={() => setSubscriptionFilter('AL_DIA')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1",
                   subscriptionFilter === 'AL_DIA'
                     ? "bg-emerald-600 text-white"
                     : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40 border border-emerald-500/20"
                 )}
               >
-                ✓ Al Día ({upToDateCount})
+                <Check className="w-3.5 h-3.5" />
+                <span>Al Día ({upToDateCount})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSubscriptionFilter('PENDIENTE')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1",
                   subscriptionFilter === 'PENDIENTE'
                     ? "bg-amber-600 text-white"
                     : "bg-amber-950/30 text-amber-400 hover:bg-amber-900/40 border border-amber-500/20"
                 )}
               >
-                ⏳ Pendientes ({pendingCount})
+                <Clock className="w-3.5 h-3.5" />
+                <span>Pendientes ({pendingCount})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSubscriptionFilter('PAUSADO')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1",
                   subscriptionFilter === 'PAUSADO'
                     ? "bg-rose-600 text-white animate-pulse"
                     : "bg-rose-950/30 text-rose-300 hover:bg-rose-900/40 border border-rose-500/30"
                 )}
               >
-                ⏸️ En Pausa ({pausedCount})
+                <Pause className="w-3.5 h-3.5" />
+                <span>En Pausa ({pausedCount})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSubscriptionFilter('PRUEBA')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1",
                   subscriptionFilter === 'PRUEBA'
                     ? "bg-purple-600 text-white"
                     : "bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/30"
                 )}
               >
-                🎁 En Prueba ({trialCount})
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>En Prueba ({trialCount})</span>
               </button>
               {cancellationCount > 0 && (
                 <button
@@ -1579,7 +1587,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   )}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  <span>⚠️ Bajas Programadas ({cancellationCount})</span>
+                  <span>Bajas Programadas ({cancellationCount})</span>
                 </button>
               )}
             </div>
@@ -1646,7 +1654,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           </Badge>
                         ) : t.subscription_status === 'PAUSADO' ? (
                           <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
-                            ⏸️ En Pausa
+                            En Pausa
                           </Badge>
                         ) : t.subscription_status === 'AL_DIA' ? (
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
@@ -1723,7 +1731,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           className="h-8 text-xs border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-xl px-2 cursor-pointer"
                           title="Pausar reservas públicas por no abonar a tiempo"
                         >
-                          ⏸️ Pausar
+                          <Pause className="w-3 h-3 mr-1 inline" />
+                          Pausar
                         </Button>
                       )}
 
@@ -1754,7 +1763,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         </div>
                       ) : (
                         <div className="flex-1 text-[11px] text-rose-400 font-semibold flex flex-col items-end justify-center px-1">
-                          <span>⏸️ En Pausa</span>
+                          <span>En Pausa</span>
                           <span className="text-[10px] text-amber-400 font-mono font-normal">
                             Reactivar: {formatARS(calculateReactivationFee(t.pricing.monthlyFeeArs, t.pricing.nextDueDate).totalAmount)}
                           </span>
@@ -1848,7 +1857,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         ) : t.is_trial ? (
                           <div>
                             <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
-                              🎁 En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : '15d'})
+                              En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : '15d'})
                             </Badge>
                             <div className="text-[10px] text-purple-400 font-mono mt-0.5">
                               Gratis hasta vencimiento
@@ -1857,7 +1866,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         ) : t.subscription_status === 'PAUSADO' ? (
                           <div>
                             <Badge className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] animate-pulse">
-                              ⏸️ En Pausa
+                              En Pausa
                             </Badge>
                             <div className="text-[10px] text-amber-400 font-mono mt-0.5" title="Cuota base + 3% diario por mora">
                               Reactivar: {formatARS(calculateReactivationFee(t.pricing.monthlyFeeArs, t.pricing.nextDueDate).totalAmount)}
@@ -1945,7 +1954,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               className="h-8 text-xs border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-xl px-2.5 cursor-pointer"
                               title="Pausar reservas públicas del club por no abonar suscripción a tiempo"
                             >
-                              ⏸️ Pausar
+                              <Pause className="w-3 h-3 mr-1 inline" />
+                              Pausar
                             </Button>
                           )}
 
@@ -2053,25 +2063,27 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 type="button"
                 onClick={() => setTenantStatusFilter('ACTIVE')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5",
                   tenantStatusFilter === 'ACTIVE'
                     ? "bg-emerald-600 text-white"
                     : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40 border border-emerald-500/20"
                 )}
               >
-                ✅ Habilitados ({tenants.filter(t => t.is_active && !t.is_trial && !t.cancel_at_period_end).length})
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Habilitados ({tenants.filter(t => t.is_active && !t.is_trial && !t.cancel_at_period_end).length})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setTenantStatusFilter('TRIAL')}
                 className={cn(
-                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                  "px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5",
                   tenantStatusFilter === 'TRIAL'
                     ? "bg-purple-600 text-white"
                     : "bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/30"
                 )}
               >
-                🎁 En Prueba ({tenants.filter(t => Boolean(t.is_trial) && !t.cancel_at_period_end).length})
+                <Gift className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>En Prueba ({tenants.filter(t => Boolean(t.is_trial) && !t.cancel_at_period_end).length})</span>
               </button>
               {cancellationCount > 0 && (
                 <button
@@ -2084,8 +2096,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       : "bg-amber-950/40 text-amber-300 hover:bg-amber-900/50 border border-amber-500/40 animate-pulse"
                   )}
                 >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  <span>⚠️ Bajas Programadas ({cancellationCount})</span>
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Bajas Programadas ({cancellationCount})</span>
                 </button>
               )}
               <button
@@ -2137,17 +2149,19 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         ) : (
                           <>
                             {t.is_trial && (
-                              <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
-                                🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                              <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1">
+                                <Gift className="w-3 h-3 text-purple-400" />
+                                <span>Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}</span>
                               </Badge>
                             )}
                             {t.is_active !== false ? (
-                              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
-                                ✅ Habilitado
+                              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>Habilitado</span>
                               </Badge>
                             ) : (
                               <Badge className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px]">
-                                ⏳ Pendiente
+                                Pendiente
                               </Badge>
                             )}
                           </>
@@ -2225,7 +2239,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       )}
                     >
                       <Gift className="w-3.5 h-3.5 text-purple-400" />
-                      <span>{t.is_trial ? `Extender Prueba (${t.trial_days_remaining ?? 0}d)` : '🎁 Activar 15 Días de Prueba'}</span>
+                      <span>{t.is_trial ? `Extender Prueba (${t.trial_days_remaining ?? 0}d)` : 'Activar 15 Días de Prueba'}</span>
                     </Button>
 
                     {/* Botón destacado para activar si está pendiente */}
@@ -2365,25 +2379,28 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                 Por pedido del dueño
                               </div>
                               {t.is_trial && (
-                                <span className="text-[9px] text-purple-300 block font-mono">
-                                  🎁 En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : 'Activa'})
+                                <span className="text-[9px] text-purple-300 font-mono flex items-center gap-1">
+                                  <Gift className="w-2.5 h-2.5 text-purple-400 inline" />
+                                  <span>En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : 'Activa'})</span>
                                 </span>
                               )}
                             </div>
                           ) : (
                             <>
                               {t.is_trial && (
-                                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold">
-                                  🎁 Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}
+                                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1">
+                                  <Gift className="w-3 h-3 text-purple-400" />
+                                  <span>Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : 'Activa'}</span>
                                 </Badge>
                               )}
                               {t.is_active ? (
-                                <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                                  ✅ Habilitado
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                  <span>Habilitado</span>
                                 </Badge>
                               ) : (
                                 <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
-                                  ⏳ Pendiente
+                                  Pendiente
                                 </Badge>
                               )}
                             </>
@@ -3288,16 +3305,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] leading-relaxed">
                   <div className="text-slate-400 font-semibold mb-0.5">Módulos habilitados para el club:</div>
                   {editingTenant.plan_id === 'CHICO_1' && (
-                    <span className="text-emerald-400 font-medium">📅 Calendario, 💰 Caja Diaria, ⚙️ Canchas, 💵 Reglas Precios, 📋 Mi Plan SaaS. (Solo dueño, sin multiusuario ni cantina)</span>
+                    <span className="text-emerald-400 font-medium">Calendario, Caja Diaria, Canchas, Reglas de Precios, Mi Plan SaaS. (Solo dueño, sin multiusuario ni cantina)</span>
                   )}
                   {editingTenant.plan_id === 'MEDIANO_2' && (
-                    <span className="text-emerald-400 font-medium">📅 Calendario, ☕ Cantina & Kiosco, 💰 Caja Diaria, ⚙️ Canchas, 💵 Reglas Precios, 📋 Mi Plan SaaS.</span>
+                    <span className="text-emerald-400 font-medium">Calendario, Cantina & Kiosco, Caja Diaria, Canchas, Reglas de Precios, Mi Plan SaaS.</span>
                   )}
                   {editingTenant.plan_id === 'CONSOLIDADO_3_4' && (
-                    <span className="text-emerald-400 font-medium">📅 Calendario, 📅 Turnos Fijos (Abonados), ☕ Cantina & Kiosco, 💰 Caja, ⚡ Control Luces, 📊 Reportes Ocupación, ⚙️ Canchas, 💵 Precios.</span>
+                    <span className="text-emerald-400 font-medium">Calendario, Turnos Fijos (Abonados), Cantina & Kiosco, Caja, Control Luces, Reportes Ocupación, Canchas, Precios.</span>
                   )}
                   {editingTenant.plan_id === 'GRANDE_5_PLUS' && (
-                    <span className="text-emerald-400 font-medium">🏆 Torneos y Cuadros, 📅 Turnos Fijos, ☕ Cantina, 💰 Caja, ⚡ Control Luces, 📊 Reportes Ocupación, ⚙️ Canchas + Módulos Ilimitados.</span>
+                    <span className="text-emerald-400 font-medium">Torneos y Cuadros, Turnos Fijos, Cantina, Caja, Control Luces, Reportes Ocupación, Canchas + Módulos Ilimitados.</span>
                   )}
                 </div>
               </div>
@@ -3313,8 +3330,8 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   onChange={(e) => setEditingTenant({ ...editingTenant, is_active: e.target.value === 'true' })}
                   className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                 >
-                  <option value="true">✅ Habilitado / Activo (Acceso completo según su plan)</option>
-                  <option value="false">❌ Desactivado</option>
+                  <option value="true">Habilitado / Activo (Acceso completo según su plan)</option>
+                  <option value="false">Desactivado</option>
                 </select>
               </div>
 
@@ -3328,7 +3345,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   >
                     <option value="AL_DIA">Al Día (Sin deuda)</option>
                     <option value="PENDIENTE">Pendiente de Pago</option>
-                    <option value="PAUSADO">⏸️ En Pausa (Por no abonar suscripción a tiempo)</option>
+                    <option value="PAUSADO">En Pausa (Por no abonar suscripción a tiempo)</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -3430,8 +3447,9 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <p className="text-[11px] leading-relaxed text-slate-300">
                 Se destruirán permanentemente todas las canchas, turnos fijos, reservas, pagos, torneos, clientes, cuentas corrientes, kiosco/cantina, sesiones de caja y accesos de usuario asociados a este club.
               </p>
-              <div className="text-[11px] font-semibold text-rose-400/90 pt-1 border-t border-rose-900/40">
-                ⚠️ Acción totalmente irreversible. No se puede deshacer.
+              <div className="text-[11px] font-semibold text-rose-400/90 pt-1 border-t border-rose-900/40 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Acción totalmente irreversible. No se puede deshacer.</span>
               </div>
             </div>
 
@@ -3604,9 +3622,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <button
                   type="button"
                   onClick={() => setNewUserPassword(`club${Math.floor(1000 + Math.random() * 9000)}`)}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer inline-flex items-center gap-1"
                 >
-                  ⚡ Generar aleatoria
+                  <Zap className="w-3 h-3 text-indigo-400" />
+                  <span>Generar aleatoria</span>
                 </button>
               </div>
               <Input
@@ -3939,9 +3958,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     <button
                       type="button"
                       onClick={() => setWizardOwnerPassword(`admin${Math.floor(1000 + Math.random() * 9000)}`)}
-                      className="text-[10px] text-emerald-400 hover:underline"
+                      className="text-[10px] text-emerald-400 hover:underline inline-flex items-center gap-1"
                     >
-                      ⚡ Random
+                      <Zap className="w-3 h-3 text-emerald-400" />
+                      <span>Generar</span>
                     </button>
                   </div>
                   <Input 
@@ -4002,9 +4022,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     <button
                       type="button"
                       onClick={() => setWizardStaffPassword(`staff${Math.floor(1000 + Math.random() * 9000)}`)}
-                      className="text-[10px] text-amber-400 hover:underline"
+                      className="text-[10px] text-amber-400 hover:underline inline-flex items-center gap-1"
                     >
-                      ⚡ Random
+                      <Zap className="w-3 h-3 text-amber-400" />
+                      <span>Generar</span>
                     </button>
                   </div>
                   <Input 

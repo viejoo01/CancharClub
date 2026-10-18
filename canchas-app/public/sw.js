@@ -1,6 +1,14 @@
-// CancharClub PWA Service Worker - Auto-Bust Cache (v2-live)
+// CancharClub PWA Service Worker - Auto-Bust Cache & Offline Resilience (v5-snapshot)
 
-self.addEventListener('install', () => {
+const OFFLINE_CACHE = 'canchar-v5'
+const OFFLINE_URL = '/offline.html'
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(OFFLINE_CACHE).then((cache) => {
+      return cache.addAll([OFFLINE_URL]).catch(() => {})
+    })
+  )
   self.skipWaiting()
 })
 
@@ -8,7 +16,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter(key => key !== 'canchar-v3').map(key => caches.delete(key))
+        keys.filter(key => key !== OFFLINE_CACHE).map(key => caches.delete(key))
       )
     }).then(() => self.clients.claim())
   )
@@ -23,12 +31,14 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Navegación de páginas: SIEMPRE desde la red para ver los cambios en tiempo real
+  // Navegación de páginas: SIEMPRE desde la red en tiempo real, con fallback a offline.html
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
     event.respondWith(
       fetch(event.request).catch(async () => {
         const cached = await caches.match(event.request)
-        return cached || new Response('Sin conexión', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+        if (cached) return cached
+        const offlinePage = await caches.match(OFFLINE_URL)
+        return offlinePage || new Response('Sin conexión', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
       })
     )
     return

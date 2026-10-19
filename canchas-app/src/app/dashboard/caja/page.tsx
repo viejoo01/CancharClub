@@ -152,7 +152,9 @@ export default function CajaPage() {
     }
   }, [tenantId, selectedDate])
 
-  const entries: DailyCashEntry[] = report?.entries ?? []
+  const entries: DailyCashEntry[] = [...(report?.entries ?? [])].sort((a, b) =>
+    (b.paid_at || '').localeCompare(a.paid_at || '')
+  )
 
   const handlePrint = () => {
     toast.success('Generando reporte de arqueo para impresion...')

@@ -517,7 +517,7 @@ export async function getDailyCashReport(
     console.warn('[getDailyCashReport] Audit payments query notice:', auditErr)
   }
 
-  entries.sort((a, b) => (a.paid_at || '').localeCompare(b.paid_at || ''))
+  entries.sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''))
 
   const totalCash     = entries.filter(e => e.payment_method === 'CASH').reduce((s, e) => s + e.amount_ars, 0)
   const totalTransfer = entries.filter(e => e.payment_method === 'TRANSFER').reduce((s, e) => s + e.amount_ars, 0)

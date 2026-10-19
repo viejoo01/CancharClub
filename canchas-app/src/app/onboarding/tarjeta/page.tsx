@@ -530,7 +530,7 @@ function OnboardingCardContent() {
               <div className="pt-1.5 flex items-start gap-2 text-[11px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
                 <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong className="text-amber-300">Validación de tarjeta:</strong> Para verificar con la red bancaria que la tarjeta está activa, Mercado Pago efectúa una validación técnica de <strong>$15</strong> que es <strong>reintegrada en el acto</strong> a tu cuenta.
+                  <strong className="text-amber-300">Validación de tarjeta:</strong> Para verificar con la red bancaria que la tarjeta está activa, Mercado Pago efectúa una validación técnica de <strong>$15 (Quince pesos argentinos)</strong> que es <strong>reintegrada en el acto</strong> a tu cuenta.
                 </span>
               </div>
             </div>

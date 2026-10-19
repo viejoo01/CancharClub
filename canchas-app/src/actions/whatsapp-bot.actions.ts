@@ -232,29 +232,19 @@ export async function sendAutomatedBookingConfirmation(
       dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1)
     }
 
-    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
-    const paidArs = Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
-    const balanceArs = Math.max(0, totalArs - paidArs)
-
-    const balanceText = balanceArs > 0
-      ? `\n💰 *Saldo restante a pagar en cancha:* ${formatARS(balanceArs)}`
-      : '\n✅ *Turno saldado al 100%*'
+    const clubPhone = tenantObj?.phone_whatsapp || phone
 
     const message = 
-`🎾 *¡TURNO CONFIRMADO EN ${clubName.toUpperCase()}!* ⚽
-
-Hola *${booking.customer_name}*, tu reserva quedó validada y agendada con éxito:
+`Hola *${clubName}*, hice una reserva desde CancharClub:
 
 📅 *Fecha:* ${dateStr}
 ⏰ *Horario:* ${timeStr} hs
 🏟️ *Cancha:* ${courtName}
-${clubAddress}💵 *Total:* ${formatARS(totalArs)}
-💳 *Seña abonada:* ${formatARS(paidArs)}${balanceText}
+💳 Envio el comprobante de la seña 
 
-¡Te esperamos! Te recordamos llegar 10 minutos antes.
 _Comprobante automático emitido por CancharClub._`
 
-    const sendRes = await sendWhatsAppMessage(phone, message, {
+    const sendRes = await sendWhatsAppMessage(clubPhone, message, {
       token: config.api_key,
       phoneId: config.phone_number_id,
     })

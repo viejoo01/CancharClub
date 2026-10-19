@@ -366,7 +366,7 @@ export function PlanActivationModal({
               <span>Protección de Prueba 15 Días Bonificados ($0 Hoy)</span>
             </div>
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              Para validar con la red bancaria que la tarjeta está activa, se realiza una micro-validación técnica de $15 que se reintegra en el acto. Tu cuota mensual se calculará automáticamente según las tarifas de tus canchas.
+              Para validar con la red bancaria que la tarjeta está activa, se realiza una micro-validación técnica de <strong>$15 (Quince pesos argentinos)</strong> que se reintegra en el acto. Tu cuota mensual se calculará automáticamente según las tarifas de tus canchas.
             </p>
           </div>
 

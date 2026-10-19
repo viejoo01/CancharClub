@@ -70,6 +70,7 @@ export interface DailyCashReport {
   totalMP: number
   totalOther: number
   totalCredit?: number
+  totalDeposits?: number
   entries: DailyCashEntry[]
 }
 
@@ -80,6 +81,7 @@ export interface DailyCashReport {
  *   - EFECTIVO EN CAJA (CASH)
  *   - TRANSFERENCIAS (TRANSFER - alias / CBU / banco)
  *   - MERCADO PAGO (MERCADOPAGO - online / QR)
+ *   - SEÑAS ABONADAS (señas online y mostrador)
  *   - TOTAL RECAUDADO (suma íntegra sin pérdidas ni duplicados)
  */
 export async function getDailyCashReport(
@@ -88,12 +90,12 @@ export async function getDailyCashReport(
 ): Promise<DailyCashReport> {
   const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
   if (!effectiveTenantId) {
-    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, entries: [] }
+    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, totalDeposits: 0, entries: [] }
   }
 
   const authCheck = await assertTenantMember(effectiveTenantId)
   if (!authCheck.authorized) {
-    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, entries: [] }
+    return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, totalDeposits: 0, entries: [] }
   }
 
   const supabase = await createServiceClient()
@@ -102,13 +104,48 @@ export async function getDailyCashReport(
   const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
   const dayEnd   = new Date(`${date}T23:59:59.999-03:00`).toISOString()
 
-  // 1. Consultar reservas del día (filtradas por fecha de juego, creación o cobro en PostgreSQL)
-  const { data: bookingRows } = await supabase
-    .from('bookings')
-    .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
-    .eq('tenant_id', effectiveTenantId)
-    .or(`booked_at.ov.[${dayStart},${dayEnd}],created_at.gte.${dayStart},updated_at.gte.${dayStart}`)
-    .neq('status', 'cancelled')
+  // 1. Consultar reservas del día (turnos jugados en la fecha, o señas/cobros registrados dentro de la fecha)
+  let bookingRows: Array<{
+    id: string
+    tenant_id?: string
+    customer_name?: string | null
+    deposit_cents?: number | string | null
+    price_total_cents?: number | string | null
+    payment_method?: string | null
+    paid_at?: string | null
+    created_at?: string | null
+    updated_at?: string | null
+    staff_notes?: string | null
+    booked_at?: string | null
+    status?: string | null
+    courts?: { name?: string | null } | { name?: string | null }[] | null
+  }> = []
+
+  try {
+    const [bookedRes, timeRes] = await Promise.all([
+      // Reservas cuya franja de juego overlap con el día
+      supabase
+        .from('bookings')
+        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
+        .eq('tenant_id', effectiveTenantId)
+        .filter('booked_at', 'ov', `[${dayStart},${dayEnd}]`)
+        .neq('status', 'cancelled'),
+      // Reservas creadas o cobradas/actualizadas dentro de la fecha
+      supabase
+        .from('bookings')
+        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
+        .eq('tenant_id', effectiveTenantId)
+        .or(`and(created_at.gte.${dayStart},created_at.lte.${dayEnd}),and(paid_at.gte.${dayStart},paid_at.lte.${dayEnd}),and(updated_at.gte.${dayStart},updated_at.lte.${dayEnd})`)
+        .neq('status', 'cancelled')
+    ])
+
+    const bookingsMap = new Map<string, typeof bookingRows[number]>()
+    for (const b of (bookedRes.data ?? [])) bookingsMap.set(b.id, b)
+    for (const b of (timeRes.data ?? [])) bookingsMap.set(b.id, b)
+    bookingRows = Array.from(bookingsMap.values())
+  } catch (err) {
+    console.warn('[getDailyCashReport] Error querying bookings:', err)
+  }
 
   const entries: DailyCashEntry[] = []
 
@@ -167,7 +204,10 @@ export async function getDailyCashReport(
         else if (rawM.includes('CORRIENTE') || rawM.includes('FIADO')) method = 'CUENTA_CORRIENTE'
         else if (rawM.includes('CARD') || rawM.includes('TARJETA')) method = 'OTHER'
 
-        const pType = bp.payment_type === 'DEPOSIT' ? 'DEPOSIT' : 'BALANCE'
+        const rawType = String(bp.payment_type || '').toUpperCase()
+        const pNotes = String(bp.notes || '').toLowerCase()
+        const isDeposit = rawType === 'DEPOSIT' || pNotes.includes('seña')
+        const pType = isDeposit ? 'DEPOSIT' : 'BALANCE'
 
         entries.push({
           id: `bp-${bp.id}`,
@@ -297,11 +337,11 @@ export async function getDailyCashReport(
               const paddedH = hStr.padStart(2, '0')
               initialPaidAt = `${y}-${paddedM}-${paddedD}T${paddedH}:${mStr}:00-03:00`
             } else {
-              initialPaidAt = row.created_at || row.paid_at
+              initialPaidAt = row.created_at || row.paid_at || null
             }
           }
         } else {
-          initialPaidAt = row.paid_at || row.created_at
+          initialPaidAt = row.paid_at || row.created_at || null
         }
       }
 
@@ -335,7 +375,20 @@ export async function getDailyCashReport(
 
   // 2. Consultar pedidos y ventas de Cantina del día
   try {
-    const { data: cantinaOrders } = await supabase
+    let cantinaOrders: Array<{
+      id: string
+      court_name?: string | null
+      customer_name?: string | null
+      total_ars: number | string
+      payment_method?: string | null
+      payment_status?: string | null
+      status?: string | null
+      created_at: string
+      notes?: string | null
+      items?: unknown
+    }> = []
+
+    const { data: dbOrders, error: ordersErr } = await supabase
       .from('court_orders')
       .select('id, court_name, customer_name, total_ars, payment_method, payment_status, status, created_at, notes, items')
       .eq('tenant_id', effectiveTenantId)
@@ -343,7 +396,31 @@ export async function getDailyCashReport(
       .lte('created_at', dayEnd)
       .not('status', 'eq', 'CANCELLED')
 
+    if (!ordersErr && dbOrders) {
+      cantinaOrders = dbOrders
+    } else {
+      // Fallback inmutable a audit_log si court_orders no está disponible
+      const { data: auditData } = await supabase
+        .from('audit_log')
+        .select('new_data, created_at')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('action', 'COURT_ORDER')
+        .gte('created_at', dayStart)
+        .lte('created_at', dayEnd)
+
+      if (auditData && auditData.length > 0) {
+        cantinaOrders = auditData
+          .map((row) => row.new_data as typeof cantinaOrders[number])
+          .filter(Boolean)
+          .filter((o) => o.status !== 'CANCELLED')
+      }
+    }
+
     for (const order of cantinaOrders ?? []) {
+      const statusUpper = String(order.status || '').toUpperCase()
+      const paymentStatusUpper = String(order.payment_status || '').toUpperCase()
+      if (statusUpper === 'CANCELLED' || paymentStatusUpper === 'CANCELLED') continue
+
       const orderTotal = Number(order.total_ars) || 0
       if (orderTotal <= 0) continue
 
@@ -351,16 +428,25 @@ export async function getDailyCashReport(
       let method = 'CASH'
       const rawMethod = String(order.payment_method || '').toUpperCase()
       const rawNotes = String(order.notes || '').toUpperCase()
-      const rawStatus = String(order.payment_status || '').toUpperCase()
+      const rawCourt = String(order.court_name || '').toUpperCase()
 
-      if (rawStatus === 'UNPAID' || rawStatus === 'PENDING' || rawMethod.includes('CORRIENTE') || rawMethod.includes('FIADO') || rawNotes.includes('FIADO') || rawNotes.includes('CUENTA CORRIENTE')) {
+      // Determinar si es efectivamente fiado / cuenta corriente (exclusivo si fue solicitado como fiado)
+      const isCredit = rawMethod.includes('CORRIENTE') ||
+                       rawMethod.includes('FIADO') ||
+                       rawNotes.includes('FIADO') ||
+                       rawNotes.includes('CUENTA CORRIENTE') ||
+                       rawCourt.includes('CUENTA CORRIENTE')
+
+      if (isCredit) {
         method = 'CUENTA_CORRIENTE'
-      } else if (rawMethod.includes('TRANSFER') || rawNotes.includes('TRANSFER')) {
+      } else if (rawMethod.includes('TRANSFER') || rawNotes.includes('TRANSFER') || rawNotes.includes('TRANSFERENCIA')) {
         method = 'TRANSFER'
-      } else if (rawMethod.includes('QR') || rawMethod.includes('MERCADO') || rawMethod.includes('MP') || rawNotes.includes('MP')) {
+      } else if (rawMethod.includes('QR') || rawMethod.includes('MERCADO') || rawMethod.includes('MP') || rawNotes.includes('MERCADO') || rawNotes.includes('MP') || rawNotes.includes('QR')) {
         method = 'MERCADOPAGO'
-      } else if (rawMethod.includes('CARD') || rawMethod.includes('TARJETA')) {
+      } else if (rawMethod.includes('CARD') || rawMethod.includes('TARJETA') || rawNotes.includes('TARJETA')) {
         method = 'OTHER'
+      } else {
+        method = 'CASH'
       }
 
       const courtLabel = order.court_name && order.court_name !== 'NONE'
@@ -440,9 +526,12 @@ export async function getDailyCashReport(
   const totalOther    = entries
     .filter(e => !['CASH', 'TRANSFER', 'MERCADOPAGO', 'CUENTA_CORRIENTE'].includes(e.payment_method))
     .reduce((s, e) => s + e.amount_ars, 0)
+  const totalDeposits = entries
+    .filter(e => e.payment_type === 'DEPOSIT')
+    .reduce((s, e) => s + e.amount_ars, 0)
   const totalGeneral  = totalCash + totalTransfer + totalMP + totalOther
 
-  return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, totalCredit, entries }
+  return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, totalCredit, totalDeposits, entries }
 }
 
 export interface BlindAuditRecord {

@@ -1384,6 +1384,33 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{
       return { success: false, error: upErr.message }
     }
 
+    const depCents = Number(booking.deposit_cents || 0)
+    if (depCents > 0) {
+      try {
+        const { data: existingBp } = await supabase
+          .from('booking_payments')
+          .select('id')
+          .eq('booking_id', booking.id)
+          .maybeSingle()
+
+        if (!existingBp) {
+          await supabase.from('booking_payments').insert({
+            tenant_id: booking.tenant_id,
+            booking_id: booking.id,
+            amount_ars: Math.round(depCents / 100),
+            amount_cents: depCents,
+            payment_method: 'bank_transfer',
+            payment_type: 'DEPOSIT',
+            payment_date: getArgentinaTodayIso(now),
+            registered_at: nowIso,
+            notes: 'Seña verificada y aprobada por el club',
+          })
+        }
+      } catch (payErr) {
+        console.warn('[confirmBookingDeposit] Notice inserting into booking_payments:', payErr)
+      }
+    }
+
     // Despacho de WhatsApp Bot automático (confirmación inmediata de seña y turno)
     let waResult: {
       success: boolean

@@ -133,34 +133,35 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
 
   const isTransfer = method === 'TRANSFER'
 
-  const message = isTransfer
-    ? `¡Hola ${clubName}! 👋\nAcabo de reservar por la app:\n🏟️ *${courtName}*\n📅 Fecha: ${date}\n🕐 Horario: ${time} hs\n👤 Nombre: ${customerName}\n🔖 Reserva #${shortCode}\n💳 Monto seña: ${formatARS(deposit)}\n\nAdjunto el comprobante de la transferencia bancaria.`
-    : `¡Hola ${clubName}! 👋\nAcabo de reservar por la app:\n🏟️ *${courtName}*\n📅 Fecha: ${date}\n🕐 Horario: ${time} hs\n👤 Nombre: ${customerName}\n🔖 Reserva #${shortCode}\n💳 Seña abonada por Mercado Pago: ${formatARS(deposit)}\n\n¡Nos vemos en la cancha!`
+  const displayDate = date.replace(/\s+de\s+\d{4}$/i, '')
+  const displayTime = time.replace(/\s*hs\s*$/i, '').trim()
+
+  const message =
+    `Hola *${clubName}*, hice una reserva desde CancharClub:\n\n` +
+    `📅 *Fecha:* ${displayDate}\n` +
+    `⏰ *Horario:* ${displayTime} hs\n` +
+    `🏟️ *Cancha:* ${courtName}\n` +
+    `💳 Envio el comprobante de la seña \n\n` +
+    `_Comprobante automático emitido por CancharClub._`
 
   const explicitWaUrl = searchParams.get('waUrl')
-  const waUrl = explicitWaUrl || buildWhatsAppLink(phoneClub, message)
-
-  const teamMessage = `⚽ *¡Hay partido en CancharClub!* 🎾\n\n` +
-    `🏟️ *Club:* ${clubName}\n` +
-    `📍 *Cancha:* ${courtName}\n` +
-    `📅 *Fecha:* ${date}\n` +
-    `🕐 *Horario:* ${time} hs\n` +
-    `🗺️ *Dirección:* ${clubAddress}\n` +
-    (googleMapsUrl ? `📍 *Cómo llegar (Google Maps):* ${googleMapsUrl}\n` : '') +
-    `\n👉 *Comprobante y detalles:* ${typeof window !== 'undefined' ? window.location.href : ''}\n\n` +
-    `¡Avisen quién va y quién falta!`
-  const teamWaUrl = buildWhatsAppLink(null, teamMessage)
+  const isOldBotMessage = explicitWaUrl && (
+    decodeURIComponent(explicitWaUrl).includes('¡TURNO CONFIRMADO EN') ||
+    decodeURIComponent(explicitWaUrl).includes('tu reserva quedó validada')
+  )
+  const waUrl = (!isOldBotMessage && explicitWaUrl) ? explicitWaUrl : buildWhatsAppLink(phoneClub, message)
+  const shareText = `Tengo reserva en ${courtName} para el ${date} a las ${displayTime} hs en ${clubName}`
 
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
         title: `Reserva en ${clubName}`,
-        text: `Tengo reserva en ${courtName} para el ${date} a las ${time} hs en ${clubAddress}.`,
+        text: shareText,
         url: window.location.href,
       }).catch(() => {})
     } else {
-      navigator.clipboard.writeText(window.location.href)
-      toast.success('¡Enlace de comprobante copiado al portapapeles!')
+      navigator.clipboard.writeText(`${shareText}\n${window.location.href}`)
+      toast.success('¡Mensaje de reserva copiado al portapapeles!')
     }
   }
 
@@ -321,17 +322,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
           className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-950/40 transition-colors"
         >
           <MessageCircle className="w-5 h-5 text-white" />
-          <span>{isTransfer ? '📲 Enviar Comprobante por WhatsApp' : '📲 Abrir Comprobante en WhatsApp'}</span>
-        </a>
-
-        <a
-          href={teamWaUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-indigo-200 font-bold text-xs transition-colors shadow-sm"
-        >
-          <Share2 className="w-4 h-4 text-indigo-400" />
-          <span>Armar Partido con el Equipo (WhatsApp)</span>
+          <span>{isTransfer ? 'Enviar Comprobante por WhatsApp' : 'Abrir Comprobante en WhatsApp'}</span>
         </a>
 
         <div className="flex gap-2">

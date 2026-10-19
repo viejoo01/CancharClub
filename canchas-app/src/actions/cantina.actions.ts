@@ -274,7 +274,7 @@ export async function updateOrderStatus(
     // Obtener detalles de la orden para saber items y estado previo
     const { data: order } = await supabase
       .from('court_orders')
-      .select('id, tenant_id, status, items')
+      .select('id, tenant_id, status, items, notes, payment_method')
       .eq('id', orderId)
       .maybeSingle()
 
@@ -292,10 +292,21 @@ export async function updateOrderStatus(
     }
 
     const previousStatus = order?.status
+    const isCredit = String(order?.payment_method || '').toUpperCase().includes('CORRIENTE') ||
+                     String(order?.notes || '').toUpperCase().includes('CUENTA CORRIENTE') ||
+                     String(order?.notes || '').toUpperCase().includes('FIADO')
+
+    const updateFields: Record<string, unknown> = {
+      status,
+      updated_at: new Date().toISOString(),
+    }
+    if (status === 'DELIVERED' && !isCredit) {
+      updateFields.payment_status = 'PAID'
+    }
 
     const { error } = await supabase
       .from('court_orders')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updateFields)
       .eq('id', orderId)
 
     // Fallback si court_orders no existe
@@ -309,7 +320,12 @@ export async function updateOrderStatus(
 
       if (auditRows && auditRows.length > 0) {
         const currentData = (auditRows[0].new_data ?? {}) as Record<string, unknown>
-        const updatedData = { ...currentData, status, updated_at: new Date().toISOString() }
+        const updatedData = {
+          ...currentData,
+          status,
+          ...(status === 'DELIVERED' && !isCredit ? { payment_status: 'PAID' } : {}),
+          updated_at: new Date().toISOString()
+        }
         await supabase
           .from('audit_log')
           .update({ new_data: updatedData })

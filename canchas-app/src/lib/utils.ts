@@ -114,6 +114,7 @@ export function bookingStatusColor(status: BookingStatus): string {
 
 export function paymentMethodLabel(method: string | PaymentMethod): string {
   const m = String(method || '').toUpperCase()
+  if (m.includes('CORRIENTE') || m.includes('FIADO') || m === 'CUENTA_CORRIENTE') return 'Cuenta Corriente'
   if (m.includes('CASH') || m === 'EFECTIVO') return 'Efectivo'
   if (m.includes('TRANSFER') || m.includes('BANK')) return 'Transferencia'
   if (m.includes('MERCADO') || m.includes('MP')) return 'Mercado Pago'
@@ -189,6 +190,7 @@ export function cleanNoteForDisplay(notes: string | undefined | null): string {
     // Ocultar IDs técnicos y hashes internos de pasarelas
     .replace(/\[MP Pref:[^\]]+\]/gi, '')
     .replace(/\[MP-ID:[^\]]+\]/gi, '')
+    .replace(/\[PAGO:\s*[^\]]+\]/gi, '')
     // Reemplazar separadores internos con viñetas limpias
     .replace(/\s*-\s*\|\s*/g, ' • ')
     .replace(/\s*\|\s*/g, ' • ')

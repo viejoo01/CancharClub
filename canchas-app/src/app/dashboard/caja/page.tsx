@@ -16,7 +16,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
-  Lock
+  Lock,
+  BookOpen,
+  Coins
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,12 +46,14 @@ function methodIcon(method: string) {
   if (method === 'CASH') return <Banknote className="w-4 h-4 text-emerald-400" />
   if (method === 'TRANSFER') return <ArrowRightLeft className="w-4 h-4 text-sky-400" />
   if (method === 'MERCADOPAGO') return <CreditCard className="w-4 h-4 text-cyan-400" />
+  if (method === 'CUENTA_CORRIENTE') return <BookOpen className="w-4 h-4 text-amber-400" />
   return <CreditCard className="w-4 h-4 text-slate-400" />
 }
 
-function methodBadgeVariant(method: string): 'default' | 'info' | 'secondary' {
+function methodBadgeVariant(method: string): 'default' | 'info' | 'secondary' | 'warning' {
   if (method === 'CASH') return 'default'
   if (method === 'TRANSFER') return 'info'
+  if (method === 'CUENTA_CORRIENTE') return 'warning'
   return 'secondary'
 }
 
@@ -198,7 +202,19 @@ export default function CajaPage() {
             <input
               type="date"
               value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
+              onChange={e => {
+                const nextDate = e.target.value
+                setSelectedDate(nextDate)
+                const nextKey = `${tenantId || ''}_${nextDate}`
+                const cached = cachedDailyCash.get(nextKey)
+                if (cached) {
+                  setReport(cached)
+                  setLoading(false)
+                } else {
+                  setReport(null)
+                  setLoading(true)
+                }
+              }}
               className="bg-transparent text-xs text-slate-200 focus:outline-none"
             />
           </div>
@@ -279,16 +295,32 @@ export default function CajaPage() {
         <Card className="border-slate-800 bg-slate-900/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold uppercase">
-              <span>Mercado Pago</span>
-              <CreditCard className="w-4 h-4 text-cyan-400" />
+              <span>Señas Abonadas</span>
+              <Coins className="w-4 h-4 text-cyan-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalMP ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalDeposits ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">Señas y pagos online de jugadores</CardContent>
+          <CardContent className="text-[11px] text-slate-400">Total señas de reservas online y mostrador</CardContent>
         </Card>
       </div>
+
+      {(report?.totalCredit ?? 0) > 0 && (
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-950/25 border border-amber-500/30 text-amber-300 text-xs">
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="w-4 h-4 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold">Cuentas Corrientes (Fiados anotados hoy): </span>
+              <span className="font-mono font-bold text-sm text-amber-200">+{formatARS(report?.totalCredit ?? 0)}</span>
+              <span className="text-amber-400/80 text-[11px] ml-2 hidden sm:inline">(Se sumará a caja física cuando el cliente abone su deuda)</span>
+            </div>
+          </div>
+          <Link href="/dashboard/cuentas" className="text-xs font-semibold text-amber-400 hover:text-amber-200 underline shrink-0">
+            Ver Cuentas &rarr;
+          </Link>
+        </div>
+      )}
 
       <Card className="border-slate-800 bg-slate-900/60 overflow-hidden">
         <CardHeader className="border-b border-slate-800/80 pb-4">

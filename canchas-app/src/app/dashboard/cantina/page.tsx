@@ -344,23 +344,34 @@ export default function CantinaPage() {
   const [editingCategoryName, setEditingCategoryName] = useState('')
   const [savingCategories, setSavingCategories] = useState(false)
 
+  // Carrito de ventas POS
+  const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
+  const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
+  const [clubSlug, setClubSlug] = useState<string>('')
+  const effectiveClubSlug = clubSlug || contextSlug || ''
+
   // Resetear estados al cambiar de sede para evitar mostrar datos del club anterior
   useEffect(() => {
     if (!tenantId) return
-    const cachedProds = cantinaProductsClientCache.get(tenantId)
-    setProducts(cachedProds || [])
+    queueMicrotask(() => {
+      const cachedProds = cantinaProductsClientCache.get(tenantId)
+      setProducts(cachedProds || [])
 
-    const cachedAccounts = cantinaAccountsClientCache.get(tenantId)
-    setAccounts(cachedAccounts || [])
+      const cachedAccounts = cantinaAccountsClientCache.get(tenantId)
+      setAccounts(cachedAccounts || [])
 
-    const cachedSuppliers = cantinaSuppliersClientCache.get(tenantId)
-    setSuppliers(cachedSuppliers || DEFAULT_CANTINA_SUPPLIERS)
+      const cachedSuppliers = cantinaSuppliersClientCache.get(tenantId)
+      setSuppliers(cachedSuppliers || DEFAULT_CANTINA_SUPPLIERS)
 
-    const cachedCategories = cantinaCategoriesClientCache.get(tenantId)
-    setCategories(cachedCategories || DEFAULT_CANTINA_CATEGORIES)
+      const cachedCategories = cantinaCategoriesClientCache.get(tenantId)
+      setCategories(cachedCategories || DEFAULT_CANTINA_CATEGORIES)
 
-    setCourtOrders([])
-    setCart([])
+      setCourtOrders([])
+      setCart([])
+    })
   }, [tenantId])
 
   // Sincronizar caches en memoria del cliente para navegación instantánea (0ms) indexadas por tenantId
@@ -755,15 +766,6 @@ export default function CantinaPage() {
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false)
   const knownOrderIdsRef = useRef<Set<string>>(new Set())
 
-  // Carrito de ventas POS
-  const [cart, setCart] = useState<Array<{ product: Product; quantity: number }>>([])
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [assignToCourt, setAssignToCourt] = useState<string>('NONE')
-  const [paymentMethod, setPaymentMethod] = useState<CantinaPaymentMethod>('CASH')
-  const [clubSlug, setClubSlug] = useState<string>('')
-  const effectiveClubSlug = clubSlug || contextSlug || ''
-
   // Estados para Impresión Térmica
   const [selectedPrintOrder, setSelectedPrintOrder] = useState<CourtOrder | null>(null)
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
@@ -800,7 +802,7 @@ export default function CantinaPage() {
     toast.success(`¡Carrito cargado con el pedido de ${order.customer_name}!`, {
       description: `${order.court_name} • ${order.payment_method === 'TRANSFER' ? 'Pagado con Transferencia' : 'Abona en Efectivo'}`
     })
-  }, [])
+  }, [setAssignToCourt, setCart, setPaymentMethod])
 
   const loadOrders = useCallback(async (isInitial = false) => {
     setOrdersLoading(true)

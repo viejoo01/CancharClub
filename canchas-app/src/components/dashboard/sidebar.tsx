@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
@@ -25,11 +26,14 @@ import {
   Share2,
   Sparkles,
   MessageSquare,
-  Bell
+  Bell,
+  SlidersHorizontal
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
-import { useUserRole } from '@/hooks/use-tenant-id'
+import { useUserRole, useTenantId } from '@/hooks/use-tenant-id'
+import { CustomizeMenuModal } from './customize-menu-modal'
+import { getClubSidebarPreferences, type SidebarNavPreferences } from '@/actions/club.actions'
 
 interface NavItem {
   title: string
@@ -42,6 +46,7 @@ interface NavItem {
 }
 
 interface SidebarProps {
+  tenantId?: string | null
   tenantName?: string
   tenantSlug?: string
   userRole?: string
@@ -55,6 +60,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ 
+  tenantId,
   tenantName = 'Mi Club Deportivo', 
   tenantSlug = 'mi-club',
   userRole = 'ADMIN',
@@ -216,6 +222,95 @@ export function Sidebar({
     return true
   })
 
+  const hookTenantId = useTenantId()
+  const effectiveTenantId = tenantId || hookTenantId || null
+
+  const [showCustomizeModal, setShowCustomizeModal] = useState(false)
+  const [preferences, setPreferences] = useState<SidebarNavPreferences>(() => {
+    if (typeof window === 'undefined') return { order: [], hidden: [] }
+    try {
+      const raw = localStorage.getItem(`canchar_sidebar_nav_prefs_${effectiveTenantId || 'default'}`)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        return {
+          order: Array.isArray(parsed.order) ? parsed.order : [],
+          hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+        }
+      }
+    } catch {}
+    return { order: [], hidden: [] }
+  })
+
+  // Sincronizar con el servidor
+  useEffect(() => {
+    if (!effectiveTenantId) return
+    const currentKey = `canchar_sidebar_nav_prefs_${effectiveTenantId}`
+
+    getClubSidebarPreferences(effectiveTenantId).then((serverPrefs) => {
+      if (serverPrefs) {
+        setPreferences(serverPrefs)
+        try {
+          localStorage.setItem(currentKey, JSON.stringify(serverPrefs))
+        } catch {}
+      }
+    }).catch(() => {})
+  }, [effectiveTenantId])
+
+  // Escuchar cambios de preferencias entre pestañas o instancias
+  useEffect(() => {
+    const handler = () => {
+      if (!effectiveTenantId) return
+      const currentKey = `canchar_sidebar_nav_prefs_${effectiveTenantId}`
+      try {
+        const raw = localStorage.getItem(currentKey)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          setPreferences({
+            order: Array.isArray(parsed.order) ? parsed.order : [],
+            hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+          })
+        }
+      } catch {}
+    }
+    window.addEventListener('canchar-sidebar-prefs-changed', handler)
+    return () => window.removeEventListener('canchar-sidebar-prefs-changed', handler)
+  }, [effectiveTenantId])
+
+  const handleSavePreferences = (newPrefs: SidebarNavPreferences) => {
+    setPreferences(newPrefs)
+    if (effectiveTenantId) {
+      try {
+        localStorage.setItem(`canchar_sidebar_nav_prefs_${effectiveTenantId}`, JSON.stringify(newPrefs))
+      } catch {}
+    }
+    window.dispatchEvent(new CustomEvent('canchar-sidebar-prefs-changed'))
+  }
+
+  // Ordenar y filtrar ítems según las preferencias del club
+  const finalNavItems: NavItem[] = []
+  const itemMap = new Map(filteredNavItems.map((item) => [item.href, item]))
+
+  // 1. Agregar según orden guardado (omitiendo los que el dueño haya ocultado)
+  for (const href of preferences.order || []) {
+    const item = itemMap.get(href)
+    if (item) {
+      if (!preferences.hidden?.includes(href)) {
+        finalNavItems.push(item)
+      }
+      itemMap.delete(href)
+    }
+  }
+
+  // 2. Agregar cualquier ítem restante permitido (que no haya sido ordenado todavía y no esté oculto)
+  for (const remaining of itemMap.values()) {
+    if (!preferences.hidden?.includes(remaining.href)) {
+      finalNavItems.push(remaining)
+    }
+  }
+
+  // Si por alguna razón se ocultaron todos, mantener los permitidos
+  const displayedNavItems = finalNavItems.length > 0 ? finalNavItems : filteredNavItems
+
   return (
     <aside className={cn(
       "flex flex-col bg-slate-950 select-none",
@@ -294,11 +389,24 @@ export function Sidebar({
           </Link>
         )}
 
-        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
+        <div className="flex items-center justify-between px-3 pb-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
+          </span>
+          {!isStaff && (
+            <button
+              type="button"
+              onClick={() => setShowCustomizeModal(true)}
+              className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-900 border border-transparent hover:border-slate-800 cursor-pointer"
+              title="Personalizar orden y visibilidad del menú"
+            >
+              <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+              <span>Editar menú</span>
+            </button>
+          )}
         </div>
 
-        {filteredNavItems.map((item) => {
+        {displayedNavItems.map((item) => {
           const isActive_item = item.exact 
             ? pathname === item.href 
             : pathname.startsWith(item.href)
@@ -368,6 +476,20 @@ export function Sidebar({
 
       {/* Footer Acciones de Usuario (Redes Sociales, Cambiar Contraseña y Cerrar Sesión) */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-1">
+        {!isStaff && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose?.()
+              setShowCustomizeModal(true)
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/20 transition-colors cursor-pointer"
+          >
+            <SlidersHorizontal className="w-4 h-4 text-emerald-400/80" />
+            <span>Personalizar Menú</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
@@ -414,6 +536,21 @@ export function Sidebar({
           </button>
         </form>
       </div>
+
+      {!isStaff && (
+        <CustomizeMenuModal
+          isOpen={showCustomizeModal}
+          onClose={() => setShowCustomizeModal(false)}
+          tenantId={effectiveTenantId}
+          availableItems={filteredNavItems.map((i) => ({
+            href: i.href,
+            title: i.title,
+            icon: i.icon,
+          }))}
+          currentPreferences={preferences}
+          onSavePreferences={handleSavePreferences}
+        />
+      )}
     </aside>
   )
 }

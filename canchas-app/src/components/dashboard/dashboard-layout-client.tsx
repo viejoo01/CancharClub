@@ -156,6 +156,7 @@ export function DashboardLayoutClient({
       {/* ─── 1. SIDEBAR DESKTOP ─── */}
       <div className="hidden md:flex shrink-0">
         <Sidebar
+          tenantId={tenantId}
           tenantName={tenantName}
           tenantSlug={tenantSlug}
           userRole={userRole}
@@ -187,6 +188,7 @@ export function DashboardLayoutClient({
             )}
           >
             <Sidebar
+              tenantId={tenantId}
               tenantName={tenantName}
               tenantSlug={tenantSlug}
               userRole={userRole}

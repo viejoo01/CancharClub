@@ -1730,6 +1730,116 @@ export async function updateClubSocialLinks(
   }
 }
 
+// ─── PREFERENCIAS DE MENÚ LATERAL DEL CLUB (ORDEN Y VISIBILIDAD PERSONALIZADOS) ────
+
+export interface SidebarNavPreferences {
+  order: string[]
+  hidden: string[]
+}
+
+export async function getClubSidebarPreferences(
+  tenantId?: string | null
+): Promise<SidebarNavPreferences | null> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) return null
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+
+    if (error || !tenant?.description) return null
+
+    try {
+      const meta = JSON.parse(tenant.description)
+      if (meta && meta.sidebar_nav) {
+        return {
+          order: Array.isArray(meta.sidebar_nav.order) ? meta.sidebar_nav.order : [],
+          hidden: Array.isArray(meta.sidebar_nav.hidden) ? meta.sidebar_nav.hidden : [],
+        }
+      }
+    } catch {
+      return null
+    }
+    return null
+  } catch (err) {
+    console.warn('[getClubSidebarPreferences] Exception:', err)
+    return null
+  }
+}
+
+export async function updateClubSidebarPreferences(
+  tenantId: string | null | undefined,
+  prefs: SidebarNavPreferences
+): Promise<{ success: boolean; data?: SidebarNavPreferences; error?: string }> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Identificador de club requerido' }
+    }
+
+    const auth = await assertTenantAdmin(effectiveTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos de administrador sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: tenant, error: fetchErr } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .single()
+
+    if (fetchErr || !tenant) {
+      return { success: false, error: fetchErr?.message || 'Club no encontrado' }
+    }
+
+    let meta: Record<string, unknown> = {}
+    if (tenant.description) {
+      try {
+        meta = JSON.parse(tenant.description)
+      } catch {
+        meta = {}
+      }
+    }
+
+    const safeOrder = Array.isArray(prefs.order) ? prefs.order.filter(s => typeof s === 'string') : []
+    const safeHidden = Array.isArray(prefs.hidden) ? prefs.hidden.filter(s => typeof s === 'string') : []
+
+    meta.sidebar_nav = {
+      order: safeOrder,
+      hidden: safeHidden,
+    }
+
+    const { error: updateErr } = await supabase
+      .from('tenants')
+      .update({
+        description: JSON.stringify(meta),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', effectiveTenantId)
+
+    if (updateErr) {
+      console.error('[updateClubSidebarPreferences] Error updating tenants:', updateErr.message)
+      return { success: false, error: updateErr.message }
+    }
+
+    revalidatePath('/dashboard')
+
+    return {
+      success: true,
+      data: { order: safeOrder, hidden: safeHidden },
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado al guardar preferencias de menú'
+    console.error('[updateClubSidebarPreferences] Exception:', err)
+    return { success: false, error: msg }
+  }
+}
+
 // ─── SERVICIOS Y UBICACIÓN DEL CLUB (ESTACIONAMIENTO, CANTINA, DUCHAS, CÁMARAS, GOOGLE MAPS) ─────
 
 export async function getClubServicesAndLocation(

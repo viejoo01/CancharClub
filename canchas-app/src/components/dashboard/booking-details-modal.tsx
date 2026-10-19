@@ -317,15 +317,11 @@ export function BookingDetailsModal({
         const noteAddition = res.updatedNotes || (currentNotes ? `${currentNotes} | Seña verificada y aprobada por el club` : 'Seña verificada y aprobada por el club')
         setLocalNotes(noteAddition)
 
-        // Apertura o notificación de WhatsApp con el comprobante completo
+        // Notificación de confirmación de seña
         if (res.waUrl) {
-          // Si es modo simulado / wa.me directo, abrir WhatsApp automáticamente
-          if (res.isSimulated) {
-            window.open(res.waUrl, '_blank')
-          }
           toast.success('¡Turno y seña confirmados exitosamente!', {
             description: res.isSimulated
-              ? 'Se abrió WhatsApp con el comprobante detallado para el cliente.'
+              ? 'Podés enviar el comprobante detallado al cliente mediante WhatsApp.'
               : 'Se envió la confirmación oficial por WhatsApp al cliente.',
             action: {
               label: 'Abrir WhatsApp',

@@ -144,12 +144,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
     `💳 Envio el comprobante de la seña \n\n` +
     `_Comprobante automático emitido por CancharClub._`
 
-  const explicitWaUrl = searchParams.get('waUrl')
-  const isOldBotMessage = explicitWaUrl && (
-    decodeURIComponent(explicitWaUrl).includes('¡TURNO CONFIRMADO EN') ||
-    decodeURIComponent(explicitWaUrl).includes('tu reserva quedó validada')
-  )
-  const waUrl = (!isOldBotMessage && explicitWaUrl) ? explicitWaUrl : buildWhatsAppLink(phoneClub, message)
+  const waUrl = buildWhatsAppLink(phoneClub, message)
   const shareText = `Tengo reserva en ${courtName} para el ${date} a las ${displayTime} hs en ${clubName}`
 
   const handleShare = () => {

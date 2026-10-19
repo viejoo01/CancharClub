@@ -457,8 +457,60 @@ export function BookingDetailsModal({
     (Array.isArray(booking.courts) ? booking.courts[0]?.name : booking.courts?.name) || 'Cancha'
 
   const effectiveClubName = (clubName && clubName !== 'Club') ? clubName : 'CancharClub'
-  const bookingTimeStr = booking.starts_at ? formatTime(booking.starts_at) : ''
-  const waMessage = `Hola ${booking.customer_name}, te escribo desde el club ${effectiveClubName} para confirmar el alquiler de la ${courtDisplayName} en el turno de las ${bookingTimeStr} hs.`
+
+  // Formateo de fecha y hora local para el comprobante de turno que el dueño envía al jugador
+  let displayBookingDate = ''
+  let displayBookingTime = ''
+  if (booking.starts_at) {
+    try {
+      const raw = String(booking.starts_at).trim()
+      const isoNormalized = raw.includes(' ') && !raw.includes('T') ? raw.replace(' ', 'T') : raw
+      const finalIso = isoNormalized.endsWith('+00')
+        ? isoNormalized.replace('+00', 'Z')
+        : (isoNormalized.endsWith('+00:00') ? isoNormalized.replace('+00:00', 'Z') : isoNormalized)
+      const d = new Date(finalIso)
+      if (!isNaN(d.getTime())) {
+        displayBookingDate = d.toLocaleDateString('es-AR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          timeZone: 'America/Argentina/Buenos_Aires',
+        })
+        displayBookingTime = d.toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Argentina/Buenos_Aires',
+        })
+      }
+    } catch {}
+  }
+  if (displayBookingDate) {
+    displayBookingDate = displayBookingDate.charAt(0).toUpperCase() + displayBookingDate.slice(1)
+  }
+  if (!displayBookingTime && booking.starts_at) {
+    displayBookingTime = formatTime(booking.starts_at)
+  }
+
+  const totalAmountArs = booking.total_amount_ars || 0
+  const depositPaidArs = currentPaid
+  const balanceDueArs = currentBalance
+  const balanceText = balanceDueArs > 0 ? formatARS(balanceDueArs) : '$ 0'
+
+  const waMessage = 
+`🎾 *¡TURNO CONFIRMADO EN ${effectiveClubName.toUpperCase()}!* ⚽
+
+Hola *${booking.customer_name}*, tu reserva quedó validada y agendada con éxito:
+
+📅 *Fecha:* ${displayBookingDate}
+⏰ *Horario:* ${displayBookingTime} hs
+🏟️ *Cancha:* ${courtDisplayName}
+💵 *Total:* ${formatARS(totalAmountArs)}
+💳 *Seña abonada:* ${formatARS(depositPaidArs)}
+💰 *Saldo restante a pagar en cancha:* ${balanceText}
+
+¡Te esperamos! Te recordamos llegar 10 minutos antes.
+_Comprobante automático emitido por CancharClub._`
+
   const waUrl = booking.customer_phone
     ? buildWhatsAppLink(booking.customer_phone, waMessage)
     : null

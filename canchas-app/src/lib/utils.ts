@@ -237,7 +237,33 @@ export function normalizePhoneForWhatsApp(phone: string): string {
 
 export function buildWhatsAppLink(phone?: string | null, message?: string | null): string {
   const norm = phone ? normalizePhoneForWhatsApp(phone) : ''
-  const base = 'https://api.whatsapp.com/send/'
+  const base = 'https://api.whatsapp.com/send'
+  const params: string[] = []
+  if (norm) {
+    params.push(`phone=${norm}`)
+  }
+  if (message) {
+    params.push(`text=${encodeURIComponent(message)}`)
+  }
+  return params.length > 0 ? `${base}?${params.join('&')}` : base
+}
+
+export function buildWhatsAppWebLink(phone?: string | null, message?: string | null): string {
+  const norm = phone ? normalizePhoneForWhatsApp(phone) : ''
+  const base = 'https://web.whatsapp.com/send'
+  const params: string[] = []
+  if (norm) {
+    params.push(`phone=${norm}`)
+  }
+  if (message) {
+    params.push(`text=${encodeURIComponent(message)}`)
+  }
+  return params.length > 0 ? `${base}?${params.join('&')}` : base
+}
+
+export function buildWhatsAppProtocolLink(phone?: string | null, message?: string | null): string {
+  const norm = phone ? normalizePhoneForWhatsApp(phone) : ''
+  const base = 'whatsapp://send'
   const params: string[] = []
   if (norm) {
     params.push(`phone=${norm}`)

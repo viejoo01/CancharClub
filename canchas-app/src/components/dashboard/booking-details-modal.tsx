@@ -21,7 +21,14 @@ import {
 } from '@/actions/booking.actions'
 import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
 import { emitQuickInvoiceForBooking } from '@/actions/afip.actions'
-import { formatARS, formatTime, buildWhatsAppLink, cleanNoteForDisplay } from '@/lib/utils'
+import { 
+  formatARS, 
+  formatTime, 
+  buildWhatsAppLink, 
+  buildWhatsAppWebLink, 
+  buildWhatsAppProtocolLink, 
+  cleanNoteForDisplay 
+} from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
   MessageCircle, 
@@ -35,7 +42,11 @@ import {
   Printer,
   CheckCircle2,
   Clock,
-  Receipt
+  Receipt,
+  ChevronDown,
+  Copy,
+  Laptop,
+  Globe
 } from 'lucide-react'
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
@@ -112,6 +123,16 @@ export function BookingDetailsModal({
   const [showPayForm, setShowPayForm] = useState(false)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const isSubmittingPayRef = useRef(false)
+  const [showChatMenu, setShowChatMenu] = useState(false)
+  const [waPreference, setWaPreference] = useState<'app' | 'web'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('canchar_wa_preference')
+        if (stored === 'web' || stored === 'app') return stored
+      } catch {}
+    }
+    return 'app'
+  })
   const [reputation, setReputation] = useState<{
     reputationScore: number
     noShowCount: number
@@ -287,12 +308,26 @@ export function BookingDetailsModal({
     try {
       const res = await sendAutomatedBookingConfirmation(booking.id)
       if (res.success && res.waUrl) {
-        window.open(res.waUrl, '_blank')
+        if (waPreference === 'web' && waWebUrl) {
+          window.open(waWebUrl, '_blank')
+        } else if (waAppUrl) {
+          window.open(waAppUrl, '_self')
+        } else {
+          window.open(res.waUrl, '_blank')
+        }
         toast.success('¡Comprobante de WhatsApp generado!', {
           description: 'Se abrió la conversación de WhatsApp con el comprobante y detalle de saldo.',
           action: {
             label: 'Reabrir WhatsApp',
-            onClick: () => window.open(res.waUrl, '_blank'),
+            onClick: () => {
+              if (waPreference === 'web' && waWebUrl) {
+                window.open(waWebUrl, '_blank')
+              } else if (waAppUrl) {
+                window.open(waAppUrl, '_self')
+              } else {
+                window.open(res.waUrl, '_blank')
+              }
+            },
           },
         })
       } else if (res.success) {
@@ -514,6 +549,23 @@ _Comprobante automático emitido por CancharClub._`
   const waUrl = booking.customer_phone
     ? buildWhatsAppLink(booking.customer_phone, waMessage)
     : null
+  const waWebUrl = booking.customer_phone
+    ? buildWhatsAppWebLink(booking.customer_phone, waMessage)
+    : null
+  const waAppUrl = booking.customer_phone
+    ? buildWhatsAppProtocolLink(booking.customer_phone, waMessage)
+    : null
+
+  const handlePrimaryChatClick = () => {
+    if (!booking.customer_phone) return
+    if (waPreference === 'web' && waWebUrl) {
+      window.open(waWebUrl, '_blank')
+    } else if (waAppUrl) {
+      window.open(waAppUrl, '_self')
+    } else if (waUrl) {
+      window.open(waUrl, '_blank')
+    }
+  }
 
   // Recordatorio inteligente de turno para el jugador
   const formattedTime = booking.starts_at ? `${formatTime(booking.starts_at)} hs` : 'el horario acordado'
@@ -528,6 +580,23 @@ _Comprobante automático emitido por CancharClub._`
   const reminderWaUrl = booking.customer_phone
     ? buildWhatsAppLink(booking.customer_phone, customReminderMessage)
     : null
+  const reminderWaWebUrl = booking.customer_phone
+    ? buildWhatsAppWebLink(booking.customer_phone, customReminderMessage)
+    : null
+  const reminderWaAppUrl = booking.customer_phone
+    ? buildWhatsAppProtocolLink(booking.customer_phone, customReminderMessage)
+    : null
+
+  const handleReminderClick = () => {
+    if (!booking.customer_phone) return
+    if (waPreference === 'web' && reminderWaWebUrl) {
+      window.open(reminderWaWebUrl, '_blank')
+    } else if (reminderWaAppUrl) {
+      window.open(reminderWaAppUrl, '_self')
+    } else if (reminderWaUrl) {
+      window.open(reminderWaUrl, '_blank')
+    }
+  }
 
   const getStatusBadge = (status: string) => {
     const s = String(status || '').toUpperCase()
@@ -629,29 +698,102 @@ _Comprobante automático emitido por CancharClub._`
 
               {/* Botones de Comunicación */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                {waUrl && (
-                  <a
-                    href={waUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 font-medium text-xs transition-colors min-h-9"
-                    title="Abrir chat en WhatsApp"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>Chat</span>
-                  </a>
+                {booking.customer_phone && (
+                  <div className="relative inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-600/20 text-emerald-400">
+                    <button
+                      type="button"
+                      onClick={handlePrimaryChatClick}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 hover:bg-emerald-600/30 font-semibold text-xs rounded-l-lg transition-colors min-h-9 cursor-pointer"
+                      title={waPreference === 'web' ? 'Abrir chat en WhatsApp Web' : 'Abrir chat en App de WhatsApp'}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Chat {waPreference === 'web' ? '(Web)' : '(App)'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowChatMenu(prev => !prev)}
+                      className="px-2 py-2 hover:bg-emerald-600/30 border-l border-emerald-500/30 font-medium text-xs rounded-r-lg transition-colors min-h-9 flex items-center justify-center cursor-pointer"
+                      title="Opciones de WhatsApp (Web o App de escritorio)"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />
+                    </button>
+
+                    {showChatMenu && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowChatMenu(false)} />
+                        <div className="absolute left-0 top-full mt-1.5 w-64 p-1.5 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl z-50 space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWaPreference('app')
+                              try { localStorage.setItem('canchar_wa_preference', 'app') } catch {}
+                              setShowChatMenu(false)
+                              if (waAppUrl) window.open(waAppUrl, '_self')
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-left transition-colors cursor-pointer ${
+                              waPreference === 'app'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'text-slate-200 hover:bg-slate-800'
+                            }`}
+                          >
+                            <Laptop className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <div>
+                              <div>App de WhatsApp (Windows)</div>
+                              <div className="text-[10px] text-slate-400 font-normal">Abre directo la app instalada en tu PC</div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWaPreference('web')
+                              try { localStorage.setItem('canchar_wa_preference', 'web') } catch {}
+                              setShowChatMenu(false)
+                              if (waWebUrl) window.open(waWebUrl, '_blank')
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-left transition-colors cursor-pointer ${
+                              waPreference === 'web'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'text-slate-200 hover:bg-slate-800'
+                            }`}
+                          >
+                            <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <div>
+                              <div>WhatsApp Web (Navegador)</div>
+                              <div className="text-[10px] text-slate-400 font-normal">Abre en una pestaña sin bloqueos</div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(waMessage)
+                              toast.success('¡Comprobante copiado al portapapeles!')
+                              setShowChatMenu(false)
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer text-left"
+                          >
+                            <Copy className="w-4 h-4 text-slate-400 shrink-0" />
+                            <div>
+                              <div>Copiar Comprobante</div>
+                              <div className="text-[10px] text-slate-400 font-normal">Copiar texto para pegarlo manualmente</div>
+                            </div>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
-                {reminderWaUrl && (
-                  <a
-                    href={reminderWaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/25 text-emerald-300 hover:bg-emerald-600/40 border border-emerald-500/40 font-bold text-xs transition-colors min-h-9 shadow-xs"
-                    title="Enviar recordatorio de turno por WhatsApp al jugador"
+                {booking.customer_phone && (
+                  <button
+                    type="button"
+                    onClick={handleReminderClick}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/25 text-emerald-300 hover:bg-emerald-600/40 border border-emerald-500/40 font-bold text-xs transition-colors min-h-9 shadow-xs cursor-pointer"
+                    title={`Enviar recordatorio de turno por WhatsApp (${waPreference === 'web' ? 'Web' : 'App'}) al jugador`}
                   >
                     <BellRing className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Recordatorio WhatsApp</span>
-                  </a>
+                  </button>
                 )}
                 {booking.customer_phone && (
                   <Button

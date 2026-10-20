@@ -16,6 +16,7 @@ import {
   Shield,
   Settings2,
   CheckCircle2,
+  Zap,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -559,6 +560,20 @@ export default function TorneosDashboardPage() {
                 </a>
               </>
             )}
+            <Button
+              onClick={() => {
+                setNewTourName('Torneo Americano Exprés de Fin de Semana')
+                setNewTourSport('PADEL')
+                setNewTourFormat('GROUPS_AND_PLAYOFFS')
+                setNewTourCats('7ma y 8va Caballeros (8 Parejas), 5ta y 6ta Caballeros (8 Parejas), Categoría Femenino Libre (8 Parejas)')
+                setIsCreateOpen(true)
+              }}
+              variant="outline"
+              className="border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold text-xs gap-1.5 shadow-sm"
+            >
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span>Americano Exprés</span>
+            </Button>
             <Button
               onClick={() => setIsCreateOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-emerald-950/40"
@@ -1254,6 +1269,26 @@ export default function TorneosDashboardPage() {
             </DialogHeader>
 
             <form onSubmit={handleCreateTournament} className="space-y-4 py-2">
+              {/* Preset Rápido Americano */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-[11px] text-amber-200 font-medium">¿Torneo Americano Exprés?</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTourName('Torneo Americano Exprés de Fin de Semana')
+                    setNewTourSport('PADEL')
+                    setNewTourFormat('GROUPS_AND_PLAYOFFS')
+                    setNewTourCats('7ma y 8va Caballeros (8 Parejas), 5ta y 6ta Caballeros (8 Parejas), Categoría Femenino Libre (8 Parejas)')
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition-colors shadow-sm"
+                >
+                  Cargar Preset Pádel
+                </button>
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-300">Nombre del Torneo</Label>
                 <Input

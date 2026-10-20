@@ -16,7 +16,12 @@ import {
   CalendarDays,
   ShieldCheck,
   BarChart3,
-  Smartphone
+  Smartphone,
+  Trophy,
+  Share2,
+  Check,
+  X,
+  Flame,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
@@ -27,6 +32,7 @@ import { buildWhatsAppLink } from '@/lib/utils'
 export default function SumarClubLandingPage() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
   const [selectedPlanId, setSelectedPlanId] = useState<SaaSPlanId>('MEDIANO_2')
+  const [billingFrequency, setBillingFrequency] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY')
 
   const whatsappUrl = buildWhatsAppLink(
     '543816839320',
@@ -340,6 +346,219 @@ export default function SumarClubLandingPage() {
                 Tus jugadores y vos pueden instalar CancharClub en Android y iPhone directamente sin pasar por Play Store o App Store.
               </p>
             </div>
+
+            {/* 10. Dividir el Pago (Split Payment) */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/40 hover:border-emerald-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
+              <div className="absolute top-3 right-3">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                  VIRAL
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Share2 className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Dividir el pago entre amigos</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Cada amigo paga su parte desde su celular por transferencia o Mercado Pago. El saldo restante se descuenta en vivo en tu grilla.
+              </p>
+            </div>
+
+            {/* 11. Torneos Americanos Exprés */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-amber-500/40 hover:border-amber-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
+              <div className="absolute top-3 right-3">
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                  RECAUDACIÓN
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Torneos americanos exprés</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Creá torneos relámpago de fin de semana en 1 clic. Inscripción pública online con cupos en vivo, fixture y tanteador en tiempo real.
+              </p>
+            </div>
+
+            {/* 12. Automatizaciones de WhatsApp */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/40 hover:border-emerald-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
+              <div className="absolute top-3 right-3">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                  YA DISPONIBLE
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <MessageCircle className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">WhatsApp inteligente y recordatorios</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Recordatorios 2 horas antes con mapa y confirmación para 0% ausentismo. Suspensión masiva por lluvia y reprogramación en 1 clic.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Línea divisoria suave */}
+      <div className="w-full max-w-4xl mx-auto border-t border-slate-800/80" />
+
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      {/* SECCIÓN: COMPARATIVA CANCHARCLUB VS. APPS MARKETPLACE (ATC)           */}
+      {/* ────────────────────────────────────────────────────────────────────── */}
+      <section className="w-full py-16 sm:py-24 px-4 sm:px-6 flex flex-col items-center">
+        <div className="max-w-4xl mx-auto w-full text-center">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-4">
+            <Flame className="w-3.5 h-3.5 text-amber-400" />
+            <span>Transparencia y Rentabilidad</span>
+          </div>
+
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-100">
+            ¿Por qué los clubes eligen CancharClub?
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            Tu club no es una mercancía más en una lista. En CancharClub tu software es privado, tus clientes son tuyos y tu tarifa tiene tope garantizado.
+          </p>
+
+          <div className="mt-10 overflow-x-auto rounded-3xl border border-slate-800 bg-slate-900/80 shadow-2xl">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400">
+                  <th className="py-4 px-5 font-bold">Característica</th>
+                  <th className="py-4 px-5 font-bold text-emerald-400 bg-emerald-500/10 border-x border-emerald-500/20 text-center">
+                    CancharClub
+                  </th>
+                  <th className="py-4 px-5 font-bold text-slate-400 text-center">
+                    Marketplaces Comisionistas
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-slate-300">
+                <tr>
+                  <td className="py-4 px-5 font-medium">Tus clientes pertenecen al club</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>100% tuyos</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Ven a tus competidores al lado</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Comisión por turno reservado</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>$0 comisión (100% para vos)</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Cobran comisión o retención</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Tope de cuota mensual garantizado</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Sí ($69.000 max en 3 canchas)</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Planes desde $71.000+ sin tope</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Descuento Anual (2 meses bonificados)</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>20% OFF (12 meses por 10)</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Sin bonificación anual</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Dividir el pago entre amigos</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Incluido y en vivo</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>No disponible</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Torneos Americanos de fin de semana</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Preset rápido + inscripciones web</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="text-amber-500 font-semibold">&quot;Próximamente&quot;</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Automatizaciones reales por WhatsApp</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Recordatorios 2h y Lluvia masiva</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="text-amber-500 font-semibold">&quot;Próximamente&quot;</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-4 px-5 font-medium">Experiencia del jugador</td>
+                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Reserva en 20s sin descargar nada</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-5 text-center text-slate-500">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>Obliga a descargar app de 150MB</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -363,8 +582,43 @@ export default function SumarClubLandingPage() {
             15 días de prueba gratis. Mercado Pago te pide un medio de pago (tarjeta de débito o crédito), pero el primer cobro es recién a los 15 días ($0 hoy).
           </p>
 
+          {/* Selector de Frecuencia: Pago Mensual vs Pago Anual */}
+          <div className="flex items-center justify-center mt-6">
+            <div className="inline-flex items-center bg-slate-950 p-1.5 rounded-2xl border border-slate-800 shadow-xl">
+              <button
+                type="button"
+                onClick={() => setBillingFrequency('MONTHLY')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  billingFrequency === 'MONTHLY'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Pago Mensual
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingFrequency('ANNUAL')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  billingFrequency === 'ANNUAL'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>Pago Anual</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-black tracking-wide ${
+                  billingFrequency === 'ANNUAL'
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-400/50'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  20% OFF (2 meses gratis)
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Grilla de 4 Tarjetas de Precios Segmentadas por Predio */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 mt-10 sm:mt-12 text-left">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 mt-8 sm:mt-10 text-left">
             {SAAS_PLANS_LIST.map((plan) => (
               <div
                 key={plan.id}
@@ -400,13 +654,13 @@ export default function SumarClubLandingPage() {
                   {/* Precio Principal */}
                   <div className="flex items-baseline gap-1.5 mt-2">
                     <span className="text-3xl sm:text-4xl font-black text-slate-100 tracking-tight">
-                      {plan.priceTurnosLabel}
+                      {billingFrequency === 'ANNUAL' ? plan.annualTurnosLabel : plan.priceTurnosLabel}
                     </span>
                   </div>
 
                   {/* Bajada de precio */}
                   <p className="text-xs sm:text-sm text-emerald-400/90 font-medium mt-1 mb-5">
-                    {plan.priceSubtext}
+                    {billingFrequency === 'ANNUAL' ? plan.annualSubtext : plan.priceSubtext}
                   </p>
 
                   {/* Divisor */}
@@ -513,6 +767,7 @@ export default function SumarClubLandingPage() {
         open={isRegisterModalOpen}
         onOpenChange={setIsRegisterModalOpen}
         selectedPlanId={selectedPlanId}
+        billingFrequency={billingFrequency}
       />
     </div>
   )

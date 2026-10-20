@@ -545,8 +545,16 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       {/* Formulario de Datos del Jugador */}
       <form id="checkout-form" onSubmit={handlePay} className="px-4 pt-4 space-y-4">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-            1. Tus datos de contacto
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              1. Tus datos de contacto
+            </div>
+            {customerName && (
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                <Check className="w-3 h-3 text-emerald-400" />
+                Jugador frecuente
+              </span>
+            )}
           </div>
 
           <div className="space-y-3">

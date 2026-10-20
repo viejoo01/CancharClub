@@ -179,6 +179,56 @@ export async function createTournament(payload: {
   }
 }
 
+/** Crear Torneo Americano Exprés de Fin de Semana (Preset Rápido para Clubes de Pádel) */
+export async function createAmericanoTournamentPreset(payload: {
+  tenant_id: string
+  name?: string
+  sport?: string
+  start_date?: string
+  end_date?: string
+  categories?: { name: string; max_teams: number }[]
+}): Promise<{ success: boolean; tournament_id?: string; error?: string }> {
+  try {
+    const auth = await assertTenantMember(payload.tenant_id)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const today = new Date()
+    // Si no se especifica fecha, usar el próximo fin de semana (sábado y domingo)
+    const dayOfWeek = today.getDay()
+    const daysUntilSaturday = (6 - dayOfWeek + 7) % 7
+    const saturday = new Date(today)
+    saturday.setDate(today.getDate() + (daysUntilSaturday === 0 ? 0 : daysUntilSaturday))
+    const sunday = new Date(saturday)
+    sunday.setDate(saturday.getDate() + 1)
+
+    const startDate = payload.start_date || saturday.toISOString().split('T')[0]
+    const endDate = payload.end_date || sunday.toISOString().split('T')[0]
+
+    const categories = payload.categories && payload.categories.length > 0 
+      ? payload.categories 
+      : [
+          { name: '7ma y 8va Caballeros (8 Parejas)', max_teams: 8 },
+          { name: '5ta y 6ta Caballeros (8 Parejas)', max_teams: 8 },
+          { name: 'Categoría Femenino Libre (8 Parejas)', max_teams: 8 }
+        ]
+
+    return await createTournament({
+      tenant_id: payload.tenant_id,
+      name: payload.name || 'Torneo Americano Exprés de Fin de Semana',
+      sport: payload.sport || 'PADEL',
+      format: 'GROUPS_AND_PLAYOFFS',
+      start_date: startDate,
+      end_date: endDate,
+      categories,
+    })
+  } catch (err) {
+    console.error('[createAmericanoTournamentPreset] Error:', err)
+    return { success: false, error: 'Error al crear torneo americano' }
+  }
+}
+
 /** Inscribir una pareja / equipo a una categoría */
 export async function addTeamToCategory(payload: {
   category_id: string
@@ -904,4 +954,63 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
     return { success: false, error: 'Error al eliminar inscripción' }
   }
 }
+
+/**
+ * Obtener todos los torneos públicos activos con categorías para el portal público de torneos
+ */
+export async function getPublicTournaments(): Promise<TournamentWithDetails[]> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: tournaments, error } = await supabase
+      .from('tournaments')
+      .select('*')
+      .in('status', ['REGISTRATION', 'IN_PROGRESS'])
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error || !tournaments || tournaments.length === 0) return []
+
+    const fullTournaments = await Promise.all(
+      tournaments.map(async (tour) => {
+        const { data: categories } = await supabase
+          .from('tournament_categories')
+          .select('*')
+          .eq('tournament_id', tour.id)
+
+        const fullCats = await Promise.all(
+          (categories || []).map(async (cat) => {
+            const [{ data: teams }, { data: matches }] = await Promise.all([
+              supabase
+                .from('tournament_teams')
+                .select('*')
+                .eq('category_id', cat.id)
+                .order('created_at', { ascending: true }),
+              supabase
+                .from('tournament_matches')
+                .select('*')
+                .eq('category_id', cat.id)
+                .order('match_number', { ascending: true }),
+            ])
+            return {
+              ...cat,
+              teams: (teams as TournamentTeam[]) || [],
+              matches: (matches as TournamentMatch[]) || [],
+            }
+          })
+        )
+
+        return {
+          ...(tour as Tournament),
+          categories: fullCats,
+        }
+      })
+    )
+
+    return fullTournaments
+  } catch (err) {
+    console.error('[getPublicTournaments] Error:', err)
+    return []
+  }
+}
+
 

@@ -2197,4 +2197,211 @@ export async function cancelBookingByPlayer(
   }
 }
 
+// ─── FASE 3: DIVIDIR EL PAGO (SPLIT PAYMENT) ─────────────────────────────────
+
+export interface MatchSplitShare {
+  id: string
+  playerName: string
+  playerPhone?: string
+  amountArs: number
+  status: 'PAID' | 'PENDING'
+  paidAt?: string
+  paymentMethod?: string
+  isOrganizer?: boolean
+}
+
+export interface MatchSplitDetails {
+  bookingId: string
+  shortCode: string
+  clubName: string
+  clubSlug: string
+  clubPhone: string
+  clubAddress: string
+  bankAlias?: string
+  bankName?: string
+  courtName: string
+  sport: string
+  dateFormatted: string
+  time: string
+  totalAmount: number
+  depositAmount: number
+  balanceRemaining: number
+  totalCollected: number
+  recommendedShares: number
+  organizerName: string
+  organizerPhone?: string
+  shares: MatchSplitShare[]
+}
+
+/**
+ * Obtiene los detalles de un partido para dividir el pago entre amigos
+ */
+export async function getMatchSplitDetails(
+  bookingId: string
+): Promise<{ success: boolean; data?: MatchSplitDetails; error?: string }> {
+  try {
+    const cleanId = (bookingId || '').trim()
+    if (!cleanId) return { success: false, error: 'Identificador no válido' }
+
+    // Obtenemos los datos base de la reserva mediante getBookingPublicReceipt
+    const receiptRes = await getBookingPublicReceipt(cleanId)
+    if (!receiptRes.success || !receiptRes.data) {
+      return { success: false, error: receiptRes.error || 'Reserva no encontrada' }
+    }
+
+    const r = receiptRes.data
+    const isPadel = r.sport.toUpperCase().includes('PADEL')
+    const isFutbol = r.sport.toUpperCase().includes('FUTBOL')
+    const recommendedShares = isPadel ? 4 : isFutbol ? 10 : 2
+
+    const supabase = await createServiceClient()
+    const { data: dbPayments } = await supabase
+      .from('booking_payments')
+      .select('*')
+      .eq('booking_id', cleanId)
+      .order('registered_at', { ascending: true })
+
+    const shares: MatchSplitShare[] = []
+    let totalCollected = r.depositAmount
+
+    // Cupo 1: Organizador (cubrió la seña)
+    shares.push({
+      id: 'organizer',
+      playerName: r.customerName || 'Organizador',
+      amountArs: r.depositAmount,
+      status: 'PAID',
+      paymentMethod: r.paymentMethod,
+      isOrganizer: true,
+    })
+
+    // Pagos registrados de amigos
+    if (dbPayments && Array.isArray(dbPayments)) {
+      dbPayments.forEach((p, idx) => {
+        // Ignorar la seña si ya fue computada
+        if (p.notes && p.notes.includes('Split payment')) {
+          const matchName = p.notes.match(/Jugador:\s*([^()]+)/)
+          const name = matchName ? matchName[1].trim() : `Amigo #${idx + 1}`
+          const matchPhone = p.notes.match(/\(([^)]+)\)/)
+          const phone = matchPhone ? matchPhone[1].trim() : undefined
+          const amount = (Number(p.amount_ars) || 0)
+
+          totalCollected += amount
+          shares.push({
+            id: p.id,
+            playerName: name,
+            playerPhone: phone !== 'Sin tel' ? phone : undefined,
+            amountArs: amount,
+            status: 'PAID',
+            paidAt: p.registered_at,
+            paymentMethod: p.payment_method,
+            isOrganizer: false,
+          })
+        }
+      })
+    }
+
+    const balanceRemaining = Math.max(0, r.totalAmount - totalCollected)
+
+    return {
+      success: true,
+      data: {
+        bookingId: cleanId,
+        shortCode: r.shortCode,
+        clubName: r.clubName,
+        clubSlug: r.clubSlug,
+        clubPhone: r.clubPhone,
+        clubAddress: r.clubAddress,
+        bankAlias: r.bankAlias,
+        courtName: r.courtName,
+        sport: r.sport,
+        dateFormatted: r.dateFormatted || r.date,
+        time: r.time,
+        totalAmount: r.totalAmount,
+        depositAmount: r.depositAmount,
+        balanceRemaining,
+        totalCollected,
+        recommendedShares,
+        organizerName: r.customerName,
+        shares,
+      },
+    }
+  } catch (err) {
+    console.error('[getMatchSplitDetails] Error:', err)
+    return { success: false, error: 'Error al consultar detalles de la división' }
+  }
+}
+
+/**
+ * Registra el pago de una cuota de amigo en el partido dividido
+ */
+export async function recordPlayerSplitPayment(payload: {
+  bookingId: string
+  playerName: string
+  playerPhone?: string
+  amountArs: number
+  paymentMethod: 'TRANSFER' | 'MERCADOPAGO'
+  referenceNumber?: string
+}): Promise<{ success: boolean; error?: string; message?: string }> {
+  try {
+    const { bookingId, playerName, playerPhone, amountArs, paymentMethod, referenceNumber } = payload
+    if (!bookingId || !playerName || amountArs <= 0) {
+      return { success: false, error: 'Datos de pago incompletos' }
+    }
+
+    const supabase = await createServiceClient()
+
+    // 1. Verificar existencia de la reserva
+    let { data: booking } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, total_amount_ars, deposit_amount_ars, internal_notes')
+      .eq('id', bookingId)
+      .maybeSingle()
+
+    // Si no está con ID exacto (o es simulación), buscar por match
+    if (!booking) {
+      const { data: bMatch } = await supabase
+        .from('bookings')
+        .select('id, tenant_id, total_amount_ars, deposit_amount_ars, internal_notes')
+        .ilike('id', `%${bookingId}%`)
+        .maybeSingle()
+      booking = bMatch
+    }
+
+    if (booking) {
+      const cleanTenantId = booking.tenant_id
+      const splitNote = `Split payment - Jugador: ${playerName.trim()} (${playerPhone?.trim() || 'Sin tel'})${referenceNumber ? ` [Ref: ${referenceNumber}]` : ''}`
+
+      // Registrar pago
+      await supabase.from('booking_payments').insert({
+        tenant_id: cleanTenantId,
+        booking_id: booking.id,
+        amount_ars: amountArs,
+        payment_method: paymentMethod,
+        payment_date: getArgentinaTodayIso(),
+        registered_at: new Date().toISOString(),
+        notes: splitNote,
+        reference_number: referenceNumber || null,
+      })
+
+      // Actualizar notas internas de la reserva
+      const existingNotes = booking.internal_notes || ''
+      const updatedNotes = `${existingNotes}\n[Pago Amigo]: ${playerName.trim()} $${amountArs} (${paymentMethod})`.trim()
+      await supabase.from('bookings').update({ internal_notes: updatedNotes }).eq('id', booking.id)
+    }
+
+    revalidatePath(`/partido/${bookingId}`)
+    revalidatePath(`/reserva/${bookingId}/confirmado`)
+    revalidatePath('/dashboard')
+
+    return {
+      success: true,
+      message: `¡Pago de ${playerName} ($${amountArs.toLocaleString('es-AR')}) registrado con éxito!`,
+    }
+  } catch (err) {
+    console.error('[recordPlayerSplitPayment] Error:', err)
+    return { success: false, error: 'Error al registrar el pago del amigo' }
+  }
+}
+
+
 

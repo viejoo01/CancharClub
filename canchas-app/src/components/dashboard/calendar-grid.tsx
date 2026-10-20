@@ -546,10 +546,37 @@ export function CalendarGrid({
     }
   }, [tenantId, selectedDate, onRefresh])
 
-  // Filtro de canchas
+  // Filtro de canchas con ordenamiento natural ('Cancha 1', 'Cancha 2', ..., 'Cancha 10')
   const filteredCourts = useMemo(() => {
-    return activeCourts.filter(c => c.is_active && (selectedSport === 'ALL' || c.sport === selectedSport))
+    return activeCourts
+      .filter((c) => c.is_active && (selectedSport === 'ALL' || c.sport === selectedSport))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }))
   }, [activeCourts, selectedSport])
+
+  // Densidad de grilla para complejos medianos y grandes (10+ canchas)
+  const [gridDensity, setGridDensity] = useState<'normal' | 'compact'>('normal')
+
+  // Auto-activar vista compacta si el club tiene 7 o más canchas
+  useEffect(() => {
+    if (activeCourts.length >= 7) {
+      setGridDensity('compact')
+    }
+  }, [activeCourts.length])
+
+  // Ancho de columnas según densidad seleccionada
+  const colWidth = gridDensity === 'compact' ? 145 : 190
+  const timeColWidth = 76
+
+  // Scroll horizontal asistido para el panel de recepción
+  const scrollCourtsHorizontally = (direction: 'left' | 'right') => {
+    if (!gridContainerRef.current) return
+    const offset = direction === 'left' ? -colWidth * 3 : colWidth * 3
+    gridContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' })
+  }
+
+  // Plantilla exacta de columnas para evitar wrap desfasado en CSS Grid
+  const gridTemplateCols = `${timeColWidth}px repeat(${filteredCourts.length}, minmax(${colWidth}px, 1fr))`
+  const totalGridMinWidth = `${timeColWidth + filteredCourts.length * colWidth}px`
 
   // Deportes disponibles
   const sports = useMemo(() => {
@@ -757,6 +784,36 @@ export function CalendarGrid({
               <span className="hidden sm:inline">Protocolo</span> Lluvia
             </Button>
 
+            {/* Selector de Densidad y Navegación de Canchas */}
+            {filteredCourts.length > 3 && (
+              <div className="hidden sm:flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setGridDensity('compact')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    gridDensity === 'compact'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                  title="Modo Compacto: Ver hasta 10 canchas en simultáneo"
+                >
+                  Compacto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGridDensity('normal')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    gridDensity === 'normal'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                  title="Modo Cómodo: Celdas amplias con nombres completos"
+                >
+                  Cómodo
+                </button>
+              </div>
+            )}
+
             {/* Indicador Realtime */}
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-400 font-semibold shadow-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -791,20 +848,45 @@ export function CalendarGrid({
         </div>
       </div>
 
-
-
-      {/* Indicador para móviles de desplazamiento horizontal de canchas */}
-      <div className="md:hidden flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
-        <span className="flex items-center gap-1.5 animate-pulse">
+      {/* Indicador de desplazamiento horizontal de canchas con botones asistidos */}
+      <div className="flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
+        <span className="flex items-center gap-1.5">
           <span className="inline-flex items-center gap-1 bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-700/60">
             <ChevronLeft className="w-3 h-3 text-slate-500" />
-            <span className="text-slate-300 font-medium">Deslizá para ver canchas</span>
+            <span className="text-slate-300 font-medium">
+              {filteredCourts.length > 5 ? 'Deslizá horizontalmente para ver todas las canchas' : 'Deslizá para ver canchas'}
+            </span>
             <ChevronRight className="w-3 h-3 text-slate-500" />
           </span>
         </span>
-        <span className="text-emerald-400 font-semibold bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-500/30">
-          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
-        </span>
+        <div className="flex items-center gap-2">
+          {filteredCourts.length > 4 && (
+            <div className="flex items-center gap-1 bg-slate-950 rounded-lg border border-slate-800 p-0.5">
+              <button
+                type="button"
+                onClick={() => scrollCourtsHorizontally('left')}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Desplazar a canchas anteriores"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-1.5 text-[10px] font-semibold text-slate-400">
+                Mover
+              </span>
+              <button
+                type="button"
+                onClick={() => scrollCourtsHorizontally('right')}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Desplazar a canchas siguientes"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <span className="text-emerald-400 font-semibold bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+            {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
+          </span>
+        </div>
       </div>
 
       {/* Matriz de Calendario o Estado Vacío */}
@@ -834,20 +916,34 @@ export function CalendarGrid({
           className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto"
           style={{ scrollBehavior: 'smooth' }}
         >
-        <div className="min-w-180 sm:min-w-200">
-          {/* Header de Canchas (Columnas) - Sticky Top */}
-          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md">
-            <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-950 shadow-xs">
-              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-400" />
+        <div 
+          className="w-max min-w-full"
+          style={{ minWidth: totalGridMinWidth }}
+        >
+          {/* Header de Canchas (Columnas) - Sticky Top con Frozen Header */}
+          <div 
+            className="grid border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md"
+            style={{ gridTemplateColumns: gridTemplateCols }}
+          >
+            <div 
+              className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-950 shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
+              style={{ width: `${timeColWidth}px` }}
+            >
+              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-400 shrink-0" />
               Hora
             </div>
             {filteredCourts.map((court) => (
               <div
                 key={court.id}
-                className="p-3 text-center border-r border-slate-800/80 last:border-r-0 bg-slate-900/90"
+                className="p-2.5 text-center border-r border-slate-800/80 last:border-r-0 bg-slate-900/90 flex flex-col justify-center min-w-0"
               >
-                <div className="text-sm font-bold text-white tracking-tight">{court.name}</div>
-                <div className="text-[11px] text-emerald-400 font-medium">{court.sport}</div>
+                <div className="text-sm font-bold text-white tracking-tight truncate px-1" title={court.name}>
+                  {court.name}
+                </div>
+                <div className="text-[11px] text-emerald-400 font-medium truncate inline-flex items-center gap-1 justify-center mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="truncate">{court.sport}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -858,10 +954,14 @@ export function CalendarGrid({
               <div
                 key={time}
                 data-time={time}
-                className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[72px]"
+                className="grid min-h-[72px]"
+                style={{ gridTemplateColumns: gridTemplateCols }}
               >
-                {/* Columna Hora - Sticky Left */}
-                <div className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-xs">
+                {/* Columna Hora - Sticky Left con Sombra de Elevación */}
+                <div 
+                  className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.6)] select-none"
+                  style={{ width: `${timeColWidth}px` }}
+                >
                   {time}
                 </div>
 
@@ -953,7 +1053,7 @@ export function CalendarGrid({
                             </div>
 
                             <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
-                              <span>{formatARS(booking.total_amount_ars)}</span>
+                              <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
                               {booking.balance_due > 0 ? (
                                 <button
                                   type="button"
@@ -961,14 +1061,16 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
-                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400" />
-                                  <span>Cobrar {formatARS(booking.balance_due)}</span>
+                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                  <span className="truncate">
+                                    {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar ${formatARS(booking.balance_due)}`}
+                                  </span>
                                 </button>
                               ) : (
-                                <span className="text-emerald-400 font-semibold">Saldado</span>
+                                <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1014,7 +1116,7 @@ export function CalendarGrid({
                             </div>
 
                             <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
-                              <span>{formatARS(booking.total_amount_ars)}</span>
+                              <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
                               {booking.balance_due > 0 ? (
                                 <button
                                   type="button"
@@ -1022,14 +1124,16 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
-                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400" />
-                                  <span>Cobrar resto ({formatARS(booking.balance_due)})</span>
+                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                  <span className="truncate">
+                                    {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
+                                  </span>
                                 </button>
                               ) : (
-                                <span className="text-emerald-400 font-semibold">Saldado</span>
+                                <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1050,10 +1154,10 @@ export function CalendarGrid({
                           <div
                             className={`h-full min-h-[72px] w-full rounded-none px-2.5 py-1.5 flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-[1px] relative z-10 ${colorClasses}`}
                           >
-                            <span className="text-[10px] font-medium opacity-70 italic">
-                              Turno en curso...
+                            <span className="text-[10px] font-medium opacity-70 italic truncate">
+                              {gridDensity === 'compact' ? 'En curso' : 'Turno en curso...'}
                             </span>
-                            <span className="text-[10px] opacity-75 font-semibold">
+                            <span className="text-[10px] opacity-75 font-semibold truncate">
                               {booking.customer_name}
                             </span>
                           </div>
@@ -1074,9 +1178,9 @@ export function CalendarGrid({
                           className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
                         >
                           <div className="flex items-center justify-between w-full h-full text-[11px] opacity-90 mt-auto gap-1">
-                            <div className="flex items-center gap-1.5 font-semibold text-slate-300">
+                            <div className="flex items-center gap-1.5 font-semibold text-slate-300 truncate">
                               <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                              <span>Hasta las {endTime} hs</span>
+                              <span className="truncate">{gridDensity === 'compact' ? `${endTime} hs` : `Hasta las ${endTime} hs`}</span>
                             </div>
                             {booking.balance_due > 0 ? (
                               <button
@@ -1085,15 +1189,17 @@ export function CalendarGrid({
                                   e.stopPropagation()
                                   setSelectedBooking(booking)
                                 }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                 title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                               >
-                                <DollarSign className="w-3 h-3 text-emerald-400" />
-                                <span>Cobrar Resto ({formatARS(booking.balance_due)})</span>
+                                <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                <span className="truncate">
+                                  {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
+                                </span>
                               </button>
                             ) : (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300">
-                                {totalSlots === 2 ? '1 hora' : `${totalSlots * 30} min`}
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300 shrink-0">
+                                {totalSlots === 2 ? '1 h' : `${totalSlots * 30}m`}
                               </span>
                             )}
                           </div>
@@ -1133,9 +1239,12 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-end px-2 py-1 text-[11px] text-slate-400">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 px-2 py-1 text-[11px] text-slate-400 select-none">
+        <span className="text-slate-500 hidden sm:inline">
+          Tip de recepción: Mantené <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[10px]">Shift</kbd> + rueda del mouse para desplazarte entre canchas.
+        </span>
         <span className="text-emerald-400 font-medium">
-          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'}
+          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'} ({gridDensity === 'compact' ? 'Modo Compacto' : 'Modo Cómodo'})
         </span>
       </div>
       </>

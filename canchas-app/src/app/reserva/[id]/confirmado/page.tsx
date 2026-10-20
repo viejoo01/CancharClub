@@ -13,7 +13,10 @@ import {
   Home,
   Copy,
   Check,
-  Download
+  Download,
+  Users,
+  ArrowRight,
+  Sparkles
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -261,6 +264,55 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── FASE 3: DIVIDIR EL PAGO ENTRE AMIGOS (VIRAL SPLIT) ─── */}
+      <div className="w-full mt-4 p-4 rounded-2xl bg-linear-to-r from-emerald-950/60 via-slate-900 to-indigo-950/60 border-2 border-emerald-500/40 text-left shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            <Sparkles className="w-3 h-3 text-emerald-400" />
+            Dividir el Pago
+          </span>
+          <span className="text-[10px] text-slate-400">¿Juegan 4 o más?</span>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+            Dividí el valor del turno con tu equipo
+          </h4>
+          <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+            Compartiles el enlace para que cada uno pague su parte exacta ({formatARS(Math.round(total / 4))} c/u).
+          </p>
+        </div>
+
+        <div className="pt-1 flex gap-2">
+          <Link href={`/partido/${bookingId}`} className="flex-1">
+            <Button
+              size="sm"
+              className="w-full h-9 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
+            >
+              <span>Abrir División del Turno</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Button>
+          </Link>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                const url = `${window.location.origin}/partido/${bookingId}`
+                navigator.clipboard.writeText(url)
+                toast.success('¡Enlace para dividir copiado!')
+              }
+            }}
+            className="h-9 px-3 rounded-xl border-slate-700 bg-slate-950 text-slate-200 hover:text-white text-xs gap-1.5 cursor-pointer shrink-0"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Copiar</span>
+          </Button>
+        </div>
+      </div>
 
       {/* Sincronización con Calendario */}
       <div className="w-full mt-4 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5 text-left">

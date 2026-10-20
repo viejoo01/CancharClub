@@ -15,6 +15,9 @@ import {
   Coffee,
   Loader2,
   Navigation,
+  Trophy,
+  Share2,
+  Smartphone,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -302,6 +305,11 @@ export default function HomePage() {
           
           {/* Logo / Encabezado superior */}
           <div className="flex flex-col items-center justify-center">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-semibold mb-3 shadow-xs">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Nuevo: Dividir el Pago y Torneos en Vivo</span>
+            </div>
+
             <div className="w-16 h-16 rounded-2xl mb-3 shadow-xl shadow-emerald-950/40 flex items-center justify-center hover:scale-105 transition-all duration-300">
               <CancharClubIcon className="w-16 h-16 drop-shadow-md" />
             </div>
@@ -348,7 +356,48 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Menú inferior con separadores (Fiel a la captura) */}
+          {/* Superpoderes CancharClub (Tarjetas de funcionalidades clave) */}
+          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-left pt-1">
+            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 flex items-start gap-3 hover:border-emerald-500/40 transition-colors">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                <Share2 className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-white">Dividir el Pago</h4>
+                <p className="text-[11px] text-slate-400 leading-tight">Cada amigo abona su parte por celular.</p>
+              </div>
+            </div>
+
+            <Link
+              href="/torneo"
+              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 flex items-start gap-3 hover:border-amber-500/40 transition-colors group cursor-pointer"
+            >
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
+                <Trophy className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Torneos en Vivo</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                    Ver
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-400 leading-tight">Cuadros y parejas de fin de semana.</p>
+              </div>
+            </Link>
+
+            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 flex items-start gap-3 hover:border-sky-500/40 transition-colors">
+              <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-white">Reserva en 20s</h4>
+                <p className="text-[11px] text-slate-400 leading-tight">Sin descargar apps pesadas ni demoras.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Menú inferior con separadores */}
           <div className="w-full max-w-sm sm:max-w-md bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden divide-y divide-slate-800 shadow-sm text-left">
             <button
               onClick={() => setIsReservasModalOpen(true)}
@@ -360,6 +409,22 @@ export default function HomePage() {
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
+
+            <Link
+              href="/torneo"
+              className="w-full px-4 py-3.5 min-h-12 flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-800/40 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>Torneos y Americanos en Vivo</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30">
+                  Nuevo
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </div>
+            </Link>
 
             <button
               onClick={() => setIsClubLoginModalOpen(true)}
@@ -373,7 +438,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Opción "¿Sos dueño de un club? Sumá tu club →" (Fiel a la captura) */}
+          {/* Opción "¿Sos dueño de un club? Sumá tu club →" */}
           <div className="pt-2 text-center text-sm text-slate-500 dark:text-slate-400">
             ¿Sos dueño de un club?{' '}
             <Link

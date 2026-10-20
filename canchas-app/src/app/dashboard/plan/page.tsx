@@ -72,6 +72,7 @@ export default function ClubPlanPage() {
     return false
   })
 
+  const [billingFrequency, setBillingFrequency] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showReactivationModal, setShowReactivationModal] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -753,12 +754,14 @@ export default function ClubPlanPage() {
                 Al Día (Pagado)
               </Badge>
             ) : !isAutoDebitActive ? (
-              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start">
-                ⚠️ Pendiente de Tarjeta
+              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Pendiente de Tarjeta</span>
               </Badge>
             ) : isPaused ? (
-              <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-xs px-3 py-1 font-bold animate-pulse shrink-0 self-start">
-                ⏸️ En Pausa (Por falta de pago)
+              <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-xs px-3 py-1 font-bold animate-pulse shrink-0 self-start flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                <span>En Pausa (Por falta de pago)</span>
               </Badge>
             ) : (
               <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs px-3 py-1 shrink-0 self-start">
@@ -801,11 +804,20 @@ export default function ClubPlanPage() {
               </span>
               {hasPriceConfigured ? (
                 <>
-                  <div className="text-3xl font-extrabold text-emerald-400 font-mono mt-1">
-                    {formatARS(pricing.monthlyFeeArs)}
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <div className="text-3xl font-extrabold text-emerald-400 font-mono mt-1">
+                      {formatARS(pricing.monthlyFeeArs)}
+                    </div>
+                    {pricing.isCapApplied && (
+                      <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
+                        Tope de Mercado Protegido
+                      </span>
+                    )}
                   </div>
                   <span className="text-[11px] text-slate-400">
-                    Basado en turno mayor de {formatARS(highestSlotPrice)} ({activePlan.priceTurnosLabel})
+                    {pricing.isCapApplied && pricing.monthlyCapArs
+                      ? `Tope máximo de ${formatARS(pricing.monthlyCapArs)} aplicado (Turno mayor: ${formatARS(highestSlotPrice)})`
+                      : `Basado en turno mayor de ${formatARS(highestSlotPrice)} (${activePlan.priceTurnosLabel})`}
                   </span>
                 </>
               ) : (
@@ -1132,7 +1144,7 @@ export default function ClubPlanPage() {
 
       {/* Comparativa de Modelos de Planes SaaS por Tamaño de Predio */}
       <div className="space-y-4 pt-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wider uppercase mb-0.5">
               <Calculator className="w-4 h-4" />
@@ -1144,6 +1156,39 @@ export default function ClubPlanPage() {
             <p className="text-xs text-slate-400">
               Cada modelo está diseñado a la medida de la infraestructura de tu predio.
             </p>
+          </div>
+
+          {/* Toggle Mensual vs Anual */}
+          <div className="inline-flex items-center bg-slate-950 p-1.5 rounded-2xl border border-slate-800 shadow-xl shrink-0 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setBillingFrequency('MONTHLY')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                billingFrequency === 'MONTHLY'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Pago Mensual
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingFrequency('ANNUAL')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                billingFrequency === 'ANNUAL'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Pago Anual</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black tracking-wide ${
+                billingFrequency === 'ANNUAL'
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-400/50'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                20% OFF
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1186,10 +1231,10 @@ export default function ClubPlanPage() {
                   <div>
                     <h4 className="text-sm font-black text-white">{plan.name}</h4>
                     <div className="text-base font-extrabold text-emerald-400 font-mono mt-1">
-                      {plan.priceTurnosLabel}
+                      {billingFrequency === 'ANNUAL' ? plan.annualTurnosLabel : plan.priceTurnosLabel}
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
-                      {plan.priceSubtext}
+                      {billingFrequency === 'ANNUAL' ? plan.annualSubtext : plan.priceSubtext}
                     </div>
                   </div>
 

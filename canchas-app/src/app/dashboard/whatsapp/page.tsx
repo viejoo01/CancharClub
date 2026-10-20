@@ -21,12 +21,15 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { formatARS } from '@/lib/utils'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { 
   getWhatsAppBotConfig, 
   saveWhatsAppBotConfig, 
   getWhatsAppMessageLogs, 
   testWhatsAppBotMessage, 
+  getTodayTurnosForReminders,
+  sendTurnoReminderWhatsApp,
   type WhatsAppBotConfig, 
   type AutomatedMessageLog 
 } from '@/actions/whatsapp-bot.actions'
@@ -63,15 +66,29 @@ export default function WhatsAppBotPage() {
   const [phoneNumberId, setPhoneNumberId] = useState('')
   const [savingCreds, setSavingCreds] = useState(false)
 
+  // Turnos de hoy para recordatorios 2 horas antes
+  const [todayTurnos, setTodayTurnos] = useState<Array<{
+    id: string
+    customerName: string
+    customerPhone: string
+    courtName: string
+    timeStr: string
+    balanceArs: number
+    alreadyReminded: boolean
+  }>>([])
+  const [loadingTurnos, setLoadingTurnos] = useState(false)
+  const [dispatchingTurnoId, setDispatchingTurnoId] = useState<string | null>(null)
+
   useEffect(() => {
     if (!tenantId) return
     let isMounted = true
 
     Promise.all([
       getWhatsAppBotConfig(tenantId),
-      getWhatsAppMessageLogs(tenantId)
+      getWhatsAppMessageLogs(tenantId),
+      getTodayTurnosForReminders(tenantId)
     ])
-      .then(([cfg, logList]) => {
+      .then(([cfg, logList, turnos]) => {
         if (isMounted) {
           cachedWhatsAppConfig.set(tenantId, cfg)
           cachedWhatsAppLogs.set(tenantId, logList)
@@ -79,6 +96,7 @@ export default function WhatsAppBotPage() {
           setLogs(logList)
           setApiKey(cfg.api_key || '')
           setPhoneNumberId(cfg.phone_number_id || '')
+          setTodayTurnos(turnos)
         }
       })
       .catch(() => {})
@@ -87,6 +105,35 @@ export default function WhatsAppBotPage() {
       isMounted = false
     }
   }, [tenantId])
+
+  const handleSendReminder = async (turnoId: string) => {
+    setDispatchingTurnoId(turnoId)
+    try {
+      const res = await sendTurnoReminderWhatsApp(turnoId)
+      if (res.success) {
+        if (res.isSimulated && res.waUrl) {
+          toast.success('¡Recordatorio preparado! Abriendo WhatsApp...')
+          window.open(res.waUrl, '_blank')
+        } else {
+          toast.success('¡Recordatorio enviado por WhatsApp con éxito!')
+        }
+        setTodayTurnos(prev =>
+          prev.map(t => (t.id === turnoId ? { ...t, alreadyReminded: true } : t))
+        )
+        if (tenantId) {
+          const updatedLogs = await getWhatsAppMessageLogs(tenantId)
+          cachedWhatsAppLogs.set(tenantId, updatedLogs)
+          setLogs(updatedLogs)
+        }
+      } else {
+        toast.error(res.error || 'No se pudo despachar el recordatorio')
+      }
+    } catch {
+      toast.error('Error al despachar recordatorio')
+    } finally {
+      setDispatchingTurnoId(null)
+    }
+  }
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -421,6 +468,107 @@ export default function WhatsAppBotPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── RECORDATORIOS PREVENTIVOS DE TURNOS DE HOY ─── */}
+      <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden">
+        <div className="h-1 bg-gradient-to-r from-teal-500 to-emerald-400" />
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 gap-2">
+          <div>
+            <CardTitle className="text-base text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-teal-400" />
+              Recordatorios de Turnos de Hoy (2 Horas Antes)
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Despacho manual o programado con link de Google Maps, estado de seña y división de pago.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (tenantId) {
+                setLoadingTurnos(true)
+                try {
+                  const turnos = await getTodayTurnosForReminders(tenantId)
+                  setTodayTurnos(turnos)
+                  toast.success('Turnos del día actualizados')
+                } finally {
+                  setLoadingTurnos(false)
+                }
+              }
+            }}
+            disabled={loadingTurnos}
+            className="border-slate-800 text-slate-300 hover:text-white h-8 text-xs gap-1.5 self-start sm:self-auto"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingTurnos ? 'animate-spin text-teal-400' : ''}`} />
+            <span>Actualizar Turnos</span>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {todayTurnos.length === 0 ? (
+            <div className="py-8 text-center text-slate-500 space-y-1">
+              <Clock className="w-8 h-8 mx-auto text-slate-700" />
+              <p className="text-xs">No hay turnos activos programados para la fecha.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-800/80">
+              {todayTurnos.map((turno) => (
+                <div key={turno.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex flex-col items-center justify-center font-mono font-bold text-teal-400 shrink-0">
+                      <span className="text-[11px] leading-none">{turno.timeStr}</span>
+                      <span className="text-[9px] text-teal-500/70">hs</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-white text-xs">{turno.customerName}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">({turno.customerPhone || 'Sin tel'})</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                        <span className="text-emerald-400 font-medium">{turno.courtName}</span>
+                        <span>•</span>
+                        <span>Resta en mostrador: <strong className="text-slate-300">{turno.balanceArs > 0 ? formatARS(turno.balanceArs) : '$0'}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {turno.alreadyReminded ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 text-[10px] px-2 py-0.5 gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Recordatorio Enviado</span>
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-slate-800 text-slate-400 border-slate-700 text-[10px] px-2 py-0.5">
+                        Pendiente
+                      </Badge>
+                    )}
+
+                    <Button
+                      size="sm"
+                      onClick={() => handleSendReminder(turno.id)}
+                      disabled={dispatchingTurnoId === turno.id}
+                      className="h-8 px-3 text-xs font-bold rounded-xl bg-teal-600 hover:bg-teal-500 text-white gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      {dispatchingTurnoId === turno.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Enviando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar Recordatorio</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ─── HISTORIAL DE MENSAJES ENVIADOS ─── */}
       <div className="grid grid-cols-1 gap-6">

@@ -11,12 +11,27 @@ import {
   Flame,
   Radio,
   MapPin,
+  UserPlus,
+  CheckCircle2,
+  Sparkles,
+  Phone,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import {
   getTournamentById,
+  addTeamToCategory,
   type TournamentWithDetails,
 } from '@/actions/tournament.actions'
 import type { TournamentMatch, TournamentTeam } from '@/types/database'
@@ -32,6 +47,16 @@ export default function PublicTournamentPage({
   const [tournament, setTournament] = useState<TournamentWithDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedCatId, setSelectedCatId] = useState<string>('')
+
+  // Modal de Inscripción Pública
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false)
+  const [regCategory, setRegCategory] = useState('')
+  const [regTeamName, setRegTeamName] = useState('')
+  const [regPlayer1, setRegPlayer1] = useState('')
+  const [regPlayer2, setRegPlayer2] = useState('')
+  const [regPhone, setRegPhone] = useState('')
+  const [regLoading, setRegLoading] = useState(false)
+  const [regSuccess, setRegSuccess] = useState(false)
 
   const loadTournament = useCallback(async () => {
     try {
@@ -130,6 +155,46 @@ export default function PublicTournamentPage({
     return Array.from(table.values()).sort((a, b) => b.pts - a.pts || b.pg - a.pg)
   }
 
+  const handleRegisterTeam = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!regCategory || !regTeamName.trim() || !regPlayer1.trim() || !regPhone.trim()) {
+      toast.error('Completá los datos obligatorios')
+      return
+    }
+
+    setRegLoading(true)
+    try {
+      const res = await addTeamToCategory({
+        category_id: regCategory,
+        name: regTeamName.trim(),
+        player_1: regPlayer1.trim(),
+        player_2: regPlayer2.trim() || undefined,
+        phone: regPhone.trim(),
+      })
+
+      if (res.success) {
+        toast.success('¡Inscripción registrada con éxito!')
+        setRegSuccess(true)
+        await loadTournament()
+      } else {
+        toast.error(res.error || 'No se pudo completar la inscripción')
+      }
+    } catch {
+      toast.error('Error al registrar inscripción')
+    } finally {
+      setRegLoading(false)
+    }
+  }
+
+  const handleResetModal = () => {
+    setIsRegisterOpen(false)
+    setRegSuccess(false)
+    setRegTeamName('')
+    setRegPlayer1('')
+    setRegPlayer2('')
+    setRegPhone('')
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
@@ -154,6 +219,8 @@ export default function PublicTournamentPage({
     )
   }
 
+  const isFoot = tournament.sport === 'FUTBOL_5' || tournament.sport === 'FUTBOL_7' || tournament.sport === 'FUTBOL_11'
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Barra superior con branding CancharClub */}
@@ -175,8 +242,21 @@ export default function PublicTournamentPage({
 
             <Button
               size="sm"
+              onClick={() => {
+                setRegCategory(selectedCatId || tournament.categories[0]?.id || '')
+                setIsRegisterOpen(true)
+              }}
+              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold h-8 text-xs shadow-md shadow-amber-950/40"
+            >
+              <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+              {isFoot ? 'Inscribir Equipo' : 'Inscribir Pareja'}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
               onClick={handleShare}
-              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold h-8 text-xs"
+              className="border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-slate-200 font-semibold h-8 text-xs"
             >
               <Share2 className="w-3.5 h-3.5 mr-1.5" />
               Compartir
@@ -210,6 +290,35 @@ export default function PublicTournamentPage({
             <p className="text-sm text-slate-400 mt-1">
               Cuadro oficial, tablas de posiciones y marcadores en tiempo real.
             </p>
+          </div>
+
+          {/* Banner de Inscripción Abierta */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-amber-300">Inscripciones Abiertas</span>
+                <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] border-emerald-500/40">
+                  Cupos Limitados
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-300">
+                {selectedCategory
+                  ? `${selectedCategory.name}: ${selectedCategory.teams.length} / ${selectedCategory.max_teams || 8} ${isFoot ? 'equipos' : 'parejas'} anotadas`
+                  : `Inscribí a tu ${isFoot ? 'equipo' : 'pareja'} online y asegurá tu lugar en el cuadro oficial`}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                setRegCategory(selectedCatId || tournament.categories[0]?.id || '')
+                setIsRegisterOpen(true)
+              }}
+              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shrink-0 shadow-md"
+            >
+              <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+              {isFoot ? 'Anotar Equipo' : 'Anotar Pareja'}
+            </Button>
           </div>
 
           {/* Selector de Categorías */}
@@ -384,6 +493,165 @@ export default function PublicTournamentPage({
           </div>
         </div>
       </main>
+
+      {/* Modal: Inscripción Pública al Torneo */}
+      <Dialog open={isRegisterOpen} onOpenChange={(open) => {
+        if (!open) handleResetModal()
+        else setIsRegisterOpen(true)
+      }}>
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Trophy className="w-5 h-5 text-amber-400" />
+              <span>Inscripción al Torneo</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              {regSuccess 
+                ? '¡Tu inscripción ha sido registrada exitosamente!'
+                : `Completá los datos para sumarte al cuadro oficial de ${tournament.name}.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {regSuccess ? (
+            <div className="py-4 space-y-4">
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+                <h4 className="text-base font-bold text-white">¡Anotados con Éxito!</h4>
+                <p className="text-xs text-slate-300">
+                  La pareja <strong className="text-white">{regTeamName}</strong> ya figura en el listado de inscriptos.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 space-y-1">
+                <p className="font-semibold text-white">Siguiente paso:</p>
+                <p className="text-slate-400">
+                  Enviá un mensaje al club por WhatsApp para coordinar el pago de la seña/inscripción y asegurar el lugar.
+                </p>
+              </div>
+
+              <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+                <Button
+                  onClick={() => {
+                    const catObj = tournament.categories.find(c => c.id === regCategory)
+                    const text = `¡Hola! Acabamos de inscribirnos online al torneo *${tournament.name}* en la categoría *${catObj?.name || 'Oficial'}*.\n\n*Equipo:* ${regTeamName}\n*Jugadores:* ${regPlayer1} y ${regPlayer2 || 'A confirmar'}\n*Tel:* ${regPhone}\n\n¿Por qué medio podemos abonar la seña de la inscripción?`
+                    window.open(buildWhatsAppLink(null, text), '_blank')
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5"
+                >
+                  <Phone className="w-4 h-4" />
+                  Avisar al Club por WhatsApp
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleResetModal}
+                  className="w-full border-slate-800 text-slate-300"
+                >
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleRegisterTeam} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Categoría</Label>
+                <select
+                  value={regCategory}
+                  onChange={(e) => setRegCategory(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
+                  required
+                >
+                  {tournament.categories.map((cat) => {
+                    const limit = cat.max_teams || 8
+                    const isFull = cat.teams.length >= limit
+                    return (
+                      <option key={cat.id} value={cat.id} disabled={isFull}>
+                        {cat.name} ({cat.teams.length}/{limit} {isFoot ? 'equipos' : 'parejas'}) {isFull ? '— COMPLETO' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">
+                  {isFoot ? 'Nombre del Equipo' : 'Nombre de la Pareja'}
+                </Label>
+                <Input
+                  placeholder={isFoot ? 'Ej. Los Galácticos FC' : 'Ej. González / Martínez'}
+                  value={regTeamName}
+                  onChange={(e) => setRegTeamName(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">
+                    {isFoot ? 'Capitán / Jugador 1' : 'Jugador 1'}
+                  </Label>
+                  <Input
+                    placeholder="Nombre y Apellido"
+                    value={regPlayer1}
+                    onChange={(e) => setRegPlayer1(e.target.value)}
+                    required
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">
+                    {isFoot ? 'Subcapitán (opcional)' : 'Jugador 2'}
+                  </Label>
+                  <Input
+                    placeholder="Nombre y Apellido"
+                    value={regPlayer2}
+                    onChange={(e) => setRegPlayer2(e.target.value)}
+                    required={!isFoot}
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">WhatsApp de Contacto</Label>
+                <Input
+                  type="tel"
+                  placeholder="Ej. +54 9 11 1234-5678"
+                  value={regPhone}
+                  onChange={(e) => setRegPhone(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+                <p className="text-[11px] text-slate-500">
+                  El club se comunicará por WhatsApp para validar y coordinar la seña.
+                </p>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetModal}
+                  className="border-slate-800 text-slate-300"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={regLoading}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                >
+                  {regLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    'Confirmar Inscripción'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

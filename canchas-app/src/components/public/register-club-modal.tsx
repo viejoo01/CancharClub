@@ -24,6 +24,7 @@ interface RegisterClubModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedPlanId?: SaaSPlanId
+  billingFrequency?: 'MONTHLY' | 'ANNUAL'
 }
 
 interface SportOption {
@@ -38,7 +39,7 @@ const SPORTS_OPTIONS: SportOption[] = [
   { id: 'BASQUET', label: 'Básquet' },
 ]
 
-export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIANO_2' }: RegisterClubModalProps) {
+export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIANO_2', billingFrequency = 'MONTHLY' }: RegisterClubModalProps) {
   const router = useRouter()
   const [selectedPlanOverride, setSelectedPlanOverride] = useState<SaaSPlanId | null>(null)
   const [prevSelectedPlanId, setPrevSelectedPlanId] = useState<SaaSPlanId>(selectedPlanId)
@@ -173,7 +174,9 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
                   >
                     <div className="text-xs font-bold truncate">{p.courtsLabel}</div>
                     <div className={`text-[10px] truncate ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
-                      {p.priceTurnosLabel.split('(')[0].trim()}
+                      {billingFrequency === 'ANNUAL'
+                        ? p.annualTurnosLabel.split('(')[0].trim()
+                        : p.priceTurnosLabel.split('(')[0].trim()}
                     </div>
                   </button>
                 )
@@ -185,7 +188,7 @@ export function RegisterClubModal({ open, onOpenChange, selectedPlanId = 'MEDIAN
                 {activePlanDef.name}:
               </span>
               <span className="font-bold text-emerald-700 dark:text-emerald-300">
-                {activePlanDef.priceSubtext}
+                {billingFrequency === 'ANNUAL' ? activePlanDef.annualSubtext : activePlanDef.priceSubtext}
               </span>
             </div>
           </div>

@@ -335,3 +335,240 @@ Fecha y hora: ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentin
     return { success: false, isSimulated: false, waUrl: '', error: msg }
   }
 }
+
+/**
+ * Envía avisos automáticos de lluvia masivos a los jugadores afectados
+ */
+export async function sendAutomatedRainAlerts(
+  tenantId: string,
+  affectedBookings: Array<{
+    bookingId: string
+    customerName: string
+    customerPhone: string
+    courtName: string
+    timeStr: string
+    depositArs: number
+    rescheduleUrl?: string
+  }>
+): Promise<{ success: boolean; sentCount: number; errorsCount: number }> {
+  try {
+    const config = await getWhatsAppBotConfig(tenantId)
+    let sentCount = 0
+    let errorsCount = 0
+
+    for (const item of affectedBookings) {
+      if (!item.customerPhone || item.customerPhone.trim().length < 6) {
+        errorsCount++
+        continue
+      }
+
+      const message =
+`🌧️ *AVISO DE LLUVIA — CANCELACIÓN PREVENTIVA*
+
+Hola *${item.customerName}*, te escribimos de parte del club.
+Debido a las condiciones climáticas adversas, el turno de hoy a las *${item.timeStr} hs* en *${item.courtName}* fue cancelado por protocolo de seguridad.
+
+💰 *Tu seña de ${formatARS(item.depositArs)} ya quedó acreditada al 100% como saldo a favor en tu Billetera CancharClub*, disponible automáticamente para tu próxima reserva.
+
+¡Cuidate y te esperamos en tu próximo partido!`
+
+      try {
+        const sendRes = await sendWhatsAppMessage(item.customerPhone, message, {
+          token: config.api_key,
+          phoneId: config.phone_number_id,
+        })
+
+        await logAutomatedMessage(tenantId, {
+          recipient_phone: item.customerPhone,
+          recipient_name: item.customerName,
+          message_type: 'TEST',
+          content: message,
+          status: sendRes.isSimulated ? 'SIMULATED' : (sendRes.success ? 'SENT' : 'FAILED'),
+          sent_at: new Date().toISOString(),
+        })
+
+        if (sendRes.success) sentCount++
+        else errorsCount++
+      } catch {
+        errorsCount++
+      }
+    }
+
+    return { success: true, sentCount, errorsCount }
+  } catch (err) {
+    console.error('[sendAutomatedRainAlerts] Error:', err)
+    return { success: false, sentCount: 0, errorsCount: affectedBookings.length }
+  }
+}
+
+/**
+ * Envío de Recordatorio 2 Horas Antes por WhatsApp con ubicación y voucher
+ */
+export async function sendTurnoReminderWhatsApp(
+  bookingId: string
+): Promise<{ success: boolean; error?: string; waUrl?: string; isSimulated?: boolean }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, courts(name, sport), tenants(name, address, google_maps_url)')
+      .eq('id', bookingId)
+      .maybeSingle()
+
+    if (bErr || !booking) {
+      return { success: false, error: 'Reserva no encontrada' }
+    }
+
+    const phone = booking.customer_phone
+    if (!phone || phone.trim().length < 6) {
+      return { success: false, error: 'El cliente no tiene teléfono válido' }
+    }
+
+    const config = await getWhatsAppBotConfig(booking.tenant_id)
+    const courtObj = Array.isArray(booking.courts) ? booking.courts[0] : booking.courts
+    const tenantObj = Array.isArray(booking.tenants) ? booking.tenants[0] : booking.tenants
+    const courtName = courtObj?.name || 'Cancha'
+    const clubName = tenantObj?.name || 'Club Deportivo'
+    const mapsLink = tenantObj?.google_maps_url ? `📍 Ubicación: ${tenantObj.google_maps_url}\n` : ''
+
+    let timeStr = '19:00'
+    if (booking.booked_at) {
+      const match = booking.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+      if (match?.[1]) {
+        const raw = match[1].trim()
+        const iso = raw.includes(' ') ? raw.replace(' ', 'T') : raw
+        const d = new Date(iso)
+        if (!isNaN(d.getTime())) {
+          timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
+        }
+      }
+    }
+
+    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
+    const paidArs = Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
+    const balanceArs = Math.max(0, totalArs - paidArs)
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
+    const splitUrl = `${appUrl}/partido/${booking.id}`
+
+    const message =
+`⏰ *RECORDATORIO DE TURNO — EN 2 HORAS* 🎾
+
+Hola *${booking.customer_name}*, te recordamos que hoy tenés turno:
+
+🏟️ *Cancha:* ${courtName} (${clubName})
+⏰ *Horario:* ${timeStr} hs
+${mapsLink}💰 *Saldo a abonar en mostrador:* ${balanceArs > 0 ? formatARS(balanceArs) : '$0 (Al día)'}
+
+👥 ¿Jugás con amigos? Dividí el pago acá:
+${splitUrl}
+
+¡Te esperamos! Por favor presentate 10 minutos antes.`
+
+    const sendRes = await sendWhatsAppMessage(phone, message, {
+      token: config.api_key,
+      phoneId: config.phone_number_id,
+    })
+
+    await logAutomatedMessage(booking.tenant_id, {
+      recipient_phone: phone,
+      recipient_name: booking.customer_name || 'Cliente',
+      message_type: 'REMINDER_2H',
+      content: message,
+      status: sendRes.isSimulated ? 'SIMULATED' : (sendRes.success ? 'SENT' : 'FAILED'),
+      sent_at: new Date().toISOString(),
+    })
+
+    return {
+      success: sendRes.success,
+      isSimulated: sendRes.isSimulated,
+      waUrl: sendRes.waUrl,
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al enviar recordatorio'
+    return { success: false, error: msg }
+  }
+}
+
+/**
+ * Obtener turnos programados para hoy para la grilla de recordatorios de WhatsApp
+ */
+export async function getTodayTurnosForReminders(tenantId: string): Promise<Array<{
+  id: string
+  customerName: string
+  customerPhone: string
+  courtName: string
+  timeStr: string
+  balanceArs: number
+  alreadyReminded: boolean
+}>> {
+  try {
+    const supabase = await createServiceClient()
+    const today = new Date().toISOString().split('T')[0]
+
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, courts(name)')
+      .eq('tenant_id', tenantId)
+      .neq('status', 'CANCELLED_USER')
+      .neq('status', 'CANCELLED_CLUB')
+      .neq('status', 'RAIN_CANCELLED')
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (!bookings || bookings.length === 0) return []
+
+    // Obtener logs de recordatorios ya enviados hoy
+    const { data: todayLogs } = await supabase
+      .from('audit_log')
+      .select('new_data')
+      .eq('tenant_id', tenantId)
+      .eq('action', 'WHATSAPP_MESSAGE_SENT')
+      .gte('created_at', `${today}T00:00:00Z`)
+
+    const remindedPhones = new Set<string>()
+    if (todayLogs) {
+      todayLogs.forEach((l) => {
+        const d = l.new_data as { recipient_phone?: string; message_type?: string }
+        if (d?.message_type === 'REMINDER_2H' && d.recipient_phone) {
+          remindedPhones.add(d.recipient_phone)
+        }
+      })
+    }
+
+    return bookings.map((b) => {
+      const courtObj = Array.isArray(b.courts) ? b.courts[0] : b.courts
+      let timeStr = '19:00'
+      if (b.booked_at) {
+        const match = b.booked_at.match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
+        if (match?.[1]) {
+          const raw = match[1].trim()
+          const iso = raw.includes(' ') ? raw.replace(' ', 'T') : raw
+          const d = new Date(iso)
+          if (!isNaN(d.getTime())) {
+            timeStr = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
+          }
+        }
+      }
+
+      const totalArs = Math.round(Number(b.price_total_cents || 0) / 100)
+      const paidArs = Math.round(Number(b.staff_deposit_amount_cents ?? b.deposit_cents ?? 0) / 100)
+      const balanceArs = Math.max(0, totalArs - paidArs)
+      const phone = b.customer_phone || ''
+
+      return {
+        id: b.id,
+        customerName: b.customer_name || 'Cliente',
+        customerPhone: phone,
+        courtName: courtObj?.name || 'Cancha',
+        timeStr,
+        balanceArs,
+        alreadyReminded: remindedPhones.has(phone),
+      }
+    })
+  } catch (err) {
+    console.error('[getTodayTurnosForReminders] Error:', err)
+    return []
+  }
+}
+

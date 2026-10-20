@@ -1061,7 +1061,11 @@ function calculateFirstBillingDate(trialEndsAt?: string | null, createdAt?: stri
 
 // ─── SUSCRIPCIÓN CON DÉBITO AUTOMÁTICO (Mercado Pago Preapproval - Mejora 3A) ──
 
-export async function setupMonthlySubscriptionPreapproval(tenantId: string, customBackUrl?: string) {
+export async function setupMonthlySubscriptionPreapproval(
+  tenantId: string, 
+  customBackUrl?: string,
+  options?: { billingFrequency?: 'MONTHLY' | 'ANNUAL' }
+) {
   const auth = await assertTenantAdmin(tenantId)
   if (!auth.authorized) {
     return {
@@ -1081,7 +1085,8 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
     .maybeSingle()
 
   const summary = await getClubBillingSummary(tenantId)
-  const monthlyAmount = summary.pricing.monthlyFeeArs
+  const isAnnual = options?.billingFrequency === 'ANNUAL'
+  const monthlyAmount = isAnnual ? summary.pricing.annualTotalFeeArs : summary.pricing.monthlyFeeArs
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
 
   // Si aún no configuró tarifas en el panel (monthlyFeeArs === 0),
@@ -1089,8 +1094,11 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
   // Mercado Pago Preapproval MLA exige un monto mayor o igual a $15.00 ARS.
   const estimatedSlotPrice = 30000
   const multiplier = summary.pricing?.multiplier || 1.5
-  const fallbackMonthlyFee = Math.round(multiplier * estimatedSlotPrice)
-  const effectiveMonthlyAmount = Math.max(15, (monthlyAmount && monthlyAmount > 0) ? monthlyAmount : fallbackMonthlyFee)
+  const baseMonthly = Math.round(multiplier * estimatedSlotPrice)
+  const fallbackFee = isAnnual ? baseMonthly * 10 : baseMonthly
+  const effectiveMonthlyAmount = Math.max(15, (monthlyAmount && monthlyAmount > 0) ? monthlyAmount : fallbackFee)
+  const frequency = isAnnual ? 12 : 1
+  const subReason = isAnnual ? 'CancharClub - Anual' : 'CancharClub'
 
   const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
 
@@ -1106,8 +1114,9 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
       initPoint: null,
       isSimulated: true,
       monthlyAmount: effectiveMonthlyAmount,
+      billingFrequency: isAnnual ? 'ANNUAL' : 'MONTHLY',
       tenantName: tenant?.name || 'Club Deportivo',
-      message: `Débito automático activado para ${tenant?.name || 'el club'} por ${effectiveMonthlyAmount} ARS/mes.`
+      message: `Débito automático activado para ${tenant?.name || 'el club'} por ${effectiveMonthlyAmount} ARS (${isAnnual ? 'anual' : 'mensual'}).`
     }
   }
 
@@ -1130,10 +1139,10 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
     try {
       result = await preApprovalClient.create({
         body: {
-          reason: 'CancharClub', // Nombre exacto solicitado para el resumen de tarjeta
+          reason: subReason,
           external_reference: `saas_preapproval_${tenantId}`,
           auto_recurring: {
-            frequency: 1,
+            frequency: frequency,
             frequency_type: 'months',
             transaction_amount: effectiveMonthlyAmount,
             currency_id: 'ARS',
@@ -1152,10 +1161,10 @@ export async function setupMonthlySubscriptionPreapproval(tenantId: string, cust
         console.warn('[setupMonthlySubscriptionPreapproval] Reintentando con email de fallback:', errStr)
         result = await preApprovalClient.create({
           body: {
-            reason: 'CancharClub',
+            reason: subReason,
             external_reference: `saas_preapproval_${tenantId}`,
             auto_recurring: {
-              frequency: 1,
+              frequency: frequency,
               frequency_type: 'months',
               transaction_amount: effectiveMonthlyAmount,
               currency_id: 'ARS',
@@ -1291,10 +1300,14 @@ export async function syncPreapprovalAmountIfNeeded(
  * Abre la experiencia oficial de Mercado Pago para autorizar el débito automático:
  * Hoy $0 cuota mensual (15 días de prueba gratis), primer débito automático en el día 16 y cada 30 días.
  */
-export async function setupCardLinkingCheckoutPreference(tenantId: string, customBackUrl?: string) {
+export async function setupCardLinkingCheckoutPreference(
+  tenantId: string, 
+  customBackUrl?: string,
+  billingFrequency?: 'MONTHLY' | 'ANNUAL'
+) {
   // Delegamos directamente a setupMonthlySubscriptionPreapproval para crear un contrato
-  // oficial PreApproval en Mercado Pago. Esto garantiza recurrencia mensual automática sin fallas.
-  const res = await setupMonthlySubscriptionPreapproval(tenantId, customBackUrl)
+  // oficial PreApproval en Mercado Pago. Esto garantiza recurrencia mensual o anual automática sin fallas.
+  const res = await setupMonthlySubscriptionPreapproval(tenantId, customBackUrl, { billingFrequency })
   return {
     ...res,
     preferenceId: res.preapprovalId, // Mantiene compatibilidad con interfaces existentes

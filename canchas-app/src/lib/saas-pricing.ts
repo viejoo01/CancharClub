@@ -16,7 +16,7 @@
 // - 6 Canchas: M = 0.5(6) + 0.5 = 3.5 turnos  (Si el turno vale $30.000 -> $105.000/mes)
 // ==============================================================================
 
-import { getPlanMultiplier, getPlanByCourtsCount } from '@/config/saas-plans'
+import { getPlanMultiplier, getPlanByCourtsCount, getPlanCapArs } from '@/config/saas-plans'
 
 export interface ClubSaaSPricing {
   courtsCount: number
@@ -31,15 +31,22 @@ export interface ClubSaaSPricing {
   isTrial?: boolean
   trialDaysRemaining?: number
   trialEndsAt?: string | null
+  monthlyCapArs?: number
+  isCapApplied?: boolean
+  rawMonthlyFeeArs?: number
+  annualTotalFeeArs?: number
+  annualMonthlyEquivalentArs?: number
+  annualSavingsArs?: number
+  isAnnual?: boolean
 }
 
 /**
  * Calcula el multiplicador de turnos en base al número de canchas activas:
  * - 1 Cancha: 1.0 turno
- * - 2 Canchas: 1.5 turnos
- * - 3 Canchas: 2.0 turnos
- * - 4 Canchas: 2.5 turnos
- * - 5+ Canchas: 3.0 turnos (Tope máximo garantizado)
+ * - 2 Canchas: 1.3 turnos
+ * - 3 Canchas: 1.5 turnos
+ * - 4 Canchas: 2.0 turnos
+ * - 5+ Canchas: 2.5 turnos (Tope máximo garantizado)
  */
 export function calculateSaaSMultiplier(courtsCount: number): number {
   return getPlanMultiplier(courtsCount)
@@ -104,17 +111,18 @@ export function computeNextDueDate(
 
 /**
  * Calcula la cuota mensual SaaS completa para un club.
- * Regla de negocio solicitada:
- * La mensualidad es estrictamente proporcional al valor de la cancha más cara del club (P_max)
- * multiplicada por el factor de canchas de su plan (ej: si la cancha vale $30.000 y tiene 4 canchas, es $30.000 x 2,5 = $75.000).
- * No hay precio base fijo; depende exclusivamente de la tarifa real de cada club.
+ * Regla de negocio blindada y justa:
+ * 1. Proporcional al valor del turno: P_max * Multiplicador
+ * 2. Tope máximo de mercado (Cap): si el turno es caro, se protege al club aplicando el techo garantizado.
+ * 3. Opción Anual: 12 meses al precio de 10 (20% de descuento).
  */
 export function calculateClubSaaSFee(
   courtsCount: number,
   highestSlotPriceArs: number,
   createdAt?: string | Date | null,
   trialEndsAt?: string | Date | null,
-  hasPriceConfigured?: boolean
+  hasPriceConfigured?: boolean,
+  isAnnual: boolean = false
 ): ClubSaaSPricing {
   const safeCourts = Math.max(1, courtsCount)
   const isConfigured = hasPriceConfigured !== undefined 
@@ -123,7 +131,16 @@ export function calculateClubSaaSFee(
   
   const safePrice = Math.max(0, highestSlotPriceArs)
   const multiplier = calculateSaaSMultiplier(safeCourts)
-  const monthlyFeeArs = isConfigured ? Math.round(safePrice * multiplier) : 0
+  const rawMonthlyFeeArs = isConfigured ? Math.round(safePrice * multiplier) : 0
+  const monthlyCapArs = getPlanCapArs(safeCourts)
+  const isCapApplied = isConfigured && rawMonthlyFeeArs > monthlyCapArs
+  const standardMonthlyFeeArs = isCapApplied ? monthlyCapArs : rawMonthlyFeeArs
+
+  // Abono anual: 12 meses al precio de 10 (20% de descuento)
+  const annualTotalFeeArs = Math.round(standardMonthlyFeeArs * 10)
+  const annualMonthlyEquivalentArs = Math.round(annualTotalFeeArs / 12)
+  const annualSavingsArs = Math.round(standardMonthlyFeeArs * 2)
+
   const plan = getPlanByCourtsCount(safeCourts)
   const nextDueDate = computeNextDueDate(createdAt, trialEndsAt)
   const now = new Date()
@@ -135,16 +152,23 @@ export function calculateClubSaaSFee(
   const msRemaining = trialEnd.getTime() - now.getTime()
   const trialDaysRemaining = isTrial ? Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24))) : 0
 
+  let formulaDescription = 'Esperando configuración de precios del club'
+  if (isConfigured) {
+    if (isAnnual) {
+      formulaDescription = `Abono Anual: $${annualTotalFeeArs.toLocaleString('es-AR')} (~$${annualMonthlyEquivalentArs.toLocaleString('es-AR')}/mes con 2 meses bonificados)`
+    } else if (isCapApplied) {
+      formulaDescription = `Tope garantizado de $${monthlyCapArs.toLocaleString('es-AR')}/mes (${multiplier} turnos darían $${rawMonthlyFeeArs.toLocaleString('es-AR')})`
+    } else {
+      formulaDescription = `${multiplier} turno${multiplier > 1 ? 's' : ''} de $${safePrice.toLocaleString('es-AR')} (${safeCourts} cancha${safeCourts > 1 ? 's' : ''})`
+    }
+  }
+
   return {
     courtsCount: safeCourts,
     highestSlotPriceArs: safePrice,
     multiplier,
-    monthlyFeeArs,
-    formulaDescription: isConfigured
-      ? (safeCourts >= 5 
-          ? `3 turnos de $${safePrice.toLocaleString('es-AR')} (Tope máximo para ${safeCourts} canchas)`
-          : `${multiplier} turno${multiplier > 1 ? 's' : ''} de $${safePrice.toLocaleString('es-AR')} (${safeCourts} cancha${safeCourts > 1 ? 's' : ''})`)
-      : 'Esperando configuración de precios del club',
+    monthlyFeeArs: isAnnual ? annualMonthlyEquivalentArs : standardMonthlyFeeArs,
+    formulaDescription,
     nextDueDate,
     planId: plan.id,
     planName: plan.name,
@@ -152,6 +176,13 @@ export function calculateClubSaaSFee(
     isTrial,
     trialDaysRemaining,
     trialEndsAt: trialEnd.toISOString(),
+    monthlyCapArs,
+    isCapApplied,
+    rawMonthlyFeeArs,
+    annualTotalFeeArs,
+    annualMonthlyEquivalentArs,
+    annualSavingsArs,
+    isAnnual,
   }
 }
 

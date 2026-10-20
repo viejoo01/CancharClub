@@ -37,6 +37,10 @@ export interface SaaSPlanDefinition {
   turnosMultiplierMin: number
   turnosMultiplierMax: number
   priceExampleArs: string
+  monthlyCapArs: number
+  annualDiscountPercent: number
+  annualTurnosLabel: string
+  annualSubtext: string
   features: string[]
   allowedModules: SaaSFeatureKey[]
 }
@@ -51,10 +55,14 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
     maxCourts: 1,
     badge: '15 días 100% gratis',
     priceTurnosLabel: '1 Turno / mes',
-    priceSubtext: '(Ej. aprox. $25.000 – $35.000 / mes según tu tarifa)',
+    priceSubtext: '(Tope máx. garantizado: $40.000 / mes según tu tarifa)',
     turnosMultiplierMin: 1.0,
     turnosMultiplierMax: 1.0,
-    priceExampleArs: '$25.000 – $35.000',
+    monthlyCapArs: 40000,
+    annualDiscountPercent: 20,
+    annualTurnosLabel: '0.8 Turnos / mes',
+    annualSubtext: '$384.000 / año (equivale a ~$32.000 / mes)',
+    priceExampleArs: '$25.000 – $40.000',
     features: [
       'Grilla en vivo y reservas automáticas 24/7.',
       'Cobro de señas automáticas por Mercado Pago (Cero clavadas).',
@@ -77,11 +85,15 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
     maxCourts: 2,
     isPopular: true,
     badge: '15 días 100% gratis | Más popular',
-    priceTurnosLabel: '1.5 Turnos / mes',
-    priceSubtext: '(Ej. aprox. $40.000 – $55.000 / mes según tu tarifa)',
-    turnosMultiplierMin: 1.5,
-    turnosMultiplierMax: 1.5,
-    priceExampleArs: '$40.000 – $55.000',
+    priceTurnosLabel: '1.3 Turnos / mes',
+    priceSubtext: '(Tope máx. garantizado: $55.000 / mes según tu tarifa)',
+    turnosMultiplierMin: 1.3,
+    turnosMultiplierMax: 1.3,
+    monthlyCapArs: 55000,
+    annualDiscountPercent: 20,
+    annualTurnosLabel: '1.0 Turno / mes',
+    annualSubtext: '$528.000 / año (equivale a ~$44.000 / mes)',
+    priceExampleArs: '$35.000 – $55.000',
     features: [
       'Todo lo del plan anterior.',
       'Módulo de Cantina y Kiosco (punto de venta y stock).',
@@ -106,11 +118,15 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
     minCourts: 3,
     maxCourts: 4,
     badge: '15 días 100% gratis',
-    priceTurnosLabel: '2 a 2.5 Turnos / mes',
-    priceSubtext: '(3 canchas: 2 turnos | 4 canchas: 2.5 turnos)',
-    turnosMultiplierMin: 2.0,
-    turnosMultiplierMax: 2.5,
-    priceExampleArs: '$55.000 – $80.000',
+    priceTurnosLabel: '1.5 a 2 Turnos / mes',
+    priceSubtext: '(3 canchas: tope máx. $69.000 | 4 canchas: $99.000)',
+    turnosMultiplierMin: 1.5,
+    turnosMultiplierMax: 2.0,
+    monthlyCapArs: 69000,
+    annualDiscountPercent: 20,
+    annualTurnosLabel: '1.2 a 1.6 Turnos / mes',
+    annualSubtext: '3 canchas: $660.000 / año (equivale a ~$55.000 / mes)',
+    priceExampleArs: '$45.000 – $69.000',
     features: [
       'Todo lo del plan anterior.',
       'Gestión de turnos fijos y abonados semanales automáticos.',
@@ -139,11 +155,15 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
     minCourts: 5,
     maxCourts: null,
     badge: '15 días 100% gratis',
-    priceTurnosLabel: '3 Turnos / mes (Tope máximo garantizado)',
-    priceSubtext: '(No pagás de más sin importar cuántas canchas sumes)',
-    turnosMultiplierMin: 3.0,
-    turnosMultiplierMax: 3.0,
-    priceExampleArs: 'Tope 3 turnos fijos',
+    priceTurnosLabel: '2.5 Turnos / mes (Tope máximo garantizado)',
+    priceSubtext: '(Tope fijo garantizado: $125.000 / mes sin límite de canchas)',
+    turnosMultiplierMin: 2.5,
+    turnosMultiplierMax: 2.5,
+    monthlyCapArs: 125000,
+    annualDiscountPercent: 20,
+    annualTurnosLabel: '2.0 Turnos / mes (Tope anual)',
+    annualSubtext: '$1.200.000 / año (equivale a ~$100.000 / mes)',
+    priceExampleArs: 'Tope $125.000 fijo',
     features: [
       'Plataforma completa sin límites de reservas ni canchas.',
       'Módulo de torneos y cuadros de fin de semana exprés.',
@@ -189,19 +209,31 @@ export function getPlanByCourtsCount(courtsCount: number): SaaSPlanDefinition {
 }
 
 /**
- * Retorna el multiplicador de turnos exacto según la regla escalonada:
+ * Retorna el multiplicador de turnos exacto según la regla calibrada:
  * - 1 Cancha: 1.0 turno
- * - 2 Canchas: 1.5 turnos
- * - 3 Canchas: 2.0 turnos
- * - 4 Canchas: 2.5 turnos
- * - 5+ Canchas: 3.0 turnos (Tope máximo)
+ * - 2 Canchas: 1.3 turnos
+ * - 3 Canchas: 1.5 turnos
+ * - 4 Canchas: 2.0 turnos
+ * - 5+ Canchas: 2.5 turnos (Tope máximo)
  */
 export function getPlanMultiplier(courtsCount: number): number {
   if (courtsCount <= 1) return 1.0
-  if (courtsCount === 2) return 1.5
-  if (courtsCount === 3) return 2.0
-  if (courtsCount === 4) return 2.5
-  return 3.0 // Tope máximo garantizado
+  if (courtsCount === 2) return 1.3
+  if (courtsCount === 3) return 1.5
+  if (courtsCount === 4) return 2.0
+  return 2.5 // Tope máximo garantizado
+}
+
+/**
+ * Retorna el tope máximo en pesos ARS para la cuota mensual según la cantidad de canchas.
+ * Garantiza que ningún club de tarifas altas pague más que el mercado.
+ */
+export function getPlanCapArs(courtsCount: number): number {
+  if (courtsCount <= 1) return 40000
+  if (courtsCount === 2) return 55000
+  if (courtsCount === 3) return 69000
+  if (courtsCount === 4) return 99000
+  return 125000
 }
 
 /**

@@ -16,7 +16,6 @@ import {
   Shield,
   Settings2,
   CheckCircle2,
-  Zap,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,6 +43,7 @@ import {
   deleteTeam,
   type TournamentWithDetails 
 } from '@/actions/tournament.actions'
+import { getClubCourts } from '@/actions/club.actions'
 import { getArgentinaTodayIso, buildWhatsAppLink } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
@@ -165,7 +165,11 @@ export default function TorneosDashboardPage() {
 
   // Form crear torneo
   const [newTourName, setNewTourName] = useState('')
+  const [availableSports, setAvailableSports] = useState<{ value: string; label: string }[]>([
+    { value: 'PADEL', label: 'Pádel' },
+  ])
   const [newTourSport, setNewTourSport] = useState('PADEL')
+  const [newTourMaxTeams, setNewTourMaxTeams] = useState<number>(8)
   const [newTourFormat, setNewTourFormat] = useState<'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'>('GROUPS_AND_PLAYOFFS')
   const [newTourStart, setNewTourStart] = useState(() => getArgentinaTodayIso())
   const [newTourEnd, setNewTourEnd] = useState(() => {
@@ -253,6 +257,57 @@ export default function TorneosDashboardPage() {
     }
   }, [tenantId, loadTournaments])
 
+  // Cargar deportes activos configurados en las canchas de este club
+  useEffect(() => {
+    if (!tenantId) return
+    let isMounted = true
+
+    async function fetchClubSports() {
+      try {
+        const courts = await getClubCourts(tenantId)
+        if (!isMounted || !courts || courts.length === 0) return
+
+        const SPORT_CATALOG: Record<string, { value: string; label: string }> = {
+          PADEL: { value: 'PADEL', label: 'Pádel' },
+          FUTBOL: { value: 'FUTBOL_5', label: 'Fútbol 5' },
+          FUTBOL5: { value: 'FUTBOL_5', label: 'Fútbol 5' },
+          FUTBOL_5: { value: 'FUTBOL_5', label: 'Fútbol 5' },
+          FUTBOL7: { value: 'FUTBOL_7', label: 'Fútbol 7' },
+          FUTBOL_7: { value: 'FUTBOL_7', label: 'Fútbol 7' },
+          FUTBOL11: { value: 'FUTBOL_11', label: 'Fútbol 11' },
+          FUTBOL_11: { value: 'FUTBOL_11', label: 'Fútbol 11' },
+          TENIS: { value: 'TENIS', label: 'Tenis' },
+          BASQUET: { value: 'BASQUET', label: 'Básquet' },
+        }
+
+        const map = new Map<string, { value: string; label: string }>()
+        courts.forEach((c) => {
+          const raw = (c.sport || '').toUpperCase().trim()
+          const item = SPORT_CATALOG[raw] || { value: raw, label: raw }
+          if (!map.has(item.value)) {
+            map.set(item.value, item)
+          }
+        })
+
+        const list = Array.from(map.values())
+        if (list.length > 0) {
+          setAvailableSports(list)
+          setNewTourSport((prev) => {
+            if (list.some((s) => s.value === prev)) return prev
+            return list[0].value
+          })
+        }
+      } catch (err) {
+        console.warn('[Torneos] Error cargando deportes del club:', err)
+      }
+    }
+
+    void fetchClubSports()
+    return () => {
+      isMounted = false
+    }
+  }, [tenantId])
+
   const handleSportChange = (sport: string) => {
     setNewTourSport(sport)
     if (isFootballSport(sport)) {
@@ -272,11 +327,12 @@ export default function TorneosDashboardPage() {
 
     setActionLoading(true)
     try {
+      const targetMaxTeams = Number(newTourMaxTeams) > 0 ? Number(newTourMaxTeams) : 8
       const cats = newTourCats
         .split(',')
         .map((c) => c.trim())
         .filter(Boolean)
-        .map((name) => ({ name, max_teams: 8 }))
+        .map((name) => ({ name, max_teams: targetMaxTeams }))
 
       const res = await createTournament({
         tenant_id: tenantId!,
@@ -560,20 +616,6 @@ export default function TorneosDashboardPage() {
                 </a>
               </>
             )}
-            <Button
-              onClick={() => {
-                setNewTourName('Torneo Americano Exprés de Fin de Semana')
-                setNewTourSport('PADEL')
-                setNewTourFormat('GROUPS_AND_PLAYOFFS')
-                setNewTourCats('7ma y 8va Caballeros (8 Parejas), 5ta y 6ta Caballeros (8 Parejas), Categoría Femenino Libre (8 Parejas)')
-                setIsCreateOpen(true)
-              }}
-              variant="outline"
-              className="border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold text-xs gap-1.5 shadow-sm"
-            >
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span>Americano Exprés</span>
-            </Button>
             <Button
               onClick={() => setIsCreateOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-emerald-950/40"
@@ -1269,26 +1311,6 @@ export default function TorneosDashboardPage() {
             </DialogHeader>
 
             <form onSubmit={handleCreateTournament} className="space-y-4 py-2">
-              {/* Preset Rápido Americano */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span className="text-[11px] text-amber-200 font-medium">¿Torneo Americano Exprés?</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewTourName('Torneo Americano Exprés de Fin de Semana')
-                    setNewTourSport('PADEL')
-                    setNewTourFormat('GROUPS_AND_PLAYOFFS')
-                    setNewTourCats('7ma y 8va Caballeros (8 Parejas), 5ta y 6ta Caballeros (8 Parejas), Categoría Femenino Libre (8 Parejas)')
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] transition-colors shadow-sm"
-                >
-                  Cargar Preset Pádel
-                </button>
-              </div>
-
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-300">Nombre del Torneo</Label>
                 <Input
@@ -1306,13 +1328,13 @@ export default function TorneosDashboardPage() {
                   <select
                     value={newTourSport}
                     onChange={(e) => handleSportChange(e.target.value)}
-                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
+                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="PADEL">Pádel</option>
-                    <option value="FUTBOL_5">Fútbol 5</option>
-                    <option value="FUTBOL_7">Fútbol 7</option>
-                    <option value="FUTBOL_11">Fútbol 11</option>
-                    <option value="TENIS">Tenis</option>
+                    {availableSports.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1321,7 +1343,7 @@ export default function TorneosDashboardPage() {
                   <select
                     value={newTourFormat}
                     onChange={(e) => setNewTourFormat(e.target.value as 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS')}
-                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
+                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="GROUPS_AND_PLAYOFFS">Fase de Grupos + Playoffs</option>
                     <option value="PLAYOFFS">Solo Eliminación Directa</option>
@@ -1329,10 +1351,57 @@ export default function TorneosDashboardPage() {
                 </div>
               </div>
 
+              {/* Selector de Cupo de Equipos / Parejas (8, 12, 16, 24 o editable) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-300">
+                    Cupo de {getParticipantLabelCapitalized(newTourSport, true)}
+                  </Label>
+                  <span className="text-[11px] text-slate-400">
+                    Límite por categoría
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    {[8, 12, 16, 24].map((qty) => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setNewTourMaxTeams(qty)}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          newTourMaxTeams === qty
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        {qty}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative flex-1">
+                    <Input
+                      type="number"
+                      min={2}
+                      max={128}
+                      value={newTourMaxTeams || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10)
+                        setNewTourMaxTeams(isNaN(val) ? 0 : val)
+                      }}
+                      placeholder="Otro ej: 10"
+                      className="bg-slate-900 border-slate-800 text-xs h-9 text-center font-bold font-mono text-emerald-400"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Elegí 8, 12, 16, 24 o ingresá un número personalizado de {getParticipantLabel(newTourSport, true)}.
+                </p>
+              </div>
+
               <p className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
                 {newTourFormat === 'GROUPS_AND_PLAYOFFS'
-                  ? '⚡ Grupos + Playoffs: Los equipos se dividen en Zona A y Zona B, juegan fase de grupos y los mejores clasifican a Semifinales y Final.'
-                  : '⚡ Solo Eliminación Directa: Cuadro tradicional de playoffs (Cuartos / Semis y Final) a partido único.'}
+                  ? '⚡ Grupos + Playoffs: Los participantes se dividen en zonas, juegan fase de grupos y los mejores clasifican a Playoffs.'
+                  : '⚡ Solo Eliminación Directa: Cuadro tradicional de playoffs a partido único.'}
                 <span className="block text-emerald-400 font-semibold mt-1">
                   * Podrás modificar el formato en cualquier momento desde la gestión del torneo.
                 </span>

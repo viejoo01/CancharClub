@@ -489,7 +489,8 @@ export default function SumarClubLandingPage() {
                   </td>
                   <td className="py-4 px-5 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-1.5">
-                      <span className="text-amber-500 font-semibold">&quot;Próximamente&quot;</span>
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>No disponible</span>
                     </div>
                   </td>
                 </tr>
@@ -504,7 +505,8 @@ export default function SumarClubLandingPage() {
                   </td>
                   <td className="py-4 px-5 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-1.5">
-                      <span className="text-amber-500 font-semibold">&quot;Próximamente&quot;</span>
+                      <X className="w-4 h-4 text-rose-500" />
+                      <span>No disponible</span>
                     </div>
                   </td>
                 </tr>

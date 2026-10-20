@@ -553,15 +553,30 @@ export function CalendarGrid({
       .sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }))
   }, [activeCourts, selectedSport])
 
-  // Densidad de grilla para complejos medianos y grandes (10+ canchas)
+  // Densidad de grilla para complejos deportivos (Compacto vs Cómodo)
   const [gridDensity, setGridDensity] = useState<'normal' | 'compact'>('normal')
 
-  // Auto-activar vista compacta si el club tiene 7 o más canchas
+  // Cargar preferencia guardada o auto-activar vista compacta si el club tiene 5 o más canchas
   useEffect(() => {
-    if (activeCourts.length >= 7) {
+    try {
+      const saved = localStorage.getItem('canchar_calendar_density') as 'normal' | 'compact' | null
+      if (saved === 'normal' || saved === 'compact') {
+        setGridDensity(saved)
+        return
+      }
+    } catch {}
+
+    if (activeCourts.length >= 5) {
       setGridDensity('compact')
     }
   }, [activeCourts.length])
+
+  const changeGridDensity = (density: 'normal' | 'compact') => {
+    setGridDensity(density)
+    try {
+      localStorage.setItem('canchar_calendar_density', density)
+    } catch {}
+  }
 
   // Ancho de columnas según densidad seleccionada
   const colWidth = gridDensity === 'compact' ? 145 : 190
@@ -784,25 +799,25 @@ export function CalendarGrid({
               <span className="hidden sm:inline">Protocolo</span> Lluvia
             </Button>
 
-            {/* Selector de Densidad y Navegación de Canchas */}
-            {filteredCourts.length > 3 && (
-              <div className="hidden sm:flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            {/* Selector de Densidad de Grilla (Compacto / Cómodo) para recepción */}
+            {filteredCourts.length > 0 && (
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setGridDensity('compact')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  onClick={() => changeGridDensity('compact')}
+                  className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                     gridDensity === 'compact'
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                   }`}
-                  title="Modo Compacto: Ver hasta 10 canchas en simultáneo"
+                  title="Modo Compacto: Columnas ajustadas para ver más canchas en pantalla"
                 >
                   Compacto
                 </button>
                 <button
                   type="button"
-                  onClick={() => setGridDensity('normal')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  onClick={() => changeGridDensity('normal')}
+                  className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                     gridDensity === 'normal'
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -860,7 +875,7 @@ export function CalendarGrid({
           </span>
         </span>
         <div className="flex items-center gap-2">
-          {filteredCourts.length > 4 && (
+          {filteredCourts.length > 2 && (
             <div className="flex items-center gap-1 bg-slate-950 rounded-lg border border-slate-800 p-0.5">
               <button
                 type="button"

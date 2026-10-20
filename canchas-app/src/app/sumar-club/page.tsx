@@ -18,7 +18,6 @@ import {
   BarChart3,
   Smartphone,
   Trophy,
-  Share2,
   Check,
   X,
   Flame,
@@ -347,23 +346,7 @@ export default function SumarClubLandingPage() {
               </p>
             </div>
 
-            {/* 10. Dividir el Pago (Split Payment) */}
-            <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/40 hover:border-emerald-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
-              <div className="absolute top-3 right-3">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
-                  VIRAL
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <Share2 className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-white">Dividir el pago entre amigos</h3>
-              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                Cada amigo paga su parte desde su celular por transferencia o Mercado Pago. El saldo restante se descuenta en vivo en tu grilla.
-              </p>
-            </div>
-
-            {/* 11. Torneos Americanos Exprés */}
+            {/* 10. Torneos de Fin de Semana */}
             <div className="p-6 rounded-2xl bg-slate-900 border border-amber-500/40 hover:border-amber-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
               <div className="absolute top-3 right-3">
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
@@ -373,9 +356,9 @@ export default function SumarClubLandingPage() {
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
                 <Trophy className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-base text-white">Torneos americanos exprés</h3>
+              <h3 className="font-bold text-base text-white">Torneos de fin de semana</h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                Creá torneos relámpago de fin de semana en 1 clic. Inscripción pública online con cupos en vivo, fixture y tanteador en tiempo real.
+                Creá torneos relámpago en 1 clic. Inscripción pública online con cupos en vivo, fixture y tanteador en tiempo real.
               </p>
             </div>
 
@@ -497,23 +480,7 @@ export default function SumarClubLandingPage() {
                 </tr>
 
                 <tr>
-                  <td className="py-4 px-5 font-medium">Dividir el pago entre amigos</td>
-                  <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <Check className="w-4 h-4 text-emerald-400" />
-                      <span>Incluido y en vivo</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-5 text-center text-slate-500">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <X className="w-4 h-4 text-rose-500" />
-                      <span>No disponible</span>
-                    </div>
-                  </td>
-                </tr>
-
-                <tr>
-                  <td className="py-4 px-5 font-medium">Torneos Americanos de fin de semana</td>
+                  <td className="py-4 px-5 font-medium">Torneos de fin de semana</td>
                   <td className="py-4 px-5 bg-emerald-500/5 border-x border-emerald-500/20 text-center font-bold text-emerald-400">
                     <div className="flex items-center justify-center gap-1.5">
                       <Check className="w-4 h-4 text-emerald-400" />

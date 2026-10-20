@@ -16,7 +16,7 @@ import {
   Loader2,
   Navigation,
   Trophy,
-  Share2,
+  ShieldCheck,
   Smartphone,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -307,7 +307,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-center">
             <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-semibold mb-3 shadow-xs">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Nuevo: Dividir el Pago y Torneos en Vivo</span>
+              <span>Nuevo: Torneos de fin de semana en Vivo</span>
             </div>
 
             <div className="w-16 h-16 rounded-2xl mb-3 shadow-xl shadow-emerald-950/40 flex items-center justify-center hover:scale-105 transition-all duration-300">
@@ -360,11 +360,11 @@ export default function HomePage() {
           <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-left pt-1">
             <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/80 flex items-start gap-3 hover:border-emerald-500/40 transition-colors">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                <Share2 className="w-4 h-4" />
+                <ShieldCheck className="w-4 h-4" />
               </div>
               <div className="space-y-0.5">
-                <h4 className="text-xs font-bold text-white">Dividir el Pago</h4>
-                <p className="text-[11px] text-slate-400 leading-tight">Cada amigo abona su parte por celular.</p>
+                <h4 className="text-xs font-bold text-white">Seña Instantánea</h4>
+                <p className="text-[11px] text-slate-400 leading-tight">Mercado Pago directo a tu cuenta.</p>
               </div>
             </div>
 
@@ -377,7 +377,7 @@ export default function HomePage() {
               </div>
               <div className="space-y-0.5">
                 <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>Torneos en Vivo</span>
+                  <span>Torneos de fin de semana</span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-bold">
                     Ver
                   </span>

@@ -416,7 +416,7 @@ export default function HomePage() {
             >
               <div className="flex items-center gap-3">
                 <Trophy className="w-4 h-4 text-amber-400" />
-                <span>Torneos y Americanos en Vivo</span>
+                <span>Torneos en vivo</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30">

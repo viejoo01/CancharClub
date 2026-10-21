@@ -25,7 +25,7 @@ const PUBLIC_PATHS = [
 // con el rate limiter distribuido basado en Upstash Redis de src/lib/rate-limiter.ts.
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-pathname', pathname)

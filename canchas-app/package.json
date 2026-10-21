@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:backup": "node scripts/backup-db.mjs",
     "db:backup:ps": "powershell -ExecutionPolicy Bypass -File scripts/backup-supabase.ps1",
     "db:backup:task": "powershell -ExecutionPolicy Bypass -File scripts/register-weekly-backup-task.ps1",
@@ -50,6 +52,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.12"
   }
 }

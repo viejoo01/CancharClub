@@ -495,20 +495,6 @@ export function Sidebar({
           </span>
         </button>
 
-        {!isStaff && (
-          <button
-            type="button"
-            onClick={() => {
-              onClose?.()
-              setShowCustomizeModal(true)
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/20 transition-colors cursor-pointer"
-          >
-            <SlidersHorizontal className="w-4 h-4 text-emerald-400/80" />
-            <span>Personalizar Menú</span>
-          </button>
-        )}
-
         <button
           type="button"
           onClick={() => {

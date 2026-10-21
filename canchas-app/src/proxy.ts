@@ -6,6 +6,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const PUBLIC_PATHS = [
+  '/app',               // Enrutador inteligente PWA (selector de perfil Jugador vs Club)
+  '/api/manifest',      // Manifiesto PWA dinámico según perfil
   '/sumar-club',        // Landing para dueños de clubes
   '/mis-reservas',      // Consulta de reservas de jugadores
   '/club',              // Portal público por slug

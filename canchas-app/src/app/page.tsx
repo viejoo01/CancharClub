@@ -436,6 +436,22 @@ export default function HomePage() {
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
+
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))}
+              className="w-full px-4 py-3.5 min-h-12 flex items-center justify-between text-xs sm:text-sm font-semibold text-emerald-400 hover:bg-slate-800/40 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <Smartphone className="w-4 h-4 text-emerald-400" />
+                <span>Instalar App CancharClub</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-bold border border-emerald-500/30">
+                  PWA
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </div>
+            </button>
           </div>
 
           {/* Opción "¿Sos dueño de un club? Sumá tu club →" */}

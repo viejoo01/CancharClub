@@ -2,9 +2,9 @@
   "name": "CancharClub - Sistema de Canchas y Reservas",
   "short_name": "CancharClub",
   "description": "Gestión integral de complejos deportivos, turnos en vivo, cobro de señas y torneos.",
-  "start_url": "/dashboard",
+  "start_url": "/app",
   "scope": "/",
-  "id": "https://cancharclub.com.ar/",
+  "id": "https://cancharclub.com.ar/app",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "any",
@@ -47,10 +47,34 @@
   ],
   "shortcuts": [
     {
-      "name": "Calendario de Turnos",
-      "short_name": "Turnos",
+      "name": "Reservar Canchas (Jugador)",
+      "short_name": "Reservar",
+      "description": "Buscar clubes y reservar canchas online",
+      "url": "/app?role=player",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Mis Reservas",
+      "short_name": "Mis Turnos",
+      "description": "Ver mis partidos y reservas activas",
+      "url": "/mis-reservas",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Panel de Club (Administrador)",
+      "short_name": "Gestión Club",
       "description": "Ver la grilla de turnos y canchas en vivo",
-      "url": "/dashboard",
+      "url": "/app?role=club",
       "icons": [
         {
           "src": "/icon-192.png",
@@ -63,30 +87,6 @@
       "short_name": "Caja",
       "description": "Arqueo de caja y cobros del día",
       "url": "/dashboard/caja",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Torneos de Fin de Semana",
-      "short_name": "Torneos",
-      "description": "Crear y administrar torneos relámpago",
-      "url": "/dashboard/torneos",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Reservas Online",
-      "short_name": "Reservar",
-      "description": "Portal público de reservas de canchas",
-      "url": "/",
       "icons": [
         {
           "src": "/icon-192.png",

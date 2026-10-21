@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -204,6 +204,23 @@ export function Header({
               >
                 <KeyRound className="w-4 h-4 text-amber-400" />
                 <span>Cambiar Contraseña</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUserMenuOpen(false)
+                  window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 transition-colors cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <span>Instalar App Móvil</span>
+                </div>
+                <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 px-1 rounded font-bold">
+                  PWA
+                </span>
               </button>
 
               <div className="h-px bg-slate-800/80 my-1" />

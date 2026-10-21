@@ -16,23 +16,12 @@ export function AppAutoUpdater() {
   const router = useRouter()
 
   useEffect(() => {
-    // 1. Purga activa de Service Workers y Cache Storage
-    if (typeof window !== 'undefined') {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then((registrations) => {
-          for (const reg of registrations) {
-            reg.unregister().catch(() => {})
-          }
-        }).catch(() => {})
-      }
-
-      if ('caches' in window) {
-        caches.keys().then((keys) => {
-          for (const key of keys) {
-            caches.delete(key).catch(() => {})
-          }
-        }).catch(() => {})
-      }
+    // 1. Verificación proactiva y no destructiva de actualizaciones del Service Worker
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        // Chequea periódicamente si hay una nueva versión del Service Worker sin romper el PWA
+        registration.update().catch(() => {})
+      }).catch(() => {})
     }
 
     // 2. Auto-recuperación ante despliegues en producción (ChunkLoadError)

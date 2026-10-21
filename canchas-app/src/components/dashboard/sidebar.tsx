@@ -27,7 +27,8 @@ import {
   Sparkles,
   MessageSquare,
   Bell,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Smartphone
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -476,6 +477,24 @@ export function Sidebar({
 
       {/* Footer Acciones de Usuario (Redes Sociales, Cambiar Contraseña y Cerrar Sesión) */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-1">
+        <button
+          type="button"
+          onClick={() => {
+            onClose?.()
+            window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))
+          }}
+          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-emerald-400/90 hover:text-emerald-300 hover:bg-emerald-950/30 transition-colors cursor-pointer group"
+          title="Instalar CancharClub en pantalla de inicio"
+        >
+          <div className="flex items-center gap-3">
+            <Smartphone className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+            <span>Instalar App Móvil</span>
+          </div>
+          <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+            PWA
+          </span>
+        </button>
+
         {!isStaff && (
           <button
             type="button"

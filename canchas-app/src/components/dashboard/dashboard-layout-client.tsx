@@ -71,10 +71,28 @@ export function DashboardLayoutClient({
   trialForfeited,
 }: DashboardLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return localStorage.getItem('canchar_sidebar_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [showActivationModal, setShowActivationModal] = useState(false)
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const [showSocialLinksModal, setShowSocialLinksModal] = useState(false)
   const pathname = usePathname()
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('canchar_sidebar_collapsed', String(next))
+      } catch {}
+      return next
+    })
+  }
 
   // Cerrar menú móvil automáticamente al navegar a otra ruta (patrón oficial React docs)
   const [currentPath, setCurrentPath] = useState(pathname)
@@ -154,7 +172,12 @@ export function DashboardLayoutClient({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-100 relative">
       {/* ─── 1. SIDEBAR DESKTOP ─── */}
-      <div className="hidden md:flex shrink-0">
+      <div 
+        className={cn(
+          "hidden md:flex shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+          sidebarCollapsed ? "w-0 opacity-0 pointer-events-none" : "w-64 opacity-100"
+        )}
+      >
         <Sidebar
           tenantId={tenantId}
           tenantName={tenantName}
@@ -165,6 +188,8 @@ export function DashboardLayoutClient({
           isTrial={isTrial}
           trialDaysRemaining={trialDaysRemaining}
           trialDueDate={trialDueDate || dueDate}
+          onCollapseToggle={toggleSidebar}
+          isCollapsed={sidebarCollapsed}
         />
       </div>
 
@@ -213,6 +238,8 @@ export function DashboardLayoutClient({
           sports={sports}
           mpConnected={mpConnected}
           onToggleMobileMenu={() => setMobileMenuOpen(true)}
+          onToggleSidebar={toggleSidebar}
+          isSidebarCollapsed={sidebarCollapsed}
           isTrial={isTrial}
           trialDaysRemaining={trialDaysRemaining}
           trialDueDate={trialDueDate || dueDate}

@@ -28,7 +28,8 @@ import {
   MessageSquare,
   Bell,
   SlidersHorizontal,
-  Smartphone
+  Smartphone,
+  PanelLeftClose
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -58,6 +59,8 @@ interface SidebarProps {
   isTrial?: boolean
   trialDaysRemaining?: number
   trialDueDate?: string
+  onCollapseToggle?: () => void
+  isCollapsed?: boolean
 }
 
 export function Sidebar({ 
@@ -72,6 +75,8 @@ export function Sidebar({
   isTrial = false,
   trialDaysRemaining,
   trialDueDate,
+  onCollapseToggle,
+  isCollapsed,
 }: SidebarProps) {
   const pathname = usePathname()
 
@@ -313,10 +318,12 @@ export function Sidebar({
   const displayedNavItems = finalNavItems.length > 0 ? finalNavItems : filteredNavItems
 
   return (
-    <aside className={cn(
-      "flex flex-col bg-slate-950 select-none",
-      isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-800/80"
-    )}>
+    <aside 
+      className={cn(
+        "flex flex-col bg-slate-950 select-none",
+        isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-800/80"
+      )}
+    >
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950/50">
         <div className="flex items-center gap-3 overflow-hidden">
@@ -355,6 +362,20 @@ export function Sidebar({
             aria-label="Cerrar menú"
           >
             <X className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Botón para ocultar/colapsar menú lateral en Desktop */}
+        {!isMobile && onCollapseToggle && (
+          <button
+            type="button"
+            onClick={onCollapseToggle}
+            aria-expanded={!isCollapsed}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0 ml-1"
+            title="Ocultar menú lateral"
+            aria-label="Ocultar menú lateral"
+          >
+            <PanelLeftClose className="w-4 h-4 text-slate-400 hover:text-emerald-400 transition-colors" />
           </button>
         )}
       </div>

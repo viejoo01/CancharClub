@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -13,6 +13,8 @@ import { useUserRole } from '@/hooks/use-tenant-id'
 interface HeaderProps {
   onQuickBookClick?: () => void
   onToggleMobileMenu?: () => void
+  onToggleSidebar?: () => void
+  isSidebarCollapsed?: boolean
   mpConnected?: boolean
   userName?: string
   tenantName?: string
@@ -27,6 +29,8 @@ interface HeaderProps {
 export function Header({
   onQuickBookClick,
   onToggleMobileMenu,
+  onToggleSidebar,
+  isSidebarCollapsed = false,
   mpConnected = false,
   userName = 'Administrador',
   tenantName,
@@ -74,6 +78,23 @@ export function Header({
             aria-label="Abrir menú de navegación"
           >
             <Menu className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Botón para ocultar / mostrar menú lateral en Desktop */}
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="hidden md:flex p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-900 border border-slate-800/80 transition-all cursor-pointer items-center justify-center group"
+            title={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
+            aria-label={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+            ) : (
+              <PanelLeftClose className="w-5 h-5 group-hover:text-emerald-400 transition-colors" />
+            )}
           </button>
         )}
 

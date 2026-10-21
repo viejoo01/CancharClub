@@ -93,6 +93,8 @@ export default function PublicTournamentPage({
   selectedCategory?.teams.forEach((t) => teamsMap.set(t.id, t))
 
   const matches = selectedCategory?.matches || []
+  const dieciseisavos = matches.filter((m) => m.round === 'DIECISEISAVOS')
+  const octavos = matches.filter((m) => m.round === 'OCTAVOS')
   const cuartos = matches.filter((m) => m.round === 'CUARTOS')
   const semis = matches.filter((m) => m.round === 'SEMIFINAL')
   const finalMatch = matches.find((m) => m.round === 'FINAL')
@@ -447,10 +449,38 @@ export default function PublicTournamentPage({
             <span>Cuadro Eliminatorio (Playoffs)</span>
           </h2>
 
-          <div className={`grid grid-cols-1 ${cuartos.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6 items-center`}>
+          <div className="flex flex-col lg:flex-row gap-6 overflow-x-auto pb-4 items-start min-w-0">
+            {/* Columna Dieciseisavos */}
+            {dieciseisavos.length > 0 && (
+              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
+                  16avos de Final
+                </p>
+                <div className="space-y-3">
+                  {dieciseisavos.map((match) => (
+                    <MatchCard key={match.id} match={match} teamsMap={teamsMap} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Columna Octavos */}
+            {octavos.length > 0 && (
+              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
+                  Octavos de Final
+                </p>
+                <div className="space-y-3">
+                  {octavos.map((match) => (
+                    <MatchCard key={match.id} match={match} teamsMap={teamsMap} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Columna Cuartos */}
             {cuartos.length > 0 && (
-              <div className="space-y-4">
+              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                   Cuartos de Final
                 </p>
@@ -463,7 +493,7 @@ export default function PublicTournamentPage({
             )}
 
             {/* Columna Semifinales */}
-            <div className="space-y-4">
+            <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                 Semifinales
               </p>
@@ -475,7 +505,7 @@ export default function PublicTournamentPage({
             </div>
 
             {/* Columna Gran Final */}
-            <div className="space-y-4">
+            <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-400 text-center flex items-center justify-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                 Gran Final

@@ -538,10 +538,13 @@ export function Sidebar({
           method="post" 
           onSubmit={() => {
             try {
+              localStorage.removeItem('canchar_today_schedule_snapshot')
               localStorage.removeItem('canchar_cached_tenant_id')
+              localStorage.removeItem('canchar_cached_tenant_slug')
               localStorage.removeItem('canchar_active_venue_id')
               localStorage.removeItem('canchar_active_venue_name')
               localStorage.removeItem('canchar_custom_venues')
+              localStorage.removeItem('canchar_court_orders')
             } catch {}
             onClose?.()
           }}

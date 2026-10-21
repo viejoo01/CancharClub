@@ -252,7 +252,34 @@ export async function addTeamToCategory(payload: {
 
     const supabase = await createServiceClient()
 
-    // Validar que la categoría exista y no supere el cupo máximo
+    // 1. Invocar función atómica con bloqueo a nivel de fila (FOR UPDATE) en PostgreSQL
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('register_tournament_team_atomic', {
+      p_category_id: payload.category_id,
+      p_name: cleanName,
+      p_player_1: cleanP1,
+      p_player_2: cleanP2,
+      p_phone: cleanPhone,
+    })
+
+    if (!rpcErr && rpcRes) {
+      const res = rpcRes as { success: boolean; error?: string; team?: TournamentTeam }
+      if (!res.success) {
+        return { success: false, error: res.error || 'No se pudo inscribir el equipo' }
+      }
+
+      const { data: cat } = await supabase
+        .from('tournament_categories')
+        .select('tournament_id')
+        .eq('id', payload.category_id)
+        .maybeSingle()
+
+      await invalidateTournamentCache(null, cat?.tournament_id)
+      revalidatePath('/dashboard/torneos')
+      if (cat?.tournament_id) revalidatePath(`/torneo/${cat.tournament_id}`)
+      return { success: true, team: res.team }
+    }
+
+    // 2. Fallback de contingencia si la función RPC no estuviese disponible
     const { data: cat } = await supabase
       .from('tournament_categories')
       .select('id, max_teams, tournament_id')
@@ -451,7 +478,7 @@ export async function generatePlayoffBracket(
           court_name: 'Cancha Central',
         },
       ]
-    } else {
+    } else if (teams.length <= 8) {
       // 5 a 8 equipos: Cuartos de Final clásicos -> Semis -> Final
       const t = [...teams]
       while (t.length < 8) {
@@ -542,6 +569,266 @@ export async function generatePlayoffBracket(
       ]
 
       allMatches = [...cuartosRows, ...semisRows, ...finalRows]
+    } else if (teams.length <= 16) {
+      // 9 a 16 equipos (ej. 12 o 16): Octavos -> Cuartos -> Semis -> Final
+      const t = [...teams]
+      while (t.length < 16) {
+        t.push(null as unknown as TournamentTeam)
+      }
+
+      // Emparejamientos estándar de llave de 16
+      const octavosPairs = [
+        { matchNum: 1, a: t[0], b: t[15], time: 'Viernes 18:00', court: 'Cancha 1' },
+        { matchNum: 2, a: t[7], b: t[8],  time: 'Viernes 18:00', court: 'Cancha 2' },
+        { matchNum: 3, a: t[3], b: t[12], time: 'Viernes 19:15', court: 'Cancha 1' },
+        { matchNum: 4, a: t[4], b: t[11], time: 'Viernes 19:15', court: 'Cancha 2' },
+        { matchNum: 5, a: t[1], b: t[14], time: 'Viernes 20:30', court: 'Cancha 1' },
+        { matchNum: 6, a: t[6], b: t[9],  time: 'Viernes 20:30', court: 'Cancha 2' },
+        { matchNum: 7, a: t[2], b: t[13], time: 'Viernes 21:45', court: 'Cancha 1' },
+        { matchNum: 8, a: t[5], b: t[10], time: 'Viernes 21:45', court: 'Cancha 2' },
+      ]
+
+      const octavosRows = []
+      const octavosWinners: Array<string | null> = Array(8).fill(null)
+
+      for (let i = 0; i < octavosPairs.length; i++) {
+        const pair = octavosPairs[i]
+        const teamA = pair.a
+        const teamB = pair.b
+
+        if (teamA && !teamB) {
+          // Pase por BYE
+          octavosWinners[i] = teamA.id
+          octavosRows.push({
+            category_id: categoryId,
+            round: 'OCTAVOS',
+            match_number: pair.matchNum,
+            team_a_id: teamA.id,
+            team_b_id: null,
+            score_team_a: 'BYE',
+            score_team_b: '-',
+            winner_team_id: teamA.id,
+            status: 'FINISHED',
+            scheduled_time: `${pair.time} (BYE)`,
+            court_name: pair.court,
+          })
+        } else if (teamA && teamB) {
+          octavosRows.push({
+            category_id: categoryId,
+            round: 'OCTAVOS',
+            match_number: pair.matchNum,
+            team_a_id: teamA.id,
+            team_b_id: teamB.id,
+            status: 'SCHEDULED',
+            scheduled_time: pair.time,
+            court_name: pair.court,
+          })
+        }
+      }
+
+      // Cuartos de Final (Octavos 1 y 2 a Cuartos 1, etc.)
+      const cuartosRows = [
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 1,
+          team_a_id: octavosWinners[0],
+          team_b_id: octavosWinners[1],
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 16:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 2,
+          team_a_id: octavosWinners[2],
+          team_b_id: octavosWinners[3],
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 17:15',
+          court_name: 'Cancha 2',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 3,
+          team_a_id: octavosWinners[4],
+          team_b_id: octavosWinners[5],
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 18:30',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: 4,
+          team_a_id: octavosWinners[6],
+          team_b_id: octavosWinners[7],
+          status: 'SCHEDULED',
+          scheduled_time: 'Sábado 19:45',
+          court_name: 'Cancha 2',
+        },
+      ]
+
+      // Semifinales
+      const semisRows = [
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 17:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 2,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 18:30',
+          court_name: 'Cancha 2',
+        },
+      ]
+
+      // Gran Final
+      const finalRows = [
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 20:30',
+          court_name: 'Cancha Central',
+        },
+      ]
+
+      allMatches = [...octavosRows, ...cuartosRows, ...semisRows, ...finalRows]
+    } else {
+      // 17 a 32 equipos (ej. 24 equipos): Dieciseisavos -> Octavos -> Cuartos -> Semis -> Final
+      const t = [...teams]
+      while (t.length < 32) {
+        t.push(null as unknown as TournamentTeam)
+      }
+
+      const seedPairs = [
+        [0, 31], [15, 16], [7, 24], [8, 23],
+        [3, 28], [12, 19], [4, 27], [11, 20],
+        [1, 30], [14, 17], [6, 25], [9, 22],
+        [2, 29], [13, 18], [5, 26], [10, 21]
+      ]
+
+      const dieciseisRows = []
+      const dieciseisWinners: Array<string | null> = Array(16).fill(null)
+
+      for (let i = 0; i < 16; i++) {
+        const teamA = t[seedPairs[i][0]]
+        const teamB = t[seedPairs[i][1]]
+        const matchNum = i + 1
+
+        if (teamA && !teamB) {
+          dieciseisWinners[i] = teamA.id
+          dieciseisRows.push({
+            category_id: categoryId,
+            round: 'DIECISEISAVOS',
+            match_number: matchNum,
+            team_a_id: teamA.id,
+            team_b_id: null,
+            score_team_a: 'BYE',
+            score_team_b: '-',
+            winner_team_id: teamA.id,
+            status: 'FINISHED',
+            scheduled_time: 'Pase Directo (BYE)',
+            court_name: `Cancha ${(i % 3) + 1}`,
+          })
+        } else if (teamA && teamB) {
+          dieciseisRows.push({
+            category_id: categoryId,
+            round: 'DIECISEISAVOS',
+            match_number: matchNum,
+            team_a_id: teamA.id,
+            team_b_id: teamB.id,
+            status: 'SCHEDULED',
+            scheduled_time: `Viernes 18:00 (M${matchNum})`,
+            court_name: `Cancha ${(i % 3) + 1}`,
+          })
+        }
+      }
+
+      // Octavos de final
+      const octavosRows = []
+      for (let i = 0; i < 8; i++) {
+        octavosRows.push({
+          category_id: categoryId,
+          round: 'OCTAVOS',
+          match_number: i + 1,
+          team_a_id: dieciseisWinners[i * 2],
+          team_b_id: dieciseisWinners[i * 2 + 1],
+          status: 'SCHEDULED',
+          scheduled_time: `Sábado 10:00 (O${i + 1})`,
+          court_name: `Cancha ${(i % 3) + 1}`,
+        })
+      }
+
+      // Cuartos de final
+      const cuartosRows = []
+      for (let i = 0; i < 4; i++) {
+        cuartosRows.push({
+          category_id: categoryId,
+          round: 'CUARTOS',
+          match_number: i + 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: `Sábado 17:00 (C${i + 1})`,
+          court_name: `Cancha ${(i % 2) + 1}`,
+        })
+      }
+
+      // Semifinales
+      const semisRows = [
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 17:00',
+          court_name: 'Cancha 1',
+        },
+        {
+          category_id: categoryId,
+          round: 'SEMIFINAL',
+          match_number: 2,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 18:30',
+          court_name: 'Cancha 2',
+        },
+      ]
+
+      // Final
+      const finalRows = [
+        {
+          category_id: categoryId,
+          round: 'FINAL',
+          match_number: 1,
+          team_a_id: null,
+          team_b_id: null,
+          status: 'SCHEDULED',
+          scheduled_time: 'Domingo 20:30',
+          court_name: 'Cancha Central',
+        },
+      ]
+
+      allMatches = [...dieciseisRows, ...octavosRows, ...cuartosRows, ...semisRows, ...finalRows]
     }
 
     const { data: inserted, error: iErr } = await supabase
@@ -563,7 +850,7 @@ export async function generatePlayoffBracket(
 
 /**
  * Cargar / actualizar marcador de un partido y avanzar automáticamente
- * al ganador a la siguiente ronda (Cuartos -> Semis -> Final)
+ * al ganador a la siguiente ronda (Dieciseisavos -> Octavos -> Cuartos -> Semis -> Final)
  */
 export async function updateMatchScore(payload: {
   matchId: string
@@ -612,38 +899,36 @@ export async function updateMatchScore(payload: {
     if (payload.status === 'FINISHED' && payload.winner_team_id) {
       const winnerId = payload.winner_team_id
 
-      if (currentMatch.round === 'CUARTOS') {
-        // Cuartos 1 y 2 van a Semifinal 1
-        // Cuartos 3 y 4 van a Semifinal 2
-        if (currentMatch.match_number === 1) {
-          await supabase
-            .from('tournament_matches')
-            .update({ team_a_id: winnerId })
-            .eq('category_id', payload.categoryId)
-            .eq('round', 'SEMIFINAL')
-            .eq('match_number', 1)
-        } else if (currentMatch.match_number === 2) {
-          await supabase
-            .from('tournament_matches')
-            .update({ team_b_id: winnerId })
-            .eq('category_id', payload.categoryId)
-            .eq('round', 'SEMIFINAL')
-            .eq('match_number', 1)
-        } else if (currentMatch.match_number === 3) {
-          await supabase
-            .from('tournament_matches')
-            .update({ team_a_id: winnerId })
-            .eq('category_id', payload.categoryId)
-            .eq('round', 'SEMIFINAL')
-            .eq('match_number', 2)
-        } else if (currentMatch.match_number === 4) {
-          await supabase
-            .from('tournament_matches')
-            .update({ team_b_id: winnerId })
-            .eq('category_id', payload.categoryId)
-            .eq('round', 'SEMIFINAL')
-            .eq('match_number', 2)
-        }
+      if (currentMatch.round === 'DIECISEISAVOS') {
+        // Dieciseisavos 1 y 2 van a Octavos 1, etc.
+        const targetOctavosMatch = Math.ceil(currentMatch.match_number / 2)
+        const isTeamA = currentMatch.match_number % 2 !== 0
+        await supabase
+          .from('tournament_matches')
+          .update(isTeamA ? { team_a_id: winnerId } : { team_b_id: winnerId })
+          .eq('category_id', payload.categoryId)
+          .eq('round', 'OCTAVOS')
+          .eq('match_number', targetOctavosMatch)
+      } else if (currentMatch.round === 'OCTAVOS') {
+        // Octavos 1 y 2 van a Cuartos 1, etc.
+        const targetCuartosMatch = Math.ceil(currentMatch.match_number / 2)
+        const isTeamA = currentMatch.match_number % 2 !== 0
+        await supabase
+          .from('tournament_matches')
+          .update(isTeamA ? { team_a_id: winnerId } : { team_b_id: winnerId })
+          .eq('category_id', payload.categoryId)
+          .eq('round', 'CUARTOS')
+          .eq('match_number', targetCuartosMatch)
+      } else if (currentMatch.round === 'CUARTOS') {
+        // Cuartos 1 y 2 van a Semifinal 1; Cuartos 3 y 4 van a Semifinal 2
+        const targetSemisMatch = Math.ceil(currentMatch.match_number / 2)
+        const isTeamA = currentMatch.match_number % 2 !== 0
+        await supabase
+          .from('tournament_matches')
+          .update(isTeamA ? { team_a_id: winnerId } : { team_b_id: winnerId })
+          .eq('category_id', payload.categoryId)
+          .eq('round', 'SEMIFINAL')
+          .eq('match_number', targetSemisMatch)
       } else if (currentMatch.round === 'SEMIFINAL') {
         // Semifinal 1 va a Final (Equipo A)
         // Semifinal 2 va a Final (Equipo B)

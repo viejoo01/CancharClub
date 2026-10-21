@@ -392,7 +392,7 @@ export interface TournamentTeam {
 export interface TournamentMatch {
   id: string
   category_id: string
-  round: 'GRUPO_A' | 'GRUPO_B' | 'CUARTOS' | 'SEMIFINAL' | 'FINAL' | string
+  round: 'DIECISEISAVOS' | 'OCTAVOS' | 'CUARTOS' | 'SEMIFINAL' | 'FINAL' | 'GRUPO_A' | 'GRUPO_B' | 'GRUPO' | string
   match_number: number
   team_a_id?: string | null
   team_b_id?: string | null

@@ -225,7 +225,21 @@ export function Header({
 
               <div className="h-px bg-slate-800/80 my-1" />
 
-              <form action="/auth/logout" method="post">
+              <form 
+                action="/auth/logout" 
+                method="post"
+                onSubmit={() => {
+                  try {
+                    localStorage.removeItem('canchar_today_schedule_snapshot')
+                    localStorage.removeItem('canchar_cached_tenant_id')
+                    localStorage.removeItem('canchar_cached_tenant_slug')
+                    localStorage.removeItem('canchar_active_venue_id')
+                    localStorage.removeItem('canchar_active_venue_name')
+                    localStorage.removeItem('canchar_custom_venues')
+                    localStorage.removeItem('canchar_court_orders')
+                  } catch {}
+                }}
+              >
                 <button
                   type="submit"
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer text-left"

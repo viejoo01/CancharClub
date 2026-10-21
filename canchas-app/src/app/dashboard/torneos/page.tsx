@@ -532,6 +532,8 @@ export default function TorneosDashboardPage() {
 
   const grupoAMatches = activeCategory?.matches.filter((m) => m.round === 'GRUPO_A') || []
   const grupoBMatches = activeCategory?.matches.filter((m) => m.round === 'GRUPO_B') || []
+  const dieciseisavosMatches = activeCategory?.matches.filter((m) => m.round === 'DIECISEISAVOS') || []
+  const octavosMatches = activeCategory?.matches.filter((m) => m.round === 'OCTAVOS') || []
   const cuartosMatches = activeCategory?.matches.filter((m) => m.round === 'CUARTOS') || []
   const semisMatches = activeCategory?.matches.filter((m) => m.round === 'SEMIFINAL') || []
   const finalMatches = activeCategory?.matches.filter((m) => m.round === 'FINAL') || []
@@ -1057,10 +1059,132 @@ export default function TorneosDashboardPage() {
                       </span>
                     </div>
 
-                    <div className={`grid grid-cols-1 ${cuartosMatches.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
+                    <div className="flex flex-col lg:flex-row gap-4 overflow-x-auto pb-4 items-start min-w-0">
+                      {/* Columna Dieciseisavos de Final (solo si existen 16avos) */}
+                      {dieciseisavosMatches.length > 0 && (
+                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                          <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
+                            <span>16avos de Final</span>
+                            <Badge variant="secondary" className="text-[10px] h-4">{dieciseisavosMatches.length} Llaves</Badge>
+                          </div>
+
+                          {dieciseisavosMatches.map((m) => {
+                            const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null
+                            const teamB = m.team_b_id ? teamsMap.get(m.team_b_id) : null
+                            const isFinished = m.status === 'FINISHED'
+
+                            return (
+                              <Card
+                                key={m.id}
+                                className={`border-slate-800 transition-all ${
+                                  isFinished ? 'bg-slate-900/50' : 'bg-slate-900 hover:border-slate-700'
+                                }`}
+                              >
+                                <CardContent className="p-3 space-y-2">
+                                  <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-1.5">
+                                    <span>Partido #{m.match_number}</span>
+                                    <span>{m.scheduled_time || 'A definir'}</span>
+                                  </div>
+
+                                  <div className={`flex items-center justify-between text-xs p-1.5 rounded-lg ${
+                                    m.winner_team_id === m.team_a_id ? 'bg-emerald-950/40 text-emerald-300 font-bold' : 'text-slate-200'
+                                  }`}>
+                                    <span className="truncate">{teamA?.name || 'A definir / Libre'}</span>
+                                    <span className="font-mono font-black">{m.score_team_a || '-'}</span>
+                                  </div>
+
+                                  <div className={`flex items-center justify-between text-xs p-1.5 rounded-lg ${
+                                    m.winner_team_id === m.team_b_id ? 'bg-emerald-950/40 text-emerald-300 font-bold' : 'text-slate-200'
+                                  }`}>
+                                    <span className="truncate">{teamB?.name || 'A definir / Libre'}</span>
+                                    <span className="font-mono font-black">{m.score_team_b || '-'}</span>
+                                  </div>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedMatch(m)
+                                      setScoreA(m.score_team_a || '')
+                                      setScoreB(m.score_team_b || '')
+                                      setWinnerId(m.winner_team_id || '')
+                                      setIsScoreOpen(true)
+                                    }}
+                                    className="w-full h-7 text-[11px] border-slate-700 text-slate-300 hover:text-white"
+                                  >
+                                    {isFinished ? 'Modificar Marcador' : 'Cargar Marcador'}
+                                  </Button>
+                                </CardContent>
+                              </Card>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Columna Octavos de Final (solo si existen octavos) */}
+                      {octavosMatches.length > 0 && (
+                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                          <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
+                            <span>Octavos de Final</span>
+                            <Badge variant="secondary" className="text-[10px] h-4">{octavosMatches.length} Llaves</Badge>
+                          </div>
+
+                          {octavosMatches.map((m) => {
+                            const teamA = m.team_a_id ? teamsMap.get(m.team_a_id) : null
+                            const teamB = m.team_b_id ? teamsMap.get(m.team_b_id) : null
+                            const isFinished = m.status === 'FINISHED'
+
+                            return (
+                              <Card
+                                key={m.id}
+                                className={`border-slate-800 transition-all ${
+                                  isFinished ? 'bg-slate-900/50' : 'bg-slate-900 hover:border-slate-700'
+                                }`}
+                              >
+                                <CardContent className="p-3 space-y-2">
+                                  <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-1.5">
+                                    <span>Octavo #{m.match_number}</span>
+                                    <span>{m.scheduled_time || 'A definir'}</span>
+                                  </div>
+
+                                  <div className={`flex items-center justify-between text-xs p-1.5 rounded-lg ${
+                                    m.winner_team_id === m.team_a_id ? 'bg-emerald-950/40 text-emerald-300 font-bold' : 'text-slate-200'
+                                  }`}>
+                                    <span className="truncate">{teamA?.name || 'A definir / Libre'}</span>
+                                    <span className="font-mono font-black">{m.score_team_a || '-'}</span>
+                                  </div>
+
+                                  <div className={`flex items-center justify-between text-xs p-1.5 rounded-lg ${
+                                    m.winner_team_id === m.team_b_id ? 'bg-emerald-950/40 text-emerald-300 font-bold' : 'text-slate-200'
+                                  }`}>
+                                    <span className="truncate">{teamB?.name || 'A definir / Libre'}</span>
+                                    <span className="font-mono font-black">{m.score_team_b || '-'}</span>
+                                  </div>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedMatch(m)
+                                      setScoreA(m.score_team_a || '')
+                                      setScoreB(m.score_team_b || '')
+                                      setWinnerId(m.winner_team_id || '')
+                                      setIsScoreOpen(true)
+                                    }}
+                                    className="w-full h-7 text-[11px] border-slate-700 text-slate-300 hover:text-white"
+                                  >
+                                    {isFinished ? 'Modificar Marcador' : 'Cargar Marcador'}
+                                  </Button>
+                                </CardContent>
+                              </Card>
+                            )
+                          })}
+                        </div>
+                      )}
+
                       {/* Columna Cuartos de Final (solo si existen cuartos) */}
                       {cuartosMatches.length > 0 && (
-                        <div className="space-y-3">
+                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
                           <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                             <span>Cuartos de Final</span>
                             <Badge variant="secondary" className="text-[10px] h-4">{cuartosMatches.length} Llaves</Badge>
@@ -1120,7 +1244,7 @@ export default function TorneosDashboardPage() {
                       )}
 
                       {/* Columna Semifinales */}
-                      <div className="space-y-3">
+                      <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
                         <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                           <span>Semifinales</span>
                           <Badge variant="secondary" className="text-[10px] h-4">{semisMatches.length} Llaves</Badge>
@@ -1179,7 +1303,7 @@ export default function TorneosDashboardPage() {
                       </div>
 
                       {/* Columna Gran Final */}
-                      <div className="space-y-3">
+                      <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
                         <div className="bg-gradient-to-r from-amber-950/60 to-yellow-950/60 border border-amber-500/40 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-amber-300 text-center flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/30">
                           <Trophy className="w-3.5 h-3.5 text-amber-400" />
                           <span>Gran Final</span>

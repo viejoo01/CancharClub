@@ -107,6 +107,20 @@ interface CourtItem {
 // Caché en cliente para cambio instantáneo (0ms) entre fechas
 const clientBookingsCache = new Map<string, { bookings: CalendarBooking[]; timestamp: number }>()
 
+function getTodayArgentinaIso(): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    return formatter.format(new Date())
+  } catch {
+    return new Date().toISOString().split('T')[0]
+  }
+}
+
 /**
  * Persiste una copia local ligera en localStorage para que el personal de recepción
  * pueda consultar turnos, canchas y teléfonos de contacto en modo offline ante cortes de red.
@@ -119,7 +133,7 @@ function saveOfflineScheduleSnapshot(
 ) {
   if (typeof window === 'undefined') return
   try {
-    const todayIso = new Date().toISOString().split('T')[0]
+    const todayIso = getTodayArgentinaIso()
     if (dateIso === todayIso || !localStorage.getItem('canchar_today_schedule_snapshot')) {
       const snapshot = {
         date: dateIso,

@@ -24,6 +24,7 @@ import type {
   MercadoPagoPayment,
 } from '@/types/database'
 import { handleBillingWebhook } from '@/app/api/webhooks/billing/mercadopago/route'
+import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -345,6 +346,43 @@ export async function POST(request: NextRequest) {
   ) {
     console.log('[MP Webhook] Pago de facturación SaaS detectado por external_reference. Enrutando a handleBillingWebhook...')
     return handleBillingWebhook(request, rawBody)
+  }
+
+  // Si el pago corresponde a una inscripción a torneo
+  if (externalRef?.startsWith('tournament_team_')) {
+    const teamId = externalRef.replace('tournament_team_', '').trim()
+    console.log(`[MP Webhook] Pago de inscripción a torneo detectado para team_id: ${teamId}`)
+
+    if (payment.status === 'approved') {
+      const { data: updatedTeam } = await supabase
+        .from('tournament_teams')
+        .update({
+          payment_status: 'PAID',
+          mp_payment_id: String(payment.id),
+          amount_paid_ars: Number(payment.transaction_amount) || 0,
+        })
+        .eq('id', teamId)
+        .select('id, name, phone, player_1, category:tournament_categories(tournament_id, tournament:tournaments(name, tenant:tenants(name)))')
+        .maybeSingle()
+
+      if (updatedTeam) {
+        const catObj = updatedTeam.category as unknown as {
+          tournament_id?: string
+          tournament?: { name?: string; tenant?: { name?: string } }
+        } | null
+        const tourName = catObj?.tournament?.name || 'Torneo'
+        const clubName = catObj?.tournament?.tenant?.name || 'CancharClub'
+
+        if (updatedTeam.phone) {
+          const confirmMsg = `¡Pago confirmado con éxito! 🏆 ${updatedTeam.player_1}, el pago de inscripción del equipo "${updatedTeam.name}" para el torneo *${tourName}* en *${clubName}* fue acreditado correctamente. ¡Están 100% confirmados en el cuadro!`
+          sendWhatsAppMessage(updatedTeam.phone, confirmMsg).catch((err) =>
+            console.error('[Tournament MP Webhook WhatsApp Error]', err)
+          )
+        }
+      }
+    }
+
+    return NextResponse.json({ received: true, tournament_team_id: teamId, status: payment.status })
   }
 
   const rawCandidate = externalRef || (payment as unknown as { additional_info?: { items?: Array<{ id?: string }> } })?.additional_info?.items?.[0]?.id

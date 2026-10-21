@@ -16,6 +16,9 @@ import {
   Shield,
   Settings2,
   CheckCircle2,
+  Copy,
+  Clock,
+  UserCheck,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,7 +44,12 @@ import {
   updateTournamentFormat,
   advanceGroupWinnersToPlayoffs,
   deleteTeam,
-  type TournamentWithDetails 
+  markTeamPaymentStatus,
+  createTournamentRegistrationPaymentPreference,
+  promoteWaitlistEntryToTeam,
+  getClubTournamentRanking,
+  type TournamentWithDetails,
+  type ClubPlayerRanking,
 } from '@/actions/tournament.actions'
 import { getClubCourts } from '@/actions/club.actions'
 import { getArgentinaTodayIso, buildWhatsAppLink } from '@/lib/utils'
@@ -170,6 +178,7 @@ export default function TorneosDashboardPage() {
   ])
   const [newTourSport, setNewTourSport] = useState('PADEL')
   const [newTourMaxTeams, setNewTourMaxTeams] = useState<number>(8)
+  const [newTourEntryFee, setNewTourEntryFee] = useState<number | ''>('')
   const [newTourFormat, setNewTourFormat] = useState<'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'>('GROUPS_AND_PLAYOFFS')
   const [newTourStart, setNewTourStart] = useState(() => getArgentinaTodayIso())
   const [newTourEnd, setNewTourEnd] = useState(() => {
@@ -179,6 +188,11 @@ export default function TorneosDashboardPage() {
     return getArgentinaTodayIso(end)
   })
   const [newTourCats, setNewTourCats] = useState('4ta Caballeros, 6ta Damas, Suma 11')
+
+  // Modal y datos de Ranking oficial
+  const [isRankingOpen, setIsRankingOpen] = useState(false)
+  const [rankingList, setRankingList] = useState<ClubPlayerRanking[]>([])
+  const [rankingLoading, setRankingLoading] = useState(false)
 
   // Form inscribir equipo
   const [teamName, setTeamName] = useState('')
@@ -328,11 +342,12 @@ export default function TorneosDashboardPage() {
     setActionLoading(true)
     try {
       const targetMaxTeams = Number(newTourMaxTeams) > 0 ? Number(newTourMaxTeams) : 8
+      const targetFee = typeof newTourEntryFee === 'number' && newTourEntryFee >= 0 ? newTourEntryFee : Number(newTourEntryFee) || 0
       const cats = newTourCats
         .split(',')
         .map((c) => c.trim())
         .filter(Boolean)
-        .map((name) => ({ name, max_teams: targetMaxTeams }))
+        .map((name) => ({ name, max_teams: targetMaxTeams, entry_fee_ars: targetFee }))
 
       const res = await createTournament({
         tenant_id: tenantId!,
@@ -348,6 +363,7 @@ export default function TorneosDashboardPage() {
         toast.success('¡Torneo creado exitosamente!')
         setIsCreateOpen(false)
         setNewTourName('')
+        setNewTourEntryFee('')
         await loadTournaments()
         await loadTournamentDetails(res.tournament_id)
       } else {
@@ -355,6 +371,77 @@ export default function TorneosDashboardPage() {
       }
     } catch {
       toast.error('Error de red al crear torneo')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleOpenRanking = async () => {
+    if (!tenantId) return
+    setIsRankingOpen(true)
+    setRankingLoading(true)
+    try {
+      const data = await getClubTournamentRanking(tenantId, selectedTournament?.sport)
+      setRankingList(data)
+    } catch {
+      toast.error('Error al cargar el ranking del club')
+    } finally {
+      setRankingLoading(false)
+    }
+  }
+
+  const handleTogglePaymentStatus = async (team: TournamentTeam) => {
+    const nextStatus = team.payment_status === 'PAID' ? 'PENDING' : 'PAID'
+    const fee = activeCategory?.entry_fee_ars || 0
+    setActionLoading(true)
+    try {
+      const res = await markTeamPaymentStatus(team.id, nextStatus, nextStatus === 'PAID' ? fee : 0)
+      if (res.success) {
+        toast.success(`Pago marcado como ${nextStatus === 'PAID' ? 'PAGADO' : 'PENDIENTE'}`)
+        if (selectedTournament) {
+          await loadTournamentDetails(selectedTournament.id)
+        }
+      } else {
+        toast.error(res.error || 'Error al actualizar estado de pago')
+      }
+    } catch {
+      toast.error('Error de red al actualizar pago')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCopyPaymentLink = async (teamId: string) => {
+    setActionLoading(true)
+    try {
+      const res = await createTournamentRegistrationPaymentPreference(teamId)
+      if (res.success && res.init_point) {
+        await navigator.clipboard.writeText(res.init_point)
+        toast.success('¡Link de pago Mercado Pago copiado al portapapeles!')
+      } else {
+        toast.error(res.error || 'No se pudo generar el link de pago')
+      }
+    } catch {
+      toast.error('Error de red al generar link de Mercado Pago')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handlePromoteWaitlist = async (waitlistId: string, teamLabel: string) => {
+    setActionLoading(true)
+    try {
+      const res = await promoteWaitlistEntryToTeam(waitlistId)
+      if (res.success) {
+        toast.success(`"${teamLabel}" promovido a inscripto oficial`)
+        if (selectedTournament) {
+          await loadTournamentDetails(selectedTournament.id)
+        }
+      } else {
+        toast.error(res.error || 'Error al promover equipo de lista de espera')
+      }
+    } catch {
+      toast.error('Error de red al promover equipo')
     } finally {
       setActionLoading(false)
     }
@@ -597,6 +684,14 @@ export default function TorneosDashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <Button
+              variant="outline"
+              onClick={handleOpenRanking}
+              className="border-amber-500/30 bg-amber-950/20 text-amber-300 hover:text-amber-200 text-xs gap-1.5"
+            >
+              <Medal className="w-4 h-4 text-amber-400" />
+              <span>Ranking del Club</span>
+            </Button>
             {selectedTournament && (
               <>
                 <Button
@@ -805,52 +900,157 @@ export default function TorneosDashboardPage() {
                           {activeCategory.teams.map((t, idx) => (
                             <div
                               key={t.id}
-                              className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 transition-colors flex items-center justify-between gap-2"
+                              className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 transition-colors flex flex-col justify-between gap-2.5"
                             >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold text-slate-500 font-mono">#{idx + 1}</span>
-                                  <p className="text-xs font-bold text-white truncate">{t.name}</p>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-slate-500 font-mono">#{idx + 1}</span>
+                                    <p className="text-xs font-bold text-white truncate">{t.name}</p>
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                    {isCurrentFootball ? (
+                                      <>
+                                        <span className="text-emerald-400 font-medium">Cap:</span> {t.player_1}
+                                        {t.player_2 && <span className="text-slate-500"> • {t.player_2}</span>}
+                                      </>
+                                    ) : (
+                                      <>
+                                        {t.player_1} {t.player_2 ? `/ ${t.player_2}` : ''}
+                                      </>
+                                    )}
+                                  </p>
                                 </div>
-                                <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                                  {isCurrentFootball ? (
-                                    <>
-                                      <span className="text-emerald-400 font-medium">Cap:</span> {t.player_1}
-                                      {t.player_2 && <span className="text-slate-500"> • {t.player_2}</span>}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {t.player_1} {t.player_2 ? `/ ${t.player_2}` : ''}
-                                    </>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {t.phone && (
+                                    <a
+                                      href={buildWhatsAppLink(t.phone)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Contactar por WhatsApp"
+                                      className="p-1.5 rounded-lg bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-colors border border-emerald-800/40"
+                                    >
+                                      <Phone className="w-3 h-3" />
+                                    </a>
                                   )}
-                                </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTeam(t.id, t.name)}
+                                    title={`Eliminar ${getParticipantLabel(selectedTournament.sport)}`}
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-1 shrink-0">
-                                {t.phone && (
-                                  <a
-                                    href={buildWhatsAppLink(t.phone)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Contactar por WhatsApp"
-                                    className="p-1.5 rounded-lg bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-colors border border-emerald-800/40"
-                                  >
-                                    <Phone className="w-3 h-3" />
-                                  </a>
+                              {/* Estado de pago y botón Mercado Pago */}
+                              <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-900 text-[10px]">
+                                {t.payment_status === 'PAID' ? (
+                                  <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-semibold py-0 px-1.5">
+                                    Pagado {t.amount_paid_ars ? `($${t.amount_paid_ars.toLocaleString('es-AR')})` : ''}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="border-amber-500/30 text-amber-300 bg-amber-500/10 text-[9px] font-semibold py-0 px-1.5">
+                                    Pago Pendiente
+                                  </Badge>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTeam(t.id, t.name)}
-                                  title={`Eliminar ${getParticipantLabel(selectedTournament.sport)}`}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePaymentStatus(t)}
+                                    disabled={actionLoading}
+                                    className="text-slate-400 hover:text-white underline decoration-dotted text-[10px]"
+                                    title={t.payment_status === 'PAID' ? 'Marcar como pendiente de pago' : 'Marcar como abonado en efectivo o transferencia'}
+                                  >
+                                    {t.payment_status === 'PAID' ? 'Desmarcar' : 'Cobrar'}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyPaymentLink(t.id)}
+                                    disabled={actionLoading}
+                                    className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 text-[10px]"
+                                    title="Generar y copiar link de pago de Mercado Pago para enviar al equipo"
+                                  >
+                                    <Copy className="w-2.5 h-2.5" />
+                                    Link MP
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           ))}
                         </div>
                       )}
+
+                      {/* Lista de Espera Automática de la Categoría */}
+                      <div className="mt-4 pt-3.5 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                              Lista de Espera ({activeCategory.waitlists?.length || 0})
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 hidden sm:inline">
+                            Al liberarse un cupo, el sistema avisa automáticamente por WhatsApp
+                          </span>
+                        </div>
+
+                        {(!activeCategory.waitlists || activeCategory.waitlists.length === 0) ? (
+                          <div className="text-center py-3 px-4 rounded-xl bg-slate-950/40 border border-slate-800/40 text-slate-500 text-xs">
+                            No hay participantes en lista de espera. Si la categoría completa sus {activeCategory.max_teams} cupos, los próximos inscriptos se ordenarán aquí automáticamente.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {activeCategory.waitlists.map((w, idx) => (
+                              <div
+                                key={w.id}
+                                className="p-2.5 rounded-xl bg-slate-950/90 border border-amber-500/20 flex items-center justify-between gap-2"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] px-1 py-0">
+                                      #{idx + 1} espera
+                                    </Badge>
+                                    <p className="text-xs font-bold text-white truncate">{w.name}</p>
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                    {w.player_1} {w.player_2 ? `/ ${w.player_2}` : ''}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {w.phone && (
+                                    <a
+                                      href={buildWhatsAppLink(w.phone)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Contactar por WhatsApp"
+                                      className="p-1.5 rounded-lg bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900/60"
+                                    >
+                                      <Phone className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handlePromoteWaitlist(w.id, w.name)}
+                                    disabled={actionLoading}
+                                    className="h-7 text-[10px] px-2 border-emerald-600/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/50"
+                                    title="Promover a inscripto oficial"
+                                  >
+                                    <UserCheck className="w-3 h-3 mr-1" />
+                                    Promover
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 )}
@@ -1555,6 +1755,33 @@ export default function TorneosDashboardPage() {
               </div>
 
               <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-300">
+                    Precio de Inscripción por {getParticipantLabelCapitalized(newTourSport)} (ARS)
+                  </Label>
+                  <span className="text-[10px] text-slate-500">Opcional (0 = gratis / presencial)</span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">$</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={500}
+                    placeholder="Ej: 15000"
+                    value={newTourEntryFee}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? '' : Number(e.target.value)
+                      setNewTourEntryFee(val)
+                    }}
+                    className="bg-slate-900 border-slate-800 text-xs pl-7 font-mono font-bold text-emerald-400"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Habilita el cobro online por Mercado Pago y el registro contable en métricas.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-300">Categorías (Separadas por coma)</Label>
                 <Input
                   placeholder="Ej. Libre, Senior +35, Femenino"
@@ -1788,6 +2015,119 @@ export default function TorneosDashboardPage() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Ranking Oficial del Club */}
+        <Dialog open={isRankingOpen} onOpenChange={setIsRankingOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-white">
+                <Medal className="w-5 h-5 text-amber-400" />
+                Ranking Oficial de Torneos del Club
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Puntuación acumulada por jugador/pareja: Campeón (200 pts), Subcampeón (120 pts), Semifinales (60 pts), Victorias (+25 pts) y Participación (+15 pts).
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Deporte: {selectedTournament?.sport ? selectedTournament.sport.replace('_', ' ') : 'Todos'}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenRanking}
+                  disabled={rankingLoading}
+                  className="h-7 text-xs border-slate-800 bg-slate-900 text-slate-300"
+                >
+                  {rankingLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                  Actualizar
+                </Button>
+              </div>
+
+              {rankingLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                  <span className="text-xs">Calculando posiciones y puntos del club...</span>
+                </div>
+              ) : rankingList.length === 0 ? (
+                <div className="text-center py-10 px-4 rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-2">
+                  <Trophy className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="text-sm font-semibold text-white">Aún no hay puntuaciones registradas</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    A medida que finalices torneos y cargues resultados oficiales de partidos, los jugadores acumularán puntos y figurarán en este ranking.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {rankingList.map((rank) => (
+                    <div
+                      key={rank.name}
+                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                        rank.rank === 1
+                          ? 'bg-amber-500/10 border-amber-500/40'
+                          : rank.rank === 2
+                          ? 'bg-slate-800/60 border-slate-600'
+                          : rank.rank === 3
+                          ? 'bg-amber-900/15 border-amber-800/40'
+                          : 'bg-slate-900/50 border-slate-800/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs font-mono shrink-0 ${
+                            rank.rank === 1
+                              ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                              : rank.rank === 2
+                              ? 'bg-slate-300 text-slate-950'
+                              : rank.rank === 3
+                              ? 'bg-amber-700 text-white'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          #{rank.rank}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                            {rank.name}
+                            {rank.partner && <span className="text-slate-400 font-normal">/ {rank.partner}</span>}
+                            {rank.titles_count > 0 && (
+                              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] px-1 py-0 font-bold flex items-center gap-1">
+                                <Trophy className="w-2.5 h-2.5" />
+                                {rank.titles_count} {rank.titles_count === 1 ? 'título' : 'títulos'}
+                              </Badge>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {rank.tournaments_played} {rank.tournaments_played === 1 ? 'torneo jugado' : 'torneos jugados'} • {rank.matches_won} victorias ({rank.win_rate_pct}% efectividad)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-sm font-black text-emerald-400 font-mono">
+                          {rank.points}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 ml-1">pts</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsRankingOpen(false)}
+                className="border-slate-800 text-slate-300 text-xs"
+              >
+                Cerrar
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

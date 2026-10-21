@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   Sparkles,
   Phone,
+  CreditCard,
+  Clock,
+  Medal,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,7 +35,11 @@ import {
 import {
   getTournamentById,
   addTeamToCategory,
+  createTournamentRegistrationPaymentPreference,
+  joinTournamentWaitlist,
+  getClubTournamentRanking,
   type TournamentWithDetails,
+  type ClubPlayerRanking,
 } from '@/actions/tournament.actions'
 import type { TournamentMatch, TournamentTeam } from '@/types/database'
 import { toast } from 'sonner'
@@ -57,6 +64,23 @@ export default function PublicTournamentPage({
   const [regPhone, setRegPhone] = useState('')
   const [regLoading, setRegLoading] = useState(false)
   const [regSuccess, setRegSuccess] = useState(false)
+  const [regTeamId, setRegTeamId] = useState<string | null>(null)
+  const [mpLoading, setMpLoading] = useState(false)
+
+  // Modal de Lista de Espera
+  const [isWaitlistOpen, setIsWaitlistOpen] = useState(false)
+  const [waitlistCategory, setWaitlistCategory] = useState('')
+  const [waitlistTeamName, setWaitlistTeamName] = useState('')
+  const [waitlistPlayer1, setWaitlistPlayer1] = useState('')
+  const [waitlistPlayer2, setWaitlistPlayer2] = useState('')
+  const [waitlistPhone, setWaitlistPhone] = useState('')
+  const [waitlistLoading, setWaitlistLoading] = useState(false)
+  const [waitlistSuccess, setWaitlistSuccess] = useState<{ position: number } | null>(null)
+
+  // Modal de Ranking del Club
+  const [isRankingOpen, setIsRankingOpen] = useState(false)
+  const [rankingList, setRankingList] = useState<ClubPlayerRanking[]>([])
+  const [rankingLoading, setRankingLoading] = useState(false)
 
   const loadTournament = useCallback(async () => {
     try {
@@ -177,6 +201,9 @@ export default function PublicTournamentPage({
       if (res.success) {
         toast.success('¡Inscripción registrada con éxito!')
         setRegSuccess(true)
+        if (res.team?.id) {
+          setRegTeamId(res.team.id)
+        }
         await loadTournament()
       } else {
         toast.error(res.error || 'No se pudo completar la inscripción')
@@ -188,6 +215,68 @@ export default function PublicTournamentPage({
     }
   }
 
+  const handlePayWithMercadoPago = async () => {
+    if (!regTeamId) return
+    setMpLoading(true)
+    try {
+      const res = await createTournamentRegistrationPaymentPreference(regTeamId)
+      if (res.success && res.init_point) {
+        window.location.href = res.init_point
+      } else {
+        toast.error(res.error || 'No se pudo generar la preferencia de Mercado Pago')
+      }
+    } catch {
+      toast.error('Error de conexión con Mercado Pago')
+    } finally {
+      setMpLoading(false)
+    }
+  }
+
+  const handleJoinWaitlist = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!waitlistCategory || !waitlistTeamName.trim() || !waitlistPlayer1.trim() || !waitlistPhone.trim()) {
+      toast.error('Completá los datos obligatorios')
+      return
+    }
+
+    setWaitlistLoading(true)
+    try {
+      const res = await joinTournamentWaitlist({
+        category_id: waitlistCategory,
+        name: waitlistTeamName.trim(),
+        player_1: waitlistPlayer1.trim(),
+        player_2: waitlistPlayer2.trim() || undefined,
+        phone: waitlistPhone.trim(),
+      })
+
+      if (res.success && res.position) {
+        setWaitlistSuccess({ position: res.position })
+        toast.success(`¡Anotado en lista de espera! Posición #${res.position}`)
+        await loadTournament()
+      } else {
+        toast.error(res.error || 'No se pudo registrar en la lista de espera')
+      }
+    } catch {
+      toast.error('Error de red al registrar en lista de espera')
+    } finally {
+      setWaitlistLoading(false)
+    }
+  }
+
+  const handleOpenRanking = async () => {
+    if (!tournament?.tenant_id) return
+    setIsRankingOpen(true)
+    setRankingLoading(true)
+    try {
+      const data = await getClubTournamentRanking(tournament.tenant_id, tournament.sport)
+      setRankingList(data)
+    } catch {
+      toast.error('Error al cargar el ranking del club')
+    } finally {
+      setRankingLoading(false)
+    }
+  }
+
   const handleResetModal = () => {
     setIsRegisterOpen(false)
     setRegSuccess(false)
@@ -195,6 +284,16 @@ export default function PublicTournamentPage({
     setRegPlayer1('')
     setRegPlayer2('')
     setRegPhone('')
+    setRegTeamId(null)
+  }
+
+  const handleResetWaitlistModal = () => {
+    setIsWaitlistOpen(false)
+    setWaitlistSuccess(null)
+    setWaitlistTeamName('')
+    setWaitlistPlayer1('')
+    setWaitlistPlayer2('')
+    setWaitlistPhone('')
   }
 
   if (loading) {
@@ -241,6 +340,17 @@ export default function PublicTournamentPage({
               <Radio className="w-3 h-3 text-emerald-400" />
               En Vivo
             </span>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleOpenRanking}
+              className="border-amber-500/30 bg-amber-950/20 hover:bg-amber-900/40 text-amber-300 font-semibold h-8 text-xs gap-1.5"
+            >
+              <Medal className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Ranking del Club</span>
+              <span className="sm:hidden">Ranking</span>
+            </Button>
 
             <Button
               size="sm"
@@ -297,12 +407,17 @@ export default function PublicTournamentPage({
           {/* Banner de Inscripción Abierta */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 gap-3">
             <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Sparkles className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-bold text-amber-300">Inscripciones Abiertas</span>
                 <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] border-emerald-500/40">
                   Cupos Limitados
                 </Badge>
+                {selectedCategory?.entry_fee_ars && selectedCategory.entry_fee_ars > 0 ? (
+                  <Badge className="bg-emerald-500/20 text-emerald-400 font-semibold text-[10px] border border-emerald-500/30">
+                    Inscripción: ${selectedCategory.entry_fee_ars.toLocaleString('es-AR')} ARS
+                  </Badge>
+                ) : null}
               </div>
               <p className="text-xs text-slate-300">
                 {selectedCategory
@@ -310,17 +425,33 @@ export default function PublicTournamentPage({
                   : `Inscribí a tu ${isFoot ? 'equipo' : 'pareja'} online y asegurá tu lugar en el cuadro oficial`}
               </p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => {
-                setRegCategory(selectedCatId || tournament.categories[0]?.id || '')
-                setIsRegisterOpen(true)
-              }}
-              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shrink-0 shadow-md"
-            >
-              <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-              {isFoot ? 'Anotar Equipo' : 'Anotar Pareja'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {selectedCategory && selectedCategory.teams.length >= (selectedCategory.max_teams || 8) ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setWaitlistCategory(selectedCategory.id)
+                    setIsWaitlistOpen(true)
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shrink-0 shadow-md gap-1"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  Lista de Espera
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setRegCategory(selectedCatId || tournament.categories[0]?.id || '')
+                    setIsRegisterOpen(true)
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shrink-0 shadow-md"
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                  {isFoot ? 'Anotar Equipo' : 'Anotar Pareja'}
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Selector de Categorías */}
@@ -546,24 +677,55 @@ export default function PublicTournamentPage({
             <div className="py-4 space-y-4">
               <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
                 <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                <h4 className="text-base font-bold text-white">¡Anotados con Éxito!</h4>
+                <h4 className="text-base font-bold text-white">
+                  {isFoot ? '¡Equipo inscripto con éxito!' : '¡Pareja inscripta con éxito!'}
+                </h4>
                 <p className="text-xs text-slate-300">
-                  La pareja <strong className="text-white">{regTeamName}</strong> ya figura en el listado de inscriptos.
+                  <strong className="text-white">{regTeamName}</strong> ya figura en el listado de inscriptos.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 space-y-1">
-                <p className="font-semibold text-white">Siguiente paso:</p>
-                <p className="text-slate-400">
-                  Enviá un mensaje al club por WhatsApp para coordinar el pago de la seña/inscripción y asegurar el lugar.
-                </p>
-              </div>
+              {(() => {
+                const catObj = tournament.categories.find(c => c.id === regCategory)
+                return catObj?.entry_fee_ars && catObj.entry_fee_ars > 0 ? (
+                  <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-xs text-emerald-200 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-white">Inscripción oficial:</span>
+                      <Badge className="bg-emerald-500/20 text-emerald-400 font-bold border-emerald-500/30">
+                        ${catObj.entry_fee_ars.toLocaleString('es-AR')} ARS
+                      </Badge>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      Aboná online ahora mismo con Mercado Pago para confirmar tu lugar en el torneo de forma inmediata.
+                    </p>
+                    <Button
+                      onClick={handlePayWithMercadoPago}
+                      disabled={mpLoading || !regTeamId}
+                      className="w-full bg-[#009ee3] hover:bg-[#0082ba] text-white font-bold text-xs gap-1.5 shadow-md shadow-sky-950/40"
+                    >
+                      {mpLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="w-4 h-4" />
+                      )}
+                      Pagar con Mercado Pago
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 space-y-1">
+                    <p className="font-semibold text-white">Siguiente paso:</p>
+                    <p className="text-slate-400">
+                      Enviá un mensaje al club por WhatsApp para coordinar el pago o la confirmación de asistencia.
+                    </p>
+                  </div>
+                )
+              })()}
 
               <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
                 <Button
                   onClick={() => {
                     const catObj = tournament.categories.find(c => c.id === regCategory)
-                    const text = `¡Hola! Acabamos de inscribirnos online al torneo *${tournament.name}* en la categoría *${catObj?.name || 'Oficial'}*.\n\n*Equipo:* ${regTeamName}\n*Jugadores:* ${regPlayer1} y ${regPlayer2 || 'A confirmar'}\n*Tel:* ${regPhone}\n\n¿Por qué medio podemos abonar la seña de la inscripción?`
+                    const text = `¡Hola! Acabamos de inscribirnos online al torneo *${tournament.name}* en la categoría *${catObj?.name || 'Oficial'}*.\n\n*Equipo:* ${regTeamName}\n*Jugadores:* ${regPlayer1} y ${regPlayer2 || 'A confirmar'}\n*Tel:* ${regPhone}\n\n¿Por qué medio podemos coordinar la confirmación?`
                     window.open(buildWhatsAppLink(null, text), '_blank')
                   }}
                   className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5"
@@ -593,9 +755,10 @@ export default function PublicTournamentPage({
                   {tournament.categories.map((cat) => {
                     const limit = cat.max_teams || 8
                     const isFull = cat.teams.length >= limit
+                    const feeStr = cat.entry_fee_ars && cat.entry_fee_ars > 0 ? ` — $${cat.entry_fee_ars.toLocaleString('es-AR')}` : ''
                     return (
                       <option key={cat.id} value={cat.id} disabled={isFull}>
-                        {cat.name} ({cat.teams.length}/{limit} {isFoot ? 'equipos' : 'parejas'}) {isFull ? '— COMPLETO' : ''}
+                        {cat.name} ({cat.teams.length}/{limit} {isFoot ? 'equipos' : 'parejas'}{feeStr}) {isFull ? '— COMPLETO' : ''}
                       </option>
                     )
                   })}
@@ -653,7 +816,7 @@ export default function PublicTournamentPage({
                   className="bg-slate-900 border-slate-800 text-xs"
                 />
                 <p className="text-[11px] text-slate-500">
-                  El club se comunicará por WhatsApp para validar y coordinar la seña.
+                  Recibirás las notificaciones de fixture, horarios y confirmación de pago por este número.
                 </p>
               </div>
 
@@ -680,6 +843,236 @@ export default function PublicTournamentPage({
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Lista de Espera Pública */}
+      <Dialog open={isWaitlistOpen} onOpenChange={setIsWaitlistOpen}>
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Clock className="w-5 h-5 text-amber-400" />
+              Lista de Espera del Torneo
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              El cupo principal está lleno. Anotate y serás notificado automáticamente por WhatsApp apenas se libere un lugar.
+            </DialogDescription>
+          </DialogHeader>
+
+          {waitlistSuccess ? (
+            <div className="space-y-4 py-2">
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center space-y-2">
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-2.5 py-1">
+                  Posición #{waitlistSuccess.position} en espera
+                </Badge>
+                <p className="text-sm font-bold text-white">
+                  ¡Registro en lista de espera confirmado!
+                </p>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Si algún equipo cancela o se libera un cupo en esta categoría, el sistema te enviará una notificación instantánea a tu WhatsApp.
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  onClick={handleResetWaitlistModal}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs"
+                >
+                  Entendido
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleJoinWaitlist} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Categoría</Label>
+                <select
+                  value={waitlistCategory}
+                  onChange={(e) => setWaitlistCategory(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200"
+                  required
+                >
+                  <option value="">-- Seleccionar Categoría --</option>
+                  {tournament.categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} ({cat.teams.length}/{cat.max_teams || 8})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">
+                  {isFoot ? 'Nombre del Equipo' : 'Nombre de la Pareja'}
+                </Label>
+                <Input
+                  placeholder={isFoot ? 'Ej. Los Galácticos FC' : 'Ej. González / Martínez'}
+                  value={waitlistTeamName}
+                  onChange={(e) => setWaitlistTeamName(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">
+                    {isFoot ? 'Capitán / Jugador 1' : 'Jugador 1'}
+                  </Label>
+                  <Input
+                    placeholder="Nombre y Apellido"
+                    value={waitlistPlayer1}
+                    onChange={(e) => setWaitlistPlayer1(e.target.value)}
+                    required
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">
+                    {isFoot ? 'Subcapitán (opcional)' : 'Jugador 2'}
+                  </Label>
+                  <Input
+                    placeholder="Nombre y Apellido"
+                    value={waitlistPlayer2}
+                    onChange={(e) => setWaitlistPlayer2(e.target.value)}
+                    required={!isFoot}
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">WhatsApp para recibir el aviso</Label>
+                <Input
+                  type="tel"
+                  placeholder="Ej. +54 9 11 1234-5678"
+                  value={waitlistPhone}
+                  onChange={(e) => setWaitlistPhone(e.target.value)}
+                  required
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetWaitlistModal}
+                  className="border-slate-800 text-slate-300"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={waitlistLoading}
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs"
+                >
+                  {waitlistLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    'Anotarme en Lista de Espera'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Ranking Oficial del Club */}
+      <Dialog open={isRankingOpen} onOpenChange={setIsRankingOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Medal className="w-5 h-5 text-amber-400" />
+              Ranking Oficial del Club
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Puntuación acumulada en torneos oficiales CancharClub para {tournament.sport.replace('_', ' ')}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {rankingLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                <span className="text-xs">Cargando posiciones del club...</span>
+              </div>
+            ) : rankingList.length === 0 ? (
+              <div className="text-center py-10 px-4 rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-2">
+                <Trophy className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-sm font-semibold text-white">Aún no hay puntuaciones acumuladas</p>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Los puntos se computan automáticamente con los partidos disputados y campeonatos de torneos oficiales del club.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rankingList.map((rank) => (
+                  <div
+                    key={rank.name}
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                      rank.rank === 1
+                        ? 'bg-amber-500/10 border-amber-500/40'
+                        : rank.rank === 2
+                        ? 'bg-slate-800/60 border-slate-600'
+                        : rank.rank === 3
+                        ? 'bg-amber-900/15 border-amber-800/40'
+                        : 'bg-slate-900/50 border-slate-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs font-mono shrink-0 ${
+                          rank.rank === 1
+                            ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                            : rank.rank === 2
+                            ? 'bg-slate-300 text-slate-950'
+                            : rank.rank === 3
+                            ? 'bg-amber-700 text-white'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        #{rank.rank}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                          {rank.name}
+                          {rank.partner && <span className="text-slate-400 font-normal">/ {rank.partner}</span>}
+                          {rank.titles_count > 0 && (
+                            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] px-1 py-0 font-bold flex items-center gap-1">
+                              <Trophy className="w-2.5 h-2.5" />
+                              {rank.titles_count} {rank.titles_count === 1 ? 'título' : 'títulos'}
+                            </Badge>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {rank.tournaments_played} {rank.tournaments_played === 1 ? 'torneo jugado' : 'torneos jugados'} • {rank.matches_won} victorias ({rank.win_rate_pct}% efectividad)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-black text-emerald-400 font-mono">
+                        {rank.points}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 ml-1">pts</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsRankingOpen(false)}
+              className="border-slate-800 text-slate-300 text-xs"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

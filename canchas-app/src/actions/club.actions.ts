@@ -2730,11 +2730,15 @@ export interface ClubAnalyticsData {
   totalRevenue: number
   courtsRevenue: number
   cantinaRevenue: number
+  tournamentsRevenue?: number
   revenueGrowthPct: number
   avgTicket: number
   occupancyPrimePct: number
   noShowsProtected: number
   bookingsCount: number
+  tournamentsCount?: number
+  tournamentTeamsCount?: number
+  tournamentsOccupancyRate?: number
   courts: Array<{
     name: string
     sport: string
@@ -2758,11 +2762,15 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
     totalRevenue: 0,
     courtsRevenue: 0,
     cantinaRevenue: 0,
+    tournamentsRevenue: 0,
     revenueGrowthPct: 0,
     avgTicket: 0,
     occupancyPrimePct: 0,
     noShowsProtected: 0,
     bookingsCount: 0,
+    tournamentsCount: 0,
+    tournamentTeamsCount: 0,
+    tournamentsOccupancyRate: 0,
     courts: [],
     occupancyHeatmap: Array.from({ length: 7 }, () => Array(9).fill(0)),
     topPlayers: []
@@ -2784,7 +2792,7 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000).toISOString()
 
     // Ejecutar consultas en paralelo para máxima velocidad
-    const [courtsResult, bookingsResult, cantinaResult] = await Promise.all([
+    const [courtsResult, bookingsResult, cantinaResult, tournamentsResult] = await Promise.all([
       supabase
         .from('courts')
         .select('id, name, sport')
@@ -2804,11 +2812,50 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
         .eq('tenant_id', effectiveTenantId)
         .gte('created_at', thirtyDaysAgo)
         .not('status', 'eq', 'CANCELLED'),
+      supabase
+        .from('tournaments')
+        .select('id, name, status, categories:tournament_categories(id, max_teams, entry_fee_ars, teams:tournament_teams(id, payment_status, amount_paid_ars))')
+        .eq('tenant_id', effectiveTenantId),
     ])
 
     const courtsList = courtsResult.data || []
     const allBookings = bookingsResult.data || []
     const cantinaRevenue = (cantinaResult.data || []).reduce((sum, o: { total_ars?: number | null }) => sum + (Number(o.total_ars) || 0), 0)
+
+    const tournamentsList = (tournamentsResult.data as unknown as Array<{
+      id: string
+      name: string
+      status: string
+      categories?: Array<{
+        max_teams?: number
+        entry_fee_ars?: number
+        teams?: Array<{
+          payment_status?: string
+          amount_paid_ars?: number
+        }>
+      }>
+    }>) || []
+
+    let tournamentsRevenue = 0
+    let totalTeamsEnrolled = 0
+    let totalMaxCapacity = 0
+
+    tournamentsList.forEach((t) => {
+      const cats = t.categories || []
+      cats.forEach((cat) => {
+        totalMaxCapacity += Number(cat.max_teams) || 8
+        const teams = cat.teams || []
+        totalTeamsEnrolled += teams.length
+        teams.forEach((tm) => {
+          if (tm.payment_status === 'PAID') {
+            const amt = Number(tm.amount_paid_ars) || Number(cat.entry_fee_ars) || 0
+            tournamentsRevenue += amt
+          }
+        })
+      })
+    })
+
+    const tournamentsOccupancyRate = totalMaxCapacity > 0 ? Math.round((totalTeamsEnrolled / totalMaxCapacity) * 100) : 0
 
     // 3. Separar por períodos (actuales 30 días vs anteriores 30 días)
     const currentPeriodBookings = allBookings.filter(b => {
@@ -2853,7 +2900,7 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
       })
       .reduce((sum, b) => sum + ((b.deposit_cents || 0) / 100), 0)
 
-    const totalRevenue = courtsRevenue + cantinaRevenue
+    const totalRevenue = courtsRevenue + cantinaRevenue + tournamentsRevenue
 
     // 6. Matriz Heatmap de Ocupación (7 días x 9 horas)
     const heatmapCounts = Array.from({ length: 7 }, () => Array(9).fill(0))
@@ -2963,11 +3010,15 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
       totalRevenue,
       courtsRevenue,
       cantinaRevenue,
+      tournamentsRevenue,
       revenueGrowthPct,
       avgTicket,
       occupancyPrimePct,
       noShowsProtected,
       bookingsCount,
+      tournamentsCount: tournamentsList.length,
+      tournamentTeamsCount: totalTeamsEnrolled,
+      tournamentsOccupancyRate,
       courts: courtsBreakdown,
       occupancyHeatmap,
       topPlayers

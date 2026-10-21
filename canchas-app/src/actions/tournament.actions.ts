@@ -8,17 +8,22 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
+import { MercadoPagoConfig, Preference } from 'mercadopago'
+import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import type { 
   Tournament, 
   TournamentCategory, 
   TournamentTeam, 
-  TournamentMatch 
+  TournamentMatch,
+  TournamentWaitlistEntry,
+  ClubPlayerRanking
 } from '@/types/database'
 
 export interface TournamentWithDetails extends Tournament {
   categories: (TournamentCategory & {
     teams: TournamentTeam[]
     matches: TournamentMatch[]
+    waitlists?: TournamentWaitlistEntry[]
   })[]
 }
 
@@ -91,7 +96,7 @@ export async function getTournamentById(tournamentId: string): Promise<Tournamen
 
     const fullCategories = await Promise.all(
       (categories || []).map(async (cat) => {
-        const [{ data: teams }, { data: matches }] = await Promise.all([
+        const [{ data: teams }, { data: matches }, { data: waitlists }] = await Promise.all([
           supabase
             .from('tournament_teams')
             .select('*')
@@ -102,12 +107,19 @@ export async function getTournamentById(tournamentId: string): Promise<Tournamen
             .select('*')
             .eq('category_id', cat.id)
             .order('match_number', { ascending: true }),
+          supabase
+            .from('tournament_waitlists')
+            .select('*')
+            .eq('category_id', cat.id)
+            .in('status', ['WAITING', 'NOTIFIED'])
+            .order('created_at', { ascending: true }),
         ])
 
         return {
           ...cat,
           teams: (teams as TournamentTeam[]) || [],
           matches: (matches as TournamentMatch[]) || [],
+          waitlists: (waitlists as TournamentWaitlistEntry[]) || [],
         }
       })
     )
@@ -132,7 +144,7 @@ export async function createTournament(payload: {
   format: 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'
   start_date: string
   end_date: string
-  categories: { name: string; max_teams: number }[]
+  categories: { name: string; max_teams: number; entry_fee_ars?: number }[]
 }): Promise<{ success: boolean; tournament_id?: string; error?: string }> {
   try {
     const auth = await assertTenantMember(payload.tenant_id)
@@ -165,6 +177,7 @@ export async function createTournament(payload: {
         tournament_id: tournament.id,
         name: c.name,
         max_teams: c.max_teams || 8,
+        entry_fee_ars: Math.max(0, Number(c.entry_fee_ars) || 0),
       }))
 
       await supabase.from('tournament_categories').insert(catRows)
@@ -1230,6 +1243,49 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
 
     await supabase.from('tournament_teams').delete().eq('id', teamId)
 
+    // Notificación automática proactiva a la lista de espera si hay parejas esperando cupo
+    try {
+      const { data: nextWaitlist } = await supabase
+        .from('tournament_waitlists')
+        .select('*')
+        .eq('category_id', team.category_id)
+        .eq('status', 'WAITING')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (nextWaitlist) {
+        await supabase
+          .from('tournament_waitlists')
+          .update({
+            status: 'NOTIFIED',
+            notified_at: new Date().toISOString(),
+          })
+          .eq('id', nextWaitlist.id)
+
+        const { data: tourData } = await supabase
+          .from('tournaments')
+          .select('name, tenant:tenants(name)')
+          .eq('id', tournamentId)
+          .maybeSingle()
+
+        const tourName = tourData?.name || 'Torneo'
+        const tenantObj = tourData?.tenant as unknown as { name?: string } | null
+        const clubName = tenantObj?.name || 'CancharClub'
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
+        const claimLink = `${appUrl}/torneo/${tournamentId}`
+
+        const notifyMsg = `¡Hola ${nextWaitlist.player_1}! 🎾 Se liberó un cupo en el torneo *${tourName}* de *${clubName}*. Tienen prioridad exclusiva por estar en la lista de espera. Ingresen al siguiente link para confirmar su inscripción:\n${claimLink}`
+        if (nextWaitlist.phone) {
+          sendWhatsAppMessage(nextWaitlist.phone, notifyMsg).catch((e) =>
+            console.error('[deleteTeam Waitlist Alert WhatsApp Error]', e)
+          )
+        }
+      }
+    } catch (wlErr) {
+      console.warn('[deleteTeam] Error al notificar lista de espera:', wlErr)
+    }
+
     await invalidateTournamentCache(resourceTenantId, tournamentId)
     revalidatePath('/dashboard/torneos')
     if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
@@ -1297,5 +1353,472 @@ export async function getPublicTournaments(): Promise<TournamentWithDetails[]> {
     return []
   }
 }
+
+/**
+ * Generar link de cobro oficial por Mercado Pago para la inscripción de un equipo/pareja
+ */
+export async function createTournamentRegistrationPaymentPreference(teamId: string): Promise<{
+  success: boolean
+  init_point?: string
+  preference_id?: string
+  amount_ars?: number
+  error?: string
+}> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: team, error: teamErr } = await supabase
+      .from('tournament_teams')
+      .select('id, name, player_1, player_2, phone, payment_status, category_id, category:tournament_categories(id, name, entry_fee_ars, tournament_id, tournament:tournaments(id, name, tenant_id, tenant:tenants(id, name, mp_access_token)))')
+      .eq('id', teamId)
+      .maybeSingle()
+
+    if (teamErr || !team) {
+      return { success: false, error: 'Equipo o pareja no encontrada' }
+    }
+
+    if (team.payment_status === 'PAID') {
+      return { success: false, error: 'La inscripción de este equipo ya se encuentra abonada.' }
+    }
+
+    const catObj = team.category as unknown as {
+      id?: string
+      name?: string
+      entry_fee_ars?: number
+      tournament_id?: string
+      tournament?: {
+        id?: string
+        name?: string
+        tenant_id?: string
+        tenant?: { id?: string; name?: string; mp_access_token?: string }
+      }
+    } | null
+
+    const entryFee = Number(catObj?.entry_fee_ars) || 0
+    if (entryFee <= 0) {
+      return { success: false, error: 'Esta categoría no tiene un arancel de inscripción configurado.' }
+    }
+
+    const tenantObj = catObj?.tournament?.tenant
+    const mpToken = tenantObj?.mp_access_token || process.env.MP_ACCESS_TOKEN || ''
+    if (!mpToken || mpToken.length < 10) {
+      return { success: false, error: 'El club no tiene conectada su cuenta de cobro de Mercado Pago todavía.' }
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
+    const tourId = catObj?.tournament?.id || ''
+    const tourName = catObj?.tournament?.name || 'Torneo'
+    const catName = catObj?.name || 'Categoría'
+
+    const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+    const preferenceClient = new Preference(mpConfig)
+
+    const preference = await preferenceClient.create({
+      body: {
+        items: [
+          {
+            id: `tour-team-${team.id}`,
+            title: `Inscripción: ${tourName} (${catName})`,
+            description: `Equipo: ${team.name} — ${team.player_1}${team.player_2 ? ' y ' + team.player_2 : ''}`,
+            quantity: 1,
+            unit_price: entryFee,
+            currency_id: 'ARS',
+          },
+        ],
+        external_reference: `tournament_team_${team.id}`,
+        back_urls: {
+          success: `${appUrl}/torneo/${tourId}?payment=approved&team_id=${team.id}`,
+          failure: `${appUrl}/torneo/${tourId}?payment=failed&team_id=${team.id}`,
+          pending: `${appUrl}/torneo/${tourId}?payment=pending&team_id=${team.id}`,
+        },
+        auto_return: 'approved',
+        notification_url: `${appUrl}/api/webhooks/mercadopago?tenant_id=${encodeURIComponent(tenantObj?.id || '')}`,
+        statement_descriptor: 'TORNEO INSCRIP',
+      },
+    })
+
+    const initPoint = preference.init_point || preference.sandbox_init_point || undefined
+    return {
+      success: true,
+      init_point: initPoint,
+      preference_id: preference.id,
+      amount_ars: entryFee,
+    }
+  } catch (err) {
+    console.error('[createTournamentRegistrationPaymentPreference] Error:', err)
+    return { success: false, error: 'No se pudo generar la orden de cobro en Mercado Pago' }
+  }
+}
+
+/**
+ * Marcar estado de pago de una inscripción manualmente (Efectivo / Transferencia / Exento)
+ */
+export async function markTeamPaymentStatus(
+  teamId: string,
+  status: 'PAID' | 'PENDING' | 'EXEMPT',
+  amountPaidArs?: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: team } = await supabase
+      .from('tournament_teams')
+      .select('id, category_id, category:tournament_categories(tournament_id, entry_fee_ars, tournament:tournaments(tenant_id))')
+      .eq('id', teamId)
+      .maybeSingle()
+
+    if (!team) return { success: false, error: 'Equipo no encontrado' }
+
+    const catObj = team.category as unknown as {
+      tournament_id?: string
+      entry_fee_ars?: number
+      tournament?: { tenant_id?: string }
+    } | null
+
+    const resourceTenantId = catObj?.tournament?.tenant_id
+    const tournamentId = catObj?.tournament_id
+
+    if (resourceTenantId) {
+      const auth = await assertTenantMember(resourceTenantId)
+      if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+    }
+
+    const finalAmount = amountPaidArs !== undefined 
+      ? amountPaidArs 
+      : status === 'PAID' 
+      ? Number(catObj?.entry_fee_ars) || 0 
+      : 0
+
+    const { error: updateErr } = await supabase
+      .from('tournament_teams')
+      .update({
+        payment_status: status,
+        amount_paid_ars: finalAmount,
+      })
+      .eq('id', teamId)
+
+    if (updateErr) return { success: false, error: updateErr.message }
+
+    await invalidateTournamentCache(resourceTenantId, tournamentId)
+    revalidatePath('/dashboard/torneos')
+    if (tournamentId) revalidatePath(`/torneo/${tournamentId}`)
+    return { success: true }
+  } catch (err) {
+    console.error('[markTeamPaymentStatus] Error:', err)
+    return { success: false, error: 'Error al actualizar estado de pago' }
+  }
+}
+
+export type { ClubPlayerRanking } from '@/types/database'
+
+/**
+ * Inscribirse a la Lista de Espera de un Torneo cuando la categoría completó su cupo
+ */
+export async function joinTournamentWaitlist(payload: {
+  category_id: string
+  name: string
+  player_1: string
+  player_2?: string | null
+  phone: string
+}): Promise<{ success: boolean; entry?: TournamentWaitlistEntry; position?: number; error?: string }> {
+  try {
+    const cleanName = sanitizeText(payload.name, 60).trim()
+    const cleanP1 = sanitizeText(payload.player_1, 60).trim()
+    const cleanP2 = payload.player_2 ? sanitizeText(payload.player_2, 60).trim() : null
+    const cleanPhone = (payload.phone || '').replace(/[^\d+]/g, '').trim()
+
+    if (!cleanName || !cleanP1 || !cleanPhone) {
+      return { success: false, error: 'Completá todos los campos obligatorios para la lista de espera' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data: cat } = await supabase
+      .from('tournament_categories')
+      .select('id, tournament_id, tournament:tournaments(tenant_id)')
+      .eq('id', payload.category_id)
+      .maybeSingle()
+
+    if (!cat) return { success: false, error: 'Categoría no encontrada' }
+
+    const tenantObj = cat.tournament as unknown as { tenant_id?: string } | null
+    const tenantId = tenantObj?.tenant_id || null
+
+    const { data: waitlistEntry, error } = await supabase
+      .from('tournament_waitlists')
+      .insert({
+        category_id: payload.category_id,
+        tenant_id: tenantId,
+        name: cleanName,
+        player_1: cleanP1,
+        player_2: cleanP2,
+        phone: cleanPhone,
+        status: 'WAITING',
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.warn('[joinTournamentWaitlist] Error:', error.message)
+      return { success: false, error: 'No se pudo guardar la lista de espera' }
+    }
+
+    const { count: waitlistCount } = await supabase
+      .from('tournament_waitlists')
+      .select('id', { count: 'exact', head: true })
+      .eq('category_id', payload.category_id)
+      .eq('status', 'WAITING')
+
+    await invalidateTournamentCache(tenantId, cat.tournament_id)
+    revalidatePath(`/torneo/${cat.tournament_id}`)
+    revalidatePath('/dashboard/torneos')
+    return { success: true, entry: waitlistEntry as TournamentWaitlistEntry, position: waitlistCount || 1 }
+  } catch (err) {
+    console.error('[joinTournamentWaitlist] Error:', err)
+    return { success: false, error: 'Error al unirse a la lista de espera' }
+  }
+}
+
+/**
+ * Obtener lista de espera de una categoría
+ */
+export async function getTournamentWaitlists(categoryId: string): Promise<TournamentWaitlistEntry[]> {
+  try {
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('tournament_waitlists')
+      .select('*')
+      .eq('category_id', categoryId)
+      .order('created_at', { ascending: true })
+
+    if (error) return []
+    return (data as TournamentWaitlistEntry[]) || []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Promover una pareja/equipo de la Lista de Espera a Inscripto Oficial
+ */
+export async function promoteWaitlistEntryToTeam(waitlistId: string): Promise<{
+  success: boolean
+  team?: TournamentTeam
+  error?: string
+}> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: entry } = await supabase
+      .from('tournament_waitlists')
+      .select('*')
+      .eq('id', waitlistId)
+      .maybeSingle()
+
+    if (!entry) return { success: false, error: 'Registro de lista de espera no encontrado' }
+
+    // Inscribir oficialmente
+    const res = await addTeamToCategory({
+      category_id: entry.category_id,
+      name: entry.name,
+      player_1: entry.player_1,
+      player_2: entry.player_2 || undefined,
+      phone: entry.phone,
+    })
+
+    if (!res.success) {
+      return { success: false, error: res.error || 'No se pudo inscribir el equipo' }
+    }
+
+    // Actualizar estado de lista de espera a ENROLLED
+    await supabase
+      .from('tournament_waitlists')
+      .update({ status: 'ENROLLED' })
+      .eq('id', waitlistId)
+
+    // Notificar por WhatsApp
+    if (entry.phone) {
+      const msg = `¡Felicitaciones ${entry.player_1}! 🎾 Tu equipo "${entry.name}" fue promovido con éxito de la lista de espera y ya está inscripto oficialmente en el torneo. ¡Nos vemos en la cancha!`
+      sendWhatsAppMessage(entry.phone, msg).catch((err) =>
+        console.error('[promoteWaitlist WhatsApp Error]', err)
+      )
+    }
+
+    return { success: true, team: res.team }
+  } catch (err) {
+    console.error('[promoteWaitlistEntryToTeam] Error:', err)
+    return { success: false, error: 'Error al promover equipo' }
+  }
+}
+
+/**
+ * Obtener el Ranking Oficial de Jugadores del Club
+ * Computa puntos acumulados por torneos jugados, victorias en fases de grupos,
+ * llaves de playoffs, subcampeonatos y títulos obtenidos.
+ */
+export async function getClubTournamentRanking(
+  tenantId: string,
+  sport?: string
+): Promise<ClubPlayerRanking[]> {
+  try {
+    if (!tenantId) return []
+    const supabase = await createServiceClient()
+
+    // 1. Obtener torneos del club
+    let query = supabase
+      .from('tournaments')
+      .select('id, name, sport, categories:tournament_categories(id, name, matches:tournament_matches(id, round, match_number, team_a_id, team_b_id, winner_team_id, status), teams:tournament_teams(id, name, player_1, player_2, phone))')
+      .eq('tenant_id', tenantId)
+
+    if (sport) {
+      query = query.eq('sport', sport)
+    }
+
+    const { data: tournaments, error } = await query
+    if (error || !tournaments) {
+      console.warn('[getClubTournamentRanking] Error fetching tournaments:', error?.message)
+      return []
+    }
+
+    // Mapa de estadísticas por jugador (clave: nombre limpio en minúsculas)
+    interface PlayerStatAccumulator {
+      name: string
+      partner?: string | null
+      sport: string
+      points: number
+      tournaments_played: Set<string>
+      matches_won: number
+      matches_lost: number
+      titles_count: number
+    }
+
+    const playerStats = new Map<string, PlayerStatAccumulator>()
+
+    const registerPlayer = (name: string, defaultSport: string, partner?: string | null) => {
+      const clean = name.trim()
+      if (clean.length < 2) return null
+      const key = clean.toLowerCase()
+      if (!playerStats.has(key)) {
+        playerStats.set(key, {
+          name: clean,
+          partner: partner ? partner.trim() : null,
+          sport: defaultSport,
+          points: 0,
+          tournaments_played: new Set<string>(),
+          matches_won: 0,
+          matches_lost: 0,
+          titles_count: 0,
+        })
+      }
+      return playerStats.get(key)!
+    }
+
+    for (const tour of tournaments) {
+      const tourSport = tour.sport || 'PADEL'
+      const categories = (tour.categories as unknown as Array<{
+        teams?: TournamentTeam[]
+        matches?: TournamentMatch[]
+      }>) || []
+
+      for (const cat of categories) {
+        const teams = cat.teams || []
+        const matches = cat.matches || []
+
+        const teamMap = new Map<string, TournamentTeam>()
+        teams.forEach((t) => teamMap.set(t.id, t))
+
+        // Puntos base por participación en el torneo (+15 pts)
+        teams.forEach((t) => {
+          if (t.player_1) {
+            const p1 = registerPlayer(t.player_1, tourSport, t.player_2)
+            if (p1) {
+              p1.points += 15
+              p1.tournaments_played.add(tour.id)
+            }
+          }
+          if (t.player_2) {
+            const p2 = registerPlayer(t.player_2, tourSport, t.player_1)
+            if (p2) {
+              p2.points += 15
+              p2.tournaments_played.add(tour.id)
+            }
+          }
+        })
+
+        // Puntos por partidos disputados
+        for (const m of matches) {
+          if (m.status !== 'FINISHED' || !m.winner_team_id) continue
+
+          const winner = teamMap.get(m.winner_team_id)
+          const loserId = m.team_a_id === m.winner_team_id ? m.team_b_id : m.team_a_id
+          const loser = loserId ? teamMap.get(loserId) : null
+
+          // Ganador: +25 pts por victoria
+          if (winner) {
+            const players = [winner.player_1, winner.player_2].filter(Boolean) as string[]
+            players.forEach((pName) => {
+              const p = registerPlayer(pName, tourSport)
+              if (p) {
+                p.matches_won += 1
+                p.points += 25
+
+                // Bonificación adicional por ronda avanzada
+                if (m.round === 'FINAL') {
+                  p.points += 150 // Campeón: 25 victoria + 150 bonus = 175 pts
+                  p.titles_count += 1
+                } else if (m.round === 'SEMIFINAL') {
+                  p.points += 40
+                }
+              }
+            })
+          }
+
+          // Perdedor: suma partido perdido y puntos por subcampeonato / semis
+          if (loser) {
+            const players = [loser.player_1, loser.player_2].filter(Boolean) as string[]
+            players.forEach((pName) => {
+              const p = registerPlayer(pName, tourSport)
+              if (p) {
+                p.matches_lost += 1
+                if (m.round === 'FINAL') {
+                  p.points += 75 // Subcampeón
+                } else if (m.round === 'SEMIFINAL') {
+                  p.points += 20 // Semifinalista
+                }
+              }
+            })
+          }
+        }
+      }
+    }
+
+    // Convertir a lista ordenada
+    const list: ClubPlayerRanking[] = Array.from(playerStats.values())
+      .map((p) => {
+        const totalMatches = p.matches_won + p.matches_lost
+        const winRate = totalMatches > 0 ? Math.round((p.matches_won / totalMatches) * 100) : 0
+        return {
+          rank: 0,
+          name: p.name,
+          partner: p.partner,
+          sport: p.sport,
+          points: p.points,
+          tournaments_played: p.tournaments_played.size,
+          matches_won: p.matches_won,
+          matches_lost: p.matches_lost,
+          titles_count: p.titles_count,
+          win_rate_pct: winRate,
+        }
+      })
+      .sort((a, b) => b.points - a.points || b.titles_count - a.titles_count || b.matches_won - a.matches_won)
+
+    // Asignar posición de rank
+    list.forEach((item, idx) => {
+      item.rank = idx + 1
+    })
+
+    return list
+  } catch (err) {
+    console.error('[getClubTournamentRanking] Error:', err)
+    return []
+  }
+}
+
 
 

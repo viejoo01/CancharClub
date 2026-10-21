@@ -375,6 +375,7 @@ export interface TournamentCategory {
   tournament_id: string
   name: string
   max_teams: number
+  entry_fee_ars?: number
   teams?: TournamentTeam[]
   matches?: TournamentMatch[]
 }
@@ -386,7 +387,36 @@ export interface TournamentTeam {
   player_1: string
   player_2?: string | null
   phone: string
+  payment_status?: 'PENDING' | 'PAID' | 'EXEMPT'
+  mp_payment_id?: string | null
+  amount_paid_ars?: number
   created_at: string
+}
+
+export interface TournamentWaitlistEntry {
+  id: string
+  category_id: string
+  tenant_id?: string | null
+  name: string
+  player_1: string
+  player_2?: string | null
+  phone: string
+  status: 'WAITING' | 'NOTIFIED' | 'ENROLLED' | 'CANCELLED'
+  created_at: string
+  notified_at?: string | null
+}
+
+export interface ClubPlayerRanking {
+  rank: number
+  name: string
+  partner?: string | null
+  sport: string
+  points: number
+  tournaments_played: number
+  matches_won: number
+  matches_lost: number
+  titles_count: number
+  win_rate_pct: number
 }
 
 export interface TournamentMatch {

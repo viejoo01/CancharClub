@@ -87,7 +87,11 @@ export default function MetricasPage() {
   const totalRevenue = analytics?.totalRevenue || 0
   const courtsRevenue = analytics?.courtsRevenue || 0
   const cantinaRevenue = analytics?.cantinaRevenue || 0
+  const tournamentsRevenue = analytics?.tournamentsRevenue || 0
   const totalBookings = analytics?.bookingsCount || 0
+  const tournamentsCount = analytics?.tournamentsCount || 0
+  const tournamentTeamsCount = analytics?.tournamentTeamsCount || 0
+  const tournamentsOccupancyRate = analytics?.tournamentsOccupancyRate || 0
   const avgTicket = analytics?.avgTicket || 0
   const primeOccupancy = analytics?.occupancyPrimePct || 0
   const noShowsProtected = analytics?.noShowsProtected || 0
@@ -95,6 +99,7 @@ export default function MetricasPage() {
 
   const courtsSharePct = totalRevenue > 0 ? Math.round((courtsRevenue / totalRevenue) * 100) : 100
   const cantinaSharePct = totalRevenue > 0 ? Math.round((cantinaRevenue / totalRevenue) * 100) : 0
+  const tournamentsSharePct = totalRevenue > 0 ? Math.round((tournamentsRevenue / totalRevenue) * 100) : 0
 
   if (loading && !analytics) {
     return (
@@ -131,7 +136,7 @@ export default function MetricasPage() {
       </div>
 
       {/* KPI Cards de Rendimiento Superior */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Facturación Total */}
         <Card className="bg-slate-900/60 border-slate-800 p-4 rounded-2xl relative overflow-hidden">
           <div className="text-slate-400 text-xs font-medium flex items-center justify-between">
@@ -184,7 +189,21 @@ export default function MetricasPage() {
           </div>
         </Card>
 
-        {/* Card 4: Protección Señas */}
+        {/* Card 4: Recaudación Torneos */}
+        <Card className="bg-slate-900/60 border-slate-800 p-4 rounded-2xl relative overflow-hidden">
+          <div className="text-slate-400 text-xs font-medium flex items-center justify-between">
+            <span>Inscripciones Torneos</span>
+            <Trophy className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="text-2xl font-extrabold text-white mt-1 font-mono">
+            {formatARS(tournamentsRevenue)}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            {tournamentTeamsCount} inscriptos en {tournamentsCount} {tournamentsCount === 1 ? 'torneo' : 'torneos'} ({tournamentsOccupancyRate}% cupo)
+          </div>
+        </Card>
+
+        {/* Card 5: Protección Señas */}
         <Card className="bg-slate-900/60 border-slate-800 p-4 rounded-2xl relative overflow-hidden">
           <div className="text-slate-400 text-xs font-medium flex items-center justify-between">
             <span>Protección Señas (No-Shows)</span>
@@ -329,22 +348,22 @@ export default function MetricasPage() {
           </div>
         </Card>
 
-        {/* Desglose Cancha vs Cantina */}
+        {/* Desglose Cancha vs Cantina vs Torneos */}
         <Card className="bg-slate-900/80 border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between">
           <CardHeader className="p-0 pb-4 border-b border-slate-800">
             <CardTitle className="text-base text-white flex items-center gap-2">
-              <Coffee className="w-4 h-4 text-teal-400" />
-              <span>Fuentes de Ingresos: Canchas vs Cantina</span>
+              <Layers className="w-4 h-4 text-teal-400" />
+              <span>Fuentes de Ingresos: Canchas, Cantina y Torneos</span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Comparativa de ingresos por alquiler de canchas y ventas de cantina
+              Distribución de ingresos por turnos, ventas de cantina e inscripciones de torneos
             </CardDescription>
           </CardHeader>
 
-          <div className="py-6 space-y-4">
-            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
+          <div className="py-6 space-y-3">
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-sm">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-xs">
                   {courtsSharePct}%
                 </div>
                 <div>
@@ -352,14 +371,14 @@ export default function MetricasPage() {
                   <div className="text-[11px] text-slate-400">Cobro de reservas y señas</div>
                 </div>
               </div>
-              <div className="font-extrabold text-sm text-emerald-400 font-mono">
+              <div className="font-extrabold text-xs text-emerald-400 font-mono">
                 {formatARS(courtsRevenue)}
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-black text-sm">
+                <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-black text-xs">
                   {cantinaSharePct}%
                 </div>
                 <div>
@@ -367,8 +386,23 @@ export default function MetricasPage() {
                   <div className="text-[11px] text-slate-400">Ventas en mostrador y pedidos QR</div>
                 </div>
               </div>
-              <div className="font-extrabold text-sm text-teal-400 font-mono">
+              <div className="font-extrabold text-xs text-teal-400 font-mono">
                 {formatARS(cantinaRevenue)}
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-xs">
+                  {tournamentsSharePct}%
+                </div>
+                <div>
+                  <div className="font-bold text-xs text-white">Torneos y Competencias</div>
+                  <div className="text-[11px] text-slate-400">Aranceles de inscripción online y presencial</div>
+                </div>
+              </div>
+              <div className="font-extrabold text-xs text-amber-400 font-mono">
+                {formatARS(tournamentsRevenue)}
               </div>
             </div>
           </div>

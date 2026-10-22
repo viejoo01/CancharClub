@@ -9,7 +9,6 @@ import {
   Clock, 
   CheckCircle2, 
   ArrowRight, 
-  X,
   CreditCard,
   ShieldAlert
 } from 'lucide-react'
@@ -188,27 +187,18 @@ export function PlanExpirationAlert({
         <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Encabezado con Icono y Badge */}
-        <div className="flex items-start justify-between gap-3 relative">
-          <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${iconBgClass}`}>
-              <IconComponent className="w-6 h-6" />
-            </div>
-            <div>
-              <Badge className={`${badgeClass} text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5`}>
-                {badgeText}
-              </Badge>
-              <h3 id="plan-alert-title" className="text-lg sm:text-xl font-extrabold text-white mt-1.5 leading-snug tracking-tight">
-                {titleText}
-              </h3>
-            </div>
+        <div className="flex items-center gap-3 relative">
+          <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${iconBgClass}`}>
+            <IconComponent className="w-6 h-6" />
           </div>
-          <button
-            onClick={handleDismiss}
-            className="p-1.5 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
-            title="Cerrar aviso"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div>
+            <Badge className={`${badgeClass} text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5`}>
+              {badgeText}
+            </Badge>
+            <h3 id="plan-alert-title" className="text-lg sm:text-xl font-extrabold text-white mt-1.5 leading-snug tracking-tight">
+              {titleText}
+            </h3>
+          </div>
         </div>
 
         {/* Detalle descriptivo */}

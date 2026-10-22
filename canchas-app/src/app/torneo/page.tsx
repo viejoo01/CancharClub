@@ -62,7 +62,7 @@ export default function PublicTournamentsDirectoryPage() {
       </header>
 
       {/* Hero */}
-      <div className="bg-gradient-to-b from-slate-900 via-slate-900/50 to-slate-950 border-b border-slate-800/80 px-4 py-12 text-center">
+      <div className="bg-linear-to-b from-slate-900 via-slate-900/50 to-slate-950 border-b border-slate-800/80 px-4 py-12 text-center">
         <div className="max-w-3xl mx-auto space-y-4">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
             <Trophy className="w-3.5 h-3.5 text-amber-400" />
@@ -194,7 +194,7 @@ export default function PublicTournamentsDirectoryPage() {
                       </div>
                       <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-emerald-500 to-amber-400 rounded-full transition-all"
+                          className="h-full bg-linear-to-r from-emerald-500 to-amber-400 rounded-full transition-all"
                           style={{ width: `${Math.min(100, Math.round((totalTeams / (totalSlots || 1)) * 100))}%` }}
                         />
                       </div>

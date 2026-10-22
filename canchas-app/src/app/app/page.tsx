@@ -120,7 +120,7 @@ function AppDispatcherContent() {
     return (
       <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-white">
         <div className="flex flex-col items-center space-y-4 text-center animate-in fade-in duration-300">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-2xl shadow-emerald-950/60 animate-pulse">
+          <div className="w-16 h-16 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-2xl shadow-emerald-950/60 animate-pulse">
             <CancharClubIcon className="w-10 h-10 text-white" />
           </div>
           <div>
@@ -167,7 +167,7 @@ function AppDispatcherContent() {
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedRole('player') }}
           className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden text-left ${
             selectedRole === 'player'
-              ? 'bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-500/80 shadow-xl shadow-emerald-950/40 ring-1 ring-emerald-500/50'
+              ? 'bg-linear-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-500/80 shadow-xl shadow-emerald-950/40 ring-1 ring-emerald-500/50'
               : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
           }`}
         >
@@ -175,7 +175,7 @@ function AppDispatcherContent() {
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform ${
                 selectedRole === 'player'
-                  ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-lg shadow-emerald-950/50 scale-105'
+                  ? 'bg-linear-to-tr from-emerald-600 to-teal-500 text-white shadow-lg shadow-emerald-950/50 scale-105'
                   : 'bg-slate-800 text-slate-400'
               }`}>
                 <Trophy className="w-6 h-6" />
@@ -221,7 +221,7 @@ function AppDispatcherContent() {
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedRole('club') }}
           className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden text-left ${
             selectedRole === 'club'
-              ? 'bg-gradient-to-br from-teal-950/40 via-slate-900 to-slate-900 border-teal-500/80 shadow-xl shadow-teal-950/40 ring-1 ring-teal-500/50'
+              ? 'bg-linear-to-br from-teal-950/40 via-slate-900 to-slate-900 border-teal-500/80 shadow-xl shadow-teal-950/40 ring-1 ring-teal-500/50'
               : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
           }`}
         >
@@ -229,7 +229,7 @@ function AppDispatcherContent() {
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform ${
                 selectedRole === 'club'
-                  ? 'bg-gradient-to-tr from-teal-600 to-sky-500 text-white shadow-lg shadow-teal-950/50 scale-105'
+                  ? 'bg-linear-to-tr from-teal-600 to-sky-500 text-white shadow-lg shadow-teal-950/50 scale-105'
                   : 'bg-slate-800 text-slate-400'
               }`}>
                 <Building2 className="w-6 h-6" />
@@ -283,7 +283,7 @@ function AppDispatcherContent() {
       <footer className="relative z-10 max-w-xl mx-auto w-full pt-2 pb-4 space-y-3">
         <Button
           onClick={() => handleApplyRole(selectedRole)}
-          className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm rounded-xl shadow-xl shadow-emerald-950/50 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+          className="w-full h-12 bg-linear-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm rounded-xl shadow-xl shadow-emerald-950/50 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
         >
           <span>
             {selectedRole === 'player' ? 'Ingresar como Jugador' : 'Ingresar a mi Club'}

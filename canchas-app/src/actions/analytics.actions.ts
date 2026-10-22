@@ -512,25 +512,17 @@ export async function getDailyCashReport(
       const isAbono = pData?.type === 'RECURRING_SLOT_PAYMENT' || pData?.type === 'ABONO_FIJO_PAYMENT'
       // Evitar duplicación si el cobro ya fue procesado mediante booking_payments
       const isAlreadyInEntries = entries.some(e => {
-        if (isAbono && e.court_name.includes('Abono')) {
-          const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
-          const eNameLower = (e.customer_name || '').toLowerCase().trim()
-          if (cNameLower && eNameLower && (eNameLower.includes(cNameLower) || cNameLower.includes(eNameLower))) return true
-          if (e.amount_ars === amt) {
-            const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
-            if (timeDiff < 300000) return true
-          }
-          return false
-        }
-        if (!isAbono && e.court_name.includes('Cuenta Corriente')) {
-          const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
-          const eNameLower = (e.customer_name || '').toLowerCase().trim()
-          if (cNameLower && eNameLower && (eNameLower.includes(cNameLower) || cNameLower.includes(eNameLower))) return true
-          if (e.amount_ars === amt) {
-            const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
-            if (timeDiff < 300000) return true
-          }
-          return false
+        const isTargetAbono = isAbono && e.court_name.includes('Abono')
+        const isTargetCtaCte = !isAbono && e.court_name.includes('Cuenta Corriente')
+        if (!isTargetAbono && !isTargetCtaCte) return false
+
+        const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
+        const eNameLower = (e.customer_name || '').toLowerCase().trim()
+
+        // 1. Coincidencia estricta: Mismo cliente exacto Y mismo monto (tolerancia < $1)
+        if (cNameLower && eNameLower && cNameLower === eNameLower && Math.abs(e.amount_ars - amt) < 1) {
+          const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
+          if (timeDiff < 600000) return true
         }
         return false
       })

@@ -1831,6 +1831,46 @@ export interface PublicBookingReceipt {
   isAbono?: boolean
 }
 
+interface PublicReceiptBookingRecord {
+  id: string
+  court_id?: string
+  customer_name?: string | null
+  customer_phone?: string | null
+  customer_email?: string | null
+  booked_at?: string | null
+  status?: string | null
+  price_total_cents?: number | null
+  deposit_cents?: number | null
+  payment_method?: string | null
+  staff_notes?: string | null
+  recurring_slot_id?: string | null
+  created_at?: string | null
+  courts?: { id?: string; name?: string | null; sport?: string | null } | { id?: string; name?: string | null; sport?: string | null }[] | null
+  tenants?: {
+    id?: string
+    name?: string | null
+    address?: string | null
+    city?: string | null
+    province?: string | null
+    phone_whatsapp?: string | null
+    slug?: string | null
+    bank_alias?: string | null
+    bank_name?: string | null
+    google_maps_url?: string | null
+  } | {
+    id?: string
+    name?: string | null
+    address?: string | null
+    city?: string | null
+    province?: string | null
+    phone_whatsapp?: string | null
+    slug?: string | null
+    bank_alias?: string | null
+    bank_name?: string | null
+    google_maps_url?: string | null
+  }[] | null
+}
+
 export async function getBookingPublicReceipt(bookingId: string): Promise<{ success: boolean; data?: PublicBookingReceipt; error?: string }> {
   try {
     const cleanId = (bookingId || '').trim()
@@ -1839,10 +1879,7 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
     const supabase = await createServiceClient()
 
     // 1. Consultar en base de datos Postgres
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let dbQuery: any = supabase
-      .from('bookings')
-      .select(`
+    const selectFields = `
         id,
         court_id,
         customer_name,
@@ -1873,23 +1910,17 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           bank_name,
           google_maps_url
         )
-      `)
+      `
 
-    if (isValidUuid(cleanId)) {
-      dbQuery = dbQuery.eq('id', cleanId)
-    } else {
-      dbQuery = dbQuery.ilike('id', `%${cleanId}%`)
-    }
-
-    const { data: records, error } = await dbQuery.limit(1).maybeSingle()
+    const queryBuilder = supabase.from('bookings').select(selectFields)
+    const { data: records, error } = isValidUuid(cleanId)
+      ? await queryBuilder.eq('id', cleanId).limit(1).maybeSingle()
+      : await queryBuilder.ilike('id', `%${cleanId}%`).limit(1).maybeSingle()
 
     if (!error && records) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b = records as Record<string, any>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tenant = (Array.isArray(b.tenants) ? b.tenants[0] : b.tenants) as Record<string, any> | null
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) as Record<string, any> | null
+      const b = records as unknown as PublicReceiptBookingRecord
+      const tenant = (Array.isArray(b.tenants) ? b.tenants[0] : b.tenants) || null
+      const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) || null
 
       const isAbono = isAbonoBooking({
         recurring_slot_id: b.recurring_slot_id,

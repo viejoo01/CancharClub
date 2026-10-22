@@ -471,7 +471,7 @@ export default function WhatsAppBotPage() {
 
       {/* ─── RECORDATORIOS PREVENTIVOS DE TURNOS DE HOY ─── */}
       <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-teal-500 to-emerald-400" />
+        <div className="h-1 bg-linear-to-r from-teal-500 to-emerald-400" />
         <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 gap-2">
           <div>
             <CardTitle className="text-base text-white flex items-center gap-2">

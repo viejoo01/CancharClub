@@ -1058,7 +1058,7 @@ export default function TorneosDashboardPage() {
                 {/* Vista Fase de Grupos (si existen) */}
                 {hasGroupMatches && (
                   <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-emerald-950/30 via-slate-900/60 to-slate-900/80 p-3.5 rounded-2xl border border-emerald-500/20">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-linear-to-r from-emerald-950/30 via-slate-900/60 to-slate-900/80 p-3.5 rounded-2xl border border-emerald-500/20">
                       <div>
                         <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
                           <Users className="w-4 h-4 text-emerald-400" />
@@ -1262,7 +1262,7 @@ export default function TorneosDashboardPage() {
                     <div className="flex flex-col lg:flex-row gap-4 overflow-x-auto pb-4 items-start min-w-0">
                       {/* Columna Dieciseisavos de Final (solo si existen 16avos) */}
                       {dieciseisavosMatches.length > 0 && (
-                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                        <div className="space-y-3 w-full lg:min-w-65 lg:max-w-[320px] lg:flex-1">
                           <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                             <span>16avos de Final</span>
                             <Badge variant="secondary" className="text-[10px] h-4">{dieciseisavosMatches.length} Llaves</Badge>
@@ -1323,7 +1323,7 @@ export default function TorneosDashboardPage() {
 
                       {/* Columna Octavos de Final (solo si existen octavos) */}
                       {octavosMatches.length > 0 && (
-                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                        <div className="space-y-3 w-full lg:min-w-65 lg:max-w-[320px] lg:flex-1">
                           <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                             <span>Octavos de Final</span>
                             <Badge variant="secondary" className="text-[10px] h-4">{octavosMatches.length} Llaves</Badge>
@@ -1384,7 +1384,7 @@ export default function TorneosDashboardPage() {
 
                       {/* Columna Cuartos de Final (solo si existen cuartos) */}
                       {cuartosMatches.length > 0 && (
-                        <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                        <div className="space-y-3 w-full lg:min-w-65 lg:max-w-[320px] lg:flex-1">
                           <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                             <span>Cuartos de Final</span>
                             <Badge variant="secondary" className="text-[10px] h-4">{cuartosMatches.length} Llaves</Badge>
@@ -1444,7 +1444,7 @@ export default function TorneosDashboardPage() {
                       )}
 
                       {/* Columna Semifinales */}
-                      <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
+                      <div className="space-y-3 w-full lg:min-w-65 lg:max-w-[320px] lg:flex-1">
                         <div className="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-slate-300 text-center flex items-center justify-center gap-1.5">
                           <span>Semifinales</span>
                           <Badge variant="secondary" className="text-[10px] h-4">{semisMatches.length} Llaves</Badge>
@@ -1503,8 +1503,8 @@ export default function TorneosDashboardPage() {
                       </div>
 
                       {/* Columna Gran Final */}
-                      <div className="space-y-3 w-full lg:min-w-[260px] lg:max-w-[320px] lg:flex-1">
-                        <div className="bg-gradient-to-r from-amber-950/60 to-yellow-950/60 border border-amber-500/40 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-amber-300 text-center flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/30">
+                      <div className="space-y-3 w-full lg:min-w-65 lg:max-w-[320px] lg:flex-1">
+                        <div className="bg-linear-to-r from-amber-950/60 to-yellow-950/60 border border-amber-500/40 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider text-amber-300 text-center flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/30">
                           <Trophy className="w-3.5 h-3.5 text-amber-400" />
                           <span>Gran Final</span>
                         </div>
@@ -1518,7 +1518,7 @@ export default function TorneosDashboardPage() {
                           return (
                             <Card
                               key={m.id}
-                              className="border-amber-500/40 bg-gradient-to-b from-slate-900 to-amber-950/20 shadow-lg shadow-amber-950/20"
+                              className="border-amber-500/40 bg-linear-to-b from-slate-900 to-amber-950/20 shadow-lg shadow-amber-950/20"
                             >
                               <CardContent className="p-3.5 space-y-3">
                                 <div className="flex items-center justify-between text-[11px] text-amber-300/80 border-b border-amber-500/20 pb-2">

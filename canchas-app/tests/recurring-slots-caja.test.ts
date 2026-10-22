@@ -185,15 +185,15 @@ describe('Abonados Fijos (Recurring Slots) & Cash Register Isolation', () => {
     const amt = pData.amount_ars
 
     const isAlreadyInEntries = entries.some(e => {
-      if (isAbono && e.court_name.includes('Abono')) {
-        const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
-        const eNameLower = (e.customer_name || '').toLowerCase().trim()
-        if (cNameLower && eNameLower && (eNameLower.includes(cNameLower) || cNameLower.includes(eNameLower))) return true
-        if (e.amount_ars === amt) {
-          const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || '').getTime())
-          if (timeDiff < 300000) return true
-        }
-        return false
+      const isTargetAbono = isAbono && e.court_name.includes('Abono')
+      if (!isTargetAbono) return false
+
+      const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
+      const eNameLower = (e.customer_name || '').toLowerCase().trim()
+
+      if (cNameLower && eNameLower && cNameLower === eNameLower && Math.abs(e.amount_ars - amt) < 1) {
+        const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || '').getTime())
+        if (timeDiff < 600000) return true
       }
       return false
     })

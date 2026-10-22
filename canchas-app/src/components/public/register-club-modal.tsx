@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Building2,
@@ -62,6 +62,7 @@ export function RegisterClubModal({
   const router = useRouter()
   const [selectedPlanOverride, setSelectedPlanOverride] = useState<SaaSPlanId | null>(null)
   const [prevSelectedPlanId, setPrevSelectedPlanId] = useState<SaaSPlanId>(selectedPlanId)
+  const [prevBillingFrequency, setPrevBillingFrequency] = useState<'MONTHLY' | 'ANNUAL'>(billingFrequency)
   const [internalBillingFrequency, setInternalBillingFrequency] = useState<'MONTHLY' | 'ANNUAL'>(billingFrequency)
 
   if (selectedPlanId !== prevSelectedPlanId) {
@@ -69,9 +70,10 @@ export function RegisterClubModal({
     setSelectedPlanOverride(null)
   }
 
-  useEffect(() => {
+  if (billingFrequency !== prevBillingFrequency) {
+    setPrevBillingFrequency(billingFrequency)
     setInternalBillingFrequency(billingFrequency)
-  }, [billingFrequency])
+  }
 
   const currentPlanId = selectedPlanOverride || selectedPlanId
   const [clubName, setClubName] = useState('')
@@ -422,7 +424,7 @@ export function RegisterClubModal({
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 mt-4"
+              className="w-full h-12 rounded-xl bg-linear-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 mt-4"
             >
               {isLoading ? (
                 <>

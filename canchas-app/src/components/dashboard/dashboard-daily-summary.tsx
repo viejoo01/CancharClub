@@ -9,7 +9,9 @@ import {
   AlertCircle, 
   ArrowUpRight,
   Sparkles,
-  CreditCard
+  CreditCard,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -148,12 +150,14 @@ export function DashboardDailySummary({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
-            <span className="text-emerald-400 font-medium">
-              ✓ {stats.confirmedCount} confirmadas
+            <span className="text-emerald-400 font-medium flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {stats.confirmedCount} confirmadas
             </span>
             {stats.pendingCount > 0 ? (
-              <span className="text-amber-400 font-medium">
-                ⏳ {stats.pendingCount} pendientes
+              <span className="text-amber-400 font-medium flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                {stats.pendingCount} pendientes
               </span>
             ) : (
               <span className="text-slate-500">0 pendientes</span>

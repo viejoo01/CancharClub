@@ -583,7 +583,7 @@ export default function PublicTournamentPage({
           <div className="flex flex-col lg:flex-row gap-6 overflow-x-auto pb-4 items-start min-w-0">
             {/* Columna Dieciseisavos */}
             {dieciseisavos.length > 0 && (
-              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+              <div className="space-y-4 w-full lg:min-w-65 lg:flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                   16avos de Final
                 </p>
@@ -597,7 +597,7 @@ export default function PublicTournamentPage({
 
             {/* Columna Octavos */}
             {octavos.length > 0 && (
-              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+              <div className="space-y-4 w-full lg:min-w-65 lg:flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                   Octavos de Final
                 </p>
@@ -611,7 +611,7 @@ export default function PublicTournamentPage({
 
             {/* Columna Cuartos */}
             {cuartos.length > 0 && (
-              <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+              <div className="space-y-4 w-full lg:min-w-65 lg:flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                   Cuartos de Final
                 </p>
@@ -624,7 +624,7 @@ export default function PublicTournamentPage({
             )}
 
             {/* Columna Semifinales */}
-            <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+            <div className="space-y-4 w-full lg:min-w-65 lg:flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">
                 Semifinales
               </p>
@@ -636,13 +636,13 @@ export default function PublicTournamentPage({
             </div>
 
             {/* Columna Gran Final */}
-            <div className="space-y-4 w-full lg:min-w-[260px] lg:flex-1">
+            <div className="space-y-4 w-full lg:min-w-65 lg:flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-400 text-center flex items-center justify-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                 Gran Final
               </p>
               {finalMatch ? (
-                <div className="p-1 rounded-2xl bg-gradient-to-r from-amber-500/30 via-emerald-500/30 to-amber-500/30 shadow-xl">
+                <div className="p-1 rounded-2xl bg-linear-to-r from-amber-500/30 via-emerald-500/30 to-amber-500/30 shadow-xl">
                   <MatchCard match={finalMatch} teamsMap={teamsMap} isFinal />
                 </div>
               ) : (

@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
-import { formatARS, isAbonoBooking } from '@/lib/utils'
+import { formatARS, isAbonoBooking, getArgentinaTodayIso } from '@/lib/utils'
 
 export interface WhatsAppBotConfig {
   tenant_id: string
@@ -524,27 +524,28 @@ export async function getTodayTurnosForReminders(tenantId: string): Promise<Arra
 }>> {
   try {
     const supabase = await createServiceClient()
-    const today = new Date().toISOString().split('T')[0]
+    const todayArg = getArgentinaTodayIso()
+    const startOfDay = new Date(`${todayArg}T00:00:00-03:00`).toISOString()
+    const endOfDay = new Date(`${todayArg}T23:59:59.999-03:00`).toISOString()
 
     const { data: bookings } = await supabase
       .from('bookings')
       .select('id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, recurring_slot_id, courts(name)')
       .eq('tenant_id', tenantId)
-      .neq('status', 'CANCELLED_USER')
-      .neq('status', 'CANCELLED_CLUB')
-      .neq('status', 'RAIN_CANCELLED')
-      .order('created_at', { ascending: false })
-      .limit(20)
+      .filter('booked_at', 'ov', `[${startOfDay},${endOfDay}]`)
+      .not('status', 'ilike', '%cancel%')
+      .order('booked_at', { ascending: true })
 
     if (!bookings || bookings.length === 0) return []
 
-    // Obtener logs de recordatorios ya enviados hoy
+    // Obtener logs de recordatorios ya enviados hoy en horario local de Argentina
     const { data: todayLogs } = await supabase
       .from('audit_log')
       .select('new_data')
       .eq('tenant_id', tenantId)
       .eq('action', 'WHATSAPP_MESSAGE_SENT')
-      .gte('created_at', `${today}T00:00:00Z`)
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay)
 
     const remindedPhones = new Set<string>()
     if (todayLogs) {

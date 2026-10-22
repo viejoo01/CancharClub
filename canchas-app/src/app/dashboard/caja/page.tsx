@@ -359,7 +359,9 @@ export default function CajaPage() {
                       {e.payment_type === 'BALANCE' && (
                         <>
                           <span>•</span>
-                          <span className="text-amber-400/80">Saldo restante</span>
+                          <span className={e.court_name.includes('Abono') ? "text-purple-400 font-semibold" : e.court_name.includes('Cuenta Corriente') ? "text-cyan-400 font-semibold" : "text-amber-400/80"}>
+                            {e.court_name.includes('Abono') ? 'Abono mensual' : e.court_name.includes('Cuenta Corriente') ? 'Cobro Cta Cte' : 'Saldo restante'}
+                          </span>
                         </>
                       )}
                       {e.payment_type === 'DEPOSIT' && (

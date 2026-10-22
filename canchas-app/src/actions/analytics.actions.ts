@@ -247,7 +247,10 @@ export async function getDailyCashReport(
     const isAbonoTurn = Boolean(
       row.recurring_slot_id ||
       row.payment_method === 'abono_fijo' ||
-      (row.staff_notes && row.staff_notes.toUpperCase().includes('ABONO FIJO'))
+      (row.staff_notes && (
+        row.staff_notes.toUpperCase().includes('ABONO') ||
+        row.staff_notes.toUpperCase().includes('TURNO FIJO')
+      ))
     )
     if (isAbonoTurn) {
       continue
@@ -516,10 +519,29 @@ export async function getDailyCashReport(
 
       const isAbono = pData?.type === 'RECURRING_SLOT_PAYMENT' || pData?.type === 'ABONO_FIJO_PAYMENT'
       // Evitar duplicación si el cobro ya fue procesado mediante booking_payments
-      const isAlreadyInEntries = entries.some(e =>
-        (e.court_name.includes('Abono') || e.court_name.includes('Cuenta Corriente')) &&
-        e.amount_ars === amt
-      )
+      const isAlreadyInEntries = entries.some(e => {
+        if (isAbono && e.court_name.includes('Abono')) {
+          const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
+          const eNameLower = (e.customer_name || '').toLowerCase().trim()
+          if (cNameLower && eNameLower && (eNameLower.includes(cNameLower) || cNameLower.includes(eNameLower))) return true
+          if (e.amount_ars === amt) {
+            const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
+            if (timeDiff < 300000) return true
+          }
+          return false
+        }
+        if (!isAbono && e.court_name.includes('Cuenta Corriente')) {
+          const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
+          const eNameLower = (e.customer_name || '').toLowerCase().trim()
+          if (cNameLower && eNameLower && (eNameLower.includes(cNameLower) || cNameLower.includes(eNameLower))) return true
+          if (e.amount_ars === amt) {
+            const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
+            if (timeDiff < 300000) return true
+          }
+          return false
+        }
+        return false
+      })
       if (isAlreadyInEntries) continue
 
       const pMethod = String(pData?.payment_method || '').toUpperCase()

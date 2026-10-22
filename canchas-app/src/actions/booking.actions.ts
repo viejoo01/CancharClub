@@ -1003,7 +1003,7 @@ export async function registerCashPayment(params: {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status, paid_at, customer_name, customer_phone')
+      .select('id, tenant_id, price_total_cents, deposit_cents, payment_method, staff_notes, status, paid_at, customer_name, customer_phone, recurring_slot_id')
       .eq('id', params.booking_id)
       .single()
 
@@ -1012,6 +1012,23 @@ export async function registerCashPayment(params: {
     const authCheck = await assertTenantMember(booking.tenant_id)
     if (!authCheck.authorized) {
       return { success: false, error: authCheck.error || 'Sin permisos para registrar cobros en este club' }
+    }
+
+    // BLINDAJE ANTIFRAUDE: Si el turno pertenece a un abonado fijo (mensualidad recurrente),
+    // prohibir el cobro individual de cancha para evitar duplicar ingresos en la caja diaria.
+    const isAbonoTurn = Boolean(
+      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
+      booking.payment_method === 'abono_fijo' ||
+      (booking.staff_notes && (
+        booking.staff_notes.toUpperCase().includes('ABONO') ||
+        booking.staff_notes.toUpperCase().includes('TURNO FIJO')
+      ))
+    )
+    if (isAbonoTurn) {
+      return {
+        success: false,
+        error: 'Este turno corresponde a un Abonado Fijo cubierto por mensualidad. El cobro del abono se realiza de forma única desde la sección Turnos Fijos para evitar duplicar ingresos en caja.',
+      }
     }
 
     const amountCents = Math.round(params.amount_ars * 100)
@@ -1351,11 +1368,20 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status, customer_name, customer_phone')
+      .select('id, tenant_id, price_total_cents, deposit_cents, staff_notes, status, customer_name, customer_phone, recurring_slot_id')
       .eq('id', bookingId)
       .single()
 
     if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
+
+    const isAbonoTurn = Boolean(
+      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
+      /\[(ABONO|TURNO FIJO)\]/i.test(booking.staff_notes || '') ||
+      (booking.staff_notes || '').toUpperCase().includes('ABONO')
+    )
+    if (isAbonoTurn) {
+      return { success: false, error: 'Este turno pertenece a un abono fijo mensual y no requiere validación de seña individual.' }
+    }
 
     const authCheck = await assertTenantMember(booking.tenant_id)
     if (!authCheck.authorized) {
@@ -1805,6 +1831,7 @@ export interface PublicBookingReceipt {
   paymentMethod: string
   bankAlias?: string
   status: string
+  isAbono?: boolean
 }
 
 export async function getBookingPublicReceipt(bookingId: string): Promise<{ success: boolean; data?: PublicBookingReceipt; error?: string }> {
@@ -1829,6 +1856,8 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
         price_total_cents,
         deposit_cents,
         payment_method,
+        staff_notes,
+        recurring_slot_id,
         created_at,
         courts (
           id,
@@ -1865,8 +1894,17 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) as Record<string, any> | null
 
+      const isAbono = Boolean(
+        b.recurring_slot_id ||
+        b.payment_method === 'abono_fijo' ||
+        (b.staff_notes && (
+          String(b.staff_notes).toUpperCase().includes('ABONO') ||
+          String(b.staff_notes).toUpperCase().includes('TURNO FIJO')
+        ))
+      )
+
       const total = (Number(b.price_total_cents) || 0) / 100
-      const deposit = (Number(b.deposit_cents) || 0) / 100
+      const deposit = isAbono ? total : (Number(b.deposit_cents) || 0) / 100
       const rawId = String(b.id || '')
       const shortCode = rawId.slice(-6).toUpperCase()
 
@@ -1961,10 +1999,11 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
           customerName: String(b.customer_name || 'Jugador'),
           totalAmount: total,
           depositAmount: deposit,
-          balanceRemaining: Math.max(0, total - deposit),
-          paymentMethod: String(b.payment_method || 'TRANSFER'),
+          balanceRemaining: isAbono ? 0 : Math.max(0, total - deposit),
+          paymentMethod: isAbono ? 'abono_fijo' : String(b.payment_method || 'TRANSFER'),
           bankAlias: tenant?.bank_alias || undefined,
-          status: String(b.status || 'CONFIRMED')
+          status: isAbono ? 'CONFIRMED' : String(b.status || 'CONFIRMED'),
+          isAbono,
         }
       }
     }

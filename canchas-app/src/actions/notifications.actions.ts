@@ -301,7 +301,10 @@ export async function getClubNotificationsAction(params?: {
         const isAbonoTurn = Boolean(
           (b as { recurring_slot_id?: string | null }).recurring_slot_id ||
           b.payment_method === 'abono_fijo' ||
-          (b.staff_notes && b.staff_notes.toUpperCase().includes('ABONO FIJO'))
+          (b.staff_notes && (
+            b.staff_notes.toUpperCase().includes('ABONO') ||
+            b.staff_notes.toUpperCase().includes('TURNO FIJO')
+          ))
         )
         if (isAbonoTurn) {
           continue

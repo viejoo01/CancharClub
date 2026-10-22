@@ -50,11 +50,21 @@ export function DashboardDailySummary({
     const isPending = (status: string) => 
       status === 'PENDING_DEPOSIT' || status === 'SLOT_LOCKED' || status === 'PENDING'
 
+    const isAbono = (b: CalendarBooking) => Boolean(
+      b.is_abono ||
+      b.recurring_slot_id ||
+      b.internal_notes?.includes('ABONO') ||
+      b.internal_notes?.includes('FIJO')
+    )
+
+    const regularBookings = activeBookings.filter(b => !isAbono(b))
+    const abonosCount = activeBookings.filter(b => isAbono(b)).length
+
     const confirmedCount = activeBookings.filter(b => isConfirmed(b.status)).length
     const pendingCount = activeBookings.filter(b => isPending(b.status)).length
 
-    const totalIncome = activeBookings.reduce((acc, b) => acc + (b.total_amount_ars || 0), 0)
-    const depositsCollected = activeBookings.reduce((acc, b) => acc + (b.deposit_amount_ars || b.total_paid || 0), 0)
+    const totalIncome = regularBookings.reduce((acc, b) => acc + (b.total_amount_ars || 0), 0)
+    const depositsCollected = regularBookings.reduce((acc, b) => acc + (b.deposit_amount_ars || b.total_paid || 0), 0)
     const pendingToCollect = Math.max(0, totalIncome - depositsCollected)
 
     const activeCourtsCount = courts.filter(c => c.is_active).length || courts.length || 1
@@ -69,6 +79,7 @@ export function DashboardDailySummary({
       activeCount: activeBookings.length,
       confirmedCount,
       pendingCount,
+      abonosCount,
       totalIncome,
       depositsCollected,
       pendingToCollect,
@@ -204,13 +215,18 @@ export function DashboardDailySummary({
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] flex-wrap gap-1">
             <span className="text-slate-400">
               Señas: <strong className="text-white font-mono">{formatARS(stats.depositsCollected)}</strong>
             </span>
             <span className="text-slate-400">
               Caja resto: <strong className="text-amber-400 font-mono">{formatARS(stats.pendingToCollect)}</strong>
             </span>
+            {stats.abonosCount > 0 && (
+              <span className="text-purple-400 font-semibold w-full text-[10px] text-right">
+                +{stats.abonosCount} abono(s) mensual(es) al día
+              </span>
+            )}
           </div>
         </Card>
 

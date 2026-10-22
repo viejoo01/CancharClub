@@ -185,7 +185,7 @@ export async function sendAutomatedBookingConfirmation(
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, courts(name, sport), tenants(name, address, bank_alias, phone_whatsapp)')
+      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, recurring_slot_id, courts(name, sport), tenants(name, address, bank_alias, phone_whatsapp)')
       .eq('id', bookingId)
       .maybeSingle()
 
@@ -232,11 +232,21 @@ export async function sendAutomatedBookingConfirmation(
       dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1)
     }
 
-    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
-    const paidArs = Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
-    const balanceArs = Math.max(0, totalArs - paidArs)
+    const isAbonoTurn = Boolean(
+      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
+      /\[(ABONO|TURNO FIJO)\]/i.test(booking.staff_notes || '') ||
+      (booking.staff_notes || '').toUpperCase().includes('ABONO')
+    )
 
-    const balanceText = balanceArs > 0 ? formatARS(balanceArs) : '$ 0'
+    const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
+    const paidArs = isAbonoTurn
+      ? totalArs
+      : Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
+    const balanceArs = isAbonoTurn ? 0 : Math.max(0, totalArs - paidArs)
+
+    const balanceText = isAbonoTurn
+      ? '$ 0 (Cubierto por abono mensual)'
+      : (balanceArs > 0 ? formatARS(balanceArs) : '$ 0')
 
     const message = 
 `🎾 *¡TURNO CONFIRMADO EN ${clubName.toUpperCase()}!* ⚽
@@ -411,7 +421,7 @@ export async function sendTurnoReminderWhatsApp(
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, courts(name, sport), tenants(name, address, google_maps_url)')
+      .select('id, tenant_id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, recurring_slot_id, courts(name, sport), tenants(name, address, google_maps_url)')
       .eq('id', bookingId)
       .maybeSingle()
 
@@ -444,12 +454,24 @@ export async function sendTurnoReminderWhatsApp(
       }
     }
 
+    const isAbonoTurn = Boolean(
+      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
+      /\[(ABONO|TURNO FIJO)\]/i.test((booking as { staff_notes?: string | null }).staff_notes || '') ||
+      ((booking as { staff_notes?: string | null }).staff_notes || '').toUpperCase().includes('ABONO')
+    )
+
     const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
-    const paidArs = Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
-    const balanceArs = Math.max(0, totalArs - paidArs)
+    const paidArs = isAbonoTurn
+      ? totalArs
+      : Math.round(Number(booking.staff_deposit_amount_cents ?? booking.deposit_cents ?? 0) / 100)
+    const balanceArs = isAbonoTurn ? 0 : Math.max(0, totalArs - paidArs)
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.cancharclub.com.ar'
     const splitUrl = `${appUrl}/partido/${booking.id}`
+
+    const balanceMessageText = isAbonoTurn
+      ? '$0 (Cubierto por abono mensual)'
+      : (balanceArs > 0 ? formatARS(balanceArs) : '$0 (Al día)')
 
     const message =
 `⏰ *RECORDATORIO DE TURNO — EN 2 HORAS* 🎾
@@ -458,7 +480,7 @@ Hola *${booking.customer_name}*, te recordamos que hoy tenés turno:
 
 🏟️ *Cancha:* ${courtName} (${clubName})
 ⏰ *Horario:* ${timeStr} hs
-${mapsLink}💰 *Saldo a abonar en mostrador:* ${balanceArs > 0 ? formatARS(balanceArs) : '$0 (Al día)'}
+${mapsLink}💰 *Saldo a abonar en mostrador:* ${balanceMessageText}
 
 👥 ¿Jugás con amigos? Dividí el pago acá:
 ${splitUrl}
@@ -508,7 +530,7 @@ export async function getTodayTurnosForReminders(tenantId: string): Promise<Arra
 
     const { data: bookings } = await supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, courts(name)')
+      .select('id, customer_name, customer_phone, booked_at, price_total_cents, deposit_cents, staff_deposit_amount_cents, staff_notes, recurring_slot_id, courts(name)')
       .eq('tenant_id', tenantId)
       .neq('status', 'CANCELLED_USER')
       .neq('status', 'CANCELLED_CLUB')
@@ -551,9 +573,17 @@ export async function getTodayTurnosForReminders(tenantId: string): Promise<Arra
         }
       }
 
+      const isAbonoTurn = Boolean(
+        (b as { recurring_slot_id?: string | null }).recurring_slot_id ||
+        /\[(ABONO|TURNO FIJO)\]/i.test((b as { staff_notes?: string | null }).staff_notes || '') ||
+        ((b as { staff_notes?: string | null }).staff_notes || '').toUpperCase().includes('ABONO')
+      )
+
       const totalArs = Math.round(Number(b.price_total_cents || 0) / 100)
-      const paidArs = Math.round(Number(b.staff_deposit_amount_cents ?? b.deposit_cents ?? 0) / 100)
-      const balanceArs = Math.max(0, totalArs - paidArs)
+      const paidArs = isAbonoTurn
+        ? totalArs
+        : Math.round(Number(b.staff_deposit_amount_cents ?? b.deposit_cents ?? 0) / 100)
+      const balanceArs = isAbonoTurn ? 0 : Math.max(0, totalArs - paidArs)
       const phone = b.customer_phone || ''
 
       return {

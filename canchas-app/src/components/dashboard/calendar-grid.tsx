@@ -91,6 +91,8 @@ export interface CalendarBooking {
   deposit_amount_ars: number
   total_paid: number
   balance_due: number
+  is_abono?: boolean
+  recurring_slot_id?: string | null
   internal_notes?: string | null
   courts?: { name?: string; sport?: string; slot_duration?: string } | Array<{ name?: string; sport?: string; slot_duration?: string }> | null
   booking_payments?: Array<{ amount_ars: number; payment_method: string; created_at: string }>
@@ -1019,6 +1021,8 @@ export function CalendarGrid({
                     const isFullyPaid = (booking.status === 'FULLY_PAID' || booking.balance_due === 0) && !isPendingValidation
                     const isConfirmed = (booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID') && !isPendingValidation
                     const isAbono = Boolean(
+                      booking.is_abono ||
+                      booking.recurring_slot_id ||
                       booking.internal_notes?.includes('ABONO') ||
                       booking.internal_notes?.includes('FIJO')
                     )
@@ -1083,7 +1087,7 @@ export function CalendarGrid({
 
                             <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
                               <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
-                              {booking.balance_due > 0 ? (
+                              {!isAbono && booking.balance_due > 0 ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1098,6 +1102,8 @@ export function CalendarGrid({
                                     {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar ${formatARS(booking.balance_due)}`}
                                   </span>
                                 </button>
+                              ) : isAbono ? (
+                                <span className="text-purple-300 font-semibold text-[10px] shrink-0">Abono al día</span>
                               ) : (
                                 <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
                               )}
@@ -1146,7 +1152,7 @@ export function CalendarGrid({
 
                             <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
                               <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
-                              {booking.balance_due > 0 ? (
+                              {!isAbono && booking.balance_due > 0 ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1161,6 +1167,8 @@ export function CalendarGrid({
                                     {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
                                   </span>
                                 </button>
+                              ) : isAbono ? (
+                                <span className="text-purple-300 font-semibold text-[10px] shrink-0">Abono al día</span>
                               ) : (
                                 <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
                               )}
@@ -1211,7 +1219,7 @@ export function CalendarGrid({
                               <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                               <span className="truncate">{gridDensity === 'compact' ? `${endTime} hs` : `Hasta las ${endTime} hs`}</span>
                             </div>
-                            {booking.balance_due > 0 ? (
+                            {!isAbono && booking.balance_due > 0 ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1226,6 +1234,10 @@ export function CalendarGrid({
                                   {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
                                 </span>
                               </button>
+                            ) : isAbono ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-purple-950/80 border border-purple-700/60 text-purple-300 shrink-0">
+                                Abono al día
+                              </span>
                             ) : (
                               <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300 shrink-0">
                                 {totalSlots === 2 ? '1 h' : `${totalSlots * 30}m`}

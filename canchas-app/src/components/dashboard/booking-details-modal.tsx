@@ -182,7 +182,13 @@ export function BookingDetailsModal({
 
   const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
   const hasPaidAny = currentPaid > 0
-  const isFullyPaid = currentBalance === 0 && (booking.total_amount_ars || 0) > 0
+  const isAbono = Boolean(
+    currentNotes.toUpperCase().includes('ABONO') ||
+    currentNotes.toUpperCase().includes('TURNO FIJO') ||
+    booking.origin === 'abono_fijo' ||
+    (booking as { payment_method?: string }).payment_method === 'abono_fijo'
+  )
+  const isFullyPaid = isAbono || (currentBalance === 0 && (booking.total_amount_ars || 0) > 0)
 
   const isStaffDeskPaid = Boolean(
     currentNotes.includes('Cobro $') ||
@@ -602,6 +608,13 @@ _Comprobante automático emitido por CancharClub._`
 
   const getStatusBadge = (status: string) => {
     const s = String(status || '').toUpperCase()
+    if (isAbono) {
+      return (
+        <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
+          ABONO FIJO
+        </Badge>
+      )
+    }
     if (isPendingDeposit) {
       return (
         <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold px-2.5 py-0.5 tracking-wide text-xs">
@@ -870,7 +883,22 @@ _Comprobante automático emitido por CancharClub._`
           </div>
 
           {/* Acción 1: Estado de Seña / Cobro del Turno */}
-          {isPendingDeposit ? (
+          {isAbono ? (
+            <div className="p-3.5 rounded-xl bg-purple-950/25 border border-purple-500/30 space-y-2">
+              <div className="flex items-center justify-between text-xs text-purple-300">
+                <div className="flex items-center gap-2 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span>Turno de Abonado Fijo (Cubierto por Mensualidad)</span>
+                </div>
+                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-semibold">
+                  ABONO MENSUAL
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-300 pl-6">
+                Este turno semanal está cubierto por la suscripción mensual del jugador. Para registrar el cobro del abono mensual de este abonado, hacelo de forma única desde la pestaña <strong>Turnos Fijos (Abonados)</strong>.
+              </p>
+            </div>
+          ) : isPendingDeposit ? (
             <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-amber-300 flex items-center gap-1.5">
@@ -941,8 +969,8 @@ _Comprobante automático emitido por CancharClub._`
             </div>
           )}
 
-          {/* Acción 2: Cobro rápido del saldo restante del turno */}
-          {currentBalance > 0 && (
+          {/* Acción 2: Cobro rápido del saldo restante del turno (exclusivo para turnos normales con saldo) */}
+          {!isAbono && currentBalance > 0 && (
             <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 shadow-lg space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

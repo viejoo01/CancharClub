@@ -541,6 +541,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         deposit_cents,
         staff_notes,
         payment_method,
+        recurring_slot_id,
         courts (id, name, sport, slot_duration_minutes)
       `)
       .eq('tenant_id', effectiveTenantId)
@@ -565,6 +566,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
       deposit_cents?: number | null
       staff_notes?: string | null
       payment_method?: string | null
+      recurring_slot_id?: string | null
       courts?: { id?: string; name?: string; sport?: string; slot_duration_minutes?: number } | null
     }
 
@@ -633,16 +635,27 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         }
       }
 
+      const isAbono = Boolean(
+        b.recurring_slot_id ||
+        b.payment_method === 'abono_fijo' ||
+        (b.staff_notes && (
+          b.staff_notes.toUpperCase().includes('ABONO') ||
+          b.staff_notes.toUpperCase().includes('TURNO FIJO')
+        ))
+      )
+
       const rawStatusLower = (b.status || '').toLowerCase()
       const isCancelled = rawStatusLower.includes('cancel')
       const isConfirmedCash = b.status === 'confirmed_cash' && depositArs >= totalArs
-      const isPendingDeposit = (b.status === 'pending_deposit' || b.status === 'pending') && depositArs < totalArs
-      const isFullyPaid = isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
-      const totalPaid = isFullyPaid ? totalArs : depositArs
-      const balanceDue = Math.max(0, totalArs - totalPaid)
+      const isPendingDeposit = !isAbono && (b.status === 'pending_deposit' || b.status === 'pending') && depositArs < totalArs
+      const isFullyPaid = isAbono || isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
+      const totalPaid = isAbono ? totalArs : (isFullyPaid ? totalArs : depositArs)
+      const balanceDue = isAbono ? 0 : Math.max(0, totalArs - totalPaid)
 
       const statusFormatted = isCancelled
         ? 'CANCELLED'
+        : isAbono
+        ? 'CONFIRMED'
         : isFullyPaid
         ? 'FULLY_PAID'
         : isPendingDeposit
@@ -670,6 +683,8 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         deposit_amount_ars: depositArs,
         total_paid: totalPaid,
         balance_due: balanceDue,
+        is_abono: isAbono,
+        recurring_slot_id: b.recurring_slot_id || null,
         internal_notes: cleanNoteForDisplay(b.staff_notes) || null,
         courts: {
           name: courtName,
@@ -1155,6 +1170,7 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
         created_at,
         staff_notes,
         customer_name,
+        recurring_slot_id,
         courts (name)
       `)
       .eq('tenant_id', effectiveTenantId)
@@ -1178,9 +1194,33 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
       OTHER: 0,
     }
 
+    interface CashBookingRow {
+      id: string
+      deposit_cents?: number | null
+      staff_deposit_amount_cents?: number | null
+      payment_method?: string | null
+      paid_at?: string | null
+      created_at?: string | null
+      staff_notes?: string | null
+      customer_name?: string | null
+      recurring_slot_id?: string | null
+      courts?: { name?: string | null } | { name?: string | null }[] | null
+    }
+
     let totalCollected = 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const payments = (bookings || []).map((b: any) => {
+    const payments = ((bookings || []) as unknown as CashBookingRow[])
+      .filter((b) => {
+        const isAbono = Boolean(
+          b.recurring_slot_id ||
+          b.payment_method === 'abono_fijo' ||
+          (b.staff_notes && (
+            b.staff_notes.toUpperCase().includes('ABONO') ||
+            b.staff_notes.toUpperCase().includes('TURNO FIJO')
+          ))
+        )
+        return !isAbono
+      })
+      .map((b) => {
       const depCents = Number(b.staff_deposit_amount_cents || b.deposit_cents || 0)
       const amt = depCents / 100
       totalCollected += amt

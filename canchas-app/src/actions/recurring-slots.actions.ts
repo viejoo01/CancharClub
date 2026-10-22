@@ -57,8 +57,8 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
               paid_at: null,
             })
             .eq('tenant_id', tenantId)
-            .ilike('staff_notes', '%ABONO FIJO%')
-            .eq('payment_method', 'cash')
+            .or('staff_notes.ilike.%ABONO%,staff_notes.ilike.%TURNO FIJO%,recurring_slot_id.not.is.null')
+            .neq('payment_method', 'abono_fijo')
         } catch {}
       })()
 
@@ -595,8 +595,8 @@ export async function generateMonthlyBookingsForSlot(
         status: 'CONFIRMED',
         origin: 'STAFF_MANUAL',
         total_amount_ars: pricePerTurn,
-        deposit_amount_ars: pricePerTurn,
-        total_paid: pricePerTurn,
+        deposit_amount_ars: 0,
+        total_paid: 0,
         balance_due: 0,
         internal_notes: staffNotes,
         courts: {

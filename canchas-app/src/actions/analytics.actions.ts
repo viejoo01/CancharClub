@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
-import { cleanNoteForDisplay } from '@/lib/utils'
+import { cleanNoteForDisplay, isAbonoBooking } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -244,15 +244,7 @@ export async function getDailyCashReport(
 
     // CRITICAL: Los turnos asignados a abonados fijos son reservas de cancha cubiertas por la suscripción mensual.
     // NUNCA deben sumar como cobros individuales de seña/saldo en la caja diaria (evita ingresos falsos e irreales).
-    const isAbonoTurn = Boolean(
-      row.recurring_slot_id ||
-      row.payment_method === 'abono_fijo' ||
-      (row.staff_notes && (
-        row.staff_notes.toUpperCase().includes('ABONO') ||
-        row.staff_notes.toUpperCase().includes('TURNO FIJO')
-      ))
-    )
-    if (isAbonoTurn) {
+    if (isAbonoBooking(row)) {
       continue
     }
 

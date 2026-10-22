@@ -451,3 +451,47 @@ export function formatAutoDebitAlertDate(dateInput?: string | number | Date | nu
   return formatter.format(dateObj).replace(',', '').trim()
 }
 
+/**
+ * Obtiene el timestamp ISO actual respetando la zona horaria de Argentina (UTC-3),
+ * con formato 'YYYY-MM-DDTHH:mm:ss-03:00' para evitar desfases de 3 horas en servidores UTC (Vercel).
+ */
+export function getArgentinaIsoTimestamp(now: Date = new Date(), overrideDate?: string): string {
+  const datePart = overrideDate || getArgentinaTodayIso(now)
+  const timeFormatter = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const timePart = timeFormatter.format(now)
+  return `${datePart}T${timePart}-03:00`
+}
+
+/**
+ * Determina de forma estricta y unificada si una reserva corresponde a un Abonado Fijo (Turno Recurrente).
+ * Evita falsos positivos por palabras sueltas como "abono" ("abono en efectivo") o "fijo" ("teléfono fijo").
+ */
+export function isAbonoBooking(booking?: {
+  recurring_slot_id?: string | null
+  payment_method?: string | null
+  is_abono?: boolean
+  origin?: string | null
+  staff_notes?: string | null
+  internal_notes?: string | null
+  notes?: string | null
+} | null): boolean {
+  if (!booking) return false
+  if (booking.is_abono) return true
+  if (booking.recurring_slot_id && String(booking.recurring_slot_id).trim() !== '') return true
+  if (booking.payment_method === 'abono_fijo') return true
+  if (booking.origin === 'abono_fijo') return true
+
+  const notes = (booking.staff_notes || booking.internal_notes || booking.notes || '').trim()
+  if (!notes) return false
+
+  // Etiquetas explícitas de abonados fijos (evita falsos positivos por 'abono en efectivo' o 'telefono fijo')
+  return /(?:\[ABONO SEMANAL FIJO\]|\[ABONO FIJO\]|\[TURNO FIJO\]|^ABONO FIJO:|^TURNO FIJO:|\bABONO FIJO\b|\bTURNO FIJO\b)/i.test(notes)
+}
+
+

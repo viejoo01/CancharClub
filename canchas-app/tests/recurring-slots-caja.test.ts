@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { isAbonoBooking, getArgentinaIsoTimestamp } from '@/lib/utils'
 
 describe('Abonados Fijos (Recurring Slots) & Cash Register Isolation', () => {
   it('correctly identifies recurring slot bookings as covered by monthly abono (not cash deposits)', () => {
@@ -35,17 +36,47 @@ describe('Abonados Fijos (Recurring Slots) & Cash Register Isolation', () => {
       recurring_slot_id: 'slot-123',
     }
 
-    const isAbonoTurn = (row: { recurring_slot_id?: string | null; payment_method?: string | null; staff_notes?: string | null }) => {
-      return Boolean(
-        row.recurring_slot_id ||
-        row.payment_method === 'abono_fijo' ||
-        (row.staff_notes && row.staff_notes.toUpperCase().includes('ABONO FIJO'))
-      )
+    expect(isAbonoBooking(regularBooking)).toBe(false)
+    expect(isAbonoBooking(abonoBooking)).toBe(true)
+    expect(isAbonoBooking(legacyAbonoBooking)).toBe(true)
+  })
+
+  it('prevents false positives from loose text like "el cliente abono en efectivo" or "telefono fijo"', () => {
+    const falsePositiveCash = {
+      id: 'fp-1',
+      staff_notes: 'El cliente abono en efectivo el total en caja',
+      deposit_cents: 1000000,
+      payment_method: 'cash',
     }
 
-    expect(isAbonoTurn(regularBooking)).toBe(false)
-    expect(isAbonoTurn(abonoBooking)).toBe(true)
-    expect(isAbonoTurn(legacyAbonoBooking)).toBe(true)
+    const falsePositivePhone = {
+      id: 'fp-2',
+      staff_notes: 'Telefono fijo de contacto: 4433-2211',
+      deposit_cents: 500000,
+      payment_method: 'transfer',
+    }
+
+    const genuineBracketAbono = {
+      id: 'gen-1',
+      staff_notes: '[ABONO SEMANAL FIJO] Turno asignado a Pablo',
+    }
+
+    const genuineTurnoFijoTag = {
+      id: 'gen-2',
+      staff_notes: '[TURNO FIJO] Turno semanal asignado',
+    }
+
+    expect(isAbonoBooking(falsePositiveCash)).toBe(false)
+    expect(isAbonoBooking(falsePositivePhone)).toBe(false)
+    expect(isAbonoBooking(genuineBracketAbono)).toBe(true)
+    expect(isAbonoBooking(genuineTurnoFijoTag)).toBe(true)
+  })
+
+  it('generates accurate Argentina UTC-3 timestamp to prevent 3-hour shifts on UTC servers', () => {
+    const date = new Date('2026-10-22T14:30:00Z') // 14:30 UTC -> 11:30 AR
+    const ts = getArgentinaIsoTimestamp(date, '2026-10-22')
+    expect(ts).toContain('-03:00')
+    expect(ts).toContain('2026-10-22T11:30:00-03:00')
   })
 
   it('guarantees that 5 weekly turns generated for an abonado do NOT create duplicate daily cash register entries', () => {

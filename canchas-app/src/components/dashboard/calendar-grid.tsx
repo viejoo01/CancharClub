@@ -18,7 +18,7 @@ import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-m
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
-import { formatARS, formatTime, getArgentinaTodayIso, getArgentinaTimeStr } from '@/lib/utils'
+import { formatARS, formatTime, getArgentinaTodayIso, getArgentinaTimeStr, isAbonoBooking } from '@/lib/utils'
 import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { format, addDays, subDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -1020,12 +1020,11 @@ export function CalendarGrid({
                     )
                     const isFullyPaid = (booking.status === 'FULLY_PAID' || booking.balance_due === 0) && !isPendingValidation
                     const isConfirmed = (booking.status === 'CONFIRMED' || booking.status === 'DEPOSIT_PAID') && !isPendingValidation
-                    const isAbono = Boolean(
-                      booking.is_abono ||
-                      booking.recurring_slot_id ||
-                      booking.internal_notes?.includes('ABONO') ||
-                      booking.internal_notes?.includes('FIJO')
-                    )
+                    const isAbono = isAbonoBooking({
+                      is_abono: booking.is_abono,
+                      recurring_slot_id: booking.recurring_slot_id,
+                      internal_notes: booking.internal_notes,
+                    })
 
                     // Estilo de color coordinado
                     const colorClasses = isAbono

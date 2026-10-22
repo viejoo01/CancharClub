@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { parseArgentinaDate, getArgentinaTodayIso } from '@/lib/utils'
+import { parseArgentinaDate, getArgentinaTodayIso, getArgentinaIsoTimestamp } from '@/lib/utils'
 import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
 import { assertTenantMember } from '@/lib/auth-security'
@@ -57,7 +57,7 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
               paid_at: null,
             })
             .eq('tenant_id', tenantId)
-            .or('staff_notes.ilike.%ABONO%,staff_notes.ilike.%TURNO FIJO%,recurring_slot_id.not.is.null')
+            .or('staff_notes.ilike.%[ABONO%,staff_notes.ilike.ABONO FIJO:%,staff_notes.ilike.%TURNO FIJO%,recurring_slot_id.not.is.null')
             .neq('payment_method', 'abono_fijo')
         } catch {}
       })()
@@ -708,13 +708,35 @@ export async function registerRecurringSlotPaymentAction(
       return { success: false, error: 'Turno fijo no encontrado' }
     }
 
+    // 1. Verificación de idempotencia estricta: impedir cobros duplicados para el mismo período
+    if (slot.last_paid_period === targetPeriod) {
+      return {
+        success: false,
+        error: `El período ${targetPeriod} ya se encuentra registrado y cobrado para este abonado.`,
+      }
+    }
+
+    const { data: existingPayment } = await supabase
+      .from('booking_payments')
+      .select('id, payment_date')
+      .eq('tenant_id', tenantId)
+      .eq('recurring_slot_id', slotId)
+      .eq('payment_period', targetPeriod)
+      .maybeSingle()
+
+    if (existingPayment) {
+      return {
+        success: false,
+        error: `El período ${targetPeriod} ya fue asentado en la caja diaria el día ${existingPayment.payment_date}.`,
+      }
+    }
+
     const effectiveAmount = typeof amount === 'number' && !isNaN(amount) && amount > 0 
       ? amount 
       : Number(slot.monthly_price) || 0
 
     const now = new Date()
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-    const paymentIso = `${targetPaymentDate}T${timeStr}-03:00`
+    const paymentIso = getArgentinaIsoTimestamp(now, targetPaymentDate)
 
     // Buscar una reserva existente del abonado para asociar opcionalmente como booking_id si la DB lo requiere
     const { data: slotBooking } = await supabase
@@ -729,27 +751,36 @@ export async function registerRecurringSlotPaymentAction(
     const paymentConcept = `Abono Mensual: ${slot.customer_name} (${targetPeriod})`
     const fullNotes = notes ? `${paymentConcept} - ${notes}` : paymentConcept
 
-    // 1. Asentar cobro real e inmutable en booking_payments (para la Caja Diaria del día del pago)
-    try {
-      const payRecord: Record<string, unknown> = {
-        tenant_id: tenantId,
-        amount_ars: effectiveAmount,
-        amount_cents: Math.round(effectiveAmount * 100),
-        payment_method: paymentMethod,
-        payment_type: 'BALANCE',
-        payment_date: targetPaymentDate,
-        registered_at: paymentIso,
-        notes: fullNotes,
+    // 2. Asentar cobro real e inmutable en booking_payments (para la Caja Diaria del día del pago)
+    const payRecord: Record<string, unknown> = {
+      tenant_id: tenantId,
+      recurring_slot_id: slotId,
+      payment_period: targetPeriod,
+      amount_ars: effectiveAmount,
+      amount_cents: Math.round(effectiveAmount * 100),
+      payment_method: paymentMethod,
+      payment_type: 'BALANCE',
+      payment_date: targetPaymentDate,
+      registered_at: paymentIso,
+      notes: fullNotes,
+    }
+    if (slotBooking?.id) {
+      payRecord.booking_id = slotBooking.id
+    }
+
+    const { error: insertErr } = await supabase.from('booking_payments').insert(payRecord)
+    if (insertErr) {
+      console.error('[registerRecurringSlotPaymentAction] Error al asentar en booking_payments:', insertErr.message)
+      if (insertErr.code === '23505') {
+        return {
+          success: false,
+          error: `El período ${targetPeriod} ya fue cobrado previamente (intento de duplicación bloqueado por base de datos).`,
+        }
       }
-      if (slotBooking?.id) {
-        payRecord.booking_id = slotBooking.id
+      return {
+        success: false,
+        error: `No se pudo asentar el pago en la caja diaria: ${insertErr.message}`,
       }
-      const { error: insertErr } = await supabase.from('booking_payments').insert(payRecord)
-      if (insertErr) {
-        console.warn('[registerRecurringSlotPaymentAction] Warning inserting booking_payments:', insertErr.message)
-      }
-    } catch (payEx) {
-      console.warn('[registerRecurringSlotPaymentAction] Error with booking_payments:', payEx)
     }
 
     // 2. Registrar en audit_log como PAYMENT_RECEIVED y CLUB_NOTIFICATION (una sola notificación real)

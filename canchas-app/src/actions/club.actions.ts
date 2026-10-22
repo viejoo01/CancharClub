@@ -22,7 +22,7 @@ import {
   type ClubServicesAndLocationData
 } from '@/config/clubs-catalog'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig, formatScheduleHours } from '@/lib/time-slots'
-import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNoteForDisplay } from '@/lib/utils'
+import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNoteForDisplay, isAbonoBooking } from '@/lib/utils'
 import { getVenueBookings } from '@/config/venues-data'
 import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE, type SaaSPlanId } from '@/config/saas-plans'
 import { syncPreapprovalAmountIfNeeded } from '@/actions/saas-billing.actions'
@@ -635,14 +635,11 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         }
       }
 
-      const isAbono = Boolean(
-        b.recurring_slot_id ||
-        b.payment_method === 'abono_fijo' ||
-        (b.staff_notes && (
-          b.staff_notes.toUpperCase().includes('ABONO') ||
-          b.staff_notes.toUpperCase().includes('TURNO FIJO')
-        ))
-      )
+      const isAbono = isAbonoBooking({
+        recurring_slot_id: b.recurring_slot_id,
+        payment_method: b.payment_method,
+        staff_notes: b.staff_notes,
+      })
 
       const rawStatusLower = (b.status || '').toLowerCase()
       const isCancelled = rawStatusLower.includes('cancel')
@@ -663,7 +660,7 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
         : 'CONFIRMED'
 
       const isManual = Boolean(
-        b.staff_notes?.includes('[ABONO') ||
+        isAbono ||
         b.staff_notes?.includes('mostrador') ||
         b.staff_notes?.includes('manual') ||
         b.payment_method === 'cash'
@@ -1210,14 +1207,11 @@ export async function getDailyCashSummary(tenantId: string | null | undefined, d
     let totalCollected = 0
     const payments = ((bookings || []) as unknown as CashBookingRow[])
       .filter((b) => {
-        const isAbono = Boolean(
-          b.recurring_slot_id ||
-          b.payment_method === 'abono_fijo' ||
-          (b.staff_notes && (
-            b.staff_notes.toUpperCase().includes('ABONO') ||
-            b.staff_notes.toUpperCase().includes('TURNO FIJO')
-          ))
-        )
+        const isAbono = isAbonoBooking({
+          recurring_slot_id: b.recurring_slot_id,
+          payment_method: b.payment_method,
+          staff_notes: b.staff_notes,
+        })
         return !isAbono
       })
       .map((b) => {

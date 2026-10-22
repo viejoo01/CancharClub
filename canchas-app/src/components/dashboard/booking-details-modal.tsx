@@ -27,7 +27,8 @@ import {
   buildWhatsAppLink, 
   buildWhatsAppWebLink, 
   buildWhatsAppProtocolLink, 
-  cleanNoteForDisplay 
+  cleanNoteForDisplay,
+  isAbonoBooking,
 } from '@/lib/utils'
 import { toast } from 'sonner'
 import { 
@@ -182,12 +183,12 @@ export function BookingDetailsModal({
 
   const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
   const hasPaidAny = currentPaid > 0
-  const isAbono = Boolean(
-    currentNotes.toUpperCase().includes('ABONO') ||
-    currentNotes.toUpperCase().includes('TURNO FIJO') ||
-    booking.origin === 'abono_fijo' ||
-    (booking as { payment_method?: string }).payment_method === 'abono_fijo'
-  )
+  const isAbono = isAbonoBooking({
+    recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
+    origin: booking.origin,
+    payment_method: (booking as { payment_method?: string }).payment_method,
+    internal_notes: currentNotes,
+  })
   const isFullyPaid = isAbono || (currentBalance === 0 && (booking.total_amount_ars || 0) > 0)
 
   const isStaffDeskPaid = Boolean(

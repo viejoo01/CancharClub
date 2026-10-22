@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatARS } from '@/lib/utils'
+import { formatARS, isAbonoBooking } from '@/lib/utils'
 import type { CalendarBooking } from '@/components/dashboard/calendar-grid'
 import type { QuickBookingPriceRule } from '@/components/dashboard/quick-booking-modal'
 
@@ -50,12 +50,11 @@ export function DashboardDailySummary({
     const isPending = (status: string) => 
       status === 'PENDING_DEPOSIT' || status === 'SLOT_LOCKED' || status === 'PENDING'
 
-    const isAbono = (b: CalendarBooking) => Boolean(
-      b.is_abono ||
-      b.recurring_slot_id ||
-      b.internal_notes?.includes('ABONO') ||
-      b.internal_notes?.includes('FIJO')
-    )
+    const isAbono = (b: CalendarBooking) => isAbonoBooking({
+      is_abono: b.is_abono,
+      recurring_slot_id: b.recurring_slot_id,
+      internal_notes: b.internal_notes,
+    })
 
     const regularBookings = activeBookings.filter(b => !isAbono(b))
     const abonosCount = activeBookings.filter(b => isAbono(b)).length

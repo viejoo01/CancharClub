@@ -19,6 +19,7 @@ import type {
   NotificationType,
   NotificationsStats,
 } from '@/types/notifications'
+import { isAbonoBooking } from '@/lib/utils'
 
 function parsePostgresDateRange(rangeStr?: string | null): { startIso: string; timeLabel: string; dateLabel: string } {
   if (!rangeStr) {
@@ -298,14 +299,11 @@ export async function getClubNotificationsAction(params?: {
       for (const b of bookingsRes.data) {
         // Los turnos periódicos de abonados fijos no deben emitir notificaciones individuales
         // de "Turno Reservado" ni falsos "Pago / Seña Recibida" por cada turno semanal generado.
-        const isAbonoTurn = Boolean(
-          (b as { recurring_slot_id?: string | null }).recurring_slot_id ||
-          b.payment_method === 'abono_fijo' ||
-          (b.staff_notes && (
-            b.staff_notes.toUpperCase().includes('ABONO') ||
-            b.staff_notes.toUpperCase().includes('TURNO FIJO')
-          ))
-        )
+        const isAbonoTurn = isAbonoBooking({
+          recurring_slot_id: (b as { recurring_slot_id?: string | null }).recurring_slot_id,
+          payment_method: b.payment_method,
+          staff_notes: b.staff_notes,
+        })
         if (isAbonoTurn) {
           continue
         }

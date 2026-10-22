@@ -19,6 +19,7 @@ import {
   getArgentinaTimeStr,
   getArgentinaDateStr,
   getArgentinaTodayIso,
+  isAbonoBooking,
 } from '@/lib/utils'
 import type {
   CreateBookingPayload,
@@ -1016,14 +1017,11 @@ export async function registerCashPayment(params: {
 
     // BLINDAJE ANTIFRAUDE: Si el turno pertenece a un abonado fijo (mensualidad recurrente),
     // prohibir el cobro individual de cancha para evitar duplicar ingresos en la caja diaria.
-    const isAbonoTurn = Boolean(
-      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
-      booking.payment_method === 'abono_fijo' ||
-      (booking.staff_notes && (
-        booking.staff_notes.toUpperCase().includes('ABONO') ||
-        booking.staff_notes.toUpperCase().includes('TURNO FIJO')
-      ))
-    )
+    const isAbonoTurn = isAbonoBooking({
+      recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
+      payment_method: booking.payment_method,
+      staff_notes: booking.staff_notes,
+    })
     if (isAbonoTurn) {
       return {
         success: false,
@@ -1374,11 +1372,10 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{
 
     if (bErr || !booking) return { success: false, error: 'Reserva no encontrada' }
 
-    const isAbonoTurn = Boolean(
-      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
-      /\[(ABONO|TURNO FIJO)\]/i.test(booking.staff_notes || '') ||
-      (booking.staff_notes || '').toUpperCase().includes('ABONO')
-    )
+    const isAbonoTurn = isAbonoBooking({
+      recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
+      staff_notes: booking.staff_notes,
+    })
     if (isAbonoTurn) {
       return { success: false, error: 'Este turno pertenece a un abono fijo mensual y no requiere validación de seña individual.' }
     }
@@ -1894,14 +1891,11 @@ export async function getBookingPublicReceipt(bookingId: string): Promise<{ succ
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const court = (Array.isArray(b.courts) ? b.courts[0] : b.courts) as Record<string, any> | null
 
-      const isAbono = Boolean(
-        b.recurring_slot_id ||
-        b.payment_method === 'abono_fijo' ||
-        (b.staff_notes && (
-          String(b.staff_notes).toUpperCase().includes('ABONO') ||
-          String(b.staff_notes).toUpperCase().includes('TURNO FIJO')
-        ))
-      )
+      const isAbono = isAbonoBooking({
+        recurring_slot_id: b.recurring_slot_id,
+        payment_method: b.payment_method,
+        staff_notes: b.staff_notes,
+      })
 
       const total = (Number(b.price_total_cents) || 0) / 100
       const deposit = isAbono ? total : (Number(b.deposit_cents) || 0) / 100

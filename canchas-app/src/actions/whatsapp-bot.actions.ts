@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 import { assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
-import { formatARS } from '@/lib/utils'
+import { formatARS, isAbonoBooking } from '@/lib/utils'
 
 export interface WhatsAppBotConfig {
   tenant_id: string
@@ -232,11 +232,10 @@ export async function sendAutomatedBookingConfirmation(
       dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1)
     }
 
-    const isAbonoTurn = Boolean(
-      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
-      /\[(ABONO|TURNO FIJO)\]/i.test(booking.staff_notes || '') ||
-      (booking.staff_notes || '').toUpperCase().includes('ABONO')
-    )
+    const isAbonoTurn = isAbonoBooking({
+      recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
+      staff_notes: booking.staff_notes,
+    })
 
     const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
     const paidArs = isAbonoTurn
@@ -454,11 +453,10 @@ export async function sendTurnoReminderWhatsApp(
       }
     }
 
-    const isAbonoTurn = Boolean(
-      (booking as { recurring_slot_id?: string | null }).recurring_slot_id ||
-      /\[(ABONO|TURNO FIJO)\]/i.test((booking as { staff_notes?: string | null }).staff_notes || '') ||
-      ((booking as { staff_notes?: string | null }).staff_notes || '').toUpperCase().includes('ABONO')
-    )
+    const isAbonoTurn = isAbonoBooking({
+      recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
+      staff_notes: (booking as { staff_notes?: string | null }).staff_notes,
+    })
 
     const totalArs = Math.round(Number(booking.price_total_cents || 0) / 100)
     const paidArs = isAbonoTurn
@@ -573,11 +571,10 @@ export async function getTodayTurnosForReminders(tenantId: string): Promise<Arra
         }
       }
 
-      const isAbonoTurn = Boolean(
-        (b as { recurring_slot_id?: string | null }).recurring_slot_id ||
-        /\[(ABONO|TURNO FIJO)\]/i.test((b as { staff_notes?: string | null }).staff_notes || '') ||
-        ((b as { staff_notes?: string | null }).staff_notes || '').toUpperCase().includes('ABONO')
-      )
+      const isAbonoTurn = isAbonoBooking({
+        recurring_slot_id: (b as { recurring_slot_id?: string | null }).recurring_slot_id,
+        staff_notes: (b as { staff_notes?: string | null }).staff_notes,
+      })
 
       const totalArs = Math.round(Number(b.price_total_cents || 0) / 100)
       const paidArs = isAbonoTurn

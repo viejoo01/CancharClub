@@ -15,6 +15,7 @@ import {
   DEFAULT_CANTINA_SUPPLIERS,
   DEFAULT_CANTINA_CATEGORIES 
 } from '@/config/cantina-data'
+import { recordClubNotification } from './notifications.actions'
 
 // Cache en memoria en el servidor (TTL 60s)
 const cantinaProductsCache = new Map<string, { data: CantinaProduct[]; timestamp: number }>()
@@ -687,6 +688,20 @@ export async function atomicModifyStock(
         if (itemDelta && itemDelta.delta !== 0) {
           hasChanges = true
           const nextStock = Math.max(0, (p.stock || 0) + itemDelta.delta)
+          if (nextStock <= 3 && (p.stock || 0) > 3) {
+            void recordClubNotification({
+              tenantId: cleanTenantId,
+              type: 'STOCK_ALERT',
+              category: 'ALERTS',
+              title: 'Alerta de Stock Crítico en Cantina',
+              message: `El producto "${p.name}" se está agotando. Quedan solo ${nextStock} unidades disponibles en cantina.`,
+              metadata: {
+                product_id: p.id,
+                product_name: p.name,
+                stock: nextStock,
+              },
+            })
+          }
           return { ...p, stock: nextStock }
         }
         return p

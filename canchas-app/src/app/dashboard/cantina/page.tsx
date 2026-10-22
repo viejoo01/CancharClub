@@ -75,6 +75,7 @@ import {
   getCustomerAccounts,
   chargeCustomerAccount,
   payCustomerAccount,
+  checkCustomerCreditLimit,
   type CustomerAccount,
 } from '@/actions/cuenta-corriente.actions'
 import { buildDebtWhatsAppReminder } from '@/lib/cuenta-corriente-utils'
@@ -1131,6 +1132,21 @@ export default function CantinaPage() {
         ? (cuentaCorrienteName.trim() || 'Cliente en Cuenta')
         : 'Cliente Mostrador'
 
+      // Pre-validación de límite de crédito en Cuenta Corriente
+      if (isCuentaCorriente && tenantId) {
+        const creditCheck = await checkCustomerCreditLimit({
+          tenantId,
+          customerName: clientName,
+          customerPhone: cuentaCorrientePhone ? cuentaCorrientePhone.trim() : undefined,
+          proposedAmount: effectiveTotal,
+        })
+        if (!creditCheck.allowed) {
+          toast.error(creditCheck.error || 'Límite de crédito superado para esta cuenta corriente')
+          setCheckoutLoading(false)
+          return
+        }
+      }
+
       if (activeLinkedOrder) {
         // 1. Registrar venta interna actualizando estado a DELIVERED
         await handleUpdateOrderStatus(activeLinkedOrder.id, 'DELIVERED')
@@ -1182,7 +1198,7 @@ export default function CantinaPage() {
       // Si es Cuenta Corriente, impactar en la cuenta del cliente
       if (isCuentaCorriente && tenantId) {
         const desc = `Cantina: ${cart.map(c => `${c.quantity}x ${c.product.name}`).join(', ')}`
-        await chargeCustomerAccount({
+        const chargeRes = await chargeCustomerAccount({
           tenantId,
           customerName: clientName,
           customerPhone: cuentaCorrientePhone,
@@ -1190,6 +1206,11 @@ export default function CantinaPage() {
           description: desc,
           orderId: completedOrder?.id,
         })
+        if (!chargeRes.success) {
+          toast.error(chargeRes.error || 'No se pudo anotar la deuda en cuenta corriente')
+        } else {
+          toast.success(`Anotado correctamente en la cuenta corriente de ${clientName}`)
+        }
         loadAccounts()
         setCuentaCorrienteName('')
         setCuentaCorrientePhone('')

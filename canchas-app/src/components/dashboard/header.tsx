@@ -9,6 +9,7 @@ import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { NotificationsDropdown } from './notifications-dropdown'
 import { VenueSwitcher } from './venue-switcher'
 import { useUserRole } from '@/hooks/use-tenant-id'
+import { clearClientSensitiveStorage } from '@/lib/storage-cleanup'
 
 interface HeaderProps {
   onQuickBookClick?: () => void
@@ -250,15 +251,7 @@ export function Header({
                 action="/auth/logout" 
                 method="post"
                 onSubmit={() => {
-                  try {
-                    localStorage.removeItem('canchar_today_schedule_snapshot')
-                    localStorage.removeItem('canchar_cached_tenant_id')
-                    localStorage.removeItem('canchar_cached_tenant_slug')
-                    localStorage.removeItem('canchar_active_venue_id')
-                    localStorage.removeItem('canchar_active_venue_name')
-                    localStorage.removeItem('canchar_custom_venues')
-                    localStorage.removeItem('canchar_court_orders')
-                  } catch {}
+                  clearClientSensitiveStorage()
                 }}
               >
                 <button

@@ -341,8 +341,8 @@ export async function addTeamToCategory(payload: {
 }
 
 /**
- * Generar cuadro eliminatorio de Playoffs (Cuartos -> Semis -> Final)
- * para un máximo de 8 parejas/equipos.
+ * Generar cuadro eliminatorio de Playoffs (Dieciseisavos -> Octavos -> Cuartos -> Semis -> Final)
+ * para cuadros desde 2 hasta 32 parejas/equipos con cabezas de serie y asignación automática de BYEs.
  */
 export async function generatePlayoffBracket(
   categoryId: string

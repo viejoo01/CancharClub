@@ -21,6 +21,7 @@ import {
   Sparkles,
   MessageSquare,
   ShieldAlert,
+  AlertTriangle,
   ArrowRight,
   XCircle,
   Settings,
@@ -105,6 +106,13 @@ function getNotificationVisuals(type: NotificationType) {
         bg: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
         badgeBg: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
         badgeLabel: 'Sistema',
+      }
+    case 'STOCK_ALERT':
+      return {
+        icon: AlertTriangle,
+        bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+        badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        badgeLabel: 'Stock',
       }
     default:
       return {

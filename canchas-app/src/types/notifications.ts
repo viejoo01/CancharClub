@@ -15,6 +15,7 @@ export type NotificationType =
   | 'REMINDER_SENT'           // Recordatorio de turno enviado
   | 'AUTODEBIT_ALERT'         // Alerta de cobro mensual o débito automático
   | 'CANTINA_ORDER'           // Pedido de cantina por QR
+  | 'STOCK_ALERT'             // Alerta de stock crítico o bajo en cantina
   | 'SYSTEM_ALERT'            // Alerta general del sistema
 
 export interface NotificationMetadata {

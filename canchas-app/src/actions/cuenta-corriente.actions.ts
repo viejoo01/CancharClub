@@ -205,13 +205,21 @@ export async function chargeCustomerAccount(params: {
     }
 
     if (!account) {
+      const defaultLimit = 50000
+      if (safeAmount > defaultLimit) {
+        return {
+          success: false,
+          error: `El monto solicitado ($${safeAmount.toLocaleString('es-AR')}) supera el límite de crédito para nuevas cuentas ($${defaultLimit.toLocaleString('es-AR')}).`,
+        }
+      }
+
       account = {
         id: `acc-${Date.now()}`,
         tenant_id: effectiveTenantId,
         customer_name: cleanName,
         customer_phone: cleanPhone,
         balance: safeAmount,
-        credit_limit: 50000,
+        credit_limit: defaultLimit,
         notes: 'Cuenta creada automáticamente desde cantina',
         movements: [newMovement],
         created_at: now,
@@ -219,6 +227,14 @@ export async function chargeCustomerAccount(params: {
       }
       accounts.push(account)
     } else {
+      const creditLimit = Number(account.credit_limit) || 50000
+      if (account.balance + safeAmount > creditLimit) {
+        return {
+          success: false,
+          error: `Límite de crédito excedido. El cliente "${account.customer_name}" tiene una deuda de $${account.balance.toLocaleString('es-AR')} y un límite de crédito de $${creditLimit.toLocaleString('es-AR')}. Nuevo saldo ($${(account.balance + safeAmount).toLocaleString('es-AR')}) supera el tope permitido.`,
+        }
+      }
+
       account.balance += safeAmount
       if (cleanPhone && !account.customer_phone) {
         account.customer_phone = cleanPhone
@@ -236,6 +252,60 @@ export async function chargeCustomerAccount(params: {
       success: false, 
       error: err instanceof Error ? err.message : 'Error al registrar cargo en cuenta corriente' 
     }
+  }
+}
+
+/**
+ * Consulta previa no-bloqueante del límite de crédito disponible de un cliente
+ */
+export async function checkCustomerCreditLimit(params: {
+  tenantId: string
+  customerName: string
+  customerPhone?: string
+  proposedAmount: number
+}): Promise<{
+  allowed: boolean
+  currentBalance: number
+  creditLimit: number
+  availableCredit: number
+  error?: string
+}> {
+  try {
+    const effectiveTenantId = await resolveEffectiveTenantId(params.tenantId)
+    if (!effectiveTenantId) return { allowed: false, currentBalance: 0, creditLimit: 0, availableCredit: 0, error: 'Club no válido' }
+
+    const cleanName = sanitizeText(params.customerName || '', 60).toLowerCase().trim()
+    const cleanDigits = (params.customerPhone || '').replace(/\D/g, '')
+    const safeAmount = Math.max(0, Number(params.proposedAmount) || 0)
+
+    const accounts = await getCustomerAccounts(effectiveTenantId)
+    let account: CustomerAccount | undefined
+
+    if (cleanDigits && cleanDigits.length >= 6) {
+      account = accounts.find(a => {
+        const aDigits = (a.customer_phone || '').replace(/\D/g, '')
+        return aDigits.length >= 6 && (aDigits === cleanDigits || aDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aDigits))
+      })
+    }
+
+    if (!account && cleanName) {
+      account = accounts.find(a => a.customer_name.toLowerCase().trim() === cleanName)
+    }
+
+    const currentBalance = account ? Number(account.balance) || 0 : 0
+    const creditLimit = account ? (Number(account.credit_limit) || 50000) : 50000
+    const availableCredit = Math.max(0, creditLimit - currentBalance)
+    const allowed = (currentBalance + safeAmount) <= creditLimit
+
+    return {
+      allowed,
+      currentBalance,
+      creditLimit,
+      availableCredit,
+      error: allowed ? undefined : `Supera el límite de crédito disponible ($${availableCredit.toLocaleString('es-AR')})`
+    }
+  } catch {
+    return { allowed: true, currentBalance: 0, creditLimit: 50000, availableCredit: 50000 }
   }
 }
 

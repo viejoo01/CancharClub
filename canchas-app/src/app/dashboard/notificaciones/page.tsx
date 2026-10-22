@@ -24,6 +24,7 @@ import {
   RefreshCw,
   XCircle,
   ShieldAlert,
+  AlertTriangle,
   ChevronRight,
   Copy,
   Layers,
@@ -125,6 +126,14 @@ function getVisualProps(type: NotificationType) {
         iconBg: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
         badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
         label: 'Sistema / Abono',
+      }
+    case 'STOCK_ALERT':
+      return {
+        icon: AlertTriangle,
+        border: 'border-l-amber-500',
+        iconBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        label: 'Stock Cantina',
       }
     default:
       return {

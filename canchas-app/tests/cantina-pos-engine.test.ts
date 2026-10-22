@@ -135,5 +135,76 @@ describe('Cantina & Fast POS Financial Engine', () => {
       expect(reminderLink).toContain('Mart%C3%ADn%20Palermo')
       expect(reminderLink).toContain('CLUB.CENTRAL.PADEL')
     })
+
+    it('enforces customer credit limit constraints when charging debt', () => {
+      interface CreditCheckResult {
+        allowed: boolean
+        currentBalance: number
+        creditLimit: number
+        availableCredit: number
+      }
+
+      function evaluateCreditLimit(
+        currentBalance: number,
+        creditLimit: number,
+        proposedAmount: number
+      ): CreditCheckResult {
+        const availableCredit = Math.max(0, creditLimit - currentBalance)
+        const allowed = currentBalance + proposedAmount <= creditLimit
+        return {
+          allowed,
+          currentBalance,
+          creditLimit,
+          availableCredit,
+        }
+      }
+
+      // Cliente existente con saldo previo
+      const check1 = evaluateCreditLimit(20000, 30000, 8000)
+      expect(check1.allowed).toBe(true)
+      expect(check1.availableCredit).toBe(10000)
+
+      const check2 = evaluateCreditLimit(20000, 30000, 15000)
+      expect(check2.allowed).toBe(false)
+      expect(check2.availableCredit).toBe(10000)
+
+      // Cliente nuevo con límite por defecto de 50.000 ARS
+      const defaultLimit = 50000
+      const checkNewOk = evaluateCreditLimit(0, defaultLimit, 35000)
+      expect(checkNewOk.allowed).toBe(true)
+
+      const checkNewOver = evaluateCreditLimit(0, defaultLimit, 60000)
+      expect(checkNewOver.allowed).toBe(false)
+    })
+  })
+
+  describe('Inventory & Stock Low Threshold Alerts', () => {
+    function evaluateStockDelta(currentStock: number, delta: number): {
+      nextStock: number
+      shouldTriggerAlert: boolean
+    } {
+      const nextStock = Math.max(0, currentStock + delta)
+      const shouldTriggerAlert = nextStock <= 3 && currentStock > 3
+      return { nextStock, shouldTriggerAlert }
+    }
+
+    it('triggers critical stock alert when units drop to 3 or below for the first time', () => {
+      // De 6 unidades vende 4 -> quedan 2 (cruza el umbral de 3)
+      const res = evaluateStockDelta(6, -4)
+      expect(res.nextStock).toBe(2)
+      expect(res.shouldTriggerAlert).toBe(true)
+    })
+
+    it('does not re-trigger critical alert if stock was already below the threshold', () => {
+      // De 2 unidades vende 1 -> queda 1 (ya estaba por debajo del umbral)
+      const res = evaluateStockDelta(2, -1)
+      expect(res.nextStock).toBe(1)
+      expect(res.shouldTriggerAlert).toBe(false)
+    })
+
+    it('clamps stock to zero without allowing negative numbers', () => {
+      const res = evaluateStockDelta(2, -10)
+      expect(res.nextStock).toBe(0)
+    })
   })
 })

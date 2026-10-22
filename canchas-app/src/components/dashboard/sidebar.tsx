@@ -36,6 +36,7 @@ import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-
 import { useUserRole, useTenantId } from '@/hooks/use-tenant-id'
 import { CustomizeMenuModal } from './customize-menu-modal'
 import { getClubSidebarPreferences, type SidebarNavPreferences } from '@/actions/club.actions'
+import { clearClientSensitiveStorage } from '@/lib/storage-cleanup'
 
 interface NavItem {
   title: string
@@ -544,15 +545,7 @@ export function Sidebar({
           action="/auth/logout" 
           method="post" 
           onSubmit={() => {
-            try {
-              localStorage.removeItem('canchar_today_schedule_snapshot')
-              localStorage.removeItem('canchar_cached_tenant_id')
-              localStorage.removeItem('canchar_cached_tenant_slug')
-              localStorage.removeItem('canchar_active_venue_id')
-              localStorage.removeItem('canchar_active_venue_name')
-              localStorage.removeItem('canchar_custom_venues')
-              localStorage.removeItem('canchar_court_orders')
-            } catch {}
+            clearClientSensitiveStorage()
             onClose?.()
           }}
         >

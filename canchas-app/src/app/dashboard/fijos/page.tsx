@@ -14,7 +14,8 @@ import {
   CalendarDays, 
   ShieldAlert,
   Pencil,
-  Trash2
+  Trash2,
+  Receipt
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,8 @@ import {
   checkAndReleaseOverdueRecurringSlots, 
   updateRecurringSlotStatus,
   updateRecurringSlot,
-  deleteRecurringSlot
+  deleteRecurringSlot,
+  registerRecurringSlotPaymentAction
 } from '@/actions/recurring-slots.actions'
 import { downloadIcs } from '@/lib/calendar'
 import { toast } from 'sonner'
@@ -94,6 +96,65 @@ export default function TurnosFijosPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [cancelFutureBookings, setCancelFutureBookings] = useState(true)
   const [submittingDelete, setSubmittingDelete] = useState(false)
+
+  // Estados para Modal de Cobro de Abono Mensual
+  const [payingSlot, setPayingSlot] = useState<RecurringSlot | null>(null)
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false)
+  const [payAmount, setPayAmount] = useState('')
+  const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO'>('CASH')
+  const [payDate, setPayDate] = useState(() => getArgentinaTodayIso())
+  const [payPeriod, setPayPeriod] = useState('')
+  const [payNotes, setPayNotes] = useState('')
+  const [submittingPay, setSubmittingPay] = useState(false)
+
+  const openPayModal = (slot: RecurringSlot) => {
+    const todayArg = getArgentinaTodayIso()
+    const [tYear, tMonth] = todayArg.split('-').map(Number)
+    const currentPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
+    setPayingSlot(slot)
+    setPayAmount(String(slot.monthly_price || ''))
+    setPayMethod('CASH')
+    setPayDate(todayArg)
+    setPayPeriod(currentPeriod)
+    setPayNotes('')
+    setIsPayModalOpen(true)
+  }
+
+  const handleRegisterPayment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!payingSlot || !tenantId) return
+    const amt = Number(payAmount)
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Ingresá un monto válido')
+      return
+    }
+    setSubmittingPay(true)
+    try {
+      const res = await registerRecurringSlotPaymentAction({
+        tenantId,
+        slotId: payingSlot.id,
+        amount: amt,
+        paymentMethod: payMethod,
+        paymentDate: payDate,
+        period: payPeriod,
+        notes: payNotes.trim() || undefined,
+      })
+      if (res.success) {
+        toast.success(`¡Pago mensual del abono de ${payingSlot.customer_name} registrado en caja!`, {
+          description: `Se ingresó $${amt.toLocaleString('es-AR')} en fecha ${payDate} (${payMethod === 'CASH' ? 'Efectivo en Caja' : payMethod === 'TRANSFER' ? 'Transferencia' : 'Mercado Pago'}).`
+        })
+        setIsPayModalOpen(false)
+        setPayingSlot(null)
+        await loadData()
+      } else {
+        toast.error(res.error || 'Error al registrar cobro')
+      }
+    } catch {
+      toast.error('Error al registrar cobro del abono')
+    } finally {
+      setSubmittingPay(false)
+    }
+  }
 
   const openEditModal = (slot: RecurringSlot) => {
     setEditingSlot(slot)
@@ -482,6 +543,62 @@ export default function TurnosFijosPage() {
                       Día {slot.payment_due_day} de cada mes
                     </Badge>
                   </div>
+
+                  {/* Estado y Cobro de la Mensualidad Actual */}
+                  {(() => {
+                    const todayArg = getArgentinaTodayIso()
+                    const [tYear, tMonth, tDay] = todayArg.split('-').map(Number)
+                    const currentPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
+                    const isPaidThisMonth = slot.last_paid_period === currentPeriod || Boolean(slot.notes?.includes(`[LAST_PAID:${currentPeriod}]`))
+                    const isOverdue = !isPaidThisMonth && tDay > slot.payment_due_day
+
+                    return (
+                      <div className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-all ${
+                        isPaidThisMonth 
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200' 
+                          : isOverdue 
+                          ? 'bg-red-950/40 border-red-500/40 text-red-200' 
+                          : 'bg-amber-950/30 border-amber-500/30 text-amber-200'
+                      }`}>
+                        <div className="flex items-center gap-2 min-w-0 pr-1">
+                          {isPaidThisMonth ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ) : isOverdue ? (
+                            <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-bold text-[11px] truncate">
+                              {isPaidThisMonth ? 'Mes al día' : isOverdue ? 'Abono Vencido' : 'Pendiente de cobro'}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {isPaidThisMonth 
+                                ? `Período ${currentPeriod} abonado` 
+                                : isOverdue 
+                                ? `Venció el día ${slot.payment_due_day}` 
+                                : `Vence el día ${slot.payment_due_day}`}
+                            </div>
+                          </div>
+                        </div>
+
+                        <Button
+                          size="sm"
+                          type="button"
+                          onClick={() => openPayModal(slot)}
+                          className={`h-7 px-2.5 text-[11px] font-bold rounded-lg gap-1 shrink-0 cursor-pointer transition-all ${
+                            isPaidThisMonth
+                              ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                          }`}
+                          title={isPaidThisMonth ? 'Registrar o consultar cobro de este abonado' : 'Registrar cobro mensual e impactar en caja diaria'}
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                          <span>{isPaidThisMonth ? 'Registrado' : 'Cobrar Abono'}</span>
+                        </Button>
+                      </div>
+                    )
+                  })()}
 
                   {/* Acciones del turno: Generar mes, Calendar y WhatsApp */}
                   <div className="pt-1 flex items-center justify-between gap-2">
@@ -928,6 +1045,154 @@ export default function TurnosFijosPage() {
                 </Button>
               </DialogFooter>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Registrar Cobro de Abono Mensual */}
+      <Dialog open={isPayModalOpen} onOpenChange={setIsPayModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-slate-800 text-slate-100 w-[95vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-400">
+              <Receipt className="w-5 h-5 text-emerald-500" />
+              Registrar Cobro de Abono Mensual
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              El cobro mensual se asienta UNA sola vez en la fecha real de pago e impacta en la Caja Diaria del club.
+            </DialogDescription>
+          </DialogHeader>
+
+          {payingSlot && (
+            <form onSubmit={handleRegisterPayment} className="space-y-4 py-2">
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-bold text-white text-sm">
+                  <span>{payingSlot.customer_name}</span>
+                  <Badge variant="outline" className="border-purple-500/40 text-purple-300">
+                    {DAYS_NAME[payingSlot.day_of_week]} • {payingSlot.start_time.slice(0, 5)} hs
+                  </Badge>
+                </div>
+                <div className="text-slate-400">
+                  Teléfono: <span className="text-slate-200 font-mono">{payingSlot.customer_phone}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="payAmount" className="text-xs text-slate-300 font-medium">
+                    Monto a Cobrar ($ ARS)
+                  </Label>
+                  <Input
+                    id="payAmount"
+                    type="number"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    placeholder="Monto"
+                    className="bg-slate-900 border-slate-700 text-white font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="payDate" className="text-xs text-slate-300 font-medium">
+                    Fecha del Cobro
+                  </Label>
+                  <Input
+                    id="payDate"
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                    className="bg-slate-900 border-slate-700 text-white"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300 font-medium">Método de Pago</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant={payMethod === 'CASH' ? 'default' : 'outline'}
+                    onClick={() => setPayMethod('CASH')}
+                    className={`text-xs h-9 ${payMethod === 'CASH' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'border-slate-800 text-slate-300'}`}
+                  >
+                    Efectivo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={payMethod === 'TRANSFER' ? 'default' : 'outline'}
+                    onClick={() => setPayMethod('TRANSFER')}
+                    className={`text-xs h-9 ${payMethod === 'TRANSFER' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'border-slate-800 text-slate-300'}`}
+                  >
+                    Transferencia
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={payMethod === 'MERCADOPAGO' ? 'default' : 'outline'}
+                    onClick={() => setPayMethod('MERCADOPAGO')}
+                    className={`text-xs h-9 ${payMethod === 'MERCADOPAGO' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'border-slate-800 text-slate-300'}`}
+                  >
+                    Mercado Pago
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="payPeriod" className="text-xs text-slate-300 font-medium">
+                  Período Mensual (Año-Mes)
+                </Label>
+                <Input
+                  id="payPeriod"
+                  type="month"
+                  value={payPeriod}
+                  onChange={(e) => setPayPeriod(e.target.value)}
+                  className="bg-slate-900 border-slate-700 text-white font-mono"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="payNotes" className="text-xs text-slate-300 font-medium">
+                  Nota / Detalle Adicional (Opcional)
+                </Label>
+                <Input
+                  id="payNotes"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  placeholder="Ej. Cobrado en mostrador de recepción"
+                  className="bg-slate-900 border-slate-700 text-white text-xs"
+                />
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsPayModalOpen(false)}
+                  disabled={submittingPay}
+                  className="border-slate-800 text-slate-300"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submittingPay}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5"
+                >
+                  {submittingPay ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Registrando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Receipt className="w-4 h-4" />
+                      <span>Confirmar Pago en Caja</span>
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
           )}
         </DialogContent>
       </Dialog>

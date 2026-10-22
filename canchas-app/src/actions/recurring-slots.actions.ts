@@ -43,6 +43,25 @@ export async function getRecurringSlots(tenantId: string): Promise<RecurringSlot
     if (!error && data && data.length > 0) {
       const res = data as unknown as RecurringSlot[]
       recurringSlotsCache.set(tenantId, { data: res, expiresAt: Date.now() + 60000 })
+
+      // Saneamiento proactivo en segundo plano: asegurar que los turnos individuales de abonados
+      // nunca figuren como cobros en efectivo en caja diaria
+      void (async () => {
+        try {
+          await serviceClient
+            .from('bookings')
+            .update({
+              deposit_cents: 0,
+              staff_deposit_amount_cents: 0,
+              payment_method: 'abono_fijo',
+              paid_at: null,
+            })
+            .eq('tenant_id', tenantId)
+            .ilike('staff_notes', '%ABONO FIJO%')
+            .eq('payment_method', 'cash')
+        } catch {}
+      })()
+
       return res
     }
 
@@ -541,10 +560,10 @@ export async function generateMonthlyBookingsForSlot(
           status: 'confirmed',
           sport: (slot.court as { sport?: string } | null)?.sport || 'FUTBOL5',
           price_total_cents: priceTotalCents,
-          deposit_cents: priceTotalCents, // Cubierto por abono mensual
-          staff_deposit_amount_cents: priceTotalCents,
-          payment_method: 'cash',
-          paid_at: new Date().toISOString(),
+          deposit_cents: 0, // Cubierto por suscripción mensual del abonado (NO es cobro diario en caja)
+          staff_deposit_amount_cents: 0,
+          payment_method: 'abono_fijo',
+          paid_at: null,
           customer_name: slot.customer_name,
           customer_phone: slot.customer_phone,
           customer_email: slot.customer_email || null,
@@ -623,27 +642,64 @@ export async function generateMonthlyBookingsForSlot(
 }
 
 /**
- * Registra el cobro de la mensualidad de un turno fijo.
- * Guarda la marca [LAST_PAID:YYYY-MM] en notes para garantizar que el motor
- * de liberación automática sepa que el cliente pagó este mes.
+ * Registra el cobro de la mensualidad de un turno fijo UNA SOLA VEZ en la fecha real de pago.
+ * Asienta el cobro real en booking_payments (para la Caja Diaria del club), registra la auditoría y
+ * notificaciones, y actualiza last_paid_period en recurring_slots.
  */
 export async function registerRecurringSlotPaymentAction(
-  tenantId: string,
-  slotId: string,
-  period?: string
+  tenantIdOrPayload: string | {
+    tenantId: string
+    slotId: string
+    amount?: number
+    paymentMethod?: 'CASH' | 'TRANSFER' | 'MERCADOPAGO'
+    paymentDate?: string // 'YYYY-MM-DD'
+    period?: string // 'YYYY-MM'
+    notes?: string
+  },
+  slotIdParam?: string,
+  periodParam?: string
 ): Promise<{ success: boolean; error?: string; period?: string }> {
   try {
+    let tenantId: string
+    let slotId: string
+    let amount: number | undefined
+    let paymentMethod: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' = 'CASH'
+    let paymentDate: string | undefined
+    let period: string | undefined
+    let notes: string | undefined
+
+    if (typeof tenantIdOrPayload === 'object' && tenantIdOrPayload !== null) {
+      tenantId = tenantIdOrPayload.tenantId
+      slotId = tenantIdOrPayload.slotId
+      amount = tenantIdOrPayload.amount
+      paymentMethod = tenantIdOrPayload.paymentMethod || 'CASH'
+      paymentDate = tenantIdOrPayload.paymentDate
+      period = tenantIdOrPayload.period
+      notes = tenantIdOrPayload.notes
+    } else {
+      tenantId = tenantIdOrPayload
+      slotId = slotIdParam || ''
+      period = periodParam
+    }
+
+    if (!tenantId || !slotId) {
+      return { success: false, error: 'Identificadores inválidos para registrar pago' }
+    }
+
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) {
-      return { success: false, error: auth.error }
+      return { success: false, error: auth.error || 'No autorizado' }
     }
+
     const supabase = await createServiceClient()
-    const now = new Date()
-    const targetPeriod = period || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const todayArg = getArgentinaTodayIso()
+    const [tYear, tMonth] = todayArg.split('-').map(Number)
+    const targetPeriod = period || `${tYear}-${String(tMonth).padStart(2, '0')}`
+    const targetPaymentDate = paymentDate || todayArg
 
     const { data: slot, error: fetchErr } = await supabase
       .from('recurring_slots')
-      .select('id, notes')
+      .select('*, court:courts(id, name, sport)')
       .eq('id', slotId)
       .eq('tenant_id', tenantId)
       .single()
@@ -652,8 +708,101 @@ export async function registerRecurringSlotPaymentAction(
       return { success: false, error: 'Turno fijo no encontrado' }
     }
 
+    const effectiveAmount = typeof amount === 'number' && !isNaN(amount) && amount > 0 
+      ? amount 
+      : Number(slot.monthly_price) || 0
+
+    const now = new Date()
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+    const paymentIso = `${targetPaymentDate}T${timeStr}-03:00`
+
+    // Buscar una reserva existente del abonado para asociar opcionalmente como booking_id si la DB lo requiere
+    const { data: slotBooking } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('recurring_slot_id', slotId)
+      .order('booked_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    const paymentConcept = `Abono Mensual: ${slot.customer_name} (${targetPeriod})`
+    const fullNotes = notes ? `${paymentConcept} - ${notes}` : paymentConcept
+
+    // 1. Asentar cobro real e inmutable en booking_payments (para la Caja Diaria del día del pago)
+    try {
+      const payRecord: Record<string, unknown> = {
+        tenant_id: tenantId,
+        amount_ars: effectiveAmount,
+        amount_cents: Math.round(effectiveAmount * 100),
+        payment_method: paymentMethod,
+        payment_type: 'BALANCE',
+        payment_date: targetPaymentDate,
+        registered_at: paymentIso,
+        notes: fullNotes,
+      }
+      if (slotBooking?.id) {
+        payRecord.booking_id = slotBooking.id
+      }
+      const { error: insertErr } = await supabase.from('booking_payments').insert(payRecord)
+      if (insertErr) {
+        console.warn('[registerRecurringSlotPaymentAction] Warning inserting booking_payments:', insertErr.message)
+      }
+    } catch (payEx) {
+      console.warn('[registerRecurringSlotPaymentAction] Error with booking_payments:', payEx)
+    }
+
+    // 2. Registrar en audit_log como PAYMENT_RECEIVED y CLUB_NOTIFICATION (una sola notificación real)
+    try {
+      await supabase.from('audit_log').insert([
+        {
+          tenant_id: tenantId,
+          action: 'PAYMENT_RECEIVED',
+          table_name: 'recurring_slots',
+          record_id: slotId,
+          new_data: {
+            type: 'RECURRING_SLOT_PAYMENT',
+            amount: effectiveAmount,
+            payment_method: paymentMethod,
+            customer_name: slot.customer_name,
+            slot_id: slotId,
+            period: targetPeriod,
+            payment_date: targetPaymentDate,
+            notes: fullNotes,
+            created_at: paymentIso,
+          },
+        },
+        {
+          tenant_id: tenantId,
+          action: 'CLUB_NOTIFICATION',
+          table_name: 'recurring_slots',
+          record_id: `notif-abono-${slotId}-${targetPeriod}`,
+          new_data: {
+            id: `abono-pay-${slotId}-${targetPeriod}`,
+            tenant_id: tenantId,
+            type: 'PAYMENT_RECEIVED',
+            category: 'PAYMENTS',
+            title: 'Pago de Abono Mensual Recibido',
+            message: `Se recibió el cobro mensual de $${effectiveAmount.toLocaleString('es-AR')} (${paymentMethod === 'CASH' ? 'Efectivo en Caja' : paymentMethod === 'TRANSFER' ? 'Transferencia Bancaria' : 'Mercado Pago'}) de ${slot.customer_name}.`,
+            created_at: paymentIso,
+            read: false,
+            metadata: {
+              slot_id: slotId,
+              customer_name: slot.customer_name,
+              customer_phone: slot.customer_phone,
+              amount_ars: effectiveAmount,
+              period: targetPeriod,
+              payment_method: paymentMethod,
+            },
+          },
+        },
+      ])
+    } catch (auditEx) {
+      console.warn('[registerRecurringSlotPaymentAction] Warning with audit_log:', auditEx)
+    }
+
+    // 3. Actualizar recurring_slots con last_paid_period y tag [LAST_PAID:YYYY-MM]
     let currentNotes = slot.notes || ''
-    // Remover marcas previas del mismo o distinto período para mantener notes limpio
     currentNotes = currentNotes.replace(/\[LAST_PAID:[0-9]{4}-[0-9]{2}\]/g, '').trim()
     const updatedNotes = currentNotes ? `${currentNotes} [LAST_PAID:${targetPeriod}]` : `[LAST_PAID:${targetPeriod}]`
 
@@ -663,7 +812,7 @@ export async function registerRecurringSlotPaymentAction(
         notes: updatedNotes,
         last_paid_period: targetPeriod,
         status: 'ACTIVE',
-        updated_at: now.toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', slotId)
 
@@ -671,8 +820,11 @@ export async function registerRecurringSlotPaymentAction(
       return { success: false, error: updateErr.message }
     }
 
+    await invalidateRecurringSlotsCache(tenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/fijos')
+    revalidatePath('/dashboard/caja')
+
     return { success: true, period: targetPeriod }
   } catch (err) {
     console.error('[registerRecurringSlotPaymentAction] Error:', err)

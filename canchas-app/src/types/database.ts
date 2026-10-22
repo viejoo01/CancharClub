@@ -320,6 +320,7 @@ export interface RecurringSlot {
   status: 'ACTIVE' | 'PAUSED' | 'CANCELLED'
   payment_due_day: number // Día del mes (1-28)
   last_generated_month?: string | null // Ej: "2026-09"
+  last_paid_period?: string | null     // Ej: "2026-10"
   notes?: string | null
   created_at?: string
   updated_at?: string

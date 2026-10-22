@@ -118,6 +118,7 @@ export async function getDailyCashReport(
     staff_notes?: string | null
     booked_at?: string | null
     status?: string | null
+    recurring_slot_id?: string | null
     courts?: { name?: string | null } | { name?: string | null }[] | null
   }> = []
 
@@ -126,14 +127,14 @@ export async function getDailyCashReport(
       // Reservas cuya franja de juego overlap con el día
       supabase
         .from('bookings')
-        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
+        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
         .eq('tenant_id', effectiveTenantId)
         .filter('booked_at', 'ov', `[${dayStart},${dayEnd}]`)
         .neq('status', 'cancelled'),
       // Reservas creadas o cobradas/actualizadas dentro de la fecha
       supabase
         .from('bookings')
-        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, courts(name)')
+        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
         .eq('tenant_id', effectiveTenantId)
         .or(`and(created_at.gte.${dayStart},created_at.lte.${dayEnd}),and(paid_at.gte.${dayStart},paid_at.lte.${dayEnd}),and(updated_at.gte.${dayStart},updated_at.lte.${dayEnd})`)
         .neq('status', 'cancelled')
@@ -195,6 +196,16 @@ export async function getDailyCashReport(
           if (nameMatch) {
             customerName = nameMatch[1].trim()
           }
+        } else if (
+          bp.notes?.toLowerCase().includes('abono mensual') ||
+          bp.notes?.toLowerCase().includes('abono fijo') ||
+          bp.notes?.toLowerCase().includes('cobro abono')
+        ) {
+          courtName = 'Abono Fijo (Mensual)'
+          const nameMatch = bp.notes.match(/Abono (?:Fijo|Mensual):\s*([^-\n(]+)/i)
+          if (nameMatch) {
+            customerName = nameMatch[1].trim()
+          }
         }
 
         let method = 'CASH'
@@ -230,6 +241,17 @@ export async function getDailyCashReport(
   for (const row of bookingRows ?? []) {
     // Si esta reserva ya tiene cobros asentados formalmente en booking_payments, evitar duplicación
     if (recordedBookingIds.has(row.id)) continue
+
+    // CRITICAL: Los turnos asignados a abonados fijos son reservas de cancha cubiertas por la suscripción mensual.
+    // NUNCA deben sumar como cobros individuales de seña/saldo en la caja diaria (evita ingresos falsos e irreales).
+    const isAbonoTurn = Boolean(
+      row.recurring_slot_id ||
+      row.payment_method === 'abono_fijo' ||
+      (row.staff_notes && row.staff_notes.toUpperCase().includes('ABONO FIJO'))
+    )
+    if (isAbonoTurn) {
+      continue
+    }
 
     const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
     const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
@@ -486,31 +508,35 @@ export async function getDailyCashReport(
         payment_method?: string
         customer_name?: string
         notes?: string
+        created_at?: string
       } | null
 
       const amt = Number(pData?.amount) || 0
       if (amt <= 0) continue
 
+      const isAbono = pData?.type === 'RECURRING_SLOT_PAYMENT' || pData?.type === 'ABONO_FIJO_PAYMENT'
       // Evitar duplicación si el cobro ya fue procesado mediante booking_payments
       const isAlreadyInEntries = entries.some(e =>
-        e.court_name.includes('Cuenta Corriente') &&
+        (e.court_name.includes('Abono') || e.court_name.includes('Cuenta Corriente')) &&
         e.amount_ars === amt
       )
       if (isAlreadyInEntries) continue
 
       const pMethod = String(pData?.payment_method || '').toUpperCase()
-      const resolvedMethod = pMethod === 'TRANSFER' ? 'TRANSFER' : 'CASH'
+      let resolvedMethod = 'CASH'
+      if (pMethod.includes('TRANSFER')) resolvedMethod = 'TRANSFER'
+      else if (pMethod.includes('MERCADO') || pMethod.includes('MP') || pMethod.includes('QR')) resolvedMethod = 'MERCADOPAGO'
 
       entries.push({
         id: `pay-audit-${ap.id}`,
-        customer_name: pData?.customer_name || 'Cliente Cuenta Corriente',
-        court_name: 'Cuenta Corriente (Cobro)',
+        customer_name: pData?.customer_name || (isAbono ? 'Abonado Fijo' : 'Cliente Cuenta Corriente'),
+        court_name: isAbono ? 'Abono Fijo (Mensual)' : 'Cuenta Corriente (Cobro)',
         amount_ars: amt,
         payment_type: 'BALANCE',
         payment_method: resolvedMethod,
-        paid_at: ap.created_at,
-        notes: pData?.notes || 'Cobro de saldo adeudado',
-        origin: 'cuenta_corriente',
+        paid_at: pData?.created_at || ap.created_at,
+        notes: pData?.notes || (isAbono ? 'Cobro de abono fijo mensual' : 'Cobro de saldo adeudado'),
+        origin: isAbono ? 'abono_fijo' : 'cuenta_corriente',
       })
     }
   } catch (auditErr) {

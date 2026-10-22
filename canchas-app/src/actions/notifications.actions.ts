@@ -237,7 +237,7 @@ export async function getClubNotificationsAction(params?: {
       // B. Reservas recientes (últimos 30 días o hasta 80)
       supabase
         .from('bookings')
-        .select('id, tenant_id, court_id, booked_at, status, sport, price_total_cents, deposit_cents, payment_method, paid_at, customer_name, customer_phone, customer_email, staff_notes, created_at, updated_at')
+        .select('id, tenant_id, court_id, booked_at, status, sport, price_total_cents, deposit_cents, payment_method, paid_at, customer_name, customer_phone, customer_email, staff_notes, recurring_slot_id, created_at, updated_at')
         .eq('tenant_id', effectiveTenantId)
         .order('created_at', { ascending: false })
         .limit(80),
@@ -296,6 +296,17 @@ export async function getClubNotificationsAction(params?: {
     // 4. Sintetizar reservas históricas reales
     if (bookingsRes.data) {
       for (const b of bookingsRes.data) {
+        // Los turnos periódicos de abonados fijos no deben emitir notificaciones individuales
+        // de "Turno Reservado" ni falsos "Pago / Seña Recibida" por cada turno semanal generado.
+        const isAbonoTurn = Boolean(
+          (b as { recurring_slot_id?: string | null }).recurring_slot_id ||
+          b.payment_method === 'abono_fijo' ||
+          (b.staff_notes && b.staff_notes.toUpperCase().includes('ABONO FIJO'))
+        )
+        if (isAbonoTurn) {
+          continue
+        }
+
         const court = courtMap.get(b.court_id)
         const courtName = court?.name || 'Cancha'
         const sportName = court?.sport || b.sport || 'Cancha'

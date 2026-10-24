@@ -2530,5 +2530,53 @@ export async function recordPlayerSplitPayment(payload: {
   }
 }
 
+// ─── ACTION: Auto Check-In desde Tótem de Entrada ────────────────────────────
 
+export async function checkInTotemBooking(params: {
+  bookingId: string
+  tenantId: string
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createServiceClient()
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('id, tenant_id, customer_name, start_time, end_time, court_id, staff_notes')
+      .eq('id', params.bookingId)
+      .eq('tenant_id', params.tenantId)
+      .single()
 
+    if (bErr || !booking) return { success: false, error: 'Reserva no encontrada para este club' }
+
+    const checkInTag = `[CHECK-IN TÓTEM ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}]`
+    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${checkInTag}` : checkInTag
+
+    await supabase
+      .from('bookings')
+      .update({
+        staff_notes: updatedNotes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', booking.id)
+
+    // Notificar al personal del club en recepción
+    void recordClubNotification({
+      tenantId: booking.tenant_id,
+      type: 'BOOKING_CONFIRMED',
+      category: 'BOOKINGS',
+      title: 'Jugador presente en el club (Tótem)',
+      message: `${booking.customer_name} confirmó su llegada en el tótem de entrada para su turno (${booking.start_time?.slice(0, 5) || ''} hs).`,
+      metadata: {
+        booking_id: booking.id,
+        customer_name: booking.customer_name,
+        court_id: booking.court_id,
+      },
+    })
+
+    void invalidateCalendarBookingsCache(booking.tenant_id)
+    revalidatePath('/dashboard')
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al procesar check-in en tótem'
+    return { success: false, error: msg }
+  }
+}

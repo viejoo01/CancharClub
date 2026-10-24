@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Script from 'next/script'
 import {
   CreditCard,
   ShieldCheck,
@@ -32,6 +33,7 @@ import {
   isValidDni,
   isValidCardholder,
 } from '@/lib/card-validation'
+import { tokenizeCardWithMercadoPagoClient } from '@/lib/mercadopago-client'
 import { logout } from '@/actions/auth.actions'
 import { SAAS_PLANS } from '@/config/saas-plans'
 import { formatARS } from '@/lib/utils'
@@ -223,14 +225,35 @@ function OnboardingCardContent() {
     try {
       const activeTenant = planDetails?.tenantId || undefined
 
-      const res = await validateAndRegisterCardWithMercadoPago({
-        tenantId: activeTenant,
+      // Intentar tokenización directa en el navegador vía SDK v2 de Mercado Pago (PCI-DSS SAQ A-EP)
+      const tokenRes = await tokenizeCardWithMercadoPagoClient({
         cardNumber: rawNum,
-        cardHolder: cardHolder.trim().toUpperCase(),
-        cardExpiry,
-        cardCvv,
-        cardDni,
+        cardholderName: cardHolder.trim().toUpperCase(),
+        cardExpiration: cardExpiry,
+        securityCode: cardCvv,
+        identificationNumber: cardDni,
       })
+
+      const payload = tokenRes.success && tokenRes.token
+        ? {
+            tenantId: activeTenant,
+            cardTokenId: tokenRes.token,
+            cardBrand: detected.brand,
+            cardLast4: rawNum.slice(-4),
+            cardHolder: cardHolder.trim().toUpperCase(),
+            cardExpiry,
+            cardDni,
+          }
+        : {
+            tenantId: activeTenant,
+            cardNumber: rawNum,
+            cardHolder: cardHolder.trim().toUpperCase(),
+            cardExpiry,
+            cardCvv,
+            cardDni,
+          }
+
+      const res = await validateAndRegisterCardWithMercadoPago(payload)
 
       if (res.success) {
         const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : detected.brand
@@ -561,6 +584,9 @@ function OnboardingCardContent() {
       <footer className="w-full border-t border-slate-800/60 py-4 text-center text-xs text-slate-500 select-none">
         <p>© 2026 CancharClub. Todos los derechos reservados. Cobros gestionados de forma segura con Mercado Pago MLA.</p>
       </footer>
+
+      {/* Script oficial de Mercado Pago SDK v2 para tokenización PCI-DSS */}
+      <Script src="https://sdk.mercadopago.com/js/v2" strategy="lazyOnload" />
     </div>
   )
 }

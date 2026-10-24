@@ -175,6 +175,46 @@ export async function getIssuedInvoices(tenantId?: string): Promise<IssuedInvoic
     }
 
     const supabase = await createServiceClient()
+
+    // 1. Intentar consultar tabla relacional dedicada invoices
+    const { data: dbInvoices, error: dbErr } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('tenant_id', effectiveTenantId)
+      .order('fecha_emision', { ascending: false })
+      .limit(50)
+
+    if (!dbErr && dbInvoices && dbInvoices.length > 0) {
+      const mapped: IssuedInvoice[] = dbInvoices.map((r: {
+        id: string
+        tipo_comprobante: number
+        numero_completo: string
+        fecha_emision: string
+        cliente_nombre: string
+        cliente_nro_doc?: string | null
+        monto_total: number
+        cae: string
+        cae_vencimiento: string
+        concepto?: number
+        qr_url?: string | null
+      }) => ({
+        id: r.id,
+        comprobanteTipo: r.tipo_comprobante === 6 ? 'Factura B' : (r.tipo_comprobante === 1 ? 'Factura A' : 'Factura C'),
+        numeroCompleto: r.numero_completo,
+        fechaEmision: r.fecha_emision,
+        cliente: r.cliente_nombre,
+        cuitDni: r.cliente_nro_doc || 'Consumidor Final',
+        montoTotal: Number(r.monto_total),
+        cae: r.cae,
+        caeVto: r.cae_vencimiento,
+        concepto: r.concepto === 1 ? 'Productos' : 'Servicios de Canchas',
+        qrUrl: r.qr_url || '',
+      }))
+      invoicesCache.set(effectiveTenantId, { data: mapped, expiresAt: Date.now() + 60000 })
+      return mapped
+    }
+
+    // 2. Fallback retrocompatible a audit_log
     const { data } = await supabase
       .from('audit_log')
       .select('new_data')
@@ -240,8 +280,32 @@ export async function emitInvoiceAction(params: EmitInvoiceParams): Promise<Emit
 
       mockInvoices = [newInv, ...mockInvoices]
 
-      // Persistir de forma inmutable en audit_log
       const supabase = await createServiceClient()
+
+      // 1. Guardar de forma relacional en tabla dedicada invoices
+      try {
+        await supabase.from('invoices').insert({
+          tenant_id: effectiveTenantId,
+          booking_id: params.bookingId || null,
+          tipo_comprobante: params.tipoComprobante || 11,
+          punto_venta: config.puntoVenta || 1,
+          numero_comprobante: result.comprobanteNumero,
+          numero_completo: newInv.numeroCompleto,
+          fecha_emision: newInv.fechaEmision,
+          cliente_nombre: params.nombreCliente,
+          cliente_tipo_doc: params.tipoDocRec || 99,
+          cliente_nro_doc: params.nroDocRec || null,
+          concepto: params.concepto || 2,
+          monto_total: newInv.montoTotal,
+          cae: newInv.cae,
+          cae_vencimiento: newInv.caeVto,
+          qr_url: newInv.qrUrl,
+        })
+      } catch (tblErr) {
+        console.warn('[emitInvoiceAction] Invoices relational write:', tblErr)
+      }
+
+      // 2. Dual-write inmutable a audit_log
       await supabase.from('audit_log').insert({
         tenant_id: effectiveTenantId,
         action: 'AFIP_INVOICE_ISSUED',

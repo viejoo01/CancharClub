@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Script from 'next/script'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import {
   isValidDni,
   isValidCardholder,
 } from '@/lib/card-validation'
+import { tokenizeCardWithMercadoPagoClient } from '@/lib/mercadopago-client'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -144,14 +146,35 @@ export function PlanActivationModal({
     try {
       const activeTenant = tenantId || undefined
 
-      const res = await validateAndRegisterCardWithMercadoPago({
-        tenantId: activeTenant,
+      // Intentar tokenización directa en el navegador vía SDK v2 de Mercado Pago (PCI-DSS SAQ A-EP)
+      const tokenRes = await tokenizeCardWithMercadoPagoClient({
         cardNumber: rawNum,
-        cardHolder: cardHolder.trim().toUpperCase(),
-        cardExpiry,
-        cardCvv,
-        cardDni,
+        cardholderName: cardHolder.trim().toUpperCase(),
+        cardExpiration: cardExpiry,
+        securityCode: cardCvv,
+        identificationNumber: cardDni,
       })
+
+      const payload = tokenRes.success && tokenRes.token
+        ? {
+            tenantId: activeTenant,
+            cardTokenId: tokenRes.token,
+            cardBrand: detected.brand,
+            cardLast4: rawNum.slice(-4),
+            cardHolder: cardHolder.trim().toUpperCase(),
+            cardExpiry,
+            cardDni,
+          }
+        : {
+            tenantId: activeTenant,
+            cardNumber: rawNum,
+            cardHolder: cardHolder.trim().toUpperCase(),
+            cardExpiry,
+            cardCvv,
+            cardDni,
+          }
+
+      const res = await validateAndRegisterCardWithMercadoPago(payload)
 
       if (res.success) {
         const brand = ('cardBrand' in res && res.cardBrand) ? res.cardBrand : detected.brand
@@ -389,6 +412,9 @@ export function PlanActivationModal({
             )}
           </button>
         </form>
+
+        {/* Script oficial de Mercado Pago SDK v2 para tokenización PCI-DSS */}
+        <Script src="https://sdk.mercadopago.com/js/v2" strategy="lazyOnload" />
       </DialogContent>
     </Dialog>
   )

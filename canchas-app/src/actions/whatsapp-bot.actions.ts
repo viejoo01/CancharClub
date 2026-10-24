@@ -50,6 +50,34 @@ export async function getWhatsAppBotConfig(tenantId: string): Promise<WhatsAppBo
 
   try {
     const supabase = await createServiceClient()
+
+    // 1. Intentar consultar tabla dedicada whatsapp_bot_configs
+    const { data: dbConfig, error: dbErr } = await supabase
+      .from('whatsapp_bot_configs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!dbErr && dbConfig) {
+      const hasRealKeys = Boolean(
+        (dbConfig.api_key && dbConfig.phone_number_id) ||
+        (process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID)
+      )
+      return {
+        tenant_id: tenantId,
+        is_enabled: dbConfig.is_enabled ?? true,
+        auto_confirm_bookings: dbConfig.auto_confirm_bookings ?? true,
+        auto_reminder_2h: dbConfig.auto_reminder_2h ?? true,
+        auto_waitlist_alert: dbConfig.auto_waitlist_alert ?? true,
+        provider: hasRealKeys ? 'META_CLOUD' : 'SIMULATED',
+        phone_number_id: dbConfig.phone_number_id || undefined,
+        api_key: dbConfig.api_key || undefined,
+        custom_greeting: dbConfig.custom_greeting || defaultConfig.custom_greeting,
+        updated_at: dbConfig.updated_at,
+      }
+    }
+
+    // 2. Fallback a audit_log
     const { data } = await supabase
       .from('audit_log')
       .select('new_data')
@@ -99,6 +127,26 @@ export async function saveWhatsAppBotConfig(
     }
 
     const supabase = await createServiceClient()
+
+    // 1. Guardar relacionalmente en tabla dedicada whatsapp_bot_configs
+    try {
+      await supabase.from('whatsapp_bot_configs').upsert({
+        tenant_id: tenantId,
+        is_enabled: updated.is_enabled,
+        auto_confirm_bookings: updated.auto_confirm_bookings,
+        auto_reminder_2h: updated.auto_reminder_2h,
+        auto_waitlist_alert: updated.auto_waitlist_alert,
+        provider: updated.provider,
+        phone_number_id: updated.phone_number_id || null,
+        api_key: updated.api_key || null,
+        custom_greeting: updated.custom_greeting || null,
+        updated_at: updated.updated_at,
+      }, { onConflict: 'tenant_id' })
+    } catch (tblErr) {
+      console.warn('[saveWhatsAppBotConfig] Table write warning:', tblErr)
+    }
+
+    // 2. Dual-write a audit_log
     const { error } = await supabase.from('audit_log').insert({
       tenant_id: tenantId,
       action: 'WHATSAPP_BOT_CONFIG',
@@ -109,7 +157,6 @@ export async function saveWhatsAppBotConfig(
 
     if (error) {
       console.error('[saveWhatsAppBotConfig] Error saving config:', error.message)
-      return { success: false, config: updated, error: error.message }
     }
 
     revalidatePath('/dashboard/whatsapp')
@@ -127,6 +174,38 @@ export async function getWhatsAppMessageLogs(tenantId: string): Promise<Automate
     if (!auth.authorized) return []
 
     const supabase = await createServiceClient()
+
+    // 1. Intentar consultar tabla dedicada whatsapp_message_logs
+    const { data: dbLogs, error: dbErr } = await supabase
+      .from('whatsapp_message_logs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('sent_at', { ascending: false })
+      .limit(30)
+
+    if (!dbErr && dbLogs && dbLogs.length > 0) {
+      return dbLogs.map((row: {
+        id: string
+        tenant_id: string
+        recipient_phone: string
+        recipient_name: string
+        message_type: 'CONFIRMATION' | 'REMINDER_2H' | 'WAITLIST_ALERT' | 'DEBT_REMINDER' | 'TEST'
+        content: string
+        status: 'SENT' | 'PENDING' | 'FAILED' | 'SIMULATED'
+        sent_at: string
+      }) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        recipient_phone: row.recipient_phone,
+        recipient_name: row.recipient_name,
+        message_type: row.message_type,
+        content: row.content,
+        status: row.status,
+        sent_at: row.sent_at,
+      }))
+    }
+
+    // 2. Fallback a audit_log
     const { data } = await supabase
       .from('audit_log')
       .select('id, record_id, new_data, created_at')
@@ -147,13 +226,30 @@ export async function getWhatsAppMessageLogs(tenantId: string): Promise<Automate
   }
 }
 
-/** Registra un log de mensaje en audit_log */
+/** Registra un log de mensaje en base de datos */
 async function logAutomatedMessage(
   tenantId: string,
   log: Omit<AutomatedMessageLog, 'id' | 'tenant_id'>
 ) {
   try {
     const supabase = await createServiceClient()
+
+    // 1. Intentar insertar en tabla dedicada whatsapp_message_logs
+    try {
+      await supabase.from('whatsapp_message_logs').insert({
+        tenant_id: tenantId,
+        recipient_phone: log.recipient_phone,
+        recipient_name: log.recipient_name,
+        message_type: log.message_type,
+        content: log.content,
+        status: log.status,
+        sent_at: log.sent_at || new Date().toISOString(),
+      })
+    } catch (tblErr) {
+      console.warn('[logAutomatedMessage] Relational log insert:', tblErr)
+    }
+
+    // 2. Dual-write inmutable a audit_log
     await supabase.from('audit_log').insert({
       tenant_id: tenantId,
       action: 'WHATSAPP_MESSAGE_SENT',

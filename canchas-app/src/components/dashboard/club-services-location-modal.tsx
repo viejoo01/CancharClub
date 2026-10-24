@@ -28,6 +28,7 @@ import {
   Navigation,
   Loader2,
   CheckCircle2,
+  Check,
   Layers,
   Compass,
 } from 'lucide-react'
@@ -447,13 +448,13 @@ export function ClubServicesLocationModal({
                             {srv.title}
                           </span>
                           <span
-                            className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] shrink-0 ${
+                            className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${
                               srv.active
                                 ? 'bg-emerald-500 text-slate-950 font-black'
                                 : 'border border-slate-700 text-transparent'
                             }`}
                           >
-                            ✓
+                            {srv.active ? <Check className="w-2.5 h-2.5" /> : null}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">

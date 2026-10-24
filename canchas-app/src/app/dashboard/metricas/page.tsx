@@ -7,7 +7,6 @@ import {
   BarChart3, 
   TrendingUp, 
   Flame, 
-  Coffee, 
   DollarSign, 
   ShieldCheck, 
   Layers, 
@@ -27,13 +26,15 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const HOURS = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '19:30', '21:00', '22:30']
 const COURT_COLORS = ['bg-emerald-500', 'bg-teal-500', 'bg-sky-500', 'bg-indigo-500', 'bg-amber-500', 'bg-purple-500']
 
-// Module-level cache for instant 0ms tab navigation
-let cachedAnalytics: ClubAnalyticsData | null = null
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedAnalyticsMap = new Map<string, ClubAnalyticsData>()
 
 export default function MetricasPage() {
   const tenantId = useTenantId()
-  const [analytics, setAnalytics] = useState<ClubAnalyticsData | null>(() => cachedAnalytics)
-  const [loading, setLoading] = useState(() => !cachedAnalytics)
+  const [analytics, setAnalytics] = useState<ClubAnalyticsData | null>(() => 
+    tenantId ? (cachedAnalyticsMap.get(tenantId) || null) : null
+  )
+  const [loading, setLoading] = useState(() => !tenantId || !cachedAnalyticsMap.has(tenantId))
 
   const [selectedCell, setSelectedCell] = useState<{ day: string; hour: string; pct: number } | null>(null)
 
@@ -44,7 +45,9 @@ export default function MetricasPage() {
     getClubAnalytics(tenantId)
       .then(data => {
         if (isMounted) {
-          cachedAnalytics = data
+          if (data) {
+            cachedAnalyticsMap.set(tenantId, data)
+          }
           setAnalytics(data)
           setLoading(false)
         }

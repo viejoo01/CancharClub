@@ -43,24 +43,31 @@ import type { AfipConfig, TipoComprobante } from '@/lib/afip'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
-// Module-level cache for instant 0ms tab navigation
-let cachedInvoices: IssuedInvoice[] | null = null
-let cachedAfipConfig: AfipConfig | null = null
+// Module-level cache keyed by tenant_id for instant 0ms tab navigation without cross-tenant bleed
+const cachedInvoicesMap = new Map<string, IssuedInvoice[]>()
+const cachedAfipConfigMap = new Map<string, AfipConfig>()
 
 export default function FacturacionPage() {
   const tenantId = useTenantId()
-  const [invoices, setInvoices] = useState<IssuedInvoice[]>(() => cachedInvoices || [])
-  const [config, setConfig] = useState<AfipConfig>(() => cachedAfipConfig || {
-    cuit: '',
-    puntoVenta: 1,
-    razonSocial: '',
-    condicionIva: 'MONOTRIBUTO',
-    domicilioComercial: '',
-    inicioActividades: getArgentinaTodayIso(),
-    ingresosBrutos: '',
-    environment: 'TESTING'
+  const [invoices, setInvoices] = useState<IssuedInvoice[]>(() => {
+    return tenantId && cachedInvoicesMap.has(tenantId) ? cachedInvoicesMap.get(tenantId)! : []
   })
-  const [loading, setLoading] = useState(() => !cachedInvoices)
+  const [config, setConfig] = useState<AfipConfig>(() => {
+    if (tenantId && cachedAfipConfigMap.has(tenantId)) {
+      return cachedAfipConfigMap.get(tenantId)!
+    }
+    return {
+      cuit: '',
+      puntoVenta: 1,
+      razonSocial: '',
+      condicionIva: 'MONOTRIBUTO',
+      domicilioComercial: '',
+      inicioActividades: getArgentinaTodayIso(),
+      ingresosBrutos: '',
+      environment: 'TESTING'
+    }
+  })
+  const [loading, setLoading] = useState(() => !(tenantId && cachedInvoicesMap.has(tenantId)))
 
   // Modales
   const [isEmitOpen, setIsEmitOpen] = useState(false)
@@ -79,13 +86,13 @@ export default function FacturacionPage() {
     if (!tenantId) return
     let isMounted = true
     Promise.all([
-      getIssuedInvoices(),
+      getIssuedInvoices(tenantId),
       getAfipConfig(tenantId)
     ])
       .then(([invs, cfg]) => {
         if (isMounted) {
-          cachedInvoices = invs
-          if (cfg) cachedAfipConfig = cfg
+          cachedInvoicesMap.set(tenantId, invs)
+          if (cfg) cachedAfipConfigMap.set(tenantId, cfg)
           setInvoices(invs)
           if (cfg) setConfig(cfg)
           setLoading(false)
@@ -136,7 +143,8 @@ export default function FacturacionPage() {
         setIsEmitOpen(false)
         setClienteNombre('')
         setClienteDoc('')
-        const updated = await getIssuedInvoices()
+        const updated = await getIssuedInvoices(tenantId || undefined)
+        if (tenantId) cachedInvoicesMap.set(tenantId, updated)
         setInvoices(updated)
       } else {
         toast.error(res.error || 'Error al autorizar con AFIP')

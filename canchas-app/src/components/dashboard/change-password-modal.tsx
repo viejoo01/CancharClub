@@ -178,7 +178,7 @@ export function ChangePasswordModal({
 
           {/* Nueva Contraseña */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>Nueva Contraseña</span>
             </label>
@@ -206,7 +206,7 @@ export function ChangePasswordModal({
 
           {/* Confirmar Nueva Contraseña */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
               <span>Confirmar Nueva Contraseña</span>
             </label>
@@ -234,22 +234,18 @@ export function ChangePasswordModal({
           {/* Indicadores de Requisitos */}
           <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center gap-2">
-              <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                isLengthValid ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'
-              }`}>
-                ✓
-              </div>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${
+                isLengthValid ? 'text-emerald-400' : 'text-slate-600'
+              }`} />
               <span className={isLengthValid ? 'text-emerald-400' : 'text-slate-400'}>
                 Al menos 8 caracteres
               </span>
             </div>
 
             <div className="flex items-center gap-2">
-              <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                passwordsMatch ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'
-              }`}>
-                ✓
-              </div>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${
+                passwordsMatch ? 'text-emerald-400' : 'text-slate-600'
+              }`} />
               <span className={passwordsMatch ? 'text-emerald-400' : 'text-slate-400'}>
                 Ambas contraseñas coinciden
               </span>

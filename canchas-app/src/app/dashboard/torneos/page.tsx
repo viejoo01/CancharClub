@@ -153,16 +153,18 @@ function computeGroupStandings(matches: TournamentMatch[], allTeams: TournamentT
   })
 }
 
-// Module-level cache for instant 0ms tab navigation
-let cachedTournaments: Tournament[] | null = null
-let cachedTournamentDetails: TournamentWithDetails | null = null
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedTournamentsMap = new Map<string, Tournament[]>()
+const cachedTournamentDetailsMap = new Map<string, TournamentWithDetails>()
 
 export default function TorneosDashboardPage() {
   const tenantId = useTenantId()
-  const [tournaments, setTournaments] = useState<Tournament[]>(() => cachedTournaments || [])
-  const [selectedTournament, setSelectedTournament] = useState<TournamentWithDetails | null>(() => cachedTournamentDetails)
+  const initialTournaments = tenantId ? (cachedTournamentsMap.get(tenantId) || []) : []
+  const initialDetails = tenantId ? (cachedTournamentDetailsMap.get(tenantId) || null) : null
+  const [tournaments, setTournaments] = useState<Tournament[]>(() => initialTournaments)
+  const [selectedTournament, setSelectedTournament] = useState<TournamentWithDetails | null>(() => initialDetails)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
-  const [loading, setLoading] = useState(() => !cachedTournaments)
+  const [loading, setLoading] = useState(() => !tenantId || !cachedTournamentsMap.has(tenantId))
 
   // Modales
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -210,24 +212,29 @@ export default function TorneosDashboardPage() {
   const loadTournamentDetails = useCallback(async (id: string, showToastOnError = false) => {
     try {
       const details = await getTournamentById(id)
-      cachedTournamentDetails = details
-      setSelectedTournament(details)
-      if (details?.categories && details.categories.length > 0) {
-        setSelectedCategoryId((prev) => {
-          if (prev && details.categories.some((c) => c.id === prev)) return prev
-          return details.categories[0].id
-        })
+      if (details) {
+        if (tenantId) cachedTournamentDetailsMap.set(tenantId, details)
+        setSelectedTournament(details)
+        if (details?.categories && details.categories.length > 0) {
+          setSelectedCategoryId((prev) => {
+            if (prev && details.categories.some((c) => c.id === prev)) return prev
+            return details.categories[0].id
+          })
+        }
       }
     } catch {
-      if (showToastOnError && !cachedTournamentDetails) toast.error('Error al cargar detalle del torneo')
+      if (showToastOnError && (!tenantId || !cachedTournamentDetailsMap.has(tenantId))) {
+        toast.error('Error al cargar detalle del torneo')
+      }
     }
-  }, [])
+  }, [tenantId])
 
   const loadTournaments = useCallback(async (isInitial = false) => {
     if (!tenantId) return
+    const hasCache = cachedTournamentsMap.has(tenantId)
     try {
       const list = await getTournaments(tenantId)
-      cachedTournaments = list
+      cachedTournamentsMap.set(tenantId, list)
       setTournaments(list)
       if (list.length > 0) {
         setSelectedTournament((prev) => {
@@ -239,7 +246,7 @@ export default function TorneosDashboardPage() {
         setSelectedTournament(null)
       }
     } catch {
-      if (isInitial && !cachedTournaments) toast.error('Error al cargar torneos')
+      if (isInitial && !hasCache) toast.error('Error al cargar torneos')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -1724,8 +1731,8 @@ export default function TorneosDashboardPage() {
 
               <p className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
                 {newTourFormat === 'GROUPS_AND_PLAYOFFS'
-                  ? '⚡ Grupos + Playoffs: Los participantes se dividen en zonas, juegan fase de grupos y los mejores clasifican a Playoffs.'
-                  : '⚡ Solo Eliminación Directa: Cuadro tradicional de playoffs a partido único.'}
+                  ? 'Grupos + Playoffs: Los participantes se dividen en zonas, juegan fase de grupos y los mejores clasifican a Playoffs.'
+                  : 'Solo Eliminación Directa: Cuadro tradicional de playoffs a partido único.'}
                 <span className="block text-emerald-400 font-semibold mt-1">
                   * Podrás modificar el formato en cualquier momento desde la gestión del torneo.
                 </span>

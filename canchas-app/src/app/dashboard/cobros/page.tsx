@@ -27,7 +27,7 @@ import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
 
 import type { TenantPaymentSettings } from '@/actions/tenant-payment-settings.actions'
 
-let cachedCobrosSettings: TenantPaymentSettings | null = null
+const cachedCobrosSettingsMap = new Map<string, TenantPaymentSettings>()
 
 export default function CobrosConfigPage() {
   const tenantId = useTenantId()
@@ -35,20 +35,24 @@ export default function CobrosConfigPage() {
   const [, setLoading] = useState(false)
   const [savingBank, setSavingBank] = useState(false)
 
+  const cached = tenantId ? cachedCobrosSettingsMap.get(tenantId) : undefined
+
   // Datos bancarios
-  const [bankName, setBankName] = useState(() => cachedCobrosSettings?.bankName || '')
-  const [accountHolder, setAccountHolder] = useState(() => cachedCobrosSettings?.accountHolder || '')
-  const [cbu, setCbu] = useState(() => cachedCobrosSettings?.cbu || '')
-  const [alias, setAlias] = useState(() => cachedCobrosSettings?.alias || '')
-  const [cuit, setCuit] = useState(() => cachedCobrosSettings?.cuit || '')
-  const [whatsappPhone, setWhatsappPhone] = useState(() => cachedCobrosSettings?.whatsappPhone || '')
+  const [bankName, setBankName] = useState(() => cached?.bankName || '')
+  const [accountHolder, setAccountHolder] = useState(() => cached?.accountHolder || '')
+  const [cbu, setCbu] = useState(() => cached?.cbu || '')
+  const [alias, setAlias] = useState(() => cached?.alias || '')
+  const [cuit, setCuit] = useState(() => cached?.cuit || '')
+  const [whatsappPhone, setWhatsappPhone] = useState(() => cached?.whatsappPhone || '')
   const [transferConfirmationMode, setTransferConfirmationMode] = useState<'MANUAL' | 'AUTO'>(
-    () => cachedCobrosSettings?.transferConfirmationMode || 'MANUAL'
+    () => cached?.transferConfirmationMode || 'MANUAL'
   )
 
   // Estado de persistencia y borrador
-  const [isSavedInDb, setIsSavedInDb] = useState(() => Boolean(cachedCobrosSettings?.accountHolder && (cachedCobrosSettings?.alias || cachedCobrosSettings?.cbu)))
+  const [isSavedInDb, setIsSavedInDb] = useState(() => Boolean(cached?.accountHolder && (cached?.alias || cached?.cbu)))
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  const draftKey = tenantId ? `canchar_draft_bank_settings_${tenantId}` : 'canchar_draft_bank_settings'
 
   useEffect(() => {
     let isMounted = true
@@ -57,7 +61,9 @@ export default function CobrosConfigPage() {
       try {
         const settings = await getTenantPaymentSettings(tenantId || undefined)
         if (settings && isMounted) {
-          cachedCobrosSettings = settings
+          if (tenantId) {
+            cachedCobrosSettingsMap.set(tenantId, settings)
+          }
           if (settings.tenantId) {
             setGlobalCachedTenantId(settings.tenantId)
           }
@@ -67,7 +73,7 @@ export default function CobrosConfigPage() {
           // Revisar si había borrador en sessionStorage
           let draft: Record<string, string> | null = null
           try {
-            const raw = sessionStorage.getItem('canchar_draft_bank_settings')
+            const raw = sessionStorage.getItem(draftKey)
             if (raw) draft = JSON.parse(raw)
           } catch {}
 
@@ -127,7 +133,7 @@ export default function CobrosConfigPage() {
       window.removeEventListener('focus', handleSync)
       document.removeEventListener('visibilitychange', handleSync)
     }
-  }, [tenantId, hasUnsavedChanges])
+  }, [tenantId, hasUnsavedChanges, draftKey])
 
   const handleFieldChange = (fieldKey: string, setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
@@ -142,7 +148,7 @@ export default function CobrosConfigPage() {
         cuit: fieldKey === 'cuit' ? val : cuit,
         whatsappPhone: fieldKey === 'whatsappPhone' ? val : whatsappPhone,
       }
-      sessionStorage.setItem('canchar_draft_bank_settings', JSON.stringify(current))
+      sessionStorage.setItem(draftKey, JSON.stringify(current))
     } catch {}
   }
 
@@ -168,13 +174,22 @@ export default function CobrosConfigPage() {
 
       if (res.success) {
         try {
-          sessionStorage.removeItem('canchar_draft_bank_settings')
+          sessionStorage.removeItem(draftKey)
         } catch {}
         setHasUnsavedChanges(false)
         setIsSavedInDb(true)
         if (res.savedData) {
           if (res.savedData.tenantId) {
             setGlobalCachedTenantId(res.savedData.tenantId)
+          }
+          if (tenantId) {
+            const existing = cachedCobrosSettingsMap.get(tenantId)
+            if (existing) {
+              cachedCobrosSettingsMap.set(tenantId, {
+                ...existing,
+                ...res.savedData,
+              })
+            }
           }
           setBankName(res.savedData.bankName ?? bankName)
           setAccountHolder(res.savedData.accountHolder ?? accountHolder)

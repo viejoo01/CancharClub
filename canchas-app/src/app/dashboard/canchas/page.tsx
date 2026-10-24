@@ -72,57 +72,69 @@ function formatSport(sport?: string | null) {
   return sport
 }
 
-// Caché en memoria a nivel módulo para renderizado instantáneo (0ms)
-let cachedCourts: Court[] | null = null
-let cachedSchedule: ClubScheduleConfig | null = null
-let cachedHighlight: ClubHighlightInfo | null = null
-let cachedSocialLinks: ClubSocialLinks | null = null
-let cachedServicesLocation: ClubServicesAndLocationData | null = null
+// Caché en memoria por tenant_id para renderizado instantáneo (0ms)
+const cachedCourtsMap = new Map<string, Court[]>()
+const cachedScheduleMap = new Map<string, ClubScheduleConfig>()
+const cachedHighlightMap = new Map<string, ClubHighlightInfo>()
+const cachedSocialLinksMap = new Map<string, ClubSocialLinks>()
+const cachedServicesLocationMap = new Map<string, ClubServicesAndLocationData>()
+
+const defaultHighlight: ClubHighlightInfo = {
+  highlightText: '',
+  highlightBadge: '🔥 Promoción Especial',
+  isHighlightActive: false,
+}
+
+const defaultSocial: ClubSocialLinks = {
+  instagram: '',
+  facebook: '',
+  tiktok: '',
+}
+
+const defaultServicesLocation: ClubServicesAndLocationData = {
+  services: {
+    parking: false,
+    cantina: false,
+    showers: false,
+    cameras: false,
+    lighting: false,
+    indoor: false,
+    grill: false,
+    wifi: false,
+    equipment_rental: false,
+  },
+  location: {
+    address: '',
+    city: '',
+    province: '',
+    reference: '',
+    google_maps_url: '',
+  },
+}
 
 export default function CanchasPage() {
   const tenantId = useTenantId()
   const router = useRouter()
   const { planId, plan } = useTenantPlan()
-  const [courts, setCourts] = useState<Court[]>(() => cachedCourts || [])
-  const [courtsLoading, setCourtsLoading] = useState(() => !cachedCourts)
+  const initialCourts = tenantId ? (cachedCourtsMap.get(tenantId) || []) : []
+  const initialSchedule = tenantId ? (cachedScheduleMap.get(tenantId) || DEFAULT_CLUB_SCHEDULE) : DEFAULT_CLUB_SCHEDULE
+  const initialHighlight = tenantId ? (cachedHighlightMap.get(tenantId) || defaultHighlight) : defaultHighlight
+  const initialSocial = tenantId ? (cachedSocialLinksMap.get(tenantId) || defaultSocial) : defaultSocial
+  const initialServices = tenantId ? (cachedServicesLocationMap.get(tenantId) || defaultServicesLocation) : defaultServicesLocation
+
+  const [courts, setCourts] = useState<Court[]>(() => initialCourts)
+  const [courtsLoading, setCourtsLoading] = useState(() => !tenantId || !cachedCourtsMap.has(tenantId))
   const maxCourts = getMaxCourtsAllowedForPlan(planId)
   const totalCourtsCount = courts.length
   const isLimitReached = maxCourts !== null && totalCourtsCount >= maxCourts
   const [clubSlug, setClubSlug] = useState('club')
-  const [schedule, setSchedule] = useState<ClubScheduleConfig>(() => cachedSchedule || DEFAULT_CLUB_SCHEDULE)
+  const [schedule, setSchedule] = useState<ClubScheduleConfig>(() => initialSchedule)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
-  const [highlightInfo, setHighlightInfo] = useState<ClubHighlightInfo>(() => cachedHighlight || {
-    highlightText: '',
-    highlightBadge: '🔥 Promoción Especial',
-    isHighlightActive: false,
-  })
+  const [highlightInfo, setHighlightInfo] = useState<ClubHighlightInfo>(() => initialHighlight)
   const [isHighlightModalOpen, setIsHighlightModalOpen] = useState(false)
-  const [socialLinks, setSocialLinks] = useState<ClubSocialLinks>(() => cachedSocialLinks || {
-    instagram: '',
-    facebook: '',
-    tiktok: '',
-  })
+  const [socialLinks, setSocialLinks] = useState<ClubSocialLinks>(() => initialSocial)
   const [isSocialLinksModalOpen, setIsSocialLinksModalOpen] = useState(false)
-  const [servicesLocation, setServicesLocation] = useState<ClubServicesAndLocationData>(() => cachedServicesLocation || {
-    services: {
-      parking: false,
-      cantina: false,
-      showers: false,
-      cameras: false,
-      lighting: false,
-      indoor: false,
-      grill: false,
-      wifi: false,
-      equipment_rental: false,
-    },
-    location: {
-      address: '',
-      city: '',
-      province: '',
-      reference: '',
-      google_maps_url: '',
-    },
-  })
+  const [servicesLocation, setServicesLocation] = useState<ClubServicesAndLocationData>(() => initialServices)
   const [isServicesLocationModalOpen, setIsServicesLocationModalOpen] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [name, setName] = useState('')
@@ -238,24 +250,24 @@ export default function CanchasPage() {
           is_active: c.is_active ?? true,
         }))
         setCourts(mapped)
-        cachedCourts = mapped
+        cachedCourtsMap.set(tenantId, mapped)
       }
 
       if (sched) {
         setSchedule(sched)
-        cachedSchedule = sched
+        cachedScheduleMap.set(tenantId, sched)
       }
       if (hInfo) {
         setHighlightInfo(hInfo)
-        cachedHighlight = hInfo
+        cachedHighlightMap.set(tenantId, hInfo)
       }
       if (sLinks) {
         setSocialLinks(sLinks)
-        cachedSocialLinks = sLinks
+        cachedSocialLinksMap.set(tenantId, sLinks)
       }
       if (sLoc) {
         setServicesLocation(sLoc)
-        cachedServicesLocation = sLoc
+        cachedServicesLocationMap.set(tenantId, sLoc)
       }
     } catch {}
 

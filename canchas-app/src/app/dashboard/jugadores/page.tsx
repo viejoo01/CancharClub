@@ -15,6 +15,9 @@ import {
   UserCheck,
   FileText,
   Save,
+  Star,
+  ThumbsUp,
+  Scale,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -31,9 +34,17 @@ import {
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 
-// Module-level cache for instant 0ms tab navigation
-let cachedPlayers: PlayerSummary[] | null = null
-let cachedStats = {
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedPlayersMap = new Map<string, PlayerSummary[]>()
+const cachedStatsMap = new Map<string, {
+  totalPlayers: number
+  exemplaryCount: number
+  highRiskCount: number
+  avgAttendanceRate: number
+  totalRevenueTracked: number
+}>()
+
+const defaultStats = {
   totalPlayers: 0,
   exemplaryCount: 0,
   highRiskCount: 0,
@@ -43,9 +54,13 @@ let cachedStats = {
 
 export default function JugadoresPage() {
   const tenantId = useTenantId()
-  const [players, setPlayers] = useState<PlayerSummary[]>(() => cachedPlayers || [])
-  const [stats, setStats] = useState(() => cachedStats)
-  const [loading, setLoading] = useState(() => !cachedPlayers)
+  const [players, setPlayers] = useState<PlayerSummary[]>(() => 
+    tenantId ? (cachedPlayersMap.get(tenantId) || []) : []
+  )
+  const [stats, setStats] = useState(() => 
+    tenantId && cachedStatsMap.has(tenantId) ? cachedStatsMap.get(tenantId)! : defaultStats
+  )
+  const [loading, setLoading] = useState(() => !tenantId || !cachedPlayersMap.has(tenantId))
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState<'ALL' | 'EXEMPLARY' | 'RELIABLE' | 'HIGH_RISK' | 'BLOCKED'>('ALL')
 
@@ -59,19 +74,20 @@ export default function JugadoresPage() {
 
   const loadData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
-    if (isInitial && !cachedPlayers) setLoading(true)
+    const hasCache = cachedPlayersMap.has(tenantId)
+    if (isInitial && !hasCache) setLoading(true)
     try {
       const res = await getPlayersReputation(tenantId, searchQuery)
       if (res.success) {
-        cachedPlayers = res.players
-        cachedStats = res.stats
+        cachedPlayersMap.set(tenantId, res.players)
+        cachedStatsMap.set(tenantId, res.stats)
         setPlayers(res.players)
         setStats(res.stats)
-      } else if (isInitial && !cachedPlayers) {
+      } else if (isInitial && !hasCache) {
         toast.error('Error al cargar datos de jugadores')
       }
     } catch {
-      if (isInitial && !cachedPlayers) toast.error('Error inesperado')
+      if (isInitial && !hasCache) toast.error('Error inesperado')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -281,43 +297,47 @@ export default function JugadoresPage() {
         </button>
         <button
           onClick={() => setTierFilter('EXEMPLARY')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
             tierFilter === 'EXEMPLARY'
               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
         >
-          ⭐ Ejemplares ({players.filter((p) => p.tier === 'EXEMPLARY').length})
+          <Star className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Ejemplares ({players.filter((p) => p.tier === 'EXEMPLARY').length})</span>
         </button>
         <button
           onClick={() => setTierFilter('RELIABLE')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
             tierFilter === 'RELIABLE'
               ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
         >
-          👍 Confiables ({players.filter((p) => p.tier === 'RELIABLE').length})
+          <ThumbsUp className="w-3.5 h-3.5 text-sky-400" />
+          <span>Confiables ({players.filter((p) => p.tier === 'RELIABLE').length})</span>
         </button>
         <button
           onClick={() => setTierFilter('HIGH_RISK')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
             tierFilter === 'HIGH_RISK'
               ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
         >
-          ⚠️ En Riesgo ({players.filter((p) => p.is_high_risk || p.tier === 'HIGH_RISK').length})
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+          <span>En Riesgo ({players.filter((p) => p.is_high_risk || p.tier === 'HIGH_RISK').length})</span>
         </button>
         <button
           onClick={() => setTierFilter('BLOCKED')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
             tierFilter === 'BLOCKED'
               ? 'bg-rose-600/30 text-rose-300 border border-rose-500/60'
               : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
           }`}
         >
-          🚫 Restringidos ({players.filter((p) => p.is_blocked).length})
+          <Ban className="w-3.5 h-3.5 text-rose-400" />
+          <span>Restringidos ({players.filter((p) => p.is_blocked).length})</span>
         </button>
       </div>
 
@@ -389,28 +409,33 @@ export default function JugadoresPage() {
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
                             {player.tier === 'EXEMPLARY' && (
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                ⭐ {player.score_percentage}% Asistencia
+                              <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                <Star className="w-3 h-3 text-emerald-400" />
+                                <span>{player.score_percentage}% Asistencia</span>
                               </Badge>
                             )}
                             {player.tier === 'RELIABLE' && (
-                              <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                                👍 {player.score_percentage}% Asistencia
+                              <Badge className="bg-sky-500/10 text-sky-400 border border-sky-500/30 flex items-center gap-1">
+                                <ThumbsUp className="w-3 h-3 text-sky-400" />
+                                <span>{player.score_percentage}% Asistencia</span>
                               </Badge>
                             )}
                             {player.tier === 'MODERATE' && (
-                              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                                ⚖️ {player.score_percentage}% Asistencia
+                              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                                <Scale className="w-3 h-3 text-amber-400" />
+                                <span>{player.score_percentage}% Asistencia</span>
                               </Badge>
                             )}
                             {player.tier === 'HIGH_RISK' && (
-                              <Badge className="bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                                ⚠️ Alto Riesgo ({player.score_percentage}%)
+                              <Badge className="bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                <span>Alto Riesgo ({player.score_percentage}%)</span>
                               </Badge>
                             )}
                             {player.is_blocked && (
-                              <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50">
-                                🚫 Bloqueado
+                              <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50 flex items-center gap-1">
+                                <Ban className="w-3 h-3 text-rose-400" />
+                                <span>Bloqueado</span>
                               </Badge>
                             )}
                           </div>
@@ -510,8 +535,9 @@ export default function JugadoresPage() {
                     {selectedPlayer.tier}
                   </Badge>
                   {selectedPlayer.is_blocked && (
-                    <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50 text-xs">
-                      🚫 Bloqueado
+                    <Badge className="bg-rose-600/20 text-rose-300 border border-rose-500/50 text-xs flex items-center gap-1">
+                      <Ban className="w-3 h-3 text-rose-400" />
+                      <span>Bloqueado</span>
                     </Badge>
                   )}
                 </h3>

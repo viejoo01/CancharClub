@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers, Pencil, Lock } from 'lucide-react'
+import { Plus, Clock, Percent, ShieldCheck, Loader2, TrendingUp, Sparkles, Tag, Trash2, Layers, Pencil, Lock, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -635,7 +635,7 @@ export default function PreciosPage() {
                         : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 border-slate-700/60'
                     }`}
                   >
-                    <span>🌐</span>
+                    <Globe className="w-3.5 h-3.5 text-slate-400" />
                     <span>Todas</span>
                   </button>
 
@@ -683,19 +683,19 @@ export default function PreciosPage() {
                 }}
                 className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
               >
-                <option value="">🌐 Todas las canchas del club (Todas las disciplinas)</option>
+                <option value="">Todas las canchas del club (Todas las disciplinas)</option>
 
                 {availableSports.length > 0 && !editingRuleId && (
-                  <optgroup label="⚡ Por Disciplina / Deporte">
+                  <optgroup label="Por Disciplina / Deporte">
                     {availableSports.map((sp) => (
                       <option key={sp.key} value={`sport:${sp.key}`}>
-                        {sp.icon} Todas las canchas de {sp.label} ({sp.count} {sp.count === 1 ? 'cancha' : 'canchas'})
+                        Todas las canchas de {sp.label} ({sp.count} {sp.count === 1 ? 'cancha' : 'canchas'})
                       </option>
                     ))}
                   </optgroup>
                 )}
 
-                <optgroup label="🏟️ Por Cancha Individual">
+                <optgroup label="Por Cancha Individual">
                   {availableCourts.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} {c.sport ? `(${formatSport(c.sport)})` : ''}
@@ -710,7 +710,7 @@ export default function PreciosPage() {
                   if (selectedCourtId === '') {
                     return (
                       <span className="flex items-center gap-1.5 text-slate-400">
-                        <span>🌐</span>
+                        <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>Aplica a todas las canchas del club ({availableCourts.length} canchas activas).</span>
                       </span>
                     )
@@ -721,7 +721,7 @@ export default function PreciosPage() {
                     const matchingCourts = availableCourts.filter(c => (c.sport || '').replace('_', '').toUpperCase() === spKey)
                     return (
                       <span className="flex items-center gap-1.5 text-emerald-300 font-medium">
-                        <span>{spObj?.icon || '⚡'}</span>
+                        <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         <span>
                           Aplica a todas las canchas de <strong>{spObj?.label || 'esta disciplina'}</strong> ({matchingCourts.map(c => c.name).join(', ') || `${spObj?.count} canchas`}).
                         </span>
@@ -731,7 +731,7 @@ export default function PreciosPage() {
                   const singleCourt = availableCourts.find(c => c.id === selectedCourtId)
                   return (
                     <span className="flex items-center gap-1.5 text-emerald-300 font-medium">
-                      <span>🏟️</span>
+                      <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                       <span>
                         Aplica únicamente a <strong>{singleCourt?.name || 'la cancha seleccionada'}</strong> ({formatSport(singleCourt?.sport)}).
                       </span>
@@ -827,12 +827,12 @@ export default function PreciosPage() {
               </div>
               <p className="text-[11px] text-slate-400">
                 {selectedDays.length === 7
-                  ? '✓ Aplica todos los días (Lunes a Domingo)'
+                  ? 'Aplica todos los días (Lunes a Domingo)'
                   : selectedDays.length === 2 && selectedDays.includes(6) && selectedDays.includes(0)
-                  ? '✓ Aplica solo los Fines de Semana (Sábados y Domingos)'
+                  ? 'Aplica solo los Fines de Semana (Sábados y Domingos)'
                   : selectedDays.length === 5 && !selectedDays.includes(6) && !selectedDays.includes(0)
-                  ? '✓ Aplica de Lunes a Viernes'
-                  : `✓ Días seleccionados: ${[1, 2, 3, 4, 5, 6, 0].filter(d => selectedDays.includes(d)).map(d => daysMap[d]).join(', ')}`}
+                  ? 'Aplica de Lunes a Viernes'
+                  : `Días seleccionados: ${[1, 2, 3, 4, 5, 6, 0].filter(d => selectedDays.includes(d)).map(d => daysMap[d]).join(', ')}`}
               </p>
             </div>
 

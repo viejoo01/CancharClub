@@ -15,6 +15,8 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,13 +35,15 @@ import { useTenantId } from '@/hooks/use-tenant-id'
 import { ResetStaffPasswordModal } from '@/components/dashboard/reset-staff-password-modal'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
 
-// Module-level cache for instant 0ms tab navigation
-let cachedStaff: StaffMember[] | null = null
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedStaffMap = new Map<string, StaffMember[]>()
 
 export default function EquipoPage() {
   const tenantId = useTenantId()
-  const [staff, setStaff] = useState<StaffMember[]>(() => cachedStaff || [])
-  const [loading, setLoading] = useState(() => !cachedStaff)
+  const [staff, setStaff] = useState<StaffMember[]>(() => 
+    tenantId ? (cachedStaffMap.get(tenantId) || []) : []
+  )
+  const [loading, setLoading] = useState(() => !tenantId || !cachedStaffMap.has(tenantId))
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedStaffForPassword, setSelectedStaffForPassword] = useState<StaffMember | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -54,16 +58,18 @@ export default function EquipoPage() {
 
   const loadStaff = useCallback(async (isInitial = false) => {
     if (!tenantId) return
+    const hasCache = cachedStaffMap.has(tenantId)
+    if (isInitial && !hasCache) setLoading(true)
     try {
       const res = await getClubStaff(tenantId)
       if (res.success) {
-        cachedStaff = res.staff
+        cachedStaffMap.set(tenantId, res.staff)
         setStaff(res.staff)
-      } else if (isInitial && !cachedStaff) {
+      } else if (isInitial && !hasCache) {
         toast.error('Error al cargar equipo')
       }
     } catch {
-      if (isInitial && !cachedStaff) toast.error('Error inesperado')
+      if (isInitial && !hasCache) toast.error('Error inesperado')
     } finally {
       if (isInitial) setLoading(false)
     }
@@ -524,12 +530,14 @@ export default function EquipoPage() {
                   </button>
                 </div>
                 {password && password.length < 8 ? (
-                  <p className="text-[11px] text-amber-400 mt-1 flex items-center gap-1">
-                    <span>⚠️ Mínimo 8 caracteres (faltan {8 - password.length}).</span>
+                  <p className="text-[11px] text-amber-400 mt-1 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                    <span>Mínimo 8 caracteres (faltan {8 - password.length}).</span>
                   </p>
                 ) : password.length >= 8 ? (
-                  <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
-                    <span>✓ Contraseña válida ({password.length} caracteres).</span>
+                  <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                    <span>Contraseña válida ({password.length} caracteres).</span>
                   </p>
                 ) : null}
               </div>

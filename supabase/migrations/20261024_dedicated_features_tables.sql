@@ -41,7 +41,18 @@ CREATE POLICY "invoices_tenant_isolation" ON public.invoices
       SELECT p.tenant_id
       FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'STAFF', 'OWNER')
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
+    )
+    OR (
+      SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()
+    ) = 'SUPERADMIN'
+  )
+  WITH CHECK (
+    tenant_id IN (
+      SELECT p.tenant_id
+      FROM public.profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
     )
     OR (
       SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()
@@ -77,7 +88,18 @@ CREATE POLICY "wa_configs_tenant_isolation" ON public.whatsapp_bot_configs
       SELECT p.tenant_id
       FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'STAFF', 'OWNER')
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
+    )
+    OR (
+      SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()
+    ) = 'SUPERADMIN'
+  )
+  WITH CHECK (
+    tenant_id IN (
+      SELECT p.tenant_id
+      FROM public.profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
     )
     OR (
       SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()
@@ -111,7 +133,18 @@ CREATE POLICY "wa_logs_tenant_isolation" ON public.whatsapp_message_logs
       SELECT p.tenant_id
       FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'STAFF', 'OWNER')
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
+    )
+    OR (
+      SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()
+    ) = 'SUPERADMIN'
+  )
+  WITH CHECK (
+    tenant_id IN (
+      SELECT p.tenant_id
+      FROM public.profiles p
+      WHERE p.id = auth.uid()
+        AND p.role IN ('ADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'STAFF', 'OWNER')
     )
     OR (
       SELECT p.role FROM public.profiles p WHERE p.id = auth.uid()

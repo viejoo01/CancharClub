@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { 
@@ -82,7 +82,7 @@ export default function ClubPlanPage() {
     return false
   })
 
-  const loadPlanData = async (showToast = false) => {
+  const loadPlanData = useCallback(async (showToast = false) => {
     setIsRefreshing(true)
     try {
       const details = await getClubPlanDetails(tenantId || undefined)
@@ -101,7 +101,7 @@ export default function ClubPlanPage() {
     } finally {
       setIsRefreshing(false)
     }
-  }
+  }, [tenantId])
 
 
   const handleDismissAlertFromList = async (alertId: string) => {
@@ -304,7 +304,7 @@ export default function ClubPlanPage() {
         }).catch(() => {})
       }
     }
-  }, [tenantId, planDetails?.tenantId])
+  }, [tenantId, planDetails?.tenantId, loadPlanData])
 
   const handleSetupAutoDebit = () => {
     setShowSubscriptionModal(true)

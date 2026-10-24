@@ -2552,14 +2552,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
-                  ✓ Configuración General
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Configuración General</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
-                  ✓ Planes y Cuota SaaS
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Planes y Cuota SaaS</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15">
-                  ✓ Reportes y Facturación
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Reportes y Facturación</span>
                 </span>
               </div>
             </div>
@@ -2587,14 +2590,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
-                  ✓ Calendario de Turnos
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-amber-400" />
+                  <span>Calendario de Turnos</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
-                  ✓ Kiosco / Cantina
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-amber-400" />
+                  <span>Kiosco / Cantina</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15">
-                  ✓ Caja Diaria
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-amber-400" />
+                  <span>Caja Diaria</span>
                 </span>
               </div>
             </div>

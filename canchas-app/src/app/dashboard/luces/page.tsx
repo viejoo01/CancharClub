@@ -15,7 +15,9 @@ import {
   FileText,
   Activity,
   Cpu,
-  ShieldAlert
+  ShieldAlert,
+  Bot,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,13 +60,15 @@ interface CourtUIItem {
   last_state_change: string
 }
 
-// Module-level cache for instant 0ms tab navigation
-let cachedCourts: CourtUIItem[] | null = null
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedCourtsMap = new Map<string, CourtUIItem[]>()
 
 export default function LucesPage() {
   const tenantId = useTenantId()
-  const [courts, setCourts] = useState<CourtUIItem[]>(() => cachedCourts || [])
-  const [loading, setLoading] = useState(() => !cachedCourts)
+  const [courts, setCourts] = useState<CourtUIItem[]>(() => 
+    tenantId ? (cachedCourtsMap.get(tenantId) || []) : []
+  )
+  const [loading, setLoading] = useState(() => !tenantId || !cachedCourtsMap.has(tenantId))
 
   // Estado del modal de configuración de relé IoT
   const [configModalOpen, setConfigModalOpen] = useState(false)
@@ -132,10 +136,10 @@ export default function LucesPage() {
                 : 'Sin actividad registrada',
             }
           })
-          cachedCourts = items
+          cachedCourtsMap.set(activeTenantId, items)
           setCourts(items)
         } else {
-          cachedCourts = []
+          cachedCourtsMap.set(activeTenantId, [])
           setCourts([])
         }
       } catch (err) {
@@ -503,7 +507,17 @@ export default function LucesPage() {
                               : 'bg-slate-800 text-slate-400 border-slate-700'
                           }`}
                         >
-                          {court.is_auto_mode ? '🤖 AUTOMÁTICO (Activo)' : '🖐️ MANUAL'}
+                          {court.is_auto_mode ? (
+                            <span className="flex items-center gap-1">
+                              <Bot className="w-3 h-3 text-emerald-400" />
+                              AUTOMÁTICO (Activo)
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              <SlidersHorizontal className="w-3 h-3 text-slate-400" />
+                              MANUAL
+                            </span>
+                          )}
                         </Badge>
                       </button>
                     </div>

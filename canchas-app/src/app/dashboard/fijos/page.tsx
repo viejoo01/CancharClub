@@ -55,21 +55,23 @@ const DAYS_NAME = [
 
 
 
-// Module-level cache for instant 0ms tab navigation
-let cachedSlots: RecurringSlot[] | null = null
-let cachedDbCourts: { id: string; name: string; sport: string }[] | null = null
+// Module-level tenant-keyed cache for instant 0ms tab navigation
+const cachedSlotsMap = new Map<string, RecurringSlot[]>()
+const cachedDbCourtsMap = new Map<string, { id: string; name: string; sport: string }[]>()
 
 export default function TurnosFijosPage() {
   const tenantId = useTenantId()
-  const [slots, setSlots] = useState<RecurringSlot[]>(() => cachedSlots || [])
-  const [loading, setLoading] = useState(() => !cachedSlots)
+  const initialSlots = tenantId ? (cachedSlotsMap.get(tenantId) || []) : []
+  const initialCourts = tenantId ? (cachedDbCourtsMap.get(tenantId) || []) : []
+  const [slots, setSlots] = useState<RecurringSlot[]>(() => initialSlots)
+  const [loading, setLoading] = useState(() => !tenantId || !cachedSlotsMap.has(tenantId))
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actionSlotId, setActionSlotId] = useState<string | null>(null)
-  const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => cachedDbCourts || [])
+  const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => initialCourts)
 
   // Form states (Alta)
-  const [courtId, setCourtId] = useState(() => cachedDbCourts?.[0]?.id || '')
+  const [courtId, setCourtId] = useState(() => initialCourts[0]?.id || '')
   const [dayOfWeek, setDayOfWeek] = useState(1) // Lunes
   const [startTime, setStartTime] = useState('20:00')
   const [endTime, setEndTime] = useState('21:30')
@@ -241,7 +243,7 @@ export default function TurnosFijosPage() {
     if (!tenantId) return
     try {
       const data = await getRecurringSlots(tenantId)
-      cachedSlots = data
+      cachedSlotsMap.set(tenantId, data)
       setSlots(data)
     } catch {
       toast.error('Error al actualizar turnos fijos')
@@ -256,7 +258,7 @@ export default function TurnosFijosPage() {
     supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }: { data: unknown }) => {
       const courtsList = data as { id: string; name: string; sport: string }[] | null
       if (courtsList && courtsList.length > 0) {
-        cachedDbCourts = courtsList
+        cachedDbCourtsMap.set(tenantId, courtsList)
         setDbCourts(courtsList)
         setCourtId((prev) => prev || courtsList[0].id)
       }
@@ -265,7 +267,7 @@ export default function TurnosFijosPage() {
     getRecurringSlots(tenantId)
       .then((data) => {
         if (isMounted) {
-          cachedSlots = data
+          cachedSlotsMap.set(tenantId, data)
           setSlots(data)
           setLoading(false)
         }
@@ -282,7 +284,7 @@ export default function TurnosFijosPage() {
       if (document.hidden) return
       getRecurringSlots(tenantId).then((data) => {
         if (isMounted && data) {
-          cachedSlots = data
+          cachedSlotsMap.set(tenantId, data)
           setSlots(data)
         }
       }).catch(() => {})

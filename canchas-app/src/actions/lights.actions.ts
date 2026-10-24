@@ -46,7 +46,7 @@ export interface LightToggleResult {
  * - Exige HTTPS.
  * - Bloquea localhost, loopback, rangos privados RFC 1918, link-local y metadata de cloud (169.254.169.254).
  */
-export function isSafePublicWebhookUrl(urlStr: string): { valid: boolean; reason?: string } {
+function isSafePublicWebhookUrl(urlStr: string): { valid: boolean; reason?: string } {
   try {
     const parsed = new URL(urlStr)
     if (parsed.protocol !== 'https:') {
@@ -92,7 +92,7 @@ export function isSafePublicWebhookUrl(urlStr: string): { valid: boolean; reason
 /**
  * Valida que el servidor de Shelly Cloud apunte a infraestructura legítima de Shelly.
  */
-export function isSafeShellyCloudServer(server: string): boolean {
+function isSafeShellyCloudServer(server: string): boolean {
   if (!server) return true
   const clean = server.trim().toLowerCase()
   return clean === 'shelly-api.shelly.cloud' || /^[a-zA-Z0-9-]+\.shelly\.cloud$/.test(clean)

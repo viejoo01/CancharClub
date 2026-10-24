@@ -715,7 +715,7 @@ export function CalendarGrid({
   }, [selectedDate])
 
   return (
-    <div className="flex flex-col h-full space-y-3 sm:space-y-4">
+    <div className="flex flex-col h-full space-y-3 sm:space-y-4 w-full">
       {/* Barra de Control y Filtros */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
         {/* Selector de Fecha */}
@@ -944,16 +944,16 @@ export function CalendarGrid({
         <div 
           ref={gridContainerRef}
           onWheel={handleGridWheel}
-          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto"
+          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
           style={{ scrollBehavior: 'smooth' }}
         >
         <div 
-          className="w-max min-w-full"
-          style={{ minWidth: totalGridMinWidth }}
+          className="w-full min-w-full"
+          style={{ minWidth: `max(100%, ${totalGridMinWidth})` }}
         >
           {/* Header de Canchas (Columnas) - Sticky Top con Frozen Header */}
           <div 
-            className="grid border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md"
+            className="grid w-full border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md"
             style={{ gridTemplateColumns: gridTemplateCols }}
           >
             <div 
@@ -980,12 +980,12 @@ export function CalendarGrid({
           </div>
 
           {/* Filas de Horarios */}
-          <div className="divide-y divide-slate-800/60">
+          <div className="divide-y divide-slate-800/60 w-full">
             {timeSlots.map((time) => (
               <div
                 key={time}
                 data-time={time}
-                className="grid min-h-[72px]"
+                className="grid w-full min-h-[72px]"
                 style={{ gridTemplateColumns: gridTemplateCols }}
               >
                 {/* Columna Hora - Sticky Left con Sombra de Elevación */}
@@ -1055,7 +1055,7 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="p-1.5 border-r border-slate-800/60 last:border-r-0 cursor-pointer group"
+                          className="p-1.5 border-r border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0"
                         >
                           <div
                             className={`h-full w-full rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
@@ -1120,7 +1120,7 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
+                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                         >
                           <div
                             className={`h-full min-h-[66px] w-full rounded-t-xl rounded-b-none p-2.5 flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-[1px] relative z-10 ${colorClasses}`}
@@ -1185,7 +1185,7 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 py-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
+                          className="px-1.5 py-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                         >
                           <div
                             className={`h-full min-h-[72px] w-full rounded-none px-2.5 py-1.5 flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-[1px] relative z-10 ${colorClasses}`}
@@ -1208,7 +1208,7 @@ export function CalendarGrid({
                         onClick={() => setSelectedBooking(booking)}
                         onMouseEnter={() => setHoveredBookingId(booking.id)}
                         onMouseLeave={() => setHoveredBookingId(null)}
-                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col"
+                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                       >
                         <div
                           className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
@@ -1256,7 +1256,7 @@ export function CalendarGrid({
                         setQuickBookSlot({ courtId: court.id, time })
                         setIsQuickBookOpen(true)
                       }}
-                      className="p-1 border-r border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-950/20 transition-colors relative min-h-[72px]"
+                      className="p-1 border-r border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-950/20 transition-colors relative min-h-[72px] min-w-0"
                     >
                       {/* Área visible en desktop con hover */}
                       <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">

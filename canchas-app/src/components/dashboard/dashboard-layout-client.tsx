@@ -90,6 +90,12 @@ export function DashboardLayoutClient({
       try {
         localStorage.setItem('canchar_sidebar_collapsed', String(next))
       } catch {}
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('resize'))
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'))
+        }, 320)
+      }
       return next
     })
   }

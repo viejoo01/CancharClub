@@ -21,6 +21,7 @@ import {
   Check,
   X,
   Flame,
+  Maximize2,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { RegisterClubModal } from '@/components/public/register-club-modal'
@@ -362,7 +363,7 @@ export default function SumarClubLandingPage() {
               </p>
             </div>
 
-            {/* 12. Automatizaciones de WhatsApp */}
+            {/* 11. Automatizaciones de WhatsApp */}
             <div className="p-6 rounded-2xl bg-slate-900 border border-emerald-500/40 hover:border-emerald-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
               <div className="absolute top-3 right-3">
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
@@ -375,6 +376,22 @@ export default function SumarClubLandingPage() {
               <h3 className="font-bold text-base text-white">WhatsApp inteligente y recordatorios</h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                 Recordatorios 2 horas antes con mapa y confirmación para 0% ausentismo. Suspensión masiva por lluvia y reprogramación en 1 clic.
+              </p>
+            </div>
+
+            {/* 12. Tótem Kiosco de Recepción y Auto Check-In */}
+            <div className="p-6 rounded-2xl bg-slate-900 border border-cyan-500/40 hover:border-cyan-500 hover:shadow-xl transition-all space-y-3 relative overflow-hidden">
+              <div className="absolute top-3 right-3">
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold">
+                  NUEVO
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                <Maximize2 className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white">Tótem Kiosco y Auto Check-In</h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Pantalla táctil para la entrada del club. Los jugadores confirman su llegada con su DNI/celular, consultan canchas libres y piden a la cantina por QR.
               </p>
             </div>
           </div>

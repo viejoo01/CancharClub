@@ -12,6 +12,9 @@ const PUBLIC_PATHS = [
   '/mis-reservas',      // Consulta de reservas de jugadores
   '/club',              // Portal público por slug
   '/reserva',           // Confirmación y estado público de reservas
+  '/partido',           // Split payment público para dividir costo del partido entre amigos
+  '/torneo',            // Consulta pública e inscripción a torneos
+  '/totem',             // Pantalla de autoservicio y check-in en recepción del club
   '/auth',              // Login/Register/Callback
   '/api/webhooks',      // Webhooks externos (MP)
   '/api/availability',  // Disponibilidad pública

@@ -104,6 +104,7 @@ interface CourtItem {
   sport: string
   slot_duration: 'MIN_60' | 'MIN_90' | 'MIN_120'
   is_active: boolean
+  created_at?: string | null
 }
 
 // Caché en cliente para cambio instantáneo (0ms) entre fechas
@@ -562,11 +563,20 @@ export function CalendarGrid({
     }
   }, [tenantId, selectedDate, onRefresh])
 
-  // Filtro de canchas con ordenamiento natural ('Cancha 1', 'Cancha 2', ..., 'Cancha 10')
+  // Filtro de canchas ordenadas de la más antigua creada a la más nueva creada (de izquierda a derecha)
   const filteredCourts = useMemo(() => {
     return activeCourts
       .filter((c) => c.is_active && (selectedSport === 'ALL' || c.sport === selectedSport))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }))
+      .sort((a, b) => {
+        if (a.created_at && b.created_at) {
+          const timeA = new Date(a.created_at).getTime()
+          const timeB = new Date(b.created_at).getTime()
+          if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+            return timeA - timeB
+          }
+        }
+        return a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' })
+      })
   }, [activeCourts, selectedSport])
 
   // Densidad de grilla para complejos deportivos (Compacto vs Cómodo)

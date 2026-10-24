@@ -42,6 +42,7 @@ export default async function DashboardPage(props: {
     sport: string
     slot_duration_minutes?: number | null
     is_active: boolean
+    created_at?: string | null
   }
 
   // Parallelize all independent data fetches
@@ -49,9 +50,9 @@ export default async function DashboardPage(props: {
     tenantId
       ? supabase
           .from('courts')
-          .select('id, name, sport, slot_duration_minutes, is_active')
+          .select('id, name, sport, slot_duration_minutes, is_active, created_at')
           .eq('tenant_id', tenantId)
-          .order('display_order', { ascending: true })
+          .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as DbCourtRow[] }),
     tenantId ? getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]> : Promise.resolve([] as CalendarBooking[]),
     tenantId ? getClubSchedule(tenantId) : Promise.resolve(undefined),
@@ -67,6 +68,7 @@ export default async function DashboardPage(props: {
         sport: c.sport,
         slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : 'MIN_90') as 'MIN_60' | 'MIN_90' | 'MIN_120',
         is_active: c.is_active,
+        created_at: c.created_at ?? null,
       }))
     : []
 

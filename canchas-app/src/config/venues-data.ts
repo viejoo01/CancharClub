@@ -23,6 +23,7 @@ export interface CourtItem {
   sport: string
   slot_duration: 'MIN_60' | 'MIN_90' | 'MIN_120'
   is_active: boolean
+  created_at?: string | null
 }
 
 export const DEFAULT_VENUES: VenueItem[] = [

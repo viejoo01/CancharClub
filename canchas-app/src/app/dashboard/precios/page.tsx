@@ -139,10 +139,10 @@ export default function PreciosPage() {
         reloadRules(tenantId!, isInitial && !hasCached),
         supabase
           .from('courts')
-          .select('id, name, sport')
+          .select('id, name, sport, created_at')
           .eq('tenant_id', tenantId!)
           .eq('is_active', true)
-          .order('display_order', { ascending: true })
+          .order('created_at', { ascending: true })
       ])
 
       if (isMounted) {

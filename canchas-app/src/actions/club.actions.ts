@@ -58,9 +58,9 @@ export async function getClubCourts(tenantId?: string | null) {
     const supabase = await createServiceClient()
     const { data, error } = await supabase
       .from('courts')
-      .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, display_order')
+      .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, display_order, created_at')
       .eq('tenant_id', effectiveTenantId)
-      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true })
 
     if (error) {
       console.warn('[getClubCourts] Error fetching courts:', error.message)
@@ -68,6 +68,7 @@ export async function getClubCourts(tenantId?: string | null) {
     }
     return (data ?? []).map(c => ({
       ...c,
+      created_at: c.created_at ?? null,
       slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90') as SlotDuration,
       surface: (c.surface || 'CESPED_SINTETICO') as CourtSurface,
       has_lighting: Boolean(c.has_lights),
@@ -2195,13 +2196,13 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
       return fallback
     }
 
-    // 2. Consultar canchas activas del tenant
+    // 2. Consultar canchas activas del tenant ordenadas por fecha de creación (de más antigua a más nueva)
     const { data: courts } = await supabase
       .from('courts')
-      .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active, display_order')
+      .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active, display_order, created_at')
       .eq('tenant_id', tenant.id)
       .eq('is_active', true)
-      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true })
 
     // 3. Consultar reglas de precios activas del tenant
     const { data: priceRules } = await supabase
@@ -2247,6 +2248,7 @@ export async function getClubPublicData(slug: string): Promise<ClubData> {
             slotDurationMinutes: c.slot_duration_minutes || (c.sport?.includes('FUTBOL') ? 60 : 90),
             pricePerHour,
             depositPercentage: (courtRules[0]?.depositPct ? courtRules[0].depositPct / 100 : 0.5),
+            createdAt: c.created_at ?? null,
           }
         })
       : []
@@ -2578,10 +2580,10 @@ export async function getPublicClubs(): Promise<ClubData[]> {
     for (const t of tenants) {
       const { data: courts } = await supabase
         .from('courts')
-        .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active')
+        .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active, created_at')
         .eq('tenant_id', t.id)
         .eq('is_active', true)
-        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       const { data: priceRules } = await supabase
         .from('price_rules')
@@ -2829,10 +2831,10 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
     const [courtsResult, bookingsResult, cantinaResult, tournamentsResult] = await Promise.all([
       supabase
         .from('courts')
-        .select('id, name, sport')
+        .select('id, name, sport, created_at')
         .eq('tenant_id', effectiveTenantId)
         .eq('is_active', true)
-        .order('display_order', { ascending: true }),
+        .order('created_at', { ascending: true }),
       supabase
         .from('bookings')
         .select('id, court_id, customer_name, customer_phone, customer_email, booked_at, status, price_total_cents, deposit_cents, created_at')

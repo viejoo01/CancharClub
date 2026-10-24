@@ -99,10 +99,10 @@ export default function LucesPage() {
         const [{ data: courtsData }, savedConfigs, lightMetrics] = await Promise.all([
           supabase
             .from('courts')
-            .select('id, name, has_lights, light_is_on')
+            .select('id, name, has_lights, light_is_on, created_at')
             .eq('tenant_id', activeTenantId)
             .eq('is_active', true)
-            .order('display_order', { ascending: true }),
+            .order('created_at', { ascending: true }),
           getCourtLightConfigs(activeTenantId),
           getLightMetricsAction(activeTenantId)
         ])

@@ -44,6 +44,7 @@ interface CourtItem {
   name: string
   sport: string
   is_indoor?: boolean
+  created_at?: string | null
 }
 
 interface RainProtocolModalProps {
@@ -208,7 +209,7 @@ export function RainProtocolModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleReset}>
-      <DialogContent className="sm:max-w-[700px] max-h-[92dvh] overflow-y-auto w-[96vw] sm:w-full bg-slate-900 border-slate-800 text-slate-100 p-4 sm:p-6 shadow-2xl">
+      <DialogContent className="sm:max-w-175 max-h-[92dvh] overflow-y-auto w-[96vw] sm:w-full bg-slate-900 border-slate-800 text-slate-100 p-4 sm:p-6 shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
@@ -322,7 +323,7 @@ export function RainProtocolModal({
         ) : (
           <div className="space-y-4 py-2">
             {/* Resumen del Protocolo Ejecutado */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-emerald-950/40 border border-emerald-500/50 space-y-2">
+            <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-950/60 via-slate-900 to-emerald-950/40 border border-emerald-500/50 space-y-2">
               <div className="flex items-center gap-2.5">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 <span className="text-sm font-bold text-white">
@@ -439,7 +440,7 @@ export function RainProtocolModal({
                           </div>
                         </div>
                       ) : currentReschedule ? (
-                        <div className="p-3 rounded-xl bg-gradient-to-r from-blue-950/40 to-slate-900 border border-blue-500/30 space-y-2">
+                        <div className="p-3 rounded-xl bg-linear-to-r from-blue-950/40 to-slate-900 border border-blue-500/30 space-y-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-blue-300">
                               <CalendarDays className="w-3.5 h-3.5 text-blue-400 shrink-0" />

@@ -35,6 +35,7 @@ export interface CourtDefinition {
   pricePerHour: number
   depositPercentage: number // e.g. 0.5 for 50%
   slotDurationMinutes?: number
+  createdAt?: string | null
 }
 
 export interface PriceRuleDefinition {
@@ -386,6 +387,7 @@ export interface GeneratedSlot {
   time: string
   courtId: string
   courtName: string
+  courtCreatedAt?: string | null
   sport: SportCategory
   specificSport?: string
   totalPrice: number
@@ -569,6 +571,7 @@ export function generateClubSlots(
         time,
         courtId: court.id,
         courtName: court.name,
+        courtCreatedAt: court.createdAt ?? null,
         sport: normalizeToSportCategory(court.sport),
         specificSport: court.specificSport || court.sport,
         totalPrice,
@@ -579,8 +582,19 @@ export function generateClubSlots(
     }
   })
 
-  // Ordenar por horario y luego por nombre de cancha
-  return slots.sort((a, b) => a.time.localeCompare(b.time) || a.courtName.localeCompare(b.courtName))
+  // Ordenar por horario y luego por fecha de creación de la cancha (de más antigua a más nueva)
+  return slots.sort((a, b) => {
+    const timeDiff = a.time.localeCompare(b.time)
+    if (timeDiff !== 0) return timeDiff
+    if (a.courtCreatedAt && b.courtCreatedAt) {
+      const timeA = new Date(a.courtCreatedAt).getTime()
+      const timeB = new Date(b.courtCreatedAt).getTime()
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+        return timeA - timeB
+      }
+    }
+    return a.courtName.localeCompare(b.courtName)
+  })
 }
 
 /**

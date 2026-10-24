@@ -491,7 +491,16 @@ export default function ClubPublicPage({
         return true
       })
     }
-    return list
+    return list.slice().sort((a, b) => {
+      if (a.createdAt && b.createdAt) {
+        const timeA = new Date(a.createdAt).getTime()
+        const timeB = new Date(b.createdAt).getTime()
+        if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+          return timeA - timeB
+        }
+      }
+      return 0
+    })
   }, [club.courts, selectedSport, selectedFootballFormat])
 
   const hasF11 = useMemo(() => {

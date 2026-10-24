@@ -255,7 +255,7 @@ export default function TurnosFijosPage() {
     let isMounted = true
     // Load courts from DB
     const supabase = createClient()
-    supabase.from('courts').select('id, name, sport').eq('tenant_id', tenantId).then(({ data }: { data: unknown }) => {
+    supabase.from('courts').select('id, name, sport, created_at').eq('tenant_id', tenantId).order('created_at', { ascending: true }).then(({ data }: { data: unknown }) => {
       const courtsList = data as { id: string; name: string; sport: string }[] | null
       if (courtsList && courtsList.length > 0) {
         cachedDbCourtsMap.set(tenantId, courtsList)

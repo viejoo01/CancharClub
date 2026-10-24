@@ -111,10 +111,10 @@ export async function executeRainCancellation(params: {
       getClubSchedule(effectiveTenantId).catch(() => DEFAULT_CLUB_SCHEDULE),
       supabase
         .from('courts')
-        .select('id, name, sport, slot_duration_minutes, is_active')
+        .select('id, name, sport, slot_duration_minutes, is_active, created_at')
         .eq('tenant_id', effectiveTenantId)
         .eq('is_active', true)
-        .order('display_order', { ascending: true }),
+        .order('created_at', { ascending: true }),
     ])
 
     const clubName = tenant?.name || 'CancharClub'

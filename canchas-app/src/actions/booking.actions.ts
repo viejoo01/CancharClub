@@ -73,7 +73,7 @@ async function resolveCourtUuid(
       .select('id')
       .eq('tenant_id', tenantId)
       .eq('is_active', true)
-      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
     if (firstCourt?.id) return firstCourt.id

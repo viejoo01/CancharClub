@@ -49,6 +49,7 @@ interface Court {
   has_lighting: boolean
   is_indoor: boolean
   is_active: boolean
+  created_at?: string | null
 }
 
 function formatSurface(surface?: string | null) {
@@ -218,9 +219,9 @@ export default function CanchasPage() {
       const [courtsRes, sched, hInfo, sLinks, sLoc] = await Promise.all([
         supabase
           .from('courts')
-          .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active')
+          .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, created_at')
           .eq('tenant_id', tenantId)
-          .order('display_order', { ascending: true }),
+          .order('created_at', { ascending: true }),
         getClubSchedule(tenantId).catch(() => null),
         getClubHighlightInfo(tenantId).catch(() => null),
         getClubSocialLinks(tenantId).catch(() => null),
@@ -238,6 +239,7 @@ export default function CanchasPage() {
           has_lights: boolean | null
           is_indoor: boolean | null
           is_active: boolean | null
+          created_at?: string | null
         }
         const mapped: Court[] = (data as unknown as CourtDbRow[]).map(c => ({
           id: c.id,
@@ -248,6 +250,7 @@ export default function CanchasPage() {
           has_lighting: !!c.has_lights,
           is_indoor: !!c.is_indoor,
           is_active: c.is_active ?? true,
+          created_at: c.created_at ?? null,
         }))
         setCourts(mapped)
         cachedCourtsMap.set(tenantId, mapped)

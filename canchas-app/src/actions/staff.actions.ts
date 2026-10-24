@@ -159,29 +159,51 @@ export async function inviteStaffMember(params: {
       }
       userId = newUser.user.id
     } else {
-      // Si ya existía, confirmar su email y actualizar contraseña si se proveyó
+      // SEGURIDAD CRÍTICA ANTI-ACCOUNT TAKEOVER:
+      // Validar si el usuario ya pertenece a otro club o es Superadmin
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id, tenant_id, role')
+        .eq('id', existingUser.id)
+        .maybeSingle()
+
+      if (existingProfile) {
+        if (existingProfile.tenant_id && existingProfile.tenant_id !== params.tenantId) {
+          return {
+            success: false,
+            error: 'Este correo electrónico ya está registrado y pertenece a otro club. No es posible asociarlo a este club.',
+          }
+        }
+        if (existingProfile.role === 'SUPERADMIN') {
+          return {
+            success: false,
+            error: 'No es posible invitar a una cuenta de Superadmin como personal del club.',
+          }
+        }
+      }
+
+      // Si el usuario ya existe, NUNCA sobreescribir su contraseña desde la invitación de un tercero
+      if (params.password?.trim()) {
+        return {
+          success: false,
+          error: 'Este usuario ya cuenta con una cuenta activa en el sistema. Debe usar sus credenciales existentes.',
+        }
+      }
+
+      // Limpiar metadatos residuales y sincronizar nombre si corresponde
       const currentMeta = { ...(existingUser.user_metadata || {}) }
       delete currentMeta.assigned_password
       delete currentMeta.initial_password
       delete currentMeta.password
 
-      const updateData: {
-        email_confirm: boolean
-        password?: string
-        user_metadata: Record<string, unknown>
-      } = {
+      await supabase.auth.admin.updateUserById(existingUser.id, {
         email_confirm: true,
         user_metadata: {
           ...currentMeta,
           full_name: cleanName,
           phone: cleanPhone || existingUser.user_metadata?.phone,
         },
-      }
-      if (params.password?.trim()) {
-        updateData.password = params.password.trim()
-      }
-
-      await supabase.auth.admin.updateUserById(existingUser.id, updateData)
+      })
       userId = existingUser.id
     }
 

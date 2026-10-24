@@ -534,18 +534,10 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
     const { data: authList } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
     const emailMap: Record<string, string> = {}
     const phoneMap: Record<string, string> = {}
-    const passwordMap: Record<string, string> = {}
     if (authList?.users) {
       authList.users.forEach(u => { 
         emailMap[u.id] = u.email || ''
         phoneMap[u.id] = (u.user_metadata?.phone as string) || ''
-        const pwd = (u.user_metadata?.assigned_password as string) || 
-                    (u.user_metadata?.initial_password as string) || 
-                    (u.user_metadata?.password as string) || 
-                    (u.app_metadata?.assigned_password as string) || 
-                    (u.app_metadata?.initial_password as string) || 
-                    ''
-        passwordMap[u.id] = pwd
       })
     }
 
@@ -561,7 +553,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
         tenant_name: t?.name || null,
         tenant_slug: t?.slug || null,
         created_at: p.created_at || '',
-        password: passwordMap[p.id] || '',
+        password: '••••••••',
       }
     })
 
@@ -579,7 +571,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
           tenant_name: (u.user_metadata?.full_name as string) || 'Sin club vinculado',
           tenant_slug: null,
           created_at: u.created_at || '',
-          password: passwordMap[u.id] || '',
+          password: '••••••••',
         })
       }
     }
@@ -616,11 +608,14 @@ export async function updateUserPasswordBySuperadmin(
     }
 
     const currentMeta = { ...(userData.user.user_metadata || {}) }
-    currentMeta.assigned_password = cleanPwd
-    currentMeta.initial_password = currentMeta.initial_password || cleanPwd
+    delete currentMeta.assigned_password
+    delete currentMeta.initial_password
+    delete currentMeta.password
 
     const currentAppMeta = { ...(userData.user.app_metadata || {}) }
-    currentAppMeta.assigned_password = cleanPwd
+    delete currentAppMeta.assigned_password
+    delete currentAppMeta.initial_password
+    delete currentAppMeta.password
 
     const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
       password: cleanPwd,
@@ -713,11 +708,6 @@ export async function createUserBySuperadmin(payload: {
       user_metadata: {
         full_name: payload.name,
         phone: payload.phone,
-        assigned_password: cleanPwd,
-        initial_password: cleanPwd,
-      },
-      app_metadata: {
-        assigned_password: cleanPwd,
       },
     })
 
@@ -727,11 +717,14 @@ export async function createUserBySuperadmin(payload: {
         const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === payload.email.trim().toLowerCase())
         if (existingUser) {
           const currentMeta = { ...(existingUser.user_metadata || {}) }
-          currentMeta.assigned_password = cleanPwd
-          currentMeta.initial_password = currentMeta.initial_password || cleanPwd
+          delete currentMeta.assigned_password
+          delete currentMeta.initial_password
+          delete currentMeta.password
 
           const currentAppMeta = { ...(existingUser.app_metadata || {}) }
-          currentAppMeta.assigned_password = cleanPwd
+          delete currentAppMeta.assigned_password
+          delete currentAppMeta.initial_password
+          delete currentAppMeta.password
 
           await supabase.auth.admin.updateUserById(existingUser.id, {
             password: cleanPwd,

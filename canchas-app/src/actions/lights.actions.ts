@@ -42,6 +42,63 @@ export interface LightToggleResult {
 }
 
 /**
+ * Valida que una URL sea segura para peticiones salientes (previene SSRF).
+ * - Exige HTTPS.
+ * - Bloquea localhost, loopback, rangos privados RFC 1918, link-local y metadata de cloud (169.254.169.254).
+ */
+export function isSafePublicWebhookUrl(urlStr: string): { valid: boolean; reason?: string } {
+  try {
+    const parsed = new URL(urlStr)
+    if (parsed.protocol !== 'https:') {
+      return { valid: false, reason: 'Solo se permiten webhooks seguros con HTTPS' }
+    }
+
+    const host = parsed.hostname.toLowerCase()
+
+    // Bloquear localhost y variantes
+    if (host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1') {
+      return { valid: false, reason: 'No se permiten URLs locales o loopback' }
+    }
+
+    // Bloquear AWS/GCP/Azure/DigitalOcean metadata endpoints
+    if (host === '169.254.169.254' || host === 'metadata.google.internal' || host.endsWith('.internal')) {
+      return { valid: false, reason: 'Dirección de metadata de nube no permitida' }
+    }
+
+    // Bloquear IPs privadas RFC 1918 y link-local
+    const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+    const match = host.match(ipv4Regex)
+    if (match) {
+      const octet1 = parseInt(match[1], 10)
+      const octet2 = parseInt(match[2], 10)
+      if (
+        octet1 === 10 || // 10.0.0.0/8
+        octet1 === 127 || // 127.0.0.0/8
+        (octet1 === 172 && octet2 >= 16 && octet2 <= 31) || // 172.16.0.0/12
+        (octet1 === 192 && octet2 === 168) || // 192.168.0.0/16
+        (octet1 === 169 && octet2 === 254) || // 169.254.0.0/16
+        octet1 === 0 // 0.0.0.0/8
+      ) {
+        return { valid: false, reason: 'No se permiten direcciones IP de redes privadas o locales' }
+      }
+    }
+
+    return { valid: true }
+  } catch {
+    return { valid: false, reason: 'URL inválida' }
+  }
+}
+
+/**
+ * Valida que el servidor de Shelly Cloud apunte a infraestructura legítima de Shelly.
+ */
+export function isSafeShellyCloudServer(server: string): boolean {
+  if (!server) return true
+  const clean = server.trim().toLowerCase()
+  return clean === 'shelly-api.shelly.cloud' || /^[a-zA-Z0-9-]+\.shelly\.cloud$/.test(clean)
+}
+
+/**
  * Envía un comando de encendido/apagado al relé IoT de una cancha.
  *
  * Soporta:
@@ -79,7 +136,9 @@ export async function toggleCourtLight(
   // 1. Shelly Cloud REST API (100% cloud, sin depender de red local)
   if (relayType === 'SHELLY_CLOUD' || (cloudConfig?.authKey && cloudConfig?.deviceId)) {
     try {
-      const server = cloudConfig?.server || 'shelly-api.shelly.cloud'
+      const server = (cloudConfig?.server && isSafeShellyCloudServer(cloudConfig.server))
+        ? cloudConfig.server.trim()
+        : 'shelly-api.shelly.cloud'
       const turnCmd = isOn !== null ? (isOn ? 'on' : 'off') : 'to_state'
       const formData = new URLSearchParams()
       formData.append('id', cloudConfig?.deviceId || '')
@@ -111,6 +170,11 @@ export async function toggleCourtLight(
 
   // 2. Generic Webhook (Home Assistant, eWeLink, IFTTT)
   if (relayType === 'WEBHOOK' && cloudConfig?.webhookUrl) {
+    const urlValidation = isSafePublicWebhookUrl(cloudConfig.webhookUrl)
+    if (!urlValidation.valid) {
+      return { success: false, courtId, isOn: false, error: `Webhook bloqueado por seguridad: ${urlValidation.reason}` }
+    }
+
     try {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 5000)
@@ -268,6 +332,20 @@ export async function saveCourtLightConfig(
   try {
     const auth = await assertTenantMember(tenantId)
     if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+
+    // Validar protecciones SSRF si se suministra configuración cloud
+    if (config.cloud_config?.webhookUrl) {
+      const urlCheck = isSafePublicWebhookUrl(config.cloud_config.webhookUrl)
+      if (!urlCheck.valid) {
+        return { success: false, error: `URL de Webhook inválida o insegura: ${urlCheck.reason}` }
+      }
+    }
+
+    if (config.cloud_config?.server) {
+      if (!isSafeShellyCloudServer(config.cloud_config.server)) {
+        return { success: false, error: 'Servidor Shelly Cloud inválido. Debe pertenecer al dominio *.shelly.cloud' }
+      }
+    }
 
     const supabase = await createServiceClient()
     const current = await getCourtLightConfigs(tenantId)

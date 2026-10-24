@@ -42,6 +42,7 @@ import { recordClubNotification } from './notifications.actions'
 import { invalidateCalendarBookingsCache } from './club.actions'
 import { resolveOfficialSlotPrice } from '@/lib/booking-pricing.server'
 import { getOrRefreshTenantMpToken, refreshTenantMpToken } from './mp-marketplace.actions'
+import { checkRateLimit, getClientIpFromHeaders } from '@/lib/rate-limiter'
 
 function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -1487,7 +1488,10 @@ export async function confirmBookingDeposit(bookingId: string): Promise<{
 
 // ─── ACTION: Consultar Historial y Reputación de Jugador (Mejora 2C) ───────────
 
-export async function getPlayerReputation(phone?: string | null): Promise<{
+export async function getPlayerReputation(
+  phone?: string | null,
+  tenantId?: string | null
+): Promise<{
   phone: string
   totalBookings: number
   completedBookings: number
@@ -1506,12 +1510,61 @@ export async function getPlayerReputation(phone?: string | null): Promise<{
     }
   }
 
+  // Protección perimetral de rate limit por IP
+  const clientIp = await getClientIpFromHeaders()
+  const rateCheck = await checkRateLimit(`reputation:${clientIp}`, 30, 60)
+  if (!rateCheck.success) {
+    return {
+      phone,
+      totalBookings: 0,
+      completedBookings: 0,
+      noShowCount: 0,
+      reputationScore: 100,
+      isHighRisk: false,
+    }
+  }
+
+  // Control de autorización: solo administradores o staff autenticados del club pueden consultar reputación
+  if (tenantId) {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return {
+        phone,
+        totalBookings: 0,
+        completedBookings: 0,
+        noShowCount: 0,
+        reputationScore: 100,
+        isHighRisk: false,
+      }
+    }
+  } else {
+    // Si no se proveyó tenantId explícito, verificar si existe sesión autenticada
+    const supabase = await createServiceClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return {
+        phone,
+        totalBookings: 0,
+        completedBookings: 0,
+        noShowCount: 0,
+        reputationScore: 100,
+        isHighRisk: false,
+      }
+    }
+  }
+
   try {
     const supabase = await createServiceClient()
-    const { data: bookings } = await supabase
+    let query = supabase
       .from('bookings')
       .select('status')
       .eq('customer_phone', phone)
+
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId)
+    }
+
+    const { data: bookings } = await query
 
     const list = bookings || []
     const totalBookings = list.length
@@ -1577,6 +1630,16 @@ export async function lookupPlayerBookings(query: {
   data?: PlayerBookingDetail[]
   error?: string
 }> {
+  // Rate limiting perimetral para prevenir raspado masivo de PII de jugadores
+  const clientIp = await getClientIpFromHeaders()
+  const rateCheck = await checkRateLimit(`lookup_bookings:${clientIp}`, 15, 60)
+  if (!rateCheck.success) {
+    return {
+      success: false,
+      error: 'Demasiadas consultas de reservas. Por favor aguarde un momento antes de volver a intentar.',
+    }
+  }
+
   const cleanCode = (query.code || '').trim().toUpperCase().replace(/^#/, '')
   const normalizedEmail = (query.email || '').trim().toLowerCase()
   const cleanPhone = (query.phone || '').replace(/\D/g, '').trim()

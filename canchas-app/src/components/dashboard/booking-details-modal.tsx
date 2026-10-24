@@ -146,7 +146,7 @@ export function BookingDetailsModal({
     let isMounted = true
     const fetchRep = async () => {
       if (booking?.customer_phone) {
-        const rep = await getPlayerReputation(booking.customer_phone)
+        const rep = await getPlayerReputation(booking.customer_phone, tenantId)
         if (isMounted) setReputation(rep)
       } else {
         if (isMounted) setReputation(null)
@@ -156,7 +156,7 @@ export function BookingDetailsModal({
     return () => {
       isMounted = false
     }
-  }, [booking?.customer_phone])
+  }, [booking?.customer_phone, tenantId])
 
   const [prevBookingId, setPrevBookingId] = useState(booking?.id)
   if (booking?.id !== prevBookingId) {

@@ -27,6 +27,42 @@ const PUBLIC_PATHS = [
 // con el rate limiter distribuido basado en Upstash Redis de src/lib/rate-limiter.ts.
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
+/**
+ * Valida criptográficamente la sesión Superadmin (cookie sa_session) mediante HMAC SHA-256 y expiración.
+ */
+async function isValidSuperadminSession(token: string | undefined): Promise<boolean> {
+  const secret = process.env.SUPERADMIN_SESSION_SECRET
+  if (!token || !secret) return false
+
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8')
+    const parts = decoded.split(':')
+    if (parts.length < 3) return false
+    const sig = parts.pop()!
+
+    // Verificar expiración (máximo 8 horas)
+    const timestamp = parseInt(parts[parts.length - 1], 10)
+    if (isNaN(timestamp) || Date.now() - timestamp > 8 * 60 * 60 * 1000) {
+      return false
+    }
+
+    const payload = parts.join(':')
+    const enc = new TextEncoder()
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    )
+    const sigBytes = Buffer.from(sig, 'hex')
+    const payloadBytes = enc.encode(payload)
+    return await crypto.subtle.verify('HMAC', keyMaterial, sigBytes, payloadBytes)
+  } catch {
+    return false
+  }
+}
+
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const requestHeaders = new Headers(request.headers)
@@ -153,10 +189,12 @@ export async function proxy(request: NextRequest) {
   } | null = null
 
   // ─── 3. PROTECCIÓN DE RUTAS PRIVADAS (DASHBOARD) ──────────────────────────
-  // El acceso al dashboard requiere una sesión real autenticada en Supabase o sesión Superadmin.
+  // El acceso al dashboard requiere una sesión real autenticada en Supabase o sesión Superadmin legítima.
   if (pathname.startsWith('/dashboard')) {
-    const saSession = request.cookies.get('sa_session')?.value
-    if (!user && !saSession) {
+    const rawSaSession = request.cookies.get('sa_session')?.value
+    const isSuperadmin = await isValidSuperadminSession(rawSaSession)
+
+    if (!user && !isSuperadmin) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       url.searchParams.set('redirectTo', pathname)
@@ -164,7 +202,7 @@ export async function proxy(request: NextRequest) {
     }
 
     // SI EL USUARIO NO ES SUPERADMIN: OBTENER PERFIL Y VERIFICAR ACCESO
-    if (!saSession && user) {
+    if (!isSuperadmin && user) {
       const { data: profile } = (await supabase
         .from('profiles')
         .select('role, tenant_id, tenants(subscription_status, is_active, description, trial_ends_at, created_at)')
@@ -232,7 +270,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // ─── 4. PROTECCIÓN DEL PANEL SUPERADMIN ────────────────────────────────────
-  // El panel superadmin usa su propio sistema de sesión (cookie sa_session),
+  // El panel superadmin usa su propio sistema de sesión criptográfica (cookie sa_session),
   // completamente independiente de Supabase.
   if (pathname.startsWith('/superadmin')) {
     // La página de login del superadmin es pública
@@ -240,42 +278,10 @@ export async function proxy(request: NextRequest) {
       return response
     }
 
-    // Verificar la cookie de sesión sa_session
-    const saSession = request.cookies.get('sa_session')?.value
-    const secret = process.env.SUPERADMIN_SESSION_SECRET
+    const rawSaSession = request.cookies.get('sa_session')?.value
+    const isSuperadmin = await isValidSuperadminSession(rawSaSession)
 
-    if (!saSession || !secret) {
-      return NextResponse.redirect(new URL('/superadmin/login', request.url))
-    }
-
-    // Verificar firma HMAC del token y timestamp usando Web Crypto API (Edge Runtime)
-    try {
-      const decoded = Buffer.from(saSession, 'base64url').toString('utf-8')
-      const parts = decoded.split(':')
-      if (parts.length < 3) throw new Error('invalid')
-      const sig = parts.pop()!
-
-      // Verificar que la sesión no tenga más de 8 horas
-      const timestamp = parseInt(parts[parts.length - 1], 10)
-      if (isNaN(timestamp) || Date.now() - timestamp > 8 * 60 * 60 * 1000) {
-        throw new Error('expired')
-      }
-
-      const payload = parts.join(':')
-
-      const enc = new TextEncoder()
-      const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        enc.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['verify']
-      )
-      const sigBytes = Buffer.from(sig, 'hex')
-      const payloadBytes = enc.encode(payload)
-      const valid = await crypto.subtle.verify('HMAC', keyMaterial, sigBytes, payloadBytes)
-      if (!valid) throw new Error('invalid sig')
-    } catch {
+    if (!isSuperadmin) {
       return NextResponse.redirect(new URL('/superadmin/login', request.url))
     }
 

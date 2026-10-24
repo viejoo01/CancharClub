@@ -890,11 +890,14 @@ export async function updateMatchScore(payload: {
     const catObj = currentMatch.category as unknown as { tournament_id?: string; tournament?: { tenant_id?: string } } | null
     const resourceTenantId = catObj?.tournament?.tenant_id
     const tournamentId = catObj?.tournament_id
-    if (resourceTenantId) {
-      const auth = await assertTenantMember(resourceTenantId)
-      if (!auth.authorized) {
-        return { success: false, error: auth.error || 'Sin permisos para cargar resultados de este torneo' }
-      }
+
+    if (!resourceTenantId) {
+      return { success: false, error: 'Club o torneo no encontrado' }
+    }
+
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos para cargar resultados de este torneo' }
     }
 
     // 2. Actualizar marcador del partido
@@ -1231,10 +1234,13 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
     const catObj = team.category as unknown as { tournament_id?: string; tournament?: { tenant_id?: string } } | null
     const resourceTenantId = catObj?.tournament?.tenant_id
     const tournamentId = catObj?.tournament_id
-    if (resourceTenantId) {
-      const auth = await assertTenantMember(resourceTenantId)
-      if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+
+    if (!resourceTenantId) {
+      return { success: false, error: 'Club o torneo no encontrado' }
     }
+
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
 
     // Desvincular de partidos donde figure
     await supabase.from('tournament_matches').update({ team_a_id: null }).eq('team_a_id', teamId)
@@ -1476,10 +1482,12 @@ export async function markTeamPaymentStatus(
     const resourceTenantId = catObj?.tournament?.tenant_id
     const tournamentId = catObj?.tournament_id
 
-    if (resourceTenantId) {
-      const auth = await assertTenantMember(resourceTenantId)
-      if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
+    if (!resourceTenantId) {
+      return { success: false, error: 'Club o torneo no encontrado' }
     }
+
+    const auth = await assertTenantMember(resourceTenantId)
+    if (!auth.authorized) return { success: false, error: auth.error || 'No autorizado' }
 
     const finalAmount = amountPaidArs !== undefined 
       ? amountPaidArs 

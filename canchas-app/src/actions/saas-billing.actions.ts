@@ -1751,11 +1751,14 @@ export async function resolveCardPaymentMethodAndIssuer(
 export async function validateAndRegisterCardWithMercadoPago(
   data: {
     tenantId?: string
-    cardNumber: string
-    cardHolder: string
-    cardExpiry: string
-    cardCvv: string
-    cardDni: string
+    cardTokenId?: string
+    cardBrand?: string
+    cardLast4?: string
+    cardNumber?: string
+    cardHolder?: string
+    cardExpiry?: string
+    cardCvv?: string
+    cardDni?: string
   },
   options?: { skipAuth?: boolean }
 ): Promise<{
@@ -1765,67 +1768,81 @@ export async function validateAndRegisterCardWithMercadoPago(
   cardLast4?: string
   cardHolder?: string
 }> {
-  // 1. Limpieza y validación de formato estricto
+  const isTokenized = Boolean(data.cardTokenId && data.cardTokenId.trim())
   const cleanNumber = (data.cardNumber || '').replace(/\D/g, '')
   const cleanHolder = (data.cardHolder || '').trim().toUpperCase()
   const cleanExpiry = (data.cardExpiry || '').trim()
   const cleanCvv = (data.cardCvv || '').replace(/\D/g, '')
   const cleanDni = (data.cardDni || '').replace(/\D/g, '')
 
-  if (cleanNumber.length < 15 || cleanNumber.length > 16) {
-    return {
-      success: false,
-      error: 'El número de tarjeta debe tener 15 o 16 dígitos.',
-    }
-  }
+  let detectedBrand: { brand: string } = { brand: data.cardBrand || 'VISA' }
+  let expCheck: { valid: boolean; month?: number; year?: number; error?: string } = { valid: true, month: 12, year: 2030 }
 
-  // Validación de algoritmo de Luhn (Módulo 10)
-  if (!isValidLuhn(cleanNumber)) {
-    return {
-      success: false,
-      error: 'Número de tarjeta inválido. No supera el algoritmo de validación bancaria (Luhn). Verificá los 16 dígitos de tu plástico.',
+  // 1. Limpieza y validación de formato estricto (solo si no viene pre-tokenizada por el cliente)
+  if (!isTokenized) {
+    if (cleanNumber.length < 15 || cleanNumber.length > 16) {
+      return {
+        success: false,
+        error: 'El número de tarjeta debe tener 15 o 16 dígitos.',
+      }
     }
-  }
 
-  // Detección de emisor bancario
-  const detectedBrand = detectCardBrand(cleanNumber)
-  if (!detectedBrand) {
-    return {
-      success: false,
-      error: 'Entidad emisora no válida. Ingresá una tarjeta Visa, Mastercard, American Express, Cabal o Naranja.',
+    // Validación de algoritmo de Luhn (Módulo 10)
+    if (!isValidLuhn(cleanNumber)) {
+      return {
+        success: false,
+        error: 'Número de tarjeta inválido. No supera el algoritmo de validación bancaria (Luhn). Verificá los 16 dígitos de tu plástico.',
+      }
     }
-  }
 
-  // Validación de fecha de vencimiento
-  const expCheck = isValidExpiry(cleanExpiry)
-  if (!expCheck.valid) {
-    return {
-      success: false,
-      error: expCheck.error || 'Fecha de vencimiento inválida.',
+    // Detección de emisor bancario
+    const brand = detectCardBrand(cleanNumber)
+    if (!brand) {
+      return {
+        success: false,
+        error: 'Entidad emisora no válida. Ingresá una tarjeta Visa, Mastercard, American Express, Cabal o Naranja.',
+      }
     }
-  }
+    detectedBrand = brand
 
-  // Validación de CVV
-  if (!isValidCvv(cleanCvv, detectedBrand.brand)) {
-    return {
-      success: false,
-      error: 'Código de seguridad (CVV) inválido. Debe tener 3 dígitos (o 4 dígitos en Amex).',
+    // Validación de fecha de vencimiento
+    expCheck = isValidExpiry(cleanExpiry)
+    if (!expCheck.valid) {
+      return {
+        success: false,
+        error: expCheck.error || 'Fecha de vencimiento inválida.',
+      }
     }
-  }
 
-  // Validación de DNI
-  if (!isValidDni(cleanDni)) {
-    return {
-      success: false,
-      error: 'El DNI del titular debe tener 7 u 8 dígitos numéricos.',
+    // Validación de CVV
+    if (!isValidCvv(cleanCvv, detectedBrand.brand)) {
+      return {
+        success: false,
+        error: 'Código de seguridad (CVV) inválido. Debe tener 3 dígitos (o 4 dígitos en Amex).',
+      }
     }
-  }
 
-  // Validación de titular
-  if (!isValidCardholder(cleanHolder)) {
-    return {
-      success: false,
-      error: 'Ingresá el nombre y apellido completo del titular como figura en el plástico.',
+    // Validación de DNI
+    if (!isValidDni(cleanDni)) {
+      return {
+        success: false,
+        error: 'El DNI del titular debe tener 7 u 8 dígitos numéricos.',
+      }
+    }
+
+    // Validación de titular
+    if (!isValidCardholder(cleanHolder)) {
+      return {
+        success: false,
+        error: 'Ingresá el nombre y apellido completo del titular como figura en el plástico.',
+      }
+    }
+  } else {
+    if (cleanHolder && !isValidCardholder(cleanHolder)) {
+      return {
+        success: false,
+        error: 'Ingresá el nombre y apellido completo del titular como figura en el plástico.',
+      }
     }
   }
 
@@ -1880,9 +1897,9 @@ export async function validateAndRegisterCardWithMercadoPago(
     const actRes = await confirmAndActivateSubscriptionWithCard(
       tenantId,
       {
-        cardBrand: detectedBrand.brand,
-        cardLast4: cleanNumber.slice(-4),
-        cardHolder: cleanHolder,
+        cardBrand: data.cardBrand || detectedBrand.brand,
+        cardLast4: data.cardLast4 || (cleanNumber ? cleanNumber.slice(-4) : '4242'),
+        cardHolder: cleanHolder || 'TITULAR REGISTRADO',
       },
       {
         skipAuth: options?.skipAuth,
@@ -1893,9 +1910,9 @@ export async function validateAndRegisterCardWithMercadoPago(
     return {
       success: actRes.success,
       error: actRes.error,
-      cardBrand: detectedBrand.brand,
-      cardLast4: cleanNumber.slice(-4),
-      cardHolder: cleanHolder,
+      cardBrand: data.cardBrand || detectedBrand.brand,
+      cardLast4: data.cardLast4 || (cleanNumber ? cleanNumber.slice(-4) : '4242'),
+      cardHolder: cleanHolder || 'TITULAR REGISTRADO',
     }
   }
 
@@ -1903,47 +1920,72 @@ export async function validateAndRegisterCardWithMercadoPago(
   const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
   const cardTokenClient = new CardToken(mpConfig)
 
-  // Resolver previamente el payment_method_id y el issuer_id exacto según el BIN
-  const bin = cleanNumber.slice(0, 6)
-  const publicKey = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || process.env.MP_PUBLIC_KEY
-  const resolvedCard = await resolveCardPaymentMethodAndIssuer(bin, detectedBrand.brand, mpToken, publicKey)
+  let cardToken: { id?: string; luhn_validation?: boolean } | undefined
+  let resolvedCard: { brandName: string; paymentMethodId: string | null; issuerId?: number | null } = {
+    brandName: data.cardBrand || detectedBrand.brand,
+    paymentMethodId: null,
+    issuerId: null,
+  }
 
-  let cardToken
-  try {
-    cardToken = await cardTokenClient.create({
-      body: {
-        card_number: cleanNumber,
-        expiration_month: String(expCheck.month),
-        expiration_year: String(expCheck.year),
-        security_code: cleanCvv,
-        cardholder: {
-          name: cleanHolder,
-          identification: {
-            type: 'DNI',
-            number: cleanDni,
+  if (isTokenized && data.cardTokenId) {
+    // Si la tarjeta ya fue tokenizada en el cliente directamente contra Mercado Pago SDK,
+    // se utiliza el cardTokenId emitido evitando manipular o persistir PAN/CVV (PCI-DSS)
+    cardToken = { id: data.cardTokenId.trim(), luhn_validation: true }
+  } else {
+    // Resolver previamente el payment_method_id y el issuer_id exacto según el BIN
+    const bin = cleanNumber.slice(0, 6)
+    const publicKey = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || process.env.MP_PUBLIC_KEY
+    const cardInfo = await resolveCardPaymentMethodAndIssuer(bin, detectedBrand.brand, mpToken, publicKey)
+    resolvedCard = {
+      brandName: cardInfo.brandName,
+      paymentMethodId: cardInfo.paymentMethodId,
+      issuerId: cardInfo.issuerId ?? null,
+    }
+
+    try {
+      const createdToken = await cardTokenClient.create({
+        body: {
+          card_number: cleanNumber,
+          expiration_month: String(expCheck.month),
+          expiration_year: String(expCheck.year),
+          security_code: cleanCvv,
+          cardholder: {
+            name: cleanHolder,
+            identification: {
+              type: 'DNI',
+              number: cleanDni,
+            },
           },
-        },
-      } as unknown as Parameters<typeof cardTokenClient.create>[0]['body'],
-    })
-  } catch (err: unknown) {
-    console.error('Error tokenizing card in Mercado Pago:', err)
-    return {
-      success: false,
-      error: 'Mercado Pago no pudo validar esta tarjeta. Verificá que los números correspondan a una tarjeta emitida por un banco.',
+        } as unknown as Parameters<typeof cardTokenClient.create>[0]['body'],
+      })
+      cardToken = createdToken
+    } catch (err: unknown) {
+      console.error('Error tokenizing card in Mercado Pago:', err)
+      return {
+        success: false,
+        error: 'Mercado Pago no pudo validar esta tarjeta. Verificá que los números correspondan a una tarjeta emitida por un banco.',
+      }
+    }
+
+    if (!cardToken || !cardToken.id) {
+      return {
+        success: false,
+        error: 'No se pudo generar la credencial segura para la tarjeta.',
+      }
+    }
+
+    if (cardToken.luhn_validation === false) {
+      return {
+        success: false,
+        error: 'Mercado Pago detectó que la tarjeta no es válida.',
+      }
     }
   }
 
   if (!cardToken || !cardToken.id) {
     return {
       success: false,
-      error: 'No se pudo generar la credencial segura para la tarjeta.',
-    }
-  }
-
-  if (cardToken.luhn_validation === false) {
-    return {
-      success: false,
-      error: 'Mercado Pago detectó que la tarjeta no es válida.',
+      error: 'Credencial segura de tarjeta no disponible.',
     }
   }
 
@@ -2029,26 +2071,28 @@ export async function validateAndRegisterCardWithMercadoPago(
   let payment: Awaited<ReturnType<InstanceType<typeof Payment>['create']>> | null = null
   if (!isApprovedOrVerified) {
     let testTokenId = cardToken.id
-    try {
-      const freshToken = await cardTokenClient.create({
-        body: {
-          card_number: cleanNumber,
-          expiration_month: String(expCheck.month),
-          expiration_year: String(expCheck.year),
-          security_code: cleanCvv,
-          cardholder: {
-            name: cleanHolder,
-            identification: {
-              type: 'DNI',
-              number: cleanDni,
+    if (cleanNumber) {
+      try {
+        const freshToken = await cardTokenClient.create({
+          body: {
+            card_number: cleanNumber,
+            expiration_month: String(expCheck.month),
+            expiration_year: String(expCheck.year),
+            security_code: cleanCvv,
+            cardholder: {
+              name: cleanHolder,
+              identification: {
+                type: 'DNI',
+                number: cleanDni,
+              },
             },
-          },
-        } as unknown as Parameters<typeof cardTokenClient.create>[0]['body'],
-      })
-      if (freshToken?.id) {
-        testTokenId = freshToken.id
-      }
-    } catch {}
+          } as unknown as Parameters<typeof cardTokenClient.create>[0]['body'],
+        })
+        if (freshToken?.id) {
+          testTokenId = freshToken.id
+        }
+      } catch {}
+    }
 
     const paymentClient = new Payment(mpConfig)
     try {
@@ -2171,9 +2215,9 @@ export async function validateAndRegisterCardWithMercadoPago(
   }
 
   // 5. Activar el club con tarjeta 100% verificada y contrato de débito recurrente
-  const verifiedBrand = (payment?.payment_method_id ? payment.payment_method_id.toUpperCase() : resolvedCard.brandName) || detectedBrand.brand
-  const verifiedLast4 = payment?.card?.last_four_digits || cleanNumber.slice(-4)
-  const verifiedHolder = payment?.card?.cardholder?.name || cleanHolder
+  const verifiedBrand = (payment?.payment_method_id ? payment.payment_method_id.toUpperCase() : resolvedCard?.brandName) || data.cardBrand || detectedBrand.brand
+  const verifiedLast4 = payment?.card?.last_four_digits || data.cardLast4 || (cleanNumber ? cleanNumber.slice(-4) : '4242')
+  const verifiedHolder = payment?.card?.cardholder?.name || cleanHolder || 'TITULAR REGISTRADO'
 
   const activateRes = await confirmAndActivateSubscriptionWithCard(
     tenantId,
@@ -2912,12 +2956,10 @@ export async function recordReactivationPaymentAction(params: {
   paymentMethod: 'MERCADO_PAGO' | 'TRANSFERENCIA' | 'SIMULADO'
   notes?: string
 }) {
+  // SEGURIDAD CRÍTICA: Solo el Superadmin puede forzar o asentar pagos de reactivación manuales
   const superCheck = await assertSuperadmin()
   if (!superCheck.authorized) {
-    const adminCheck = await assertTenantAdmin(params.tenantId)
-    if (!adminCheck.authorized) {
-      return { success: false, error: adminCheck.error || 'No autorizado' }
-    }
+    return { success: false, error: 'Acceso denegado: solo el Superadmin de la plataforma puede registrar reactivaciones directas.' }
   }
 
   return applyReactivationPaymentInternal(params)
@@ -2938,8 +2980,13 @@ export async function verifyAndApplyReactivationPaymentAction(params: {
   }
 
   const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+  const isProd = process.env.NODE_ENV === 'production'
+
   if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
-    // En modo simulación
+    if (isProd) {
+      return { success: false, error: 'Pasarela de cobro de reactivación no configurada en producción.' }
+    }
+    // En modo simulación exclusivo para desarrollo local
     return applyReactivationPaymentInternal({
       tenantId,
       totalPaid: 15,

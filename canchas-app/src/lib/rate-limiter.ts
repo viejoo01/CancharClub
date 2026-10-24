@@ -141,6 +141,26 @@ export function getClientIp(req: Request): string {
   return '127.0.0.1'
 }
 
+/**
+ * Extrae la IP del cliente en Server Actions o Server Components evaluando headers de proxy.
+ */
+export async function getClientIpFromHeaders(): Promise<string> {
+  try {
+    const { headers } = await import('next/headers')
+    const headersList = await headers()
+    const forwardedFor = headersList.get('x-forwarded-for')
+    if (forwardedFor) {
+      const firstIp = forwardedFor.split(',')[0].trim()
+      if (firstIp) return firstIp
+    }
+    const realIp = headersList.get('x-real-ip')
+    if (realIp) return realIp.trim()
+  } catch {
+    // Contexto donde headers() no está disponible
+  }
+  return '127.0.0.1'
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PERFILES PRECONFIGURADOS DE SEGURIDAD
 // ─────────────────────────────────────────────────────────────────────────────

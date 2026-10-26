@@ -50,4 +50,26 @@ describe('SaaS Pricing Engine', () => {
     expect(zeroFee.surchargeAmount).toBe(0)
     expect(zeroFee.totalAmount).toBe(30000)
   })
+
+  it('calculates 10-court club (Grande 5+) fee accurately at 2.5x multiplier', () => {
+    // 10 canchas, turno mayor $40.000 -> 40000 * 2.5 = $100.000
+    const res = calculateClubSaaSFee(10, 40000, null, null, true, false)
+    expect(res.courtsCount).toBe(10)
+    expect(res.multiplier).toBe(2.5)
+    expect(res.highestSlotPriceArs).toBe(40000)
+    expect(res.monthlyFeeArs).toBe(100000)
+    expect(res.planId).toBe('GRANDE_5_PLUS')
+    expect(res.formulaDescription).toContain('2.5 turnos de $40.000 (10 canchas)')
+  })
+
+  it('correctly tracks trial state before and after 15 days', () => {
+    const createdAt = new Date('2026-10-09T00:00:00.000Z')
+    const trialEndsAt = new Date('2026-10-24T00:00:00.000Z')
+
+    // Prueba expirada si la fecha actual es posterior a trialEndsAt
+    const pricingExpired = calculateClubSaaSFee(10, 40000, createdAt, trialEndsAt, true)
+    // Cuando el trial ya pasó, isTrial debe ser falso
+    expect(new Date() >= trialEndsAt).toBe(true)
+    expect(pricingExpired.isTrial).toBe(false)
+  })
 })

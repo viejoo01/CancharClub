@@ -37,6 +37,7 @@ import {
   confirmPreapprovalSubscriptionFromMercadoPago,
   validateAndRegisterCardWithMercadoPago,
   getClubPlanDetails,
+  createTenantInvoicePreference,
   requestSubscriptionRevocationAction,
   undoSubscriptionRevocationAction,
   dismissAutoDebitAlertAction,
@@ -185,8 +186,10 @@ export default function ClubPlanPage() {
     planDetails?.subscriptionStatus === 'PAUSED' ||
     planDetails?.subscriptionStatus === 'LOCKED'
 
+  const hasUnpaidInvoice = Boolean(planDetails?.invoices?.some(inv => (inv.status === 'UNPAID' || inv.status === 'DRAFT') && Number(inv.amount) > 0))
+  const isPaymentPending = planDetails?.subscriptionStatus === 'PAYMENT_PENDING' || hasUnpaidInvoice
   const isAutoDebitActive = !isPaused && Boolean(hasAutoDebit || planDetails?.hasAutoDebit)
-  const isPaid = !isPaused && isAutoDebitActive && ((planDetails?.isPaid ?? false) || isAutoDebitActive)
+  const isPaid = !isPaused && !isPaymentPending && (planDetails?.isPaid ?? false)
 
   const clubName = planDetails?.tenantName || 'Cargando club...'
   const courtsCount = planDetails?.courtsCount || 2
@@ -217,6 +220,28 @@ export default function ClubPlanPage() {
   const [revocationReason, setRevocationReason] = useState('')
   const [isRevoking, setIsRevoking] = useState(false)
   const [isUndoingRevocation, setIsUndoingRevocation] = useState(false)
+  const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null)
+
+  const handlePayInvoice = async (invoiceId: string) => {
+    const targetTenant = tenantId || planDetails?.tenantId
+    if (!targetTenant) {
+      toast.error('No se pudo identificar el club para realizar el pago')
+      return
+    }
+    try {
+      setPayingInvoiceId(invoiceId)
+      const res = await createTenantInvoicePreference(targetTenant, invoiceId)
+      if (res.success && res.initPoint) {
+        window.location.assign(res.initPoint)
+      } else {
+        toast.error(res.error || 'No se pudo generar el enlace de pago')
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al procesar el pago')
+    } finally {
+      setPayingInvoiceId(null)
+    }
+  }
 
   const handleRequestRevocation = async () => {
     setIsRevoking(true)
@@ -749,9 +774,14 @@ export default function ClubPlanPage() {
                 Modelo adaptado automáticamente a la infraestructura de tu complejo.
               </p>
             </div>
-            {isPaid && isAutoDebitActive ? (
+            {isPaid ? (
               <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs px-3 py-1 shrink-0 self-start">
                 Al Día (Pagado)
+              </Badge>
+            ) : isPaymentPending ? (
+              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Pago Pendiente / Débito Fallido</span>
               </Badge>
             ) : !isAutoDebitActive ? (
               <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-3 py-1 font-bold shrink-0 self-start flex items-center gap-1.5">
@@ -1039,6 +1069,11 @@ export default function ClubPlanPage() {
                     <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                     <span>Baja programada: Activo hasta {cancellationDate}</span>
                   </div>
+                ) : isPaymentPending ? (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center text-xs text-amber-300 font-semibold flex items-center justify-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Débito fallido / Pago mensual pendiente</span>
+                  </div>
                 ) : (
                   <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center text-xs text-emerald-400 font-semibold flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -1085,38 +1120,75 @@ export default function ClubPlanPage() {
               <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/40 text-xs font-bold px-2.5 py-0.5">
                 Recomendado • Evitá Bloqueos
               </Badge>
-              <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Débito Automático Oficial
+              <span className={`text-[11px] font-semibold flex items-center gap-1 ${
+                isPaymentPending ? 'text-amber-400' : 'text-emerald-400'
+              }`}>
+                {isPaymentPending ? (
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
+                {isPaymentPending ? 'Débito con Pago Pendiente' : 'Débito Automático Oficial'}
               </span>
             </div>
             <h3 className="text-lg font-bold text-white tracking-tight">
-              Adherí tu Club al Débito Automático Mensual
+              {isTrial ? 'Adherí tu Club al Débito Automático Mensual' : 'Débito Automático de Abono Mensual'}
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Disfrutá de <strong>15 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>.{' '}
-              {hasPriceConfigured ? (
-                <>La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 15 días ({pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.</>
+              {isTrial ? (
+                <>
+                  Disfrutá de <strong>15 días de prueba 100% gratuitos</strong>. Vinculá tu tarjeta de débito o crédito con Mercado Pago Subscriptions: <strong>hoy se cobra $0</strong>.{' '}
+                  {hasPriceConfigured ? (
+                    <>La primera cuota de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se debitará recién al cumplirse los 15 días ({pricing.trialEndsAt ? new Date(pricing.trialEndsAt).toLocaleDateString('es-AR') : pricing.nextDueDate}), y luego continuará de forma automática en esa misma fecha cada mes.</>
+                  ) : (
+                    <>La primera cuota se calculará automáticamente en base a tu turno más caro ({pricing.multiplier}x turnos) al cumplirse los 15 días ({pricing.trialEndsAt ? new Date(pricing.trialEndsAt).toLocaleDateString('es-AR') : pricing.nextDueDate}), continuando de forma automática cada mes.</>
+                  )}
+                </>
+              ) : isPaymentPending ? (
+                <>
+                  Tu cuota mensual de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> no pudo ser debitada automáticamente de tu tarjeta vinculada. Podés actualizar tu tarjeta o realizar el pago manual de la factura pendiente para regularizar el servicio.
+                </>
               ) : (
-                <>La primera cuota se calculará automáticamente en base a tu turno más caro ({pricing.multiplier}x turnos) al cumplirse los 15 días ({pricing.nextDueDate}), continuando de forma automática cada mes.</>
+                <>
+                  Tu abono mensual de <strong>{formatARS(pricing.monthlyFeeArs)}</strong> se procesa de forma automática en cada fecha de vencimiento ({pricing.nextDueDate}) a través de Mercado Pago.
+                </>
               )}
             </p>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
-              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Prueba: <strong className="text-white">15 días gratis ($0 hoy)</strong>
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Resumen de tarjeta: <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">CancharClub</strong>
-              </span>
-              <span className="text-slate-600">•</span>
-              <span>Procesado por Mercado Pago Subscriptions</span>
-            </div>
+            {isTrial && (
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 pt-1 font-mono">
+                <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Prueba: <strong className="text-white">15 días gratis ($0 hoy)</strong>
+                </span>
+                <span className="text-slate-600">•</span>
+                <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Resumen de tarjeta: <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">CancharClub</strong>
+                </span>
+                <span className="text-slate-600">•</span>
+                <span>Procesado por Mercado Pago Subscriptions</span>
+              </div>
+            )}
           </div>
 
           <div className="shrink-0 w-full md:w-auto">
-            {isAutoDebitActive ? (
+            {isPaymentPending ? (
+              <div className="flex flex-col gap-2 items-start md:items-end">
+                <div className="px-5 py-3 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    Débito Pendiente {hasPriceConfigured ? `(${formatARS(pricing.monthlyFeeArs)})` : ''}
+                  </span>
+                </div>
+                <Button
+                  onClick={() => setShowSubscriptionModal(true)}
+                  className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded-xl px-4 py-2 text-xs shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Actualizar Tarjeta</span>
+                </Button>
+              </div>
+            ) : isAutoDebitActive ? (
               <div className="flex flex-col gap-1.5 items-end">
                 <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -1326,9 +1398,24 @@ export default function ClubPlanPage() {
                           Pagado
                         </Badge>
                       ) : (
-                        <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
-                          Pendiente
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
+                            Pendiente
+                          </Badge>
+                          <Button
+                            size="sm"
+                            onClick={() => handlePayInvoice(inv.id)}
+                            disabled={payingInvoiceId === inv.id}
+                            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                          >
+                            {payingInvoiceId === inv.id ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CreditCard className="w-3.5 h-3.5" />
+                            )}
+                            <span>Pagar</span>
+                          </Button>
+                        </div>
                       )}
                       <Button 
                         variant="ghost" 

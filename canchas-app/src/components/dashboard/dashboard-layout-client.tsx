@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { 
   CalendarDays, 
   Wallet, 
@@ -83,6 +84,19 @@ export function DashboardLayoutClient({
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const [showSocialLinksModal, setShowSocialLinksModal] = useState(false)
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('billing_success') === 'true') {
+      toast.success('¡Abono Mensual Recibido!', {
+        description: 'El pago de tu cuota mensual fue acreditado con éxito. Tu club se encuentra al día.',
+        duration: 6000,
+      })
+      const nextUrl = new URL(window.location.href)
+      nextUrl.searchParams.delete('billing_success')
+      window.history.replaceState({}, '', nextUrl.toString())
+    }
+  }, [searchParams])
 
   const toggleSidebar = () => {
     setSidebarCollapsed(prev => {

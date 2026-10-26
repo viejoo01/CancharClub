@@ -416,10 +416,6 @@ export default async function DashboardLayout({
     }
   }
 
-  if ((subscriptionStatus as string) === 'PAYMENT_PENDING') {
-    subscriptionStatus = 'ACTIVE'
-  }
-
   if (!planId) {
     planId = getPlanByCourtsCount(initialCourtsCount || 2).id
   }
@@ -485,7 +481,7 @@ export default async function DashboardLayout({
       daysRemaining={daysRemaining}
       subscriptionStatus={isTrial ? 'TRIAL' : subscriptionStatus}
       monthlyFeeArs={pricing.monthlyFeeArs}
-      gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} />}
+      gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} amountArs={pricing.monthlyFeeArs} dueDate={effectiveDueDate} />}
       isTrial={isTrial}
       trialDaysRemaining={trialForfeited ? 0 : (pricing.trialDaysRemaining ?? trialDaysRemaining)}
       trialDueDate={pricing.nextDueDate}

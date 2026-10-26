@@ -14,7 +14,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { checkAndReleaseOverdueRecurringSlots } from '@/actions/recurring-slots.actions'
-import { syncPreapprovalAmountIfNeeded } from '@/actions/saas-billing.actions'
+import { syncPreapprovalAmountIfNeeded, recordAutoDebitAlertInternal } from '@/actions/saas-billing.actions'
 import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +49,7 @@ async function handleDunning(request: NextRequest) {
     // 2. Obtener todos los tenants registrados
     const { data: tenants, error: tenantsErr } = await supabase
       .from('tenants')
-      .select('id, name, slug, subscription_status, is_active, created_at, description')
+      .select('id, name, slug, subscription_status, is_active, created_at, description, base_slots_plan, plan_id')
 
     if (tenantsErr || !tenants) {
       console.error('[SaaS Dunning] Error al listar tenants:', tenantsErr)
@@ -122,9 +122,7 @@ async function handleDunning(request: NextRequest) {
 
       // Si aún está dentro del período de prueba gratis de 15 días:
       if (now < trialEnd) {
-        if (!tenant.subscription_status || tenant.subscription_status === 'TRIAL') {
-          continue
-        }
+        continue
       }
 
       let oldestInv = oldestInvoiceByTenant.get(tenant.id)
@@ -158,7 +156,7 @@ async function handleDunning(request: NextRequest) {
           // Consultar cantidad de canchas y precio más alto del club para facturar el importe real (sin pisos fijos)
           const { data: tenantCourts } = await supabase
             .from('courts')
-            .select('price_per_turn_cents, is_active')
+            .select('id, is_active')
             .eq('tenant_id', tenant.id)
             .eq('is_active', true)
 
@@ -169,17 +167,23 @@ async function handleDunning(request: NextRequest) {
             .eq('is_active', true)
 
           let highestSlotArs = 0
-          const courtsCount = Math.max(1, tenantCourts?.length || 1)
-          for (const c of tenantCourts || []) {
-            const priceArs = Math.round(Number(c.price_per_turn_cents || 0) / 100)
-            if (priceArs > highestSlotArs) highestSlotArs = priceArs
+          const realCourts = tenantCourts?.length || 0
+          let slotCourts = 0
+          if (tenant.base_slots_plan) {
+            slotCourts = Number(tenant.base_slots_plan)
           }
+          const courtsCount = Math.max(realCourts, slotCourts) || 1
+
           for (const r of priceRules || []) {
             const priceArs = Math.round(Number(r.price_cents || 0) / 100)
             if (priceArs > highestSlotArs) highestSlotArs = priceArs
           }
+          if (highestSlotArs === 0 && meta.billing_cycle_max_price_cents) {
+            highestSlotArs = Math.round(Number(meta.billing_cycle_max_price_cents) / 100)
+          }
 
-          const pricing = calculateClubSaaSFee(courtsCount, highestSlotArs, tenant.created_at, trialEnd)
+          const hasPriceConfigured = highestSlotArs > 0
+          const pricing = calculateClubSaaSFee(courtsCount, highestSlotArs, tenant.created_at, trialEnd, hasPriceConfigured)
           const dueAmount = pricing.monthlyFeeArs
 
           // Si el club aún no cargó el precio de sus canchas, la cuota proporcional no puede determinarse.
@@ -280,6 +284,32 @@ async function handleDunning(request: NextRequest) {
           // Días 1 a 7 desde la fecha de vencimiento mensual
           targetStatus = 'PAYMENT_PENDING'
           isActive = true
+        }
+      }
+
+      // Si hay mora y la factura no está saldada, asegurar que exista la alerta de débito fallido en el dashboard
+      if (daysOverdue > 0 && oldestInv && oldestInv.amount > 0) {
+        let alertsArray: Array<{ type?: string; createdAt?: string }> = []
+        if (Array.isArray(meta.auto_debit_alerts)) {
+          alertsArray = meta.auto_debit_alerts as Array<{ type?: string; createdAt?: string }>
+        }
+        const hasRecentFailedAlert = alertsArray.some((a) => {
+          if (a.type !== 'FAILED' || !a.createdAt) return false
+          const alertTime = new Date(a.createdAt).getTime()
+          return (Date.now() - alertTime) < 20 * 24 * 60 * 60 * 1000
+        })
+
+        if (!hasRecentFailedAlert) {
+          try {
+            await recordAutoDebitAlertInternal(supabase, {
+              tenantId: tenant.id,
+              type: 'FAILED',
+              timestamp: now.toISOString(),
+              detail: `No se pudo procesar el débito automático de tu cuota mensual ($${oldestInv.amount.toLocaleString('es-AR')}). Verificá los fondos de tu tarjeta para evitar la suspensión.`,
+            })
+          } catch (alertErr) {
+            console.warn(`[SaaS Dunning] Error al registrar alerta de débito para ${tenant.id}:`, alertErr)
+          }
         }
       }
 

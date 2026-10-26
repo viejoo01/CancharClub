@@ -47,13 +47,14 @@ export function GracePeriodBanner({
   }
   const [isDismissed, setIsDismissed] = useState(false)
 
-  // En ACTIVE o PAYMENT_PENDING ordinario no se muestra banner invasivo
-  if (status === 'ACTIVE' || status === 'PAYMENT_PENDING' || isDismissed) {
+  // En ACTIVE, TRIAL o descartado no se muestra banner
+  if (status === 'ACTIVE' || status === 'TRIAL' || isDismissed) {
     return null
   }
 
+  const isPaymentPending = status === 'PAYMENT_PENDING'
   const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
-  const isGrace = status === 'GRACE_PERIOD'
+  const isGrace = status === 'GRACE_PERIOD' || isPaymentPending
   const reactivation = calculateReactivationFee(amountArs, effectiveDueDate)
 
   return (
@@ -80,20 +81,28 @@ export function GracePeriodBanner({
               <span className="font-bold text-xs sm:text-sm text-white">
                 {isPartiallySuspended
                   ? 'Club en Pausa por Falta de Pago: Reservas Públicas Deshabilitadas'
+                  : isPaymentPending
+                  ? 'Abono Mensual Impago — Pago Pendiente de Suscripción'
                   : 'Aviso de Pago Pendiente (Período de Gracia)'}
               </span>
               <Badge className={`text-[10px] uppercase font-mono px-2 py-0.5 ${
                 isPartiallySuspended
                   ? 'bg-rose-500/30 text-rose-200 border-rose-500/40 font-bold'
+                  : isPaymentPending
+                  ? 'bg-amber-500/30 text-amber-300 border-amber-500/40 font-bold'
                   : 'bg-amber-500/30 text-amber-300 border-amber-500/40'
               }`}>
-                {isPartiallySuspended ? 'EN PAUSA' : status}
+                {isPartiallySuspended ? 'EN PAUSA' : isPaymentPending ? 'PAGO PENDIENTE' : status}
               </Badge>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
               {isPartiallySuspended ? (
                 <>
                   Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo para reactivar: <strong>${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (cuota base + 3% diario por mora).
+                </>
+              ) : isPaymentPending ? (
+                <>
+                  Tu abono mensual de <strong>${amountArs.toLocaleString('es-AR')}</strong> (venció el {effectiveDueDate}) no pudo ser debitado. Regularizá tu medio de pago para evitar la interrupción del servicio.
                 </>
               ) : (
                 <>

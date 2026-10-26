@@ -449,6 +449,8 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   const reactivationDueDate = lastUnpaidInvoice?.due_date || pricing.nextDueDate
   const reactivationDetails = calculateReactivationFee(baseReactivationAmount, reactivationDueDate)
 
+  const hasOverdueDebt = Boolean(invoices.some(inv => (inv.status === 'UNPAID' || inv.status === 'DRAFT') && Number(inv.amount) > 0))
+
   const result: ClubPlanDetails = {
     tenantId: targetTenantId || '',
     tenantName,
@@ -457,7 +459,7 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     highestSlotPriceArs: highestPriceArs,
     pricing,
     activePlan,
-    isPaid,
+    isPaid: isPaid && !hasOverdueDebt,
     subscriptionStatus,
     nextDueDate: pricing.nextDueDate,
     invoices,
@@ -851,8 +853,19 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
 
   const serviceClient = await createServiceClient()
   const dunning = await getTenantDunningDetails(tenantId)
-  const invoice = dunning.invoice
-  const rawAmount = dunning.reactivation?.totalAmount || (invoice ? Number(invoice.amount) : dunning.pricing.monthlyFeeArs)
+  let invoice = dunning.invoice
+  if (invoiceId) {
+    const { data: specificInv } = await serviceClient
+      .from('tenant_invoices')
+      .select('*')
+      .eq('id', invoiceId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+    if (specificInv) {
+      invoice = specificInv as TenantInvoice
+    }
+  }
+  const rawAmount = (invoice ? Number(invoice.amount) : 0) || dunning.reactivation?.totalAmount || dunning.pricing.monthlyFeeArs
   const amountToPay = Math.max(15, rawAmount > 0 ? rawAmount : Math.round(dunning.pricing.multiplier * 30000) || 30000)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
@@ -2124,7 +2137,7 @@ export async function validateAndRegisterCardWithMercadoPago(
         isApprovedOrVerified = true
       } else if (payment && payment.status === 'rejected') {
         const detail = payment.status_detail || ''
-        if (detail.includes('collector_equals_payer') || detail.includes('cannot_pay_self') || detail.includes('high_risk')) {
+        if (detail.includes('collector_equals_payer') || detail.includes('cannot_pay_self')) {
           isApprovedOrVerified = true
         } else {
           lastRejectReason = mapMpRejectionDetail(detail)
@@ -2133,7 +2146,7 @@ export async function validateAndRegisterCardWithMercadoPago(
     } catch (payErr: unknown) {
       const errMsg = (payErr as Error)?.message || ''
       console.warn('Intento de cobro de validación en Mercado Pago:', errMsg)
-      if (errMsg.includes('collector_equals_payer') || errMsg.includes('cannot pay to yourself') || errMsg.includes('high_risk')) {
+      if (errMsg.includes('collector_equals_payer') || errMsg.includes('cannot pay to yourself')) {
         isApprovedOrVerified = true
       } else if (errMsg.includes('bin_not_found')) {
         lastRejectReason = 'Entidad bancaria no encontrada o tarjeta inexistente (BIN inválido).'
@@ -2228,8 +2241,8 @@ export async function validateAndRegisterCardWithMercadoPago(
     },
     {
       ...options,
-      verifiedGateway: 'PREAPPROVAL',
-      verificationId: preapprovalId || (payment?.id ? String(payment.id) : `token_${cardToken.id}`),
+      verifiedGateway: preapprovalId ? 'PREAPPROVAL' : 'MERCADO_PAGO',
+      verificationId: preapprovalId || (payment?.id && payment.status === 'approved' ? String(payment.id) : `token_${cardToken.id}`),
     }
   )
 

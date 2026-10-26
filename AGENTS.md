@@ -18,6 +18,11 @@
    - Cero tolerancia a fallos en flujos comerciales, de reservas y pasarelas de pago (Mercado Pago MLA).
    - Manejo seguro de credenciales, tokens y aislamiento multi-tenant estricto mediante `tenant_id`.
    - Validaciones a nivel cliente y servidor para datos sensibles y financieros.
+   - **Facturación SaaS e Invariantes de Cobro**:
+     - Toda tarjeta vinculada debe contar con aprobación bancaria real; terminantemente prohibido bypass a códigos de rechazo (`high_risk`, fondos insuficientes, etc.).
+     - Si existe al menos una factura `UNPAID` o en mora, el estado de pago (`isPaid`) debe ser estrictamente `false`, independientemente de que el club tenga tarjeta guardada o débito automático configurado.
+     - Cálculo de cuota proporcional strictly basado en infraestructura real (`Math.max(canchas, base_slots_plan)` y tarifa más alta).
+     - Escalera de mora (Dunning): Días 1-7 tolerancia operativa (`PAYMENT_PENDING`), Días 8-12 período de gracia (`GRACE_PERIOD`), Días 13-14 corte de portal público (`PARTIALLY_SUSPENDED`), Día 15+ bloqueo operativo total (`LOCKED`) con recargo de mora del 3% diario.
 
 3. **Calidad de Código y Tipado Estricto**
    - TypeScript estricto en toda la aplicación. Prohibido el uso innecesario de `any`.

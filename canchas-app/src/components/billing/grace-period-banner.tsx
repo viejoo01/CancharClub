@@ -1,19 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { AlertTriangle, CreditCard, X, ArrowRight, ShieldAlert } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { AlertTriangle, CreditCard, X, ArrowRight, ShieldAlert, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { TenantSubscriptionStatus } from '@/types/database'
 
 import { calculateReactivationFee } from '@/lib/saas-pricing'
-import { getArgentinaTodayIso } from '@/lib/utils'
+import { getArgentinaTodayIso, formatARS } from '@/lib/utils'
+import { createTenantInvoicePreference } from '@/actions/saas-billing.actions'
+import { toast } from 'sonner'
 
 interface GracePeriodBannerProps {
   initialStatus?: TenantSubscriptionStatus
   amountArs?: number
   dueDate?: string
+  tenantId?: string | null
+  invoiceId?: string
 }
 
 function getDefaultDueDate(): string {
@@ -26,9 +30,13 @@ export function GracePeriodBanner({
   initialStatus = 'ACTIVE',
   amountArs = 45000,
   dueDate,
+  tenantId,
+  invoiceId,
 }: GracePeriodBannerProps) {
+  const router = useRouter()
   const effectiveDueDate = dueDate || getDefaultDueDate()
   const [prevInitialStatus, setPrevInitialStatus] = useState(initialStatus)
+  const [isRedirecting, setIsRedirecting] = useState(false)
   const [status, setStatus] = useState<TenantSubscriptionStatus>(() => {
     if (initialStatus) return initialStatus
     if (typeof document !== 'undefined') {
@@ -56,6 +64,31 @@ export function GracePeriodBanner({
   const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
   const isGrace = status === 'GRACE_PERIOD' || isPaymentPending
   const reactivation = calculateReactivationFee(amountArs, effectiveDueDate)
+
+  const handlePayMonthlyInvoice = async () => {
+    if (!tenantId) {
+      router.push('/dashboard/plan')
+      return
+    }
+
+    setIsRedirecting(true)
+    try {
+      toast.info('Conectando con Mercado Pago para abonar cuota con mora...')
+      const res = await createTenantInvoicePreference(tenantId, invoiceId)
+      if (res.success && res.initPoint) {
+        window.location.assign(res.initPoint)
+      } else {
+        toast.error(res.error || 'No se pudo generar la pasarela de pago')
+        router.push('/dashboard/plan')
+      }
+    } catch (err) {
+      console.error('Error al conectar con Mercado Pago:', err)
+      toast.error('Ocurrió un error al iniciar el checkout')
+      router.push('/dashboard/plan')
+    } finally {
+      setIsRedirecting(false)
+    }
+  }
 
   return (
     <div className={`w-full border-b transition-all animate-in slide-in-from-top duration-300 ${
@@ -102,7 +135,7 @@ export function GracePeriodBanner({
                 </>
               ) : isPaymentPending ? (
                 <>
-                  Tu abono mensual venció el <strong>{effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> ({reactivation.daysOverdue > 0 ? `$${amountArs.toLocaleString('es-AR')} cuota + ${reactivation.daysOverdue}d de mora al 3%/día: +$${reactivation.surchargeAmount.toLocaleString('es-AR')}` : `$${amountArs.toLocaleString('es-AR')} al día`}). Regularizá tu abono para evitar la suspensión.
+                  Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> ({reactivation.daysOverdue > 0 ? `$${amountArs.toLocaleString('es-AR')} cuota + ${reactivation.daysOverdue}d de mora al 3%/día: +$${reactivation.surchargeAmount.toLocaleString('es-AR')}` : `$${amountArs.toLocaleString('es-AR')} al día`}). Regularizá tu abono para evitar la suspensión.
                 </>
               ) : (
                 <>
@@ -115,19 +148,31 @@ export function GracePeriodBanner({
 
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <Button
-            asChild
             size="sm"
-            className={`rounded-xl text-xs font-semibold shadow-md ${
+            onClick={handlePayMonthlyInvoice}
+            disabled={isRedirecting}
+            className={`rounded-xl text-xs font-semibold shadow-md cursor-pointer transition-all ${
               isPartiallySuspended
                 ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/30'
                 : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/30'
             }`}
           >
-            <Link href={isPartiallySuspended ? "/dashboard/plan?action=reactivate" : "/dashboard/plan"}>
-              <CreditCard className="w-3.5 h-3.5 mr-1.5" />
-              {isPartiallySuspended ? 'Abonar y Reactivar Club' : 'Pagar Cuota Mensual'}
-              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Link>
+            {isRedirecting ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                <span>Conectando con Mercado Pago...</span>
+              </>
+            ) : (
+              <>
+                <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                <span>
+                  {isPartiallySuspended 
+                    ? `Abonar y Reactivar Club (${formatARS(reactivation.totalAmount)})` 
+                    : `Pagar Cuota Mensual (${formatARS(reactivation.totalAmount)})`}
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              </>
+            )}
           </Button>
 
           {isGrace && (

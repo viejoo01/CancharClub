@@ -31,6 +31,9 @@ interface TenantLayoutSnapshot {
   trialEndsAt: string | null
   trialForfeited: boolean
   cancellationEffectiveDate: string | null
+  unpaidInvoiceDueDate?: string | null
+  unpaidInvoiceId?: string | null
+  unpaidInvoiceAmount?: number | null
 }
 
 const tenantLayoutCache = new Map<string, { snapshot: TenantLayoutSnapshot; expiresAt: number }>()
@@ -194,13 +197,16 @@ export default async function DashboardLayout({
   let initialSports: string[] = []
   let highestPriceArs = 0
   let hasPriceConfigured = false
+  let unpaidInvoiceDueDate: string | null = null
+  let unpaidInvoiceId: string | null = null
+  let unpaidInvoiceAmount: number | null = null
 
   if (isSuperadmin) {
     userRole = 'SUPERADMIN'
     userName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
     const requestedTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
     if (requestedTenantId) {
-      const [tenantRes, courtsRes, subRes, priceRulesRes] = await Promise.all([
+      const [tenantRes, courtsRes, subRes, priceRulesRes, unpaidInvRes] = await Promise.all([
         serviceClient
           .from('tenants')
           .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
@@ -221,7 +227,21 @@ export default async function DashboardLayout({
           .from('price_rules')
           .select('price_cents, is_active')
           .eq('tenant_id', requestedTenantId),
+        serviceClient
+          .from('tenant_invoices')
+          .select('id, due_date, amount, status')
+          .eq('tenant_id', requestedTenantId)
+          .in('status', ['UNPAID', 'DRAFT'])
+          .order('due_date', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
       ])
+
+      if (unpaidInvRes?.data) {
+        unpaidInvoiceDueDate = unpaidInvRes.data.due_date
+        unpaidInvoiceId = unpaidInvRes.data.id
+        unpaidInvoiceAmount = Number(unpaidInvRes.data.amount) || null
+      }
 
       const courtsData = courtsRes.data
       if (courtsData && courtsData.length > 0) {
@@ -299,6 +319,9 @@ export default async function DashboardLayout({
       trialEndsAt = snap.trialEndsAt
       trialForfeited = snap.trialForfeited
       cancellationEffectiveDate = snap.cancellationEffectiveDate
+      unpaidInvoiceDueDate = snap.unpaidInvoiceDueDate || null
+      unpaidInvoiceId = snap.unpaidInvoiceId || null
+      unpaidInvoiceAmount = snap.unpaidInvoiceAmount || null
     } else {
       const { data: profile } = await serviceClient
         .from('profiles')
@@ -315,7 +338,7 @@ export default async function DashboardLayout({
       userRole = profile.role || 'TENANT_ADMIN'
       userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
 
-      const [tenantResult, courtsResult, subResult, priceRulesResult] = await Promise.all([
+      const [tenantResult, courtsResult, subResult, priceRulesResult, unpaidInvoiceResult] = await Promise.all([
         serviceClient
           .from('tenants')
           .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
@@ -336,7 +359,21 @@ export default async function DashboardLayout({
           .from('price_rules')
           .select('price_cents, is_active')
           .eq('tenant_id', profile.tenant_id),
+        serviceClient
+          .from('tenant_invoices')
+          .select('id, due_date, amount, status')
+          .eq('tenant_id', profile.tenant_id)
+          .in('status', ['UNPAID', 'DRAFT'])
+          .order('due_date', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
       ])
+
+      if (unpaidInvoiceResult?.data) {
+        unpaidInvoiceDueDate = unpaidInvoiceResult.data.due_date
+        unpaidInvoiceId = unpaidInvoiceResult.data.id
+        unpaidInvoiceAmount = Number(unpaidInvoiceResult.data.amount) || null
+      }
 
       const courtsData = courtsResult.data
       if (courtsData && courtsData.length > 0) {
@@ -412,6 +449,9 @@ export default async function DashboardLayout({
         trialEndsAt,
         trialForfeited,
         cancellationEffectiveDate,
+        unpaidInvoiceDueDate,
+        unpaidInvoiceId,
+        unpaidInvoiceAmount,
       })
     }
   }
@@ -460,7 +500,8 @@ export default async function DashboardLayout({
     trialEndsAt, 
     hasPriceConfigured
   )
-  const effectiveDueDate = cancellationEffectiveDate || pricing.nextDueDate
+  const effectiveDueDate = unpaidInvoiceDueDate || cancellationEffectiveDate || pricing.nextDueDate
+  const effectiveDueAmount = (unpaidInvoiceAmount && unpaidInvoiceAmount > 0) ? unpaidInvoiceAmount : pricing.monthlyFeeArs
   const daysRemaining = calculateDaysUntilDueDate(effectiveDueDate)
   const isTrial = trialForfeited ? false : Boolean(pricing.isTrial || isCurrentlyInTrial)
 
@@ -480,8 +521,16 @@ export default async function DashboardLayout({
       dueDate={effectiveDueDate}
       daysRemaining={daysRemaining}
       subscriptionStatus={isTrial ? 'TRIAL' : subscriptionStatus}
-      monthlyFeeArs={pricing.monthlyFeeArs}
-      gracePeriodBanner={<GracePeriodBanner initialStatus={subscriptionStatus} amountArs={pricing.monthlyFeeArs} dueDate={effectiveDueDate} />}
+      monthlyFeeArs={effectiveDueAmount}
+      gracePeriodBanner={
+        <GracePeriodBanner
+          initialStatus={subscriptionStatus}
+          amountArs={effectiveDueAmount}
+          dueDate={effectiveDueDate}
+          tenantId={tenantId}
+          invoiceId={unpaidInvoiceId || undefined}
+        />
+      }
       isTrial={isTrial}
       trialDaysRemaining={trialForfeited ? 0 : (pricing.trialDaysRemaining ?? trialDaysRemaining)}
       trialDueDate={pricing.nextDueDate}

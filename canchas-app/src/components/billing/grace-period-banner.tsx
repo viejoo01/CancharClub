@@ -18,6 +18,7 @@ interface GracePeriodBannerProps {
   dueDate?: string
   tenantId?: string | null
   invoiceId?: string
+  hasCard?: boolean
 }
 
 function getDefaultDueDate(): string {
@@ -32,6 +33,7 @@ export function GracePeriodBanner({
   dueDate,
   tenantId,
   invoiceId,
+  hasCard = false,
 }: GracePeriodBannerProps) {
   const router = useRouter()
   const effectiveDueDate = dueDate || getDefaultDueDate()
@@ -63,7 +65,7 @@ export function GracePeriodBanner({
   const isPaymentPending = status === 'PAYMENT_PENDING'
   const isPartiallySuspended = status === 'PARTIALLY_SUSPENDED' || status === 'PAUSED' || status === 'LOCKED'
   const isGrace = status === 'GRACE_PERIOD' || isPaymentPending
-  const reactivation = calculateReactivationFee(amountArs, effectiveDueDate)
+  const reactivation = calculateReactivationFee(amountArs, effectiveDueDate, new Date(), undefined, { isLinkedCard: hasCard })
 
   const handlePayMonthlyInvoice = async () => {
     if (!tenantId) {
@@ -73,7 +75,9 @@ export function GracePeriodBanner({
 
     setIsRedirecting(true)
     try {
-      toast.info('Conectando con Mercado Pago para abonar cuota con mora...')
+      toast.info(reactivation.daysOverdue > 0 
+        ? 'Conectando con Mercado Pago para abonar cuota con mora...' 
+        : 'Conectando con Mercado Pago para abonar cuota mensual...')
       const res = await createTenantInvoicePreference(tenantId, invoiceId)
       if (res.success && res.initPoint) {
         window.location.assign(res.initPoint)
@@ -134,9 +138,15 @@ export function GracePeriodBanner({
                   Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo para reactivar: <strong>${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (cuota base + 3% diario por mora).
                 </>
               ) : isPaymentPending ? (
-                <>
-                  Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> ({reactivation.daysOverdue > 0 ? `$${amountArs.toLocaleString('es-AR')} cuota + ${reactivation.daysOverdue}d de mora al 3%/día: +$${reactivation.surchargeAmount.toLocaleString('es-AR')}` : `$${amountArs.toLocaleString('es-AR')} al día`}). Regularizá tu abono para evitar la suspensión.
-                </>
+                reactivation.daysOverdue > 0 ? (
+                  <>
+                    Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (${amountArs.toLocaleString('es-AR')} cuota + {reactivation.daysOverdue}d de mora al 3%/día: +${reactivation.surchargeAmount.toLocaleString('es-AR')}). Regularizá tu abono para evitar la suspensión.
+                  </>
+                ) : (
+                  <>
+                    Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a abonar: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (Período de tolerancia sin recargo hasta el <strong>{reactivation.toleranceEndDate}</strong>). A partir del día 8 se aplicará mora del 3% diario.
+                  </>
+                )
               ) : (
                 <>
                   Tu factura mensual vence el <strong>{effectiveDueDate}</strong>. Abona a tiempo para evitar la pausa de reservas web el día 13.
@@ -168,6 +178,8 @@ export function GracePeriodBanner({
                 <span>
                   {isPartiallySuspended 
                     ? `Abonar y Reactivar Club (${formatARS(reactivation.totalAmount)})` 
+                    : reactivation.daysOverdue > 0
+                    ? `Pagar Cuota con Mora (${formatARS(reactivation.totalAmount)})`
                     : `Pagar Cuota Mensual (${formatARS(reactivation.totalAmount)})`}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5 ml-1.5" />

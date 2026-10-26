@@ -794,7 +794,7 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
   // Consultar tenant y última factura pendiente
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, phone_whatsapp, subscription_status, base_slots_plan, minimum_floor_ars, current_balance')
+    .select('id, name, slug, phone_whatsapp, subscription_status, base_slots_plan, minimum_floor_ars, current_balance, mp_preapproval_id, description')
     .eq('id', defaultTenantId)
     .maybeSingle()
 
@@ -814,10 +814,18 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
   const currentMonth = now.getMonth() + 1
   const currentYear = now.getFullYear()
 
+  let hasCard = Boolean(tenant?.mp_preapproval_id)
+  if (!hasCard && tenant?.description) {
+    try {
+      const meta = JSON.parse(tenant.description)
+      if (meta.card_linked) hasCard = true
+    } catch {}
+  }
+
   const effectiveStatus: TenantSubscriptionStatus = demoStatus || tenant?.subscription_status || 'LOCKED'
   const debtAmountArs = invoice ? Number(invoice.amount) : summary.pricing.monthlyFeeArs
   const dueDateCandidate = invoice?.due_date || summary.pricing.nextDueDate
-  const reactivation = calculateReactivationFee(debtAmountArs, dueDateCandidate)
+  const reactivation = calculateReactivationFee(debtAmountArs, dueDateCandidate, new Date(), undefined, { isLinkedCard: hasCard })
 
   return {
     tenantId: defaultTenantId,
@@ -826,6 +834,7 @@ export async function getTenantDunningDetails(tenantIdParam?: string) {
     phone: tenant?.phone_whatsapp || '',
     status: effectiveStatus,
     currentBalance: Number(tenant?.current_balance ?? debtAmountArs),
+    hasCard,
     invoice: (invoice as TenantInvoice | null) || {
       id: 'demo-inv-' + currentYear + '-' + currentMonth,
       tenant_id: defaultTenantId,
@@ -869,7 +878,7 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
   const invDueDate = invoice && 'due_date' in invoice ? (invoice as { due_date?: string }).due_date : undefined
   const dunningDueDate = dunning.invoice && 'due_date' in dunning.invoice ? (dunning.invoice as { due_date?: string }).due_date : undefined
   const dueDateCandidate = invDueDate || dunningDueDate || dunning.pricing.nextDueDate
-  const reactivation = calculateReactivationFee(baseAmount, dueDateCandidate)
+  const reactivation = calculateReactivationFee(baseAmount, dueDateCandidate, new Date(), undefined, { isLinkedCard: dunning.hasCard })
   const amountToPay = Math.max(15, reactivation.totalAmount > 0 ? reactivation.totalAmount : Math.round(dunning.pricing.multiplier * 30000) || 30000)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
@@ -980,7 +989,19 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
     let noteText = 'Pago manual acreditado por administración'
 
     if (currentInv?.due_date && baseAmount > 0) {
-      const react = calculateReactivationFee(baseAmount, currentInv.due_date)
+      const { data: tRecord } = await serviceClient
+        .from('tenants')
+        .select('mp_preapproval_id, description')
+        .eq('id', tenantId)
+        .maybeSingle()
+      let isLinked = Boolean(tRecord?.mp_preapproval_id)
+      if (!isLinked && tRecord?.description) {
+        try {
+          const meta = JSON.parse(tRecord.description)
+          if (meta.card_linked) isLinked = true
+        } catch {}
+      }
+      const react = calculateReactivationFee(baseAmount, currentInv.due_date, new Date(), undefined, { isLinkedCard: isLinked })
       if (react.daysOverdue > 0) {
         finalAmount = react.totalAmount
         noteText = `Pago manual acreditado por administración (Cuota base $${baseAmount.toLocaleString('es-AR')} + ${react.daysOverdue}d mora al 3%/día: +$${react.surchargeAmount.toLocaleString('es-AR')})`
@@ -2873,7 +2894,7 @@ export async function getClubReactivationDetails(tenantIdParam?: string, overrid
 
   const { data: tenant } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, phone_whatsapp, subscription_status, current_balance')
+    .select('id, name, slug, phone_whatsapp, subscription_status, current_balance, mp_preapproval_id, description')
     .eq('id', defaultTenantId)
     .maybeSingle()
 
@@ -2892,7 +2913,15 @@ export async function getClubReactivationDetails(tenantIdParam?: string, overrid
   const baseAmount = invoice ? Number(invoice.amount) : summary.pricing.monthlyFeeArs
   const dueDate = invoice?.due_date || summary.pricing.nextDueDate
 
-  const reactivation = calculateReactivationFee(baseAmount, dueDate, new Date(), overrideDays)
+  let isLinked = Boolean(tenant?.mp_preapproval_id)
+  if (!isLinked && tenant?.description) {
+    try {
+      const meta = JSON.parse(tenant.description)
+      if (meta.card_linked) isLinked = true
+    } catch {}
+  }
+
+  const reactivation = calculateReactivationFee(baseAmount, dueDate, new Date(), overrideDays, { isLinkedCard: isLinked })
 
   return {
     tenantId: defaultTenantId,

@@ -218,27 +218,40 @@ export function calculateDaysUntilDueDate(dueDateStr?: string | null): number {
   return 999
 }
 
+export interface ReactivationFeeOptions {
+  isLinkedCard?: boolean
+  toleranceDays?: number
+}
+
 export interface ReactivationFeeDetails {
   baseAmount: number
   dueDate: string
   paymentDate: string
+  elapsedDays: number
+  toleranceDays: number
   daysOverdue: number
   dailyRatePercent: number // 3
   surchargePercent: number // daysOverdue * 3
   surchargeAmount: number // Math.round(baseAmount * (surchargePercent / 100))
   totalAmount: number // baseAmount + surchargeAmount
   formulaDescription: string
+  toleranceEndDate: string
+  isInTolerancePeriod: boolean
 }
 
 /**
- * Calcula el monto de reactivación de un club:
- * Monto de la suscripción + 3% por cada día transcurrido desde la fecha de vencimiento hasta el día del pago.
+ * Calcula el monto de reactivación / cobro de suscripción de un club:
+ * - Primer cobro tras 15 días gratis / Sin tarjeta vinculada: 7 días corridos de tolerancia sin recargo (Días 1 a 7).
+ *   La mora del 3% diario comienza a devengarse a partir del Día 8 sin pagar (Día 8 = 1 día de mora).
+ * - Clubes ya vinculados con tarjeta: El cobro se ejecuta el día del vencimiento (Día 0);
+ *   si no se logra, se reintenta al día siguiente (Día 1); si tampoco se logra, la mora comienza el Día 2 (+3% diario).
  */
 export function calculateReactivationFee(
   baseAmount: number,
   dueDateStr?: string | null,
   paymentDate: Date = new Date(),
-  overrideDays?: number
+  overrideDays?: number,
+  options?: ReactivationFeeOptions
 ): ReactivationFeeDetails {
   const safeBase = Math.max(0, baseAmount)
   const payYear = paymentDate.getFullYear()
@@ -281,13 +294,27 @@ export function calculateReactivationFee(
     }
   }
 
-  // Días transcurridos desde el vencimiento hasta la fecha de pago
+  // Días corridos transcurridos desde el vencimiento hasta la fecha de pago
+  let elapsedDays = 0
+  if (paymentMidnight > dueMidnight) {
+    const diffMs = paymentMidnight - dueMidnight
+    elapsedDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+  }
+
+  // Tolerancia según regla de negocio:
+  // - Club ya vinculado con tarjeta: 1 día de reintento automático (cobro día 0, reintento día 1, mora desde día 2).
+  // - Club ordinario / post-trial: 7 días de período de pago sin recargo (días 1 al 7 abono base, día 8 inicia mora).
+  const toleranceDays = typeof options?.toleranceDays === 'number'
+    ? options.toleranceDays
+    : options?.isLinkedCard
+      ? 1
+      : 7
+
   let daysOverdue = 0
   if (typeof overrideDays === 'number') {
     daysOverdue = Math.max(0, overrideDays)
-  } else if (paymentMidnight > dueMidnight) {
-    const diffMs = paymentMidnight - dueMidnight
-    daysOverdue = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+  } else {
+    daysOverdue = Math.max(0, elapsedDays - toleranceDays)
   }
 
   const dailyRatePercent = 3
@@ -297,18 +324,28 @@ export function calculateReactivationFee(
 
   const formattedPayDate = `${String(payDay).padStart(2, '0')}/${String(payMonth + 1).padStart(2, '0')}/${payYear}`
 
+  const tolDate = new Date(dueMidnight + toleranceDays * 24 * 60 * 60 * 1000)
+  const formattedToleranceEndDate = `${String(tolDate.getDate()).padStart(2, '0')}/${String(tolDate.getMonth() + 1).padStart(2, '0')}/${tolDate.getFullYear()}`
+  const isInTolerancePeriod = elapsedDays > 0 && elapsedDays <= toleranceDays
+
   return {
     baseAmount: safeBase,
     dueDate: formattedDueDate,
     paymentDate: formattedPayDate,
+    elapsedDays,
+    toleranceDays,
     daysOverdue,
     dailyRatePercent,
     surchargePercent,
     surchargeAmount,
     totalAmount,
+    toleranceEndDate: formattedToleranceEndDate,
+    isInTolerancePeriod,
     formulaDescription: daysOverdue > 0
       ? `$${safeBase.toLocaleString('es-AR')} suscripción + ${daysOverdue} día${daysOverdue > 1 ? 's' : ''} de mora (+3% diario = +${surchargePercent}%)`
-      : `$${safeBase.toLocaleString('es-AR')} (Sin mora acumulada)`,
+      : isInTolerancePeriod
+        ? `$${safeBase.toLocaleString('es-AR')} (Período de pago de ${toleranceDays} días sin recargo hasta el ${formattedToleranceEndDate})`
+        : `$${safeBase.toLocaleString('es-AR')} (Sin mora acumulada)`,
   }
 }
 

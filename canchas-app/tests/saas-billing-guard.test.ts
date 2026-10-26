@@ -172,43 +172,83 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
     })
   })
 
-  describe('Guard 5: 3% Daily Surcharge Accrual Starting on Day 1 Overdue', () => {
-    it('accurately applies 3% daily surcharge on Day 1 of non-payment (not waiting for Day 15 lock)', () => {
+  describe('Guard 5: 7-Day Tolerance Window & Surcharge Accrual Starting on Day 8', () => {
+    it('maintains the base monthly fee during the first 7 days following trial expiration without surcharge', () => {
       const baseAmount = 100000 // Club Luli
       const dueDate = '2026-10-24'
-      const paymentDateDay1 = new Date('2026-10-25T12:00:00.000Z') // 1 day overdue
 
-      const feeDay1 = calculateReactivationFee(baseAmount, dueDate, paymentDateDay1)
-      expect(feeDay1.daysOverdue).toBe(1)
-      expect(feeDay1.dailyRatePercent).toBe(3)
-      expect(feeDay1.surchargePercent).toBe(3)
-      expect(feeDay1.surchargeAmount).toBe(3000)
-      expect(feeDay1.totalAmount).toBe(103000)
+      // Días 1 a 7 (25/10 al 31/10 inclusive): Precio base congelado, 0% de mora
+      const testCasesTolerance = [
+        { day: 1, date: '2026-10-25T12:00:00.000Z' },
+        { day: 2, date: '2026-10-26T12:00:00.000Z' }, // Hoy
+        { day: 4, date: '2026-10-28T12:00:00.000Z' },
+        { day: 7, date: '2026-10-31T12:00:00.000Z' }, // Último día sin mora
+      ]
+
+      for (const tc of testCasesTolerance) {
+        const fee = calculateReactivationFee(baseAmount, dueDate, new Date(tc.date))
+        expect(fee.elapsedDays).toBe(tc.day)
+        expect(fee.daysOverdue).toBe(0)
+        expect(fee.surchargeAmount).toBe(0)
+        expect(fee.totalAmount).toBe(baseAmount)
+        expect(fee.isInTolerancePeriod).toBe(true)
+        expect(fee.toleranceEndDate).toBe('31/10/2026')
+      }
     })
 
-    it('accumulates surcharge proportionally across the tolerance and grace periods', () => {
+    it('accurately applies 3% daily surcharge starting on Day 8 of non-payment (01/11)', () => {
       const baseAmount = 100000
+      const dueDate = '2026-10-24'
 
-      // Day 3 of tolerance
-      const feeDay3 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-10-27T12:00:00.000Z'))
-      expect(feeDay3.daysOverdue).toBe(3)
-      expect(feeDay3.surchargePercent).toBe(9)
-      expect(feeDay3.surchargeAmount).toBe(9000)
-      expect(feeDay3.totalAmount).toBe(109000)
+      // Day 8 (01/11): Primer día de mora (+3% = +$3.000)
+      const feeDay8 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-11-01T12:00:00.000Z'))
+      expect(feeDay8.elapsedDays).toBe(8)
+      expect(feeDay8.daysOverdue).toBe(1)
+      expect(feeDay8.dailyRatePercent).toBe(3)
+      expect(feeDay8.surchargePercent).toBe(3)
+      expect(feeDay8.surchargeAmount).toBe(3000)
+      expect(feeDay8.totalAmount).toBe(103000)
 
-      // Day 7 (last day of tolerance)
-      const feeDay7 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-10-31T12:00:00.000Z'))
-      expect(feeDay7.daysOverdue).toBe(7)
-      expect(feeDay7.surchargePercent).toBe(21)
-      expect(feeDay7.surchargeAmount).toBe(21000)
-      expect(feeDay7.totalAmount).toBe(121000)
+      // Day 9 (02/11): Segundo día de mora (+6% = +$6.000)
+      const feeDay9 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-11-02T12:00:00.000Z'))
+      expect(feeDay9.elapsedDays).toBe(9)
+      expect(feeDay9.daysOverdue).toBe(2)
+      expect(feeDay9.surchargePercent).toBe(6)
+      expect(feeDay9.surchargeAmount).toBe(6000)
+      expect(feeDay9.totalAmount).toBe(106000)
 
-      // Day 15 (locked)
-      const feeDay15 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-11-08T12:00:00.000Z'))
-      expect(feeDay15.daysOverdue).toBe(15)
-      expect(feeDay15.surchargePercent).toBe(45)
-      expect(feeDay15.surchargeAmount).toBe(45000)
-      expect(feeDay15.totalAmount).toBe(145000)
+      // Day 15 (locked): 8 días de mora (+24% = +$24.000)
+      const feeDay15 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-11-08T12:00:00.000Z'))
+      expect(feeDay15.elapsedDays).toBe(15)
+      expect(feeDay15.daysOverdue).toBe(8)
+      expect(feeDay15.surchargePercent).toBe(24)
+      expect(feeDay15.surchargeAmount).toBe(24000)
+      expect(feeDay15.totalAmount).toBe(124000)
+    })
+
+    it('handles linked card auto-debit clubs with 1 day retry tolerance and surcharge starting on Day 2', () => {
+      const baseAmount = 100000
+      const dueDate = '2026-10-24'
+
+      // Día 0 (24/10): Cobro automático ejecutado
+      const feeDay0 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-10-24T12:00:00.000Z'), undefined, { isLinkedCard: true })
+      expect(feeDay0.elapsedDays).toBe(0)
+      expect(feeDay0.daysOverdue).toBe(0)
+      expect(feeDay0.totalAmount).toBe(baseAmount)
+
+      // Día 1 (25/10): Reintento al otro día (sin mora)
+      const feeDay1 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-10-25T12:00:00.000Z'), undefined, { isLinkedCard: true })
+      expect(feeDay1.elapsedDays).toBe(1)
+      expect(feeDay1.daysOverdue).toBe(0)
+      expect(feeDay1.totalAmount).toBe(baseAmount)
+
+      // Día 2 (26/10): Reintento falló -> Inicia mora (1 día de mora)
+      const feeDay2 = calculateReactivationFee(baseAmount, dueDate, new Date('2026-10-26T12:00:00.000Z'), undefined, { isLinkedCard: true })
+      expect(feeDay2.elapsedDays).toBe(2)
+      expect(feeDay2.daysOverdue).toBe(1)
+      expect(feeDay2.surchargePercent).toBe(3)
+      expect(feeDay2.surchargeAmount).toBe(3000)
+      expect(feeDay2.totalAmount).toBe(103000)
     })
   })
 
@@ -226,18 +266,18 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(fee.totalAmount).toBe(100000)
     })
 
-    it('charges strictly Base Fee + Surcharge (never just Base Fee) for overdue payments', () => {
-      // Test across multiple overdue days
+    it('charges strictly Base Fee + Surcharge once mora starts on Day 8', () => {
+      // Test across multiple overdue days with mora
       const testCases = [
-        { day: 1, date: '2026-10-25T12:00:00.000Z', expectedTotal: 103000, expectedSurcharge: 3000 },
-        { day: 2, date: '2026-10-26T12:00:00.000Z', expectedTotal: 106000, expectedSurcharge: 6000 },
-        { day: 4, date: '2026-10-28T12:00:00.000Z', expectedTotal: 112000, expectedSurcharge: 12000 },
-        { day: 10, date: '2026-11-03T12:00:00.000Z', expectedTotal: 130000, expectedSurcharge: 30000 },
+        { day: 8, moraDays: 1, date: '2026-11-01T12:00:00.000Z', expectedTotal: 103000, expectedSurcharge: 3000 },
+        { day: 9, moraDays: 2, date: '2026-11-02T12:00:00.000Z', expectedTotal: 106000, expectedSurcharge: 6000 },
+        { day: 11, moraDays: 4, date: '2026-11-04T12:00:00.000Z', expectedTotal: 112000, expectedSurcharge: 12000 },
       ]
 
       for (const tc of testCases) {
         const fee = calculateReactivationFee(baseFee, dueDate, new Date(tc.date))
-        expect(fee.daysOverdue).toBe(tc.day)
+        expect(fee.elapsedDays).toBe(tc.day)
+        expect(fee.daysOverdue).toBe(tc.moraDays)
         expect(fee.surchargeAmount).toBe(tc.expectedSurcharge)
         expect(fee.totalAmount).toBe(tc.expectedTotal)
 
@@ -249,7 +289,7 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
     })
 
     it('verifies preference formatting includes mora surcharge label and details', () => {
-      const overdueDate = new Date('2026-10-25T12:00:00.000Z')
+      const overdueDate = new Date('2026-11-01T12:00:00.000Z')
       const fee = calculateReactivationFee(baseFee, dueDate, overdueDate)
 
       const itemTitle = fee.daysOverdue > 0

@@ -487,7 +487,7 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
 
     const { data: tenantRecord } = await supabase
       .from('tenants')
-      .select('id, name, subscription_status')
+      .select('id, name, subscription_status, mp_preapproval_id, description')
       .eq('id', tenantId)
       .maybeSingle()
 
@@ -545,7 +545,8 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
         let daysOverdue = 0
         let surchargeAmount = 0
         if (overdueInv?.due_date) {
-          const react = calculateReactivationFee(Number(overdueInv.amount) || 0, overdueInv.due_date)
+          const isLinked = Boolean(tenantRecord?.mp_preapproval_id)
+          const react = calculateReactivationFee(Number(overdueInv.amount) || 0, overdueInv.due_date, new Date(), undefined, { isLinkedCard: isLinked })
           daysOverdue = react.daysOverdue
           surchargeAmount = react.surchargeAmount
         }
@@ -636,7 +637,8 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
       const dueDate = dbInvoice?.due_date
       let reactivationBreakdown = ''
       if (dueDate && baseAmount > 0) {
-        const react = calculateReactivationFee(baseAmount, dueDate)
+        const isLinked = Boolean(tenantRecord?.mp_preapproval_id)
+        const react = calculateReactivationFee(baseAmount, dueDate, new Date(), undefined, { isLinkedCard: isLinked })
         if (react.daysOverdue > 0) {
           reactivationBreakdown = ` (Cuota base $${baseAmount.toLocaleString('es-AR')} + ${react.daysOverdue}d mora al 3%/día: +$${react.surchargeAmount.toLocaleString('es-AR')})`
         }

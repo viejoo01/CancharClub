@@ -529,6 +529,7 @@ export default async function DashboardLayout({
           dueDate={effectiveDueDate}
           tenantId={tenantId}
           invoiceId={unpaidInvoiceId || undefined}
+          hasCard={hasCard}
         />
       }
       isTrial={isTrial}

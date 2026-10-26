@@ -21,8 +21,9 @@
    - **Facturación SaaS e Invariantes de Cobro**:
      - Toda tarjeta vinculada debe contar con aprobación bancaria real; terminantemente prohibido bypass a códigos de rechazo (`high_risk`, fondos insuficientes, etc.).
      - Si existe al menos una factura `UNPAID` o en mora, el estado de pago (`isPaid`) debe ser estrictamente `false`, independientemente de que el club tenga tarjeta guardada o débito automático configurado.
-     - Cálculo de cuota proporcional strictly basado en infraestructura real (`Math.max(canchas, base_slots_plan)` y tarifa más alta).
-     - Escalera de mora (Dunning): El recargo del 3% diario por mora se devenga **desde el primer día posterior al vencimiento impago** (no espera a los 15 días del bloqueo). Días 1-7 tolerancia operativa (`PAYMENT_PENDING`) con mora devengada, Días 8-12 período de gracia (`GRACE_PERIOD`), Días 13-14 corte de portal público (`PARTIALLY_SUSPENDED`), Día 15+ bloqueo operativo total (`LOCKED`).
+     - Escalera de mora (Dunning) y política de recargos:
+       - **Período de prueba finalizado / Cobro manual**: Días 1 a 7 tras el vencimiento (`PAYMENT_PENDING`) constituyen la ventana de pago con precio base congelado sin recargo. A partir del Día 8 sin pagar (`GRACE_PERIOD`), comienza a devengarse el recargo del 3% diario (Día 8 = 1 día de mora, Día 9 = 2 días de mora, etc.). Días 13-14 corte de portal público (`PARTIALLY_SUSPENDED`), Día 15+ bloqueo operativo total (`LOCKED`).
+       - **Clubes con tarjeta vinculada (débito recurrente)**: El cobro se ejecuta el día del vencimiento (Día 0); si falla se reintenta al día siguiente (Día 1); si tampoco se logra efectuar el cobro, la mora empieza a correr a partir del Día 2 sin pagar (+3% diario).
 
 3. **Calidad de Código y Tipado Estricto**
    - TypeScript estricto en toda la aplicación. Prohibido el uso innecesario de `any`.

@@ -1390,7 +1390,13 @@ export default function ClubPlanPage() {
                       </div>
                     </div>
                     {(() => {
-                      const invReactivation = calculateReactivationFee(Number(inv.amount), inv.due_date)
+                      const invReactivation = calculateReactivationFee(
+                        Number(inv.amount), 
+                        inv.due_date, 
+                        new Date(), 
+                        undefined, 
+                        { isLinkedCard: Boolean(planDetails?.hasAutoDebit) }
+                      )
                       const isOverdue = !isPaidInvoice && invReactivation.daysOverdue > 0
 
                       return (

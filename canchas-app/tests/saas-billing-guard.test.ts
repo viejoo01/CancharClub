@@ -211,5 +211,60 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(feeDay15.totalAmount).toBe(145000)
     })
   })
+
+  describe('Guard 6: Overdue Invoice Payments Always Charge Base Fee + Mora Surcharge (Never Just Base Amount)', () => {
+    const baseFee = 100000 // Club Luli
+    const dueDate = '2026-10-24'
+
+    it('charges strictly the base fee on-time on due date with 0% surcharge', () => {
+      const onTimeDate = new Date('2026-10-24T12:00:00.000Z')
+      const fee = calculateReactivationFee(baseFee, dueDate, onTimeDate)
+
+      expect(fee.daysOverdue).toBe(0)
+      expect(fee.surchargeAmount).toBe(0)
+      expect(fee.totalAmount).toBe(baseFee)
+      expect(fee.totalAmount).toBe(100000)
+    })
+
+    it('charges strictly Base Fee + Surcharge (never just Base Fee) for overdue payments', () => {
+      // Test across multiple overdue days
+      const testCases = [
+        { day: 1, date: '2026-10-25T12:00:00.000Z', expectedTotal: 103000, expectedSurcharge: 3000 },
+        { day: 2, date: '2026-10-26T12:00:00.000Z', expectedTotal: 106000, expectedSurcharge: 6000 },
+        { day: 4, date: '2026-10-28T12:00:00.000Z', expectedTotal: 112000, expectedSurcharge: 12000 },
+        { day: 10, date: '2026-11-03T12:00:00.000Z', expectedTotal: 130000, expectedSurcharge: 30000 },
+      ]
+
+      for (const tc of testCases) {
+        const fee = calculateReactivationFee(baseFee, dueDate, new Date(tc.date))
+        expect(fee.daysOverdue).toBe(tc.day)
+        expect(fee.surchargeAmount).toBe(tc.expectedSurcharge)
+        expect(fee.totalAmount).toBe(tc.expectedTotal)
+
+        // INVARIANTE INQUEBRANTABLE: El monto a pagar con mora NO PUEDE ser igual al mensual base
+        expect(fee.totalAmount).toBeGreaterThan(baseFee)
+        expect(fee.totalAmount).not.toBe(baseFee)
+        expect(fee.totalAmount).toBe(baseFee + tc.expectedSurcharge)
+      }
+    })
+
+    it('verifies preference formatting includes mora surcharge label and details', () => {
+      const overdueDate = new Date('2026-10-25T12:00:00.000Z')
+      const fee = calculateReactivationFee(baseFee, dueDate, overdueDate)
+
+      const itemTitle = fee.daysOverdue > 0
+        ? `Abono Mensual CancharClub (+${fee.daysOverdue}d mora)`
+        : `Abono Mensual CancharClub`
+
+      const itemDesc = fee.daysOverdue > 0
+        ? `Cuota $${baseFee.toLocaleString('es-AR')} + ${fee.daysOverdue} día de mora (+${fee.surchargePercent}% = +$${fee.surchargeAmount.toLocaleString('es-AR')})`
+        : `Cuota regular`
+
+      expect(itemTitle).toBe('Abono Mensual CancharClub (+1d mora)')
+      expect(itemDesc).toContain('+$3.000')
+      expect(itemDesc).toContain('+3%')
+    })
+  })
 })
+
 

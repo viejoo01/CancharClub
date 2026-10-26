@@ -967,13 +967,33 @@ export async function recordTenantInvoicePayment(tenantId: string, invoiceId?: s
 
   const serviceClient = await createServiceClient()
 
-  // 1. Marcar factura como PAID si existe en BD
+  // 1. Marcar factura como PAID si existe en BD con el importe completo (base + mora)
   if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
+    const { data: currentInv } = await serviceClient
+      .from('tenant_invoices')
+      .select('amount, due_date')
+      .eq('id', invoiceId)
+      .maybeSingle()
+
+    const baseAmount = currentInv ? Number(currentInv.amount) || 0 : 0
+    let finalAmount = baseAmount
+    let noteText = 'Pago manual acreditado por administración'
+
+    if (currentInv?.due_date && baseAmount > 0) {
+      const react = calculateReactivationFee(baseAmount, currentInv.due_date)
+      if (react.daysOverdue > 0) {
+        finalAmount = react.totalAmount
+        noteText = `Pago manual acreditado por administración (Cuota base $${baseAmount.toLocaleString('es-AR')} + ${react.daysOverdue}d mora al 3%/día: +$${react.surchargeAmount.toLocaleString('es-AR')})`
+      }
+    }
+
     await serviceClient
       .from('tenant_invoices')
       .update({
         status: 'PAID',
+        amount: finalAmount > 0 ? finalAmount : undefined,
         paid_at: new Date().toISOString(),
+        notes: noteText,
       })
       .eq('id', invoiceId)
   } else {

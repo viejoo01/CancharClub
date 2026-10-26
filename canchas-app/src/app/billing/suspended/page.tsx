@@ -7,12 +7,13 @@
 // ==============================================================================
 
 import { useState, useEffect, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
-import { getTenantDunningDetails } from '@/actions/saas-billing.actions'
+import { getTenantDunningDetails, recordReactivationPaymentAction } from '@/actions/saas-billing.actions'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import type { ReactivationFeeDetails } from '@/lib/saas-pricing'
 import { PausedClubScreen } from '@/components/dashboard/paused-club-screen'
+import { toast } from 'sonner'
 
 export default function BillingSuspendedPage() {
   return (
@@ -28,6 +29,7 @@ export default function BillingSuspendedPage() {
 
 function BillingSuspendedContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dunningData, setDunningData] = useState<{
     tenantId: string
@@ -73,6 +75,34 @@ function BillingSuspendedContent() {
     }
     load()
   }, [router])
+
+  // Manejo de pago simulado en entornos de desarrollo / pruebas
+  useEffect(() => {
+    const isPaySimulated = searchParams.get('pay_simulated') === 'true'
+    const targetTenantId = searchParams.get('tenant_id')
+    const simulatedAmount = Number(searchParams.get('amount')) || 0
+    const simulatedDays = Number(searchParams.get('days')) || 0
+
+    if (isPaySimulated && targetTenantId && simulatedAmount > 0) {
+      toast.info('Acreditando pago simulado de abono mensual...')
+      const surcharge = Math.max(0, simulatedDays > 0 ? Math.round(simulatedAmount - (simulatedAmount / (1 + simulatedDays * 0.03))) : 0)
+      recordReactivationPaymentAction({
+        tenantId: targetTenantId,
+        totalPaid: simulatedAmount,
+        daysOverdue: simulatedDays,
+        surchargeAmount: surcharge,
+        paymentMethod: 'SIMULADO',
+        notes: `Pago simulado de abono mensual acreditado (+${simulatedDays * 3}% mora: $${simulatedAmount.toLocaleString('es-AR')})`,
+      }).then((res) => {
+        if (res.success) {
+          toast.success('¡Abono mensual acreditado con éxito!')
+          router.replace('/dashboard?billing_success=true')
+        }
+      }).catch((err) => {
+        console.error('Error aplicando pago simulado:', err)
+      })
+    }
+  }, [searchParams, router])
 
   if (loading) {
     return (

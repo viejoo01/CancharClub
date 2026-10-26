@@ -15,6 +15,7 @@ import {
   applyReactivationPaymentInternal,
 } from '@/actions/saas-billing.actions'
 import { getArgentinaTodayIso } from '@/lib/utils'
+import { calculateReactivationFee } from '@/lib/saas-pricing'
 
 export const dynamic = 'force-dynamic'
 
@@ -532,13 +533,30 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
             processed_at: nowIso,
           }, { onConflict: 'payment_id' })
 
+        const { data: overdueInv } = await supabase
+          .from('tenant_invoices')
+          .select('amount, due_date')
+          .eq('tenant_id', resolvedTenantId)
+          .in('status', ['UNPAID', 'DRAFT'])
+          .order('due_date', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        let daysOverdue = 0
+        let surchargeAmount = 0
+        if (overdueInv?.due_date) {
+          const react = calculateReactivationFee(Number(overdueInv.amount) || 0, overdueInv.due_date)
+          daysOverdue = react.daysOverdue
+          surchargeAmount = react.surchargeAmount
+        }
+
         await applyReactivationPaymentInternal({
           tenantId: resolvedTenantId,
           totalPaid: payAmountNum,
-          daysOverdue: 0,
-          surchargeAmount: 0,
+          daysOverdue,
+          surchargeAmount,
           paymentMethod: 'MERCADO_PAGO',
-          notes: `Reactivación acreditada vía Webhook MP #${payment.id}`,
+          notes: `Reactivación acreditada vía Webhook MP #${payment.id} ($${payAmountNum.toLocaleString('es-AR')})`,
         })
 
         return NextResponse.json({
@@ -606,14 +624,36 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
       detail: `Mercado Pago: Pago #${payment.id} acreditado exitosamente ($${payAmountNum.toLocaleString('es-AR')})`,
     })
 
-    // Actualizar Factura como PAID
+    // Actualizar Factura como PAID con el importe efectivamente liquidado (incluyendo recargo por mora si correspondía)
     if (invoiceId && !invoiceId.startsWith('demo-inv-')) {
+      const { data: dbInvoice } = await supabase
+        .from('tenant_invoices')
+        .select('amount, due_date, notes')
+        .eq('id', invoiceId)
+        .maybeSingle()
+
+      const baseAmount = dbInvoice ? Number(dbInvoice.amount) || 0 : 0
+      const dueDate = dbInvoice?.due_date
+      let reactivationBreakdown = ''
+      if (dueDate && baseAmount > 0) {
+        const react = calculateReactivationFee(baseAmount, dueDate)
+        if (react.daysOverdue > 0) {
+          reactivationBreakdown = ` (Cuota base $${baseAmount.toLocaleString('es-AR')} + ${react.daysOverdue}d mora al 3%/día: +$${react.surchargeAmount.toLocaleString('es-AR')})`
+        }
+      }
+
+      const finalAmount = payAmountNum > 0 ? payAmountNum : (baseAmount > 0 ? baseAmount : undefined)
+      const finalNote = `Pago mensual acreditado MP #${payment.id}${reactivationBreakdown}`
+
       await supabase
         .from('tenant_invoices')
         .update({
           status: 'PAID',
+          amount: finalAmount,
           paid_at: nowIso,
           mp_preference_id: String(payment.id),
+          mp_payment_id: String(payment.id),
+          notes: finalNote,
         })
         .eq('id', invoiceId)
     } else {
@@ -621,7 +661,10 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
         .from('tenant_invoices')
         .update({
           status: 'PAID',
+          amount: payAmountNum > 0 ? payAmountNum : undefined,
           paid_at: nowIso,
+          mp_payment_id: String(payment.id),
+          notes: `Pago mensual acreditado MP #${payment.id} ($${payAmountNum.toLocaleString('es-AR')})`,
         })
         .eq('tenant_id', resolvedTenantId)
         .in('status', ['UNPAID', 'DRAFT'])

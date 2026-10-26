@@ -8,6 +8,7 @@ import type { TenantSubscriptionStatus } from '@/types/database'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { calculateClubSaaSFee, calculateDaysUntilDueDate } from '@/lib/saas-pricing'
 import { verifySuperadminSessionToken } from '@/lib/auth-security'
+import { executeTenantAutoDebit } from '@/actions/saas-billing.actions'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -288,6 +289,25 @@ export default async function DashboardLayout({
       if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
         hasCard = true
       }
+
+      // Si el club tiene tarjeta y factura impaga, procesar cobro automático sin requerir acción manual del dueño
+      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-')) {
+        try {
+          const autoRes = await executeTenantAutoDebit({
+            tenantId,
+            invoiceId: unpaidInvoiceId,
+          })
+          if (autoRes.success && autoRes.status === 'PAID') {
+            unpaidInvoiceId = null
+            unpaidInvoiceDueDate = null
+            unpaidInvoiceAmount = null
+            subscriptionStatus = 'ACTIVE'
+            isActive = true
+          }
+        } catch (autoErr) {
+          console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
+        }
+      }
     }
 
     const simulatedRole = cookieStore.get('demo_user_role')?.value
@@ -428,6 +448,25 @@ export default async function DashboardLayout({
         const cookieHas = cookieStore.get('demo_has_card')?.value === 'true'
         const cookieLast4 = cookieStore.get('demo_card_last4')?.value
         if (cookieHas && cookieLast4) hasCard = true
+      }
+
+      // Si el club tiene tarjeta y factura impaga, procesar cobro automático sin requerir acción manual del dueño
+      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-')) {
+        try {
+          const autoRes = await executeTenantAutoDebit({
+            tenantId,
+            invoiceId: unpaidInvoiceId,
+          })
+          if (autoRes.success && autoRes.status === 'PAID') {
+            unpaidInvoiceId = null
+            unpaidInvoiceDueDate = null
+            unpaidInvoiceAmount = null
+            subscriptionStatus = 'ACTIVE'
+            isActive = true
+          }
+        } catch (autoErr) {
+          console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
+        }
       }
 
       setCachedTenantLayout(user.id, {

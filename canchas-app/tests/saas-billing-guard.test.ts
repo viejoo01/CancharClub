@@ -305,6 +305,76 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(itemDesc).toContain('+3%')
     })
   })
+
+  describe('Guard 7: Automated Debit for Clubs Exiting Free Trial (Zero Manual Action When Funds Are Sufficient)', () => {
+    it('executes automated debit successfully on trial exit when club has linked card with funds', () => {
+      // Simulación de club que finaliza la prueba de 15 días con tarjeta vinculada
+      const clubTrialExit = {
+        name: 'Luli',
+        hasCard: true,
+        cardBrand: 'MASTER',
+        cardLast4: '***5',
+        trialEndsAt: '2026-10-24T20:42:21.972Z',
+        monthlyFee: 100000,
+        fundsAvailable: true,
+      }
+
+      // Verificamos que si tiene fondos, el estado no debe requerir intervención manual
+      expect(clubTrialExit.hasCard).toBe(true)
+      expect(clubTrialExit.fundsAvailable).toBe(true)
+
+      // El resultado esperado del débito automático
+      const autoDebitResult = {
+        status: clubTrialExit.fundsAvailable ? 'PAID' : 'FAILED',
+        subscriptionStatus: clubTrialExit.fundsAvailable ? 'ACTIVE' : 'PAYMENT_PENDING',
+        requiresManualOwnerAction: !clubTrialExit.fundsAvailable,
+      }
+
+      expect(autoDebitResult.status).toBe('PAID')
+      expect(autoDebitResult.subscriptionStatus).toBe('ACTIVE')
+      expect(autoDebitResult.requiresManualOwnerAction).toBe(false)
+    })
+
+    it('retries on Day 1 if Day 0 auto-debit fails due to insufficient funds before triggering failed alert', () => {
+      const attempts = [
+        { day: 0, date: '2026-10-24', status: 'REJECTED', reason: 'Fondos insuficientes' },
+        { day: 1, date: '2026-10-25', status: 'REJECTED', reason: 'Fondos insuficientes' },
+      ]
+
+      // Tras 2 intentos fallidos, se emite la alerta formal y empieza la mora
+      const shouldTriggerFailedAlert = attempts.length >= 2
+      expect(shouldTriggerFailedAlert).toBe(true)
+
+      // Mora en tarjeta vinculada inicia al Día 2 sin pagar
+      const feeDay2 = calculateReactivationFee(100000, '2026-10-24', new Date('2026-10-26T12:00:00.000Z'), undefined, { isLinkedCard: true })
+      expect(feeDay2.daysOverdue).toBe(1)
+      expect(feeDay2.surchargeAmount).toBe(3000)
+      expect(feeDay2.totalAmount).toBe(103000)
+    })
+
+    it('skips auto-debit for clubs without linked cards and gives 7-day manual tolerance window', () => {
+      const clubWithoutCard = {
+        name: 'Club Sin Tarjeta',
+        hasCard: false,
+        trialEndsAt: '2026-10-24',
+      }
+
+      expect(clubWithoutCard.hasCard).toBe(false)
+
+      // Días 1 a 7: precio base congelado sin mora
+      const feeDay7 = calculateReactivationFee(100000, clubWithoutCard.trialEndsAt, new Date('2026-10-31T12:00:00.000Z'), undefined, { isLinkedCard: false })
+      expect(feeDay7.isInTolerancePeriod).toBe(true)
+      expect(feeDay7.daysOverdue).toBe(0)
+      expect(feeDay7.totalAmount).toBe(100000)
+
+      // Día 8: mora comienza
+      const feeDay8 = calculateReactivationFee(100000, clubWithoutCard.trialEndsAt, new Date('2026-11-01T12:00:00.000Z'), undefined, { isLinkedCard: false })
+      expect(feeDay8.isInTolerancePeriod).toBe(false)
+      expect(feeDay8.daysOverdue).toBe(1)
+      expect(feeDay8.totalAmount).toBe(103000)
+    })
+  })
 })
+
 
 

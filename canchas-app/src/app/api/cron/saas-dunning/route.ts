@@ -14,7 +14,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import type { TenantSubscriptionStatus } from '@/types/database'
 import { calculateClubSaaSFee } from '@/lib/saas-pricing'
 import { checkAndReleaseOverdueRecurringSlots } from '@/actions/recurring-slots.actions'
-import { syncPreapprovalAmountIfNeeded, recordAutoDebitAlertInternal } from '@/actions/saas-billing.actions'
+import { syncPreapprovalAmountIfNeeded, recordAutoDebitAlertInternal, executeTenantAutoDebit } from '@/actions/saas-billing.actions'
 import { getArgentinaTodayIso, parseArgentinaDate } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +49,7 @@ async function handleDunning(request: NextRequest) {
     // 2. Obtener todos los tenants registrados
     const { data: tenants, error: tenantsErr } = await supabase
       .from('tenants')
-      .select('id, name, slug, subscription_status, is_active, created_at, description, base_slots_plan, plan_id')
+      .select('id, name, slug, subscription_status, is_active, created_at, description, base_slots_plan, plan_id, mp_preapproval_id')
 
     if (tenantsErr || !tenants) {
       console.error('[SaaS Dunning] Error al listar tenants:', tenantsErr)
@@ -214,11 +214,30 @@ async function handleDunning(request: NextRequest) {
             .select('id, due_date, amount')
             .maybeSingle()
 
-          if (newInv && !oldestInv) {
-            oldestInv = {
-              id: newInv.id,
-              due_date: newInv.due_date,
-              amount: Number(newInv.amount) || 0,
+          if (newInv) {
+            const hasLinkedCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+            if (hasLinkedCard) {
+              // Cobro automático de cuota mensual al finalizar la prueba gratuita o en fecha ancla
+              const autoDebitRes = await executeTenantAutoDebit({
+                tenantId: tenant.id,
+                invoiceId: newInv.id,
+              })
+              if (autoDebitRes.success && autoDebitRes.status === 'PAID') {
+                console.log(`[SaaS Dunning] Cobro automático exitoso para ${tenant.name || tenant.id} (Factura #${newInv.id})`)
+                oldestInv = undefined
+              } else if (!oldestInv) {
+                oldestInv = {
+                  id: newInv.id,
+                  due_date: newInv.due_date,
+                  amount: Number(newInv.amount) || 0,
+                }
+              }
+            } else if (!oldestInv) {
+              oldestInv = {
+                id: newInv.id,
+                due_date: newInv.due_date,
+                amount: Number(newInv.amount) || 0,
+              }
             }
           }
 
@@ -227,6 +246,19 @@ async function handleDunning(request: NextRequest) {
           syncPreapprovalAmountIfNeeded(tenant.id, dueAmount).catch(syncErr => {
             console.warn(`[SaaS Dunning] Aviso al sincronizar cuota en Mercado Pago para ${tenant.id}:`, syncErr)
           })
+        }
+      }
+
+      // Si existe una factura impaga y el club tiene tarjeta vinculada, intentar cobro automático antes de aplicar dunning
+      const hasCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+      if (oldestInv && oldestInv.amount > 0 && hasCard) {
+        const autoDebitRes = await executeTenantAutoDebit({
+          tenantId: tenant.id,
+          invoiceId: oldestInv.id,
+        })
+        if (autoDebitRes.success && autoDebitRes.status === 'PAID') {
+          console.log(`[SaaS Dunning] Cobro automático exitoso para factura existente #${oldestInv.id} de ${tenant.name || tenant.id}`)
+          oldestInv = undefined
         }
       }
 

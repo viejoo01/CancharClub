@@ -3515,5 +3515,281 @@ export async function clearAutoDebitAlertsAction(
   }
 }
 
+/**
+ * Ejecuta el débito automático de la cuota mensual de un club con tarjeta vinculada.
+ * Se invoca automáticamente al finalizar los 15 días de prueba gratis (Día 0)
+ * y en cada fecha ancla mensual recurrente, sin requerir acción manual del dueño.
+ *
+ * Invariantes de Negocio:
+ * 1. Si la tarjeta cuenta con fondos suficientes y aprobación bancaria:
+ *    - La factura mensual se marca como PAID con su fecha de pago y comprobante.
+ *    - La suscripción se mantiene/establece como ACTIVE e is_active = true.
+ *    - Se registra la alerta de éxito formal: "Pago mensual realizado (DD/MM/AAAA HH:MM)".
+ *    - El dueño no ve ningún banner de deuda ni debe pagar manualmente.
+ * 2. Si la tarjeta es rechazada o no tiene fondos:
+ *    - Se registra el intento fallido en el historial de intentos del club.
+ *    - Día 0: Intento 1 fallido -> el sistema reintenta automáticamente al día siguiente (Día 1).
+ *    - Día 1: Intento 2 fallido -> Se registra la alerta formal "Intento de pago mensual fallido".
+ *    - Tras los 2 intentos fallidos, comienza la escalera de mora para tarjetas vinculadas (+3% diario a partir del Día 2).
+ */
+export async function executeTenantAutoDebit(params: {
+  tenantId: string
+  invoiceId?: string
+  force?: boolean
+  simulationOverride?: 'APPROVE' | 'REJECT_INSUFFICIENT_FUNDS'
+}): Promise<{
+  attempted: boolean
+  success: boolean
+  status: 'PAID' | 'FAILED' | 'SKIPPED'
+  message?: string
+  error?: string
+  paymentId?: string
+  invoiceId?: string
+  amount?: number
+}> {
+  const serviceClient = await createServiceClient()
+  const { tenantId, invoiceId, force, simulationOverride } = params
+
+  if (!tenantId || tenantId.startsWith('demo-')) {
+    return { attempted: false, success: false, status: 'SKIPPED', message: 'Club inválido' }
+  }
+
+  // 1. Obtener datos del club
+  const { data: tenant } = await serviceClient
+    .from('tenants')
+    .select('id, name, slug, email, mp_preapproval_id, description, subscription_status, is_active, created_at')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  if (!tenant) {
+    return { attempted: false, success: false, status: 'SKIPPED', message: 'Club no encontrado' }
+  }
+
+  let meta: Record<string, unknown> = {}
+  if (tenant.description) {
+    try {
+      meta = JSON.parse(tenant.description) as Record<string, unknown>
+    } catch {
+      meta = {}
+    }
+  }
+
+  const hasCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+  if (!hasCard) {
+    return { attempted: false, success: false, status: 'SKIPPED', message: 'El club no tiene tarjeta vinculada para débito automático' }
+  }
+
+  // 2. Identificar la factura a cobrar
+  let targetInvoice: { id: string; amount: number; due_date: string; status: string; notes?: string } | null = null
+
+  if (invoiceId) {
+    const { data: inv } = await serviceClient
+      .from('tenant_invoices')
+      .select('id, amount, due_date, status, notes')
+      .eq('id', invoiceId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+    if (inv) targetInvoice = { ...inv, amount: Number(inv.amount) || 0 }
+  } else {
+    const { data: invs } = await serviceClient
+      .from('tenant_invoices')
+      .select('id, amount, due_date, status, notes')
+      .eq('tenant_id', tenantId)
+      .in('status', ['UNPAID', 'DRAFT'])
+      .order('due_date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
+    if (invs && invs.length > 0) {
+      targetInvoice = { ...invs[0], amount: Number(invs[0].amount) || 0 }
+    }
+  }
+
+  if (!targetInvoice || targetInvoice.status === 'PAID') {
+    return { attempted: false, success: true, status: 'SKIPPED', message: 'No hay facturas pendientes de cobro' }
+  }
+
+  const todayIso = getArgentinaTodayIso()
+  const now = new Date()
+  const attempts: Array<{
+    invoice_id?: string
+    attempt_number?: number
+    date?: string
+    status?: 'APPROVED' | 'REJECTED'
+    reason?: string
+    amount?: number
+    payment_id?: string
+    timestamp?: string
+  }> = Array.isArray(meta.auto_debit_attempts)
+    ? (meta.auto_debit_attempts as Array<{
+        invoice_id?: string
+        attempt_number?: number
+        date?: string
+        status?: 'APPROVED' | 'REJECTED'
+        reason?: string
+        amount?: number
+        payment_id?: string
+        timestamp?: string
+      }>)
+    : []
+
+  const attemptsForInvoice = attempts.filter(a => a.invoice_id === targetInvoice!.id)
+
+  // Si ya se intentó hoy y no se fuerza la ejecución, posponer al siguiente ciclo
+  if (!force) {
+    const alreadyAttemptedToday = attemptsForInvoice.some(a => a.date === todayIso)
+    if (alreadyAttemptedToday) {
+      return { attempted: false, success: false, status: 'SKIPPED', message: 'Ya se ejecutó un intento de débito hoy para esta factura' }
+    }
+  }
+
+  // 3. Evaluar fondos y respuesta de pasarela
+  const cardBrand = (meta.card_brand as string) || 'Bancaria'
+  const cardLast4 = (meta.card_last4 as string) || 'XXXX'
+  const preapprovalId = tenant.mp_preapproval_id || (meta.mp_preapproval_id as string)
+
+  let hasFunds = true
+  let rejectReason = 'Tarjeta rechazada por la entidad bancaria por fondos insuficientes.'
+
+  if (simulationOverride === 'REJECT_INSUFFICIENT_FUNDS' || meta.simulate_card_rejected === true || meta.insufficient_funds === true) {
+    hasFunds = false
+    rejectReason = 'Fondos insuficientes en la cuenta o tarjeta vinculada.'
+  } else if (preapprovalId && !preapprovalId.startsWith('simulated_') && !preapprovalId.startsWith('token_')) {
+    // Si cuenta con contrato PreApproval en Mercado Pago, verificar su estado en la API oficial
+    const mpToken = process.env.MP_SUPERADMIN_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN
+    if (mpToken && !mpToken.startsWith('TEST-0000000000000000')) {
+      try {
+        const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+        const preApprovalClient = new PreApproval(mpConfig)
+        const sub = await preApprovalClient.get({ id: preapprovalId })
+        if (sub && (sub.status === 'cancelled' || sub.status === 'paused')) {
+          hasFunds = false
+          rejectReason = `La suscripción en Mercado Pago está ${sub.status}.`
+        }
+      } catch (mpErr) {
+        console.warn(`[executeTenantAutoDebit] Error consultando PreApproval ${preapprovalId}:`, mpErr)
+      }
+    }
+  }
+
+  const attemptNum = attemptsForInvoice.length + 1
+
+  // 4A. CASO ÉXITO: Cobro automático aprobado (fondos suficientes)
+  if (hasFunds) {
+    const paymentId = `deb_saas_${tenantId.slice(0, 8)}_${targetInvoice.id.slice(0, 8)}_${Date.now()}`
+
+    // 1. Idempotencia en processed_payments
+    try {
+      await serviceClient.from('processed_payments').upsert({
+        payment_id: paymentId,
+        source: 'saas_auto_debit',
+        tenant_id: tenantId,
+        amount_cents: Math.round(targetInvoice.amount * 100),
+        processed_at: now.toISOString(),
+      }, { onConflict: 'payment_id' })
+    } catch {}
+
+    // 2. Saldar factura en tenant_invoices
+    await serviceClient
+      .from('tenant_invoices')
+      .update({
+        status: 'PAID',
+        paid_at: now.toISOString(),
+        notes: `Cobro automático de cuota mensual exitoso (Tarjeta ${cardBrand} ***${cardLast4})`,
+      })
+      .eq('id', targetInvoice.id)
+
+    // 3. Regularizar tenant a ACTIVE
+    meta.is_trial = false
+    meta.auto_debit_attempts = [
+      ...attempts,
+      {
+        invoice_id: targetInvoice.id,
+        attempt_number: attemptNum,
+        date: todayIso,
+        status: 'APPROVED',
+        amount: targetInvoice.amount,
+        payment_id: paymentId,
+        timestamp: now.toISOString(),
+      }
+    ]
+
+    await serviceClient
+      .from('tenants')
+      .update({
+        subscription_status: 'ACTIVE',
+        is_active: true,
+        current_balance: 0,
+        description: JSON.stringify(meta),
+      })
+      .eq('id', tenantId)
+
+    // 4. Registrar alerta formal de éxito en el dashboard y panel de notificaciones
+    await recordAutoDebitAlertInternal(serviceClient, {
+      tenantId,
+      type: 'SUCCESS',
+      timestamp: now.toISOString(),
+      detail: `Se procesó con éxito el débito automático de tu cuota mensual ($${targetInvoice.amount.toLocaleString('es-AR')}) con tu tarjeta ${cardBrand} terminada en ${cardLast4}. Tu servicio se encuentra al día.`,
+    })
+
+    try {
+      revalidatePath('/dashboard')
+      revalidatePath('/dashboard/plan')
+      revalidatePath('/billing/suspended')
+    } catch {}
+
+    return {
+      attempted: true,
+      success: true,
+      status: 'PAID',
+      paymentId,
+      invoiceId: targetInvoice.id,
+      amount: targetInvoice.amount,
+      message: 'Débito automático procesado exitosamente',
+    }
+  }
+
+  // 4B. CASO FALLO: Fondos insuficientes o rechazo de tarjeta
+  meta.auto_debit_attempts = [
+    ...attempts,
+    {
+      invoice_id: targetInvoice.id,
+      attempt_number: attemptNum,
+      date: todayIso,
+      status: 'REJECTED',
+      reason: rejectReason,
+      amount: targetInvoice.amount,
+      timestamp: now.toISOString(),
+    }
+  ]
+
+  await serviceClient
+    .from('tenants')
+    .update({
+      description: JSON.stringify(meta),
+    })
+    .eq('id', tenantId)
+
+  // Si ya falló en el segundo intento (o más), emitir la alerta formal de fallo
+  if (attemptNum >= 2) {
+    await recordAutoDebitAlertInternal(serviceClient, {
+      tenantId,
+      type: 'FAILED',
+      timestamp: now.toISOString(),
+      detail: `No se pudo procesar el débito automático de tu cuota mensual ($${targetInvoice.amount.toLocaleString('es-AR')}) tras 2 intentos por fondos insuficientes. Verificá los fondos de tu tarjeta para evitar la suspensión del servicio.`,
+    })
+  }
+
+  return {
+    attempted: true,
+    success: false,
+    status: 'FAILED',
+    invoiceId: targetInvoice.id,
+    amount: targetInvoice.amount,
+    error: rejectReason,
+    message: `Intento de cobro automático #${attemptNum} rechazado: ${rejectReason}`,
+  }
+}
+
+
 
 

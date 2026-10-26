@@ -102,7 +102,7 @@ export function GracePeriodBanner({
                 </>
               ) : isPaymentPending ? (
                 <>
-                  Tu abono mensual de <strong>${amountArs.toLocaleString('es-AR')}</strong> (venció el {effectiveDueDate}) no pudo ser debitado. Regularizá tu medio de pago para evitar la interrupción del servicio.
+                  Tu abono mensual venció el <strong>{effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> ({reactivation.daysOverdue > 0 ? `$${amountArs.toLocaleString('es-AR')} cuota + ${reactivation.daysOverdue}d de mora al 3%/día: +$${reactivation.surchargeAmount.toLocaleString('es-AR')}` : `$${amountArs.toLocaleString('es-AR')} al día`}). Regularizá tu abono para evitar la suspensión.
                 </>
               ) : (
                 <>

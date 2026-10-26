@@ -261,6 +261,17 @@ export function calculateReactivationFee(
           formattedDueDate = `${String(d).padStart(2, '0')}/${String(m + 1).padStart(2, '0')}/${y}`
         }
       }
+    } else if (dueDateStr.includes('-')) {
+      const parts = dueDateStr.split('T')[0].split('-')
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10)
+        const m = parseInt(parts[1], 10) - 1
+        const d = parseInt(parts[2], 10)
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          dueMidnight = new Date(y, m, d).getTime()
+          formattedDueDate = `${String(d).padStart(2, '0')}/${String(m + 1).padStart(2, '0')}/${y}`
+        }
+      }
     } else {
       const parsed = new Date(dueDateStr)
       if (!isNaN(parsed.getTime())) {

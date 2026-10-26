@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateClubSaaSFee, calculateSaaSMultiplier } from '@/lib/saas-pricing'
+import { calculateClubSaaSFee, calculateSaaSMultiplier, calculateReactivationFee } from '@/lib/saas-pricing'
 import { mapMpRejectionDetail } from '@/lib/card-validation'
 
 describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
@@ -171,4 +171,45 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(getDunningStatus(30)).toBe('LOCKED')
     })
   })
+
+  describe('Guard 5: 3% Daily Surcharge Accrual Starting on Day 1 Overdue', () => {
+    it('accurately applies 3% daily surcharge on Day 1 of non-payment (not waiting for Day 15 lock)', () => {
+      const baseAmount = 100000 // Club Luli
+      const dueDate = '2026-10-24'
+      const paymentDateDay1 = new Date('2026-10-25T12:00:00.000Z') // 1 day overdue
+
+      const feeDay1 = calculateReactivationFee(baseAmount, dueDate, paymentDateDay1)
+      expect(feeDay1.daysOverdue).toBe(1)
+      expect(feeDay1.dailyRatePercent).toBe(3)
+      expect(feeDay1.surchargePercent).toBe(3)
+      expect(feeDay1.surchargeAmount).toBe(3000)
+      expect(feeDay1.totalAmount).toBe(103000)
+    })
+
+    it('accumulates surcharge proportionally across the tolerance and grace periods', () => {
+      const baseAmount = 100000
+
+      // Day 3 of tolerance
+      const feeDay3 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-10-27T12:00:00.000Z'))
+      expect(feeDay3.daysOverdue).toBe(3)
+      expect(feeDay3.surchargePercent).toBe(9)
+      expect(feeDay3.surchargeAmount).toBe(9000)
+      expect(feeDay3.totalAmount).toBe(109000)
+
+      // Day 7 (last day of tolerance)
+      const feeDay7 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-10-31T12:00:00.000Z'))
+      expect(feeDay7.daysOverdue).toBe(7)
+      expect(feeDay7.surchargePercent).toBe(21)
+      expect(feeDay7.surchargeAmount).toBe(21000)
+      expect(feeDay7.totalAmount).toBe(121000)
+
+      // Day 15 (locked)
+      const feeDay15 = calculateReactivationFee(baseAmount, '2026-10-24', new Date('2026-11-08T12:00:00.000Z'))
+      expect(feeDay15.daysOverdue).toBe(15)
+      expect(feeDay15.surchargePercent).toBe(45)
+      expect(feeDay15.surchargeAmount).toBe(45000)
+      expect(feeDay15.totalAmount).toBe(145000)
+    })
+  })
 })
+

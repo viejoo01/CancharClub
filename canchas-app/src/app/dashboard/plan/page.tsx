@@ -31,7 +31,7 @@ import { ClubReactivationModal } from '@/components/dashboard/club-reactivation-
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatARS } from '@/lib/utils'
-import { calculateClubSaaSFee } from '@/lib/saas-pricing'
+import { calculateClubSaaSFee, calculateReactivationFee } from '@/lib/saas-pricing'
 import { 
   confirmCardSetupFromMercadoPagoPayment,
   confirmPreapprovalSubscriptionFromMercadoPago,
@@ -1389,43 +1389,57 @@ export default function ClubPlanPage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-mono font-bold text-slate-200">
-                        {formatARS(Number(inv.amount))}
-                      </span>
-                      {isPaidInvoice ? (
-                        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
-                          Pagado
-                        </Badge>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
-                            Pendiente
-                          </Badge>
-                          <Button
-                            size="sm"
-                            onClick={() => handlePayInvoice(inv.id)}
-                            disabled={payingInvoiceId === inv.id}
-                            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
-                          >
-                            {payingInvoiceId === inv.id ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <CreditCard className="w-3.5 h-3.5" />
+                    {(() => {
+                      const invReactivation = calculateReactivationFee(Number(inv.amount), inv.due_date)
+                      const isOverdue = !isPaidInvoice && invReactivation.daysOverdue > 0
+
+                      return (
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <div className="font-mono font-bold text-slate-200">
+                              {formatARS(isOverdue ? invReactivation.totalAmount : Number(inv.amount))}
+                            </div>
+                            {isOverdue && (
+                              <div className="text-[10px] text-amber-400 font-mono">
+                                +{invReactivation.surchargePercent}% ({invReactivation.daysOverdue}d mora)
+                              </div>
                             )}
-                            <span>Pagar</span>
+                          </div>
+                          {isPaidInvoice ? (
+                            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                              Pagado
+                            </Badge>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
+                                {isOverdue ? `Mora ${invReactivation.daysOverdue}d` : 'Pendiente'}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                onClick={() => handlePayInvoice(inv.id)}
+                                disabled={payingInvoiceId === inv.id}
+                                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                              >
+                                {payingInvoiceId === inv.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                )}
+                                <span>Pagar {isOverdue ? formatARS(invReactivation.totalAmount) : ''}</span>
+                              </Button>
+                            </div>
+                          )}
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => downloadReceiptPdf(inv)}
+                            className="h-8 text-xs text-slate-400 hover:text-white cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5 mr-1" /> PDF
                           </Button>
                         </div>
-                      )}
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => downloadReceiptPdf(inv)}
-                        className="h-8 text-xs text-slate-400 hover:text-white cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5 mr-1" /> PDF
-                      </Button>
-                    </div>
+                      )
+                    })()}
                   </div>
                 )
               })}

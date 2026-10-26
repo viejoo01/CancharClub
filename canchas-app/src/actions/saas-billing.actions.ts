@@ -865,8 +865,12 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
       invoice = specificInv as TenantInvoice
     }
   }
-  const rawAmount = (invoice ? Number(invoice.amount) : 0) || dunning.reactivation?.totalAmount || dunning.pricing.monthlyFeeArs
-  const amountToPay = Math.max(15, rawAmount > 0 ? rawAmount : Math.round(dunning.pricing.multiplier * 30000) || 30000)
+  const baseAmount = (invoice ? Number(invoice.amount) : 0) || dunning.pricing.monthlyFeeArs
+  const invDueDate = invoice && 'due_date' in invoice ? (invoice as { due_date?: string }).due_date : undefined
+  const dunningDueDate = dunning.invoice && 'due_date' in dunning.invoice ? (dunning.invoice as { due_date?: string }).due_date : undefined
+  const dueDateCandidate = invDueDate || dunningDueDate || dunning.pricing.nextDueDate
+  const reactivation = calculateReactivationFee(baseAmount, dueDateCandidate)
+  const amountToPay = Math.max(15, reactivation.totalAmount > 0 ? reactivation.totalAmount : Math.round(dunning.pricing.multiplier * 30000) || 30000)
 
   const mpToken = process.env.MP_ACCESS_TOKEN
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -884,7 +888,7 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
     return {
       success: true,
       preferenceId: mockPreferenceId,
-      initPoint: `${appUrl}/billing/suspended?pay_simulated=true&tenant_id=${tenantId}&invoice_id=${invoice.id}&amount=${amountToPay}`,
+      initPoint: `${appUrl}/billing/suspended?pay_simulated=true&tenant_id=${tenantId}&invoice_id=${invoice.id}&amount=${amountToPay}&days=${reactivation.daysOverdue}`,
       isSimulated: true,
     }
   }
@@ -895,13 +899,20 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
 
     const externalRef = `saas_tenant_${tenantId}_inv_${invoice.id}_${Date.now()}`
 
+    const itemTitle = reactivation.daysOverdue > 0
+      ? `Abono Mensual CancharClub (+${reactivation.daysOverdue}d mora)`
+      : `Abono Mensual CancharClub - ${dunning.tenantName}`
+    const itemDesc = reactivation.daysOverdue > 0
+      ? `Cuota $${baseAmount.toLocaleString('es-AR')} + ${reactivation.daysOverdue} día${reactivation.daysOverdue > 1 ? 's' : ''} de mora (+${reactivation.surchargePercent}% = +$${reactivation.surchargeAmount.toLocaleString('es-AR')})`
+      : `Cuota de servicio CancharClub: ${dunning.pricing.courtsCount} canchas (${dunning.pricing.multiplier} turnos)`
+
     const preference = await preferenceClient.create({
       body: {
         items: [
           {
             id: invoice.id,
-            title: `Abono Mensual CancharClub - ${dunning.tenantName}`,
-            description: `Cuota de servicio CancharClub: ${dunning.pricing.courtsCount} canchas (${dunning.pricing.multiplier} turnos)`,
+            title: itemTitle,
+            description: itemDesc,
             quantity: 1,
             unit_price: amountToPay,
             currency_id: 'ARS',

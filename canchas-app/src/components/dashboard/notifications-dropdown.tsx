@@ -190,7 +190,7 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
   })
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative z-50" ref={menuRef}>
       {/* Botón Campana con Contador */}
       <button
         type="button"

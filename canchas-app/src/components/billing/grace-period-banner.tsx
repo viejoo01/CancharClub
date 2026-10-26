@@ -95,7 +95,7 @@ export function GracePeriodBanner({
       isPartiallySuspended
         ? 'bg-gradient-to-r from-red-950/90 via-amber-950/80 to-red-950/90 border-red-800/80 text-red-200'
         : 'bg-gradient-to-r from-amber-950/90 via-orange-950/80 to-amber-950/90 border-amber-800/80 text-amber-200'
-    } p-3 sm:px-6 shadow-lg relative z-40 backdrop-blur-md`}>
+    } p-3 sm:px-6 shadow-lg relative z-10 backdrop-blur-md`}>
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-xl border flex-shrink-0 ${

@@ -478,6 +478,19 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
       }
     }
 
+    // Detección directa si external_reference es el UUID de una factura
+    if (!invoiceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(extRef)) {
+      const { data: invMatch } = await supabase
+        .from('tenant_invoices')
+        .select('id, tenant_id')
+        .eq('id', extRef)
+        .maybeSingle()
+      if (invMatch) {
+        invoiceId = invMatch.id
+        tenantId = invMatch.tenant_id
+      }
+    }
+
     // Si no vino tenantId en external_reference, buscar por payer_email de Mercado Pago
     if (!tenantId && payment.payer?.email) {
       const { data: tByEmail } = await supabase

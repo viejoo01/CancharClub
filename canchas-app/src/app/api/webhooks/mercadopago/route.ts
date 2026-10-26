@@ -348,6 +348,62 @@ export async function POST(request: NextRequest) {
     return handleBillingWebhook(request, rawBody)
   }
 
+  // ── Detección directa si external_reference es el ID de una factura (Checkout Pro manual) ─
+  if (externalRef && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalRef)) {
+    const { data: invDirect } = await supabase
+      .from('tenant_invoices')
+      .select('id, tenant_id, status')
+      .eq('id', externalRef)
+      .maybeSingle()
+
+    if (invDirect) {
+      console.log(`[MP Webhook] Factura SaaS detectada directamente por external_reference: ${invDirect.id} (tenant: ${invDirect.tenant_id})`)
+
+      if (payment.status === 'approved' && payment.status_detail === 'accredited') {
+        const nowIso = new Date().toISOString()
+        const paymentIdStr = String(payment.id)
+
+        await supabase
+          .from('tenant_invoices')
+          .update({
+            status: 'PAID',
+            paid_at: nowIso,
+            mp_payment_id: paymentIdStr,
+            notes: `Abono mensual liquidado vía Checkout Pro (#${paymentIdStr})`
+          })
+          .eq('id', invDirect.id)
+
+        await supabase
+          .from('tenants')
+          .update({
+            subscription_status: 'ACTIVE',
+            is_active: true,
+            current_balance: 0,
+            updated_at: nowIso
+          })
+          .eq('id', invDirect.tenant_id)
+
+        await supabase
+          .from('processed_payments')
+          .upsert({
+            payment_id: paymentIdStr,
+            source: 'saas_checkout_pro',
+            tenant_id: invDirect.tenant_id,
+            amount_cents: Math.round((Number(payment.transaction_amount) || 0) * 100),
+            processed_at: nowIso
+          }, { onConflict: 'payment_id' })
+
+        return NextResponse.json({
+          received: true,
+          saas_payment: true,
+          invoice_id: invDirect.id,
+          tenant_id: invDirect.tenant_id,
+          status: 'PAID'
+        })
+      }
+    }
+  }
+
   // ── Detección de Cobros de Suscripción SaaS por Email de Club ─────────────
   const payerEmail = payment.payer?.email
   const isBookingExplicit = Boolean(

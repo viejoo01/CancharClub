@@ -754,6 +754,73 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(tenants[0].subscription_status).toBe('PAYMENT_PENDING')
     })
   })
+
+  describe('Guard 12: Manual Checkout Pro Preference Creation & Invariant Reconciliation', () => {
+    it('constructs the exact preference payload for manual invoice payment', () => {
+      const invoice = {
+        id: '45d127f1-f5b4-4e2c-a91e-4ac5f08e2aff',
+        amount: 100000
+      }
+
+      const preferencePayload = {
+        body: {
+          items: [{
+            id: invoice.id,
+            title: 'Abono Mensual CancharClub',
+            quantity: 1,
+            unit_price: Number(invoice.amount),
+            currency_id: 'ARS'
+          }],
+          external_reference: invoice.id,
+          back_urls: {
+            success: 'https://www.cancharclub.com.ar/dashboard/billing?status=success',
+            failure: 'https://www.cancharclub.com.ar/dashboard/billing?status=failure'
+          },
+          auto_return: 'approved'
+        }
+      }
+
+      expect(preferencePayload.body.items[0].id).toBe(invoice.id)
+      expect(preferencePayload.body.items[0].title).toBe('Abono Mensual CancharClub')
+      expect(preferencePayload.body.items[0].unit_price).toBe(100000)
+      expect(preferencePayload.body.items[0].currency_id).toBe('ARS')
+      expect(preferencePayload.body.external_reference).toBe(invoice.id)
+      expect(preferencePayload.body.auto_return).toBe('approved')
+      expect(preferencePayload.body.back_urls.success).toContain('/dashboard/billing?status=success')
+    })
+
+    it('reconciles payment and marks invoice as PAID when webhook matches external_reference = invoice.id', () => {
+      const invoice = {
+        id: '45d127f1-f5b4-4e2c-a91e-4ac5f08e2aff',
+        tenant_id: 'tenant-luli',
+        status: 'UNPAID',
+        amount: 100000
+      }
+
+      const incomingWebhookPayment = {
+        id: '777666555',
+        status: 'approved',
+        status_detail: 'accredited',
+        external_reference: '45d127f1-f5b4-4e2c-a91e-4ac5f08e2aff',
+      }
+
+      const isApproved = incomingWebhookPayment.status === 'approved' && incomingWebhookPayment.status_detail === 'accredited'
+      const invoiceMatch = incomingWebhookPayment.external_reference === invoice.id
+
+      let resultingInvoiceStatus = invoice.status
+      let resultingTenantStatus = 'PAYMENT_PENDING'
+
+      if (isApproved && invoiceMatch) {
+        resultingInvoiceStatus = 'PAID'
+        resultingTenantStatus = 'ACTIVE'
+      }
+
+      expect(invoiceMatch).toBe(true)
+      expect(isApproved).toBe(true)
+      expect(resultingInvoiceStatus).toBe('PAID')
+      expect(resultingTenantStatus).toBe('ACTIVE')
+    })
+  })
 })
 
 

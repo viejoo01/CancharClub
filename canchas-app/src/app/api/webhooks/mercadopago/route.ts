@@ -14,6 +14,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { releaseBookingLock } from '@/lib/redis'
 import { sendBookingConfirmationToPlayer, sendNewBookingAlertToClub } from '@/lib/notifications/email.service'
 import { sendAutomatedBookingConfirmation } from '@/actions/whatsapp-bot.actions'
@@ -107,30 +108,32 @@ function verifyMercadoPagoSignature(
 // ─── Consultar pago en API de MP ──────────────────────────────────────────────
 
 async function fetchMPPayment(
-  paymentId: string,
+  paymentId: string | number,
   accessToken: string
 ): Promise<MercadoPagoPayment | null> {
   try {
-    const response = await fetch(
-      `https://api.mercadopago.com/v1/payments/${paymentId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        // No cachear — datos frescos del pago
-        cache: 'no-store',
+    const client = new MercadoPagoConfig({ accessToken })
+    const paymentApi = new Payment(client)
+    const payment = await paymentApi.get({ id: String(paymentId) })
+    return payment as unknown as MercadoPagoPayment
+  } catch (sdkErr) {
+    try {
+      const response = await fetch(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        }
+      )
+
+      if (response.ok) {
+        return (await response.json()) as MercadoPagoPayment
       }
-    )
-
-    if (!response.ok) {
-      console.error('[MP Webhook] Error al consultar pago:', response.status, await response.text())
-      return null
-    }
-
-    return response.json()
-  } catch (err) {
-    console.error('[MP Webhook] Fetch error:', err)
+    } catch {}
+    console.error('[MP Webhook] Error al consultar pago con SDK/fetch:', paymentId, sdkErr)
     return null
   }
 }
@@ -178,16 +181,17 @@ export async function POST(request: NextRequest) {
     queryType === 'payment'
 
   if (!isPaymentEvent) {
-    return NextResponse.json({ received: true, skipped: 'not a payment event' })
+    return NextResponse.json({ received: true, skipped: 'not a payment event' }, { status: 200 })
   }
 
   const paymentId = 
     notification.data?.id || 
+    (notification as { id?: string | number }).id ||
     request.nextUrl.searchParams.get('data.id') || 
     request.nextUrl.searchParams.get('id')
 
   if (!paymentId) {
-    return NextResponse.json({ error: 'Missing payment id' }, { status: 400 })
+    return NextResponse.json({ received: true, skipped: 'missing_payment_id' }, { status: 200 })
   }
 
   // ── Verificar firma usando el secret de la plataforma (para webhooks de APP con x-signature) ─
@@ -332,28 +336,30 @@ export async function POST(request: NextRequest) {
 
   if (!payment) {
     console.error('[MP Webhook] Could not fetch payment:', paymentId)
-    return NextResponse.json({ error: 'Could not fetch payment' }, { status: 500 })
+    return NextResponse.json({ received: true, error: 'Could not fetch payment' }, { status: 200 })
   }
 
   // ── Buscar el booking por external_reference (o id de ítem) ──────────────
   const externalRef = payment.external_reference
 
-  // Si el pago corresponde a facturación mensual SaaS, reactivación o vinculación de club
-  if (
-    externalRef?.startsWith('saas_') ||
-    externalRef?.startsWith('card_link_') ||
-    externalRef?.startsWith('reactivation_')
-  ) {
-    console.log('[MP Webhook] Pago de facturación SaaS detectado por external_reference. Enrutando a handleBillingWebhook...')
-    return handleBillingWebhook(request, rawBody)
+  // ── Detección directa si external_reference es el ID de una factura (Checkout Pro manual) ─
+  let invoiceMatchId: string | null = null
+  if (externalRef) {
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalRef)) {
+      invoiceMatchId = externalRef
+    } else if (externalRef.startsWith('saas_invoice_')) {
+      invoiceMatchId = externalRef.replace('saas_invoice_', '').trim()
+    } else if (externalRef.includes('_inv_')) {
+      const match = externalRef.match(/_inv_([0-9a-fA-F-]+)/)
+      if (match) invoiceMatchId = match[1]
+    }
   }
 
-  // ── Detección directa si external_reference es el ID de una factura (Checkout Pro manual) ─
-  if (externalRef && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalRef)) {
+  if (invoiceMatchId) {
     const { data: invDirect } = await supabase
       .from('tenant_invoices')
       .select('id, tenant_id, status')
-      .eq('id', externalRef)
+      .eq('id', invoiceMatchId)
       .maybeSingle()
 
     if (invDirect) {
@@ -369,7 +375,7 @@ export async function POST(request: NextRequest) {
             status: 'PAID',
             paid_at: nowIso,
             mp_payment_id: paymentIdStr,
-            notes: `Abono mensual liquidado vía Checkout Pro (#${paymentIdStr})`
+            notes: `Abono mensual liquidado vía Mercado Pago (#${paymentIdStr})`
           })
           .eq('id', invDirect.id)
 
@@ -399,9 +405,29 @@ export async function POST(request: NextRequest) {
           invoice_id: invDirect.id,
           tenant_id: invDirect.tenant_id,
           status: 'PAID'
-        })
+        }, { status: 200 })
+      } else {
+        console.warn(`[MP Webhook] Factura SaaS ${invDirect.id} con pago no acreditado: ${payment.status} (${payment.status_detail})`)
+        return NextResponse.json({
+          received: true,
+          saas_payment: true,
+          invoice_id: invDirect.id,
+          tenant_id: invDirect.tenant_id,
+          status: payment.status,
+          status_detail: payment.status_detail
+        }, { status: 200 })
       }
     }
+  }
+
+  // Si el pago corresponde a facturación mensual SaaS con prefijos legacy
+  if (
+    externalRef?.startsWith('saas_') ||
+    externalRef?.startsWith('card_link_') ||
+    externalRef?.startsWith('reactivation_')
+  ) {
+    console.log('[MP Webhook] Pago de facturación SaaS detectado por external_reference. Enrutando a handleBillingWebhook...')
+    return handleBillingWebhook(request, rawBody)
   }
 
   // ── Detección de Cobros de Suscripción SaaS por Email de Club ─────────────
@@ -487,7 +513,16 @@ export async function POST(request: NextRequest) {
           saas_payment: true, 
           tenant_id: tenant.id, 
           status: 'PAID' 
-        })
+        }, { status: 200 })
+      } else {
+        console.warn(`[MP Webhook] Pago mensual SaaS no acreditado para club ${tenant.name}: ${payment.status} (${payment.status_detail})`)
+        return NextResponse.json({ 
+          received: true, 
+          saas_payment: true, 
+          tenant_id: tenant.id, 
+          status: payment.status,
+          status_detail: payment.status_detail
+        }, { status: 200 })
       }
     }
   }

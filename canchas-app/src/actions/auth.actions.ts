@@ -444,6 +444,9 @@ export async function registerClub(formData: FormData) {
         trial_days: 15,
         trial_activated_at: now.toISOString(),
         trial_ends_at: trialEndsAt,
+        billing_cycle_max_price_cents: 3000000, // Tarifa de referencia estándar: $30.000 ARS por turno
+        auto_debit_alerts: [],
+        auto_debit_attempts: [],
       }),
     })
     .select()
@@ -526,9 +529,30 @@ export async function registerClub(formData: FormData) {
       })
     }
 
-    await serviceClient
+    const { data: insertedCourts } = await serviceClient
       .from('courts')
       .insert(courtsToInsert)
+      .select('id')
+
+    // Sembrar reglas de precios base estándar ($30.000 ARS) para cada cancha creada
+    if (insertedCourts && insertedCourts.length > 0) {
+      const priceRulesToInsert = []
+      for (const court of insertedCourts) {
+        for (let day = 0; day <= 6; day++) {
+          priceRulesToInsert.push({
+            tenant_id: tenant.id,
+            court_id: court.id,
+            day_of_week: day,
+            start_time: '08:00:00',
+            end_time: '23:59:59',
+            price_cents: 3000000, // $30.000 ARS por turno estándar
+            deposit_pct: 30,
+            is_active: true,
+          })
+        }
+      }
+      await serviceClient.from('price_rules').insert(priceRulesToInsert)
+    }
   } catch (courtErr) {
     console.warn('[registerClub] Error sembrando canchas iniciales:', courtErr)
   }

@@ -2554,11 +2554,32 @@ export async function confirmAndActivateSubscriptionWithCard(
     }).catch(() => {})
   } catch {}
 
-  revalidatePath('/dashboard')
-  revalidatePath('/dashboard/plan')
-  revalidatePath('/onboarding/tarjeta')
-  revalidatePath('/billing/suspended')
-  revalidatePath('/superadmin')
+  // Si existe alguna factura UNPAID previa (por ejemplo saliendo de prueba o con cuota pendiente), cobrar automáticamente
+  try {
+    const { data: unpaidInv } = await serviceClient
+      .from('tenant_invoices')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .in('status', ['UNPAID', 'DRAFT'])
+      .order('due_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (unpaidInv) {
+      await executeTenantAutoDebit({
+        tenantId,
+        invoiceId: unpaidInv.id,
+      })
+    }
+  } catch (debitErr) {
+    console.warn('[confirmAndActivateSubscriptionWithCard] Error en cobro automático inmediato:', debitErr)
+  }
+
+  try { revalidatePath('/dashboard') } catch {}
+  try { revalidatePath('/dashboard/plan') } catch {}
+  try { revalidatePath('/onboarding/tarjeta') } catch {}
+  try { revalidatePath('/billing/suspended') } catch {}
+  try { revalidatePath('/superadmin') } catch {}
 
   return { success: true }
 }
@@ -3789,6 +3810,158 @@ export async function executeTenantAutoDebit(params: {
     message: `Intento de cobro automático #${attemptNum} rechazado: ${rejectReason}`,
   }
 }
+
+/**
+ * Garantiza que todo club que finalice su período de prueba de 15 días o arribe
+ * a su fecha de facturación mensual cuente con su factura emitida y su débito
+ * automático ejecutado de forma transparente sin intervención del dueño.
+ * Aplicable a TODOS los clubes nuevos sin excepción.
+ */
+export async function ensureTenantCurrentInvoiceAndAutoDebit(tenantId: string): Promise<{
+  invoiceCreated: boolean
+  autoDebited: boolean
+  paid: boolean
+  invoiceId?: string
+  amount?: number
+}> {
+  if (!tenantId || tenantId.startsWith('demo-')) {
+    return { invoiceCreated: false, autoDebited: false, paid: false }
+  }
+
+  const serviceClient = await createServiceClient()
+
+  // 1. Obtener club
+  const { data: tenant } = await serviceClient
+    .from('tenants')
+    .select('id, name, slug, created_at, description, subscription_status, is_active, base_slots_plan, mp_preapproval_id')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  if (!tenant) return { invoiceCreated: false, autoDebited: false, paid: false }
+
+  let meta: Record<string, unknown> = {}
+  if (tenant.description) {
+    try { meta = JSON.parse(tenant.description) } catch {}
+  }
+
+  const now = new Date()
+  let trialEnd: Date
+  if (meta.trial_ends_at && typeof meta.trial_ends_at === 'string') {
+    trialEnd = new Date(meta.trial_ends_at)
+  } else if (tenant.created_at) {
+    trialEnd = new Date(new Date(tenant.created_at).getTime() + 15 * 86400000)
+  } else {
+    trialEnd = new Date(now.getTime() + 15 * 86400000)
+  }
+
+  // Si aún está dentro de los 15 días gratis, no corresponde emitir factura mensual todavía
+  if (now < trialEnd) {
+    return { invoiceCreated: false, autoDebited: false, paid: false }
+  }
+
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  // 2. Verificar si ya existe factura para el período mensual actual
+  const { data: currentPeriodInvoices } = await serviceClient
+    .from('tenant_invoices')
+    .select('id, amount, due_date, status')
+    .eq('tenant_id', tenant.id)
+    .eq('month', currentMonth)
+    .eq('year', currentYear)
+    .limit(1)
+
+  let activeInvoice = currentPeriodInvoices && currentPeriodInvoices.length > 0 ? currentPeriodInvoices[0] : null
+  let invoiceCreated = false
+
+  // Si no existe factura para el período actual y ya finalizó el trial: emitirla
+  if (!activeInvoice) {
+    const { data: tenantCourts } = await serviceClient
+      .from('courts')
+      .select('id, is_active')
+      .eq('tenant_id', tenant.id)
+      .eq('is_active', true)
+
+    const { data: priceRules } = await serviceClient
+      .from('price_rules')
+      .select('price_cents, is_active')
+      .eq('tenant_id', tenant.id)
+      .eq('is_active', true)
+
+    let highestSlotArs = 0
+    const realCourts = tenantCourts?.length || 0
+    let slotCourts = 0
+    if (tenant.base_slots_plan) {
+      slotCourts = Number(tenant.base_slots_plan)
+    }
+    const courtsCount = Math.max(realCourts, slotCourts) || 1
+
+    for (const r of priceRules || []) {
+      const priceArs = Math.round(Number(r.price_cents || 0) / 100)
+      if (priceArs > highestSlotArs) highestSlotArs = priceArs
+    }
+    if (highestSlotArs === 0 && meta.billing_cycle_max_price_cents) {
+      highestSlotArs = Math.round(Number(meta.billing_cycle_max_price_cents) / 100)
+    }
+    if (highestSlotArs === 0) {
+      highestSlotArs = 30000 // Tarifa estándar de referencia ($30.000 ARS por turno)
+    }
+
+    const pricing = calculateClubSaaSFee(courtsCount, highestSlotArs, tenant.created_at, trialEnd, true)
+    const dueAmount = pricing.monthlyFeeArs
+    const dueDateIso = getArgentinaTodayIso()
+
+    const { data: newInv } = await serviceClient
+      .from('tenant_invoices')
+      .insert({
+        tenant_id: tenant.id,
+        month: currentMonth,
+        year: currentYear,
+        amount: dueAmount,
+        status: 'UNPAID',
+        reference_slot_price: pricing.highestSlotPriceArs,
+        slots_multiplier: pricing.multiplier,
+        due_date: dueDateIso,
+        notes: `Primer abono mensual SaaS tras 15 días gratis (${pricing.formulaDescription})`,
+      })
+      .select('id, amount, due_date, status')
+      .maybeSingle()
+
+    if (newInv) {
+      activeInvoice = newInv
+      invoiceCreated = true
+    }
+  }
+
+  if (!activeInvoice) {
+    return { invoiceCreated: false, autoDebited: false, paid: false }
+  }
+
+  // 3. Si la factura está impaga y el club tiene tarjeta vinculada, ejecutar débito automático
+  const hasCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+  if (activeInvoice.status !== 'PAID' && hasCard) {
+    const debitRes = await executeTenantAutoDebit({
+      tenantId: tenant.id,
+      invoiceId: activeInvoice.id,
+    })
+    return {
+      invoiceCreated,
+      autoDebited: debitRes.attempted,
+      paid: debitRes.status === 'PAID',
+      invoiceId: activeInvoice.id,
+      amount: Number(activeInvoice.amount) || 0,
+    }
+  }
+
+  return {
+    invoiceCreated,
+    autoDebited: false,
+    paid: activeInvoice.status === 'PAID',
+    invoiceId: activeInvoice.id,
+    amount: Number(activeInvoice.amount) || 0,
+  }
+}
+
 
 
 

@@ -8,7 +8,8 @@ import type { TenantSubscriptionStatus } from '@/types/database'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { calculateClubSaaSFee, calculateDaysUntilDueDate } from '@/lib/saas-pricing'
 import { verifySuperadminSessionToken } from '@/lib/auth-security'
-import { executeTenantAutoDebit } from '@/actions/saas-billing.actions'
+import { executeTenantAutoDebit, ensureTenantCurrentInvoiceAndAutoDebit } from '@/actions/saas-billing.actions'
+import { getArgentinaTodayIso } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -466,6 +467,23 @@ export default async function DashboardLayout({
           }
         } catch (autoErr) {
           console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
+        }
+      } else if (!unpaidInvoiceId && trialEndsAt && new Date() >= new Date(trialEndsAt) && tenantId && !tenantId.startsWith('demo-')) {
+        try {
+          const ensureRes = await ensureTenantCurrentInvoiceAndAutoDebit(tenantId)
+          if (ensureRes.paid) {
+            unpaidInvoiceId = null
+            unpaidInvoiceDueDate = null
+            unpaidInvoiceAmount = null
+            subscriptionStatus = 'ACTIVE'
+            isActive = true
+          } else if (ensureRes.invoiceCreated) {
+            unpaidInvoiceId = ensureRes.invoiceId || null
+            unpaidInvoiceDueDate = getArgentinaTodayIso()
+            unpaidInvoiceAmount = ensureRes.amount || null
+          }
+        } catch (ensureErr) {
+          console.warn('[Dashboard Layout] Error asegurando factura y cobro automático:', ensureErr)
         }
       }
 

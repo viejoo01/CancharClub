@@ -181,15 +181,16 @@ async function handleDunning(request: NextRequest) {
           if (highestSlotArs === 0 && meta.billing_cycle_max_price_cents) {
             highestSlotArs = Math.round(Number(meta.billing_cycle_max_price_cents) / 100)
           }
+          if (highestSlotArs === 0) {
+            highestSlotArs = 30000 // Tarifa estándar de referencia para clubes nuevos
+          }
 
           const hasPriceConfigured = highestSlotArs > 0
           const pricing = calculateClubSaaSFee(courtsCount, highestSlotArs, tenant.created_at, trialEnd, hasPriceConfigured)
           const dueAmount = pricing.monthlyFeeArs
 
-          // Si el club aún no cargó el precio de sus canchas, la cuota proporcional no puede determinarse.
-          // Se pospone la emisión de la factura mensual para no generar cobros de $0 ni mora injustificada.
-          if (dueAmount <= 0 || !pricing.hasPriceConfigured) {
-            console.log(`[SaaS Dunning] Club ${tenant.name || tenant.id}: tarifas de canchas no configuradas. Facturación mensual pospuesta.`)
+          if (dueAmount <= 0) {
+            console.log(`[SaaS Dunning] Club ${tenant.name || tenant.id}: importe no determinado. Facturación pospuesta.`)
             continue
           }
 

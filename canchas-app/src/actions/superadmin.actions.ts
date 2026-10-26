@@ -1164,6 +1164,8 @@ export async function createTenantFromSuperadmin(input: {
     const planId: SaaSPlanId = input.planId || getPlanByCourtsCount(courtsCount).id
     const baseSlots = planId === 'CHICO_1' ? 1 : planId === 'MEDIANO_2' ? 2 : planId === 'CONSOLIDADO_3_4' ? 4 : 5
     const now = new Date()
+    const trialEndsAt = new Date(now.getTime() + 15 * 86400000).toISOString()
+    const effectiveMaxPrice = Number(input.maxPrice) > 0 ? Number(input.maxPrice) : 30000
 
     const { data: tenant, error: insertErr } = await supabase
       .from('tenants')
@@ -1183,6 +1185,13 @@ export async function createTenantFromSuperadmin(input: {
           card_linked: true,
           created_by: 'SUPERADMIN',
           created_at: now.toISOString(),
+          is_trial: true,
+          trial_days: 15,
+          trial_activated_at: now.toISOString(),
+          trial_ends_at: trialEndsAt,
+          billing_cycle_max_price_cents: effectiveMaxPrice * 100,
+          auto_debit_alerts: [],
+          auto_debit_attempts: [],
         }),
       })
       .select()
@@ -1210,9 +1219,8 @@ export async function createTenantFromSuperadmin(input: {
     }
     const { data: insertedCourts } = await supabase.from('courts').insert(courtsToInsert).select()
 
-    // Reglas de precios base si se especificó monto
-    const maxPrice = Number(input.maxPrice) || 0
-    if (maxPrice > 0 && insertedCourts && insertedCourts.length > 0) {
+    // Reglas de precios base estándar garantizadas para todos los clubes nuevos sin excepción
+    if (insertedCourts && insertedCourts.length > 0) {
       const priceRulesToInsert = []
       for (const c of insertedCourts) {
         for (let day = 0; day <= 6; day++) {
@@ -1222,7 +1230,7 @@ export async function createTenantFromSuperadmin(input: {
             day_of_week: day,
             start_time: '08:00:00',
             end_time: '23:59:59',
-            price_cents: maxPrice * 100,
+            price_cents: effectiveMaxPrice * 100,
             deposit_pct: 30,
             is_active: true,
           })
@@ -1242,7 +1250,7 @@ export async function createTenantFromSuperadmin(input: {
         slug: tenant.slug,
         city: tenant.city,
         active_courts: courtsCount,
-        highest_slot_price: maxPrice,
+        highest_slot_price: effectiveMaxPrice,
         total_bookings: 0,
         mp_connected: false,
         status: 'ACTIVE',

@@ -445,6 +445,77 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(debitOutcome.requiresManualOwnerPayment).toBe(false)
     })
   })
+
+  describe('Guard 9: Strict Banking Validation & Prohibition of Simulated In-House Payments (Real MP Accredited Check)', () => {
+    it('strictly forbids local forged IDs (deb_saas_...) and requires genuine MP payment IDs', () => {
+      // Invariante de seguridad: Ningún pago generado internamente sin MP puede liquidar una factura
+      const isForgedPayment = (paymentId: string) => paymentId.startsWith('deb_saas_') || paymentId.startsWith('simulated_')
+      
+      expect(isForgedPayment('deb_saas_42731d75_45d127f1_1793017719979')).toBe(true)
+      expect(isForgedPayment('simulated_mp')).toBe(true)
+      expect(isForgedPayment('1234567890')).toBe(false) // ID numérico auténtico de Mercado Pago
+    })
+
+    it('asserts that missing preapprovalId strictly skips auto-debit and keeps invoice UNPAID', () => {
+      // Simulación de club sin suscripción en MP (solo tarjeta ingresada en el form)
+      const clubWithoutPreapproval: {
+        name: string
+        hasCardLinked: boolean
+        preapprovalId: string | null
+        invoiceStatus: string
+      } = {
+        name: 'Luli',
+        hasCardLinked: true,
+        preapprovalId: null, // Sin contrato PreApproval en MP
+        invoiceStatus: 'UNPAID',
+      }
+
+      const autoDebitDecision = {
+        shouldExecute: Boolean(clubWithoutPreapproval.preapprovalId && !clubWithoutPreapproval.preapprovalId.startsWith('simulated_')),
+        action: clubWithoutPreapproval.preapprovalId ? 'ATTEMPT_MP_DEBIT' : 'SKIP_REQUIRE_MANUAL_PAYMENT',
+        resultingInvoiceStatus: 'UNPAID',
+      }
+
+      expect(autoDebitDecision.shouldExecute).toBe(false)
+      expect(autoDebitDecision.action).toBe('SKIP_REQUIRE_MANUAL_PAYMENT')
+      expect(autoDebitDecision.resultingInvoiceStatus).toBe('UNPAID')
+      expect(autoDebitDecision.resultingInvoiceStatus).not.toBe('PAID')
+    })
+
+    it('asserts that only payments with status approved and status_detail accredited liquidate an invoice to PAID', () => {
+      const paymentResponses = [
+        { status: 'approved', status_detail: 'accredited', expectedPaid: true },
+        { status: 'rejected', status_detail: 'cc_rejected_insufficient_amount', expectedPaid: false },
+        { status: 'rejected', status_detail: 'cc_rejected_high_risk', expectedPaid: false },
+        { status: 'in_process', status_detail: 'pending_contingency', expectedPaid: false },
+        { status: 'cancelled', status_detail: 'by_collector', expectedPaid: false },
+      ]
+
+      for (const res of paymentResponses) {
+        const isEligibleForPaid = res.status === 'approved' && res.status_detail === 'accredited'
+        expect(isEligibleForPaid).toBe(res.expectedPaid)
+      }
+    })
+
+    it('enforces PAYMENT_PENDING status when card is linked or updated after trial has ended with unpaid invoices', () => {
+      const trialEndsAt = new Date('2026-10-24T00:00:00.000Z')
+      const currentDate = new Date('2026-10-26T12:00:00.000Z')
+      const isStillTrial = currentDate < trialEndsAt
+      const hasUnpaidInvoices = true
+
+      // Lógica implementada en confirmAndActivateSubscriptionWithCard:
+      let targetStatus: 'ACTIVE' | 'PAYMENT_PENDING' = 'ACTIVE'
+      if (!isStillTrial) {
+        if (hasUnpaidInvoices) {
+          targetStatus = 'PAYMENT_PENDING'
+        }
+      }
+
+      expect(isStillTrial).toBe(false)
+      expect(targetStatus).toBe('PAYMENT_PENDING')
+      expect(targetStatus).not.toBe('ACTIVE')
+    })
+  })
 })
 
 

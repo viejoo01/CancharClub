@@ -60,7 +60,7 @@ export default async function BillingDashboardPage({ searchParams }: BillingPage
   // Obtener facturas del club
   const { data: invoices } = await serviceClient
     .from('tenant_invoices')
-    .select('id, amount, status, month, year, billing_period, due_date, paid_at, created_at')
+    .select('*')
     .eq('tenant_id', tenant.id)
     .order('created_at', { ascending: false })
 

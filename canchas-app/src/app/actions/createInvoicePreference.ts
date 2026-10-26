@@ -54,7 +54,7 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
   // 3. Consultar la factura impaga
   const { data: invoice, error: invoiceErr } = await serviceClient
     .from('tenant_invoices')
-    .select('id, amount, status, month, year, billing_period, due_date, created_at')
+    .select('*')
     .eq('id', invoiceId)
     .eq('tenant_id', tenant.id)
     .maybeSingle()

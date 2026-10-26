@@ -348,6 +348,94 @@ export async function POST(request: NextRequest) {
     return handleBillingWebhook(request, rawBody)
   }
 
+  // ── Detección de Cobros de Suscripción SaaS por Email de Club ─────────────
+  const payerEmail = payment.payer?.email
+  const isBookingExplicit = Boolean(
+    externalRef?.startsWith('cancharclub_booking_') || 
+    externalRef?.startsWith('booking_') ||
+    externalRef?.startsWith('tournament_team_')
+  )
+
+  if (payerEmail && !isBookingExplicit) {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, name')
+      .eq('email', payerEmail)
+      .maybeSingle()
+
+    if (tenant) {
+      console.log(`[MP Webhook] Pago mensual SaaS detectado para club ${tenant.name || tenant.id} (payer: ${payerEmail})`)
+      
+      // Validar aprobación bancaria estricta
+      if (payment.status === 'approved' && payment.status_detail === 'accredited') {
+        const nowIso = new Date().toISOString()
+        const paymentIdStr = String(payment.id)
+
+        // 1. Buscar y liquidar la factura pendiente más antigua
+        const { data: unpaidInvoices } = await supabase
+          .from('tenant_invoices')
+          .select('id')
+          .eq('tenant_id', tenant.id)
+          .in('status', ['UNPAID', 'DRAFT'])
+          .order('due_date', { ascending: true })
+          .limit(1)
+
+        const targetInvoiceId = unpaidInvoices?.[0]?.id
+
+        if (targetInvoiceId) {
+          await supabase
+            .from('tenant_invoices')
+            .update({
+              status: 'PAID',
+              paid_at: nowIso,
+              mp_payment_id: paymentIdStr,
+              notes: `Cuota mensual liquidada vía Webhook Mercado Pago (#${paymentIdStr})`
+            })
+            .eq('id', targetInvoiceId)
+        } else {
+          await supabase
+            .from('tenant_invoices')
+            .update({
+              status: 'PAID',
+              paid_at: nowIso,
+              mp_payment_id: paymentIdStr
+            })
+            .eq('tenant_id', tenant.id)
+            .eq('status', 'UNPAID')
+        }
+
+        // 2. Reactivar / Mantener el club activo
+        await supabase
+          .from('tenants')
+          .update({ 
+            subscription_status: 'ACTIVE',
+            is_active: true,
+            current_balance: 0,
+            updated_at: nowIso
+          })
+          .eq('id', tenant.id)
+
+        // 3. Registrar en processed_payments para idempotencia
+        await supabase
+          .from('processed_payments')
+          .upsert({
+            payment_id: paymentIdStr,
+            source: 'saas_webhook',
+            tenant_id: tenant.id,
+            amount_cents: Math.round((Number(payment.transaction_amount) || 0) * 100),
+            processed_at: nowIso
+          }, { onConflict: 'payment_id' })
+
+        return NextResponse.json({ 
+          received: true, 
+          saas_payment: true, 
+          tenant_id: tenant.id, 
+          status: 'PAID' 
+        })
+      }
+    }
+  }
+
   // Si el pago corresponde a una inscripción a torneo
   if (externalRef?.startsWith('tournament_team_')) {
     const teamId = externalRef.replace('tournament_team_', '').trim()

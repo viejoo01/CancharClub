@@ -478,6 +478,18 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
       }
     }
 
+    // Si no vino tenantId en external_reference, buscar por payer_email de Mercado Pago
+    if (!tenantId && payment.payer?.email) {
+      const { data: tByEmail } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('email', payment.payer.email)
+        .maybeSingle()
+      if (tByEmail) {
+        tenantId = tByEmail.id
+      }
+    }
+
     // BLINDAJE MULTI-TENANT: Validar que el tenant_id sea un UUID legítimo y exista
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId || '')
     if (!tenantId || !isUUID) {

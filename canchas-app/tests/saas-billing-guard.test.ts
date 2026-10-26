@@ -642,6 +642,118 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(resultApproved.invoiceStatus).toBe('PAID')
     })
   })
+
+  describe('Guard 11: Webhook Payment Reconciliation by Tenant Email', () => {
+    interface WebhookPaymentPayload {
+      id: number | string
+      status: string
+      status_detail: string
+      payer?: { email?: string }
+    }
+
+    interface SimulatedTenant {
+      id: string
+      email: string
+      subscription_status: string
+    }
+
+    interface SimulatedInvoice {
+      id: string
+      tenant_id: string
+      status: 'UNPAID' | 'PAID'
+      due_date: string
+      mp_payment_id?: string
+      paid_at?: string
+    }
+
+    function processWebhookPayment(
+      payment: WebhookPaymentPayload,
+      tenants: SimulatedTenant[],
+      invoices: SimulatedInvoice[]
+    ): {
+      processed: boolean
+      liquidatedInvoiceId?: string
+      tenantStatus?: string
+    } {
+      if (payment.status !== 'approved' || payment.status_detail !== 'accredited') {
+        return { processed: false }
+      }
+
+      const payerEmail = payment.payer?.email
+      if (!payerEmail) return { processed: false }
+
+      const tenant = tenants.find(t => t.email.toLowerCase() === payerEmail.toLowerCase())
+      if (!tenant) return { processed: false }
+
+      const unpaidInvoices = invoices
+        .filter(inv => inv.tenant_id === tenant.id && inv.status === 'UNPAID')
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+
+      if (unpaidInvoices.length > 0) {
+        const target = unpaidInvoices[0]
+        target.status = 'PAID'
+        target.paid_at = new Date().toISOString()
+        target.mp_payment_id = String(payment.id)
+        tenant.subscription_status = 'ACTIVE'
+
+        return {
+          processed: true,
+          liquidatedInvoiceId: target.id,
+          tenantStatus: tenant.subscription_status,
+        }
+      }
+
+      return { processed: true, tenantStatus: tenant.subscription_status }
+    }
+
+    it('liquidates the oldest unpaid invoice and sets tenant to ACTIVE when webhook receives approved and accredited payment', () => {
+      const tenants: SimulatedTenant[] = [
+        { id: 'tenant-100', email: 'club.luli@gmail.com', subscription_status: 'PAYMENT_PENDING' }
+      ]
+      const invoices: SimulatedInvoice[] = [
+        { id: 'inv-octubre', tenant_id: 'tenant-100', status: 'UNPAID', due_date: '2026-10-24' },
+        { id: 'inv-noviembre', tenant_id: 'tenant-100', status: 'UNPAID', due_date: '2026-11-24' },
+      ]
+
+      const payment: WebhookPaymentPayload = {
+        id: '9988776655',
+        status: 'approved',
+        status_detail: 'accredited',
+        payer: { email: 'club.luli@gmail.com' }
+      }
+
+      const result = processWebhookPayment(payment, tenants, invoices)
+
+      expect(result.processed).toBe(true)
+      expect(result.liquidatedInvoiceId).toBe('inv-octubre')
+      expect(invoices[0].status).toBe('PAID')
+      expect(invoices[0].mp_payment_id).toBe('9988776655')
+      expect(invoices[1].status).toBe('UNPAID') // Solo liquida la más antigua
+      expect(tenants[0].subscription_status).toBe('ACTIVE')
+    })
+
+    it('does not touch invoice or tenant if payment is rejected or pending', () => {
+      const tenants: SimulatedTenant[] = [
+        { id: 'tenant-100', email: 'club.luli@gmail.com', subscription_status: 'PAYMENT_PENDING' }
+      ]
+      const invoices: SimulatedInvoice[] = [
+        { id: 'inv-octubre', tenant_id: 'tenant-100', status: 'UNPAID', due_date: '2026-10-24' }
+      ]
+
+      const payment: WebhookPaymentPayload = {
+        id: '9988776655',
+        status: 'rejected',
+        status_detail: 'cc_rejected_insufficient_amount',
+        payer: { email: 'club.luli@gmail.com' }
+      }
+
+      const result = processWebhookPayment(payment, tenants, invoices)
+
+      expect(result.processed).toBe(false)
+      expect(invoices[0].status).toBe('UNPAID')
+      expect(tenants[0].subscription_status).toBe('PAYMENT_PENDING')
+    })
+  })
 })
 
 

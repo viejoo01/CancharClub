@@ -3,9 +3,12 @@
 -- Fecha: 2026-10-26
 -- =============================================================================
 
--- 1. Agregar campo last_failed_attempt_at en tenant_invoices si no existe
+-- 1. Agregar campo last_failed_attempt_at y billing_period en tenant_invoices si no existen
 ALTER TABLE public.tenant_invoices 
 ADD COLUMN IF NOT EXISTS last_failed_attempt_at TIMESTAMPTZ;
+
+ALTER TABLE public.tenant_invoices 
+ADD COLUMN IF NOT EXISTS billing_period TEXT;
 
 -- 1.1 Agregar columnas para persistencia de tarjeta en tenants
 ALTER TABLE public.tenants 

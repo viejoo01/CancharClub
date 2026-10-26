@@ -3576,6 +3576,23 @@ export async function executeTenantAutoDebit(params: {
       })
       .eq('id', tenantId)
 
+    try {
+      await serviceClient.from('auto_debit_attempts').insert({
+        tenant_id: tenantId,
+        invoice_id: targetInvoice.id,
+        attempt_number: attemptNum,
+        status: 'FAILED',
+        failure_reason: rejectReason
+      })
+    } catch {}
+
+    try {
+      await serviceClient.from('tenant_invoices').update({
+        status: 'UNPAID',
+        last_failed_attempt_at: now.toISOString()
+      }).eq('id', targetInvoice.id)
+    } catch {}
+
     if (attemptNum >= 2) {
       await recordAutoDebitAlertInternal(serviceClient, {
         tenantId,
@@ -3873,6 +3890,23 @@ export async function executeTenantAutoDebit(params: {
           description: JSON.stringify(meta),
         })
         .eq('id', tenantId)
+
+      try {
+        await serviceClient.from('auto_debit_attempts').insert({
+          tenant_id: tenantId,
+          invoice_id: targetInvoice.id,
+          attempt_number: attemptNum,
+          status: 'FAILED',
+          failure_reason: rejectReason
+        })
+      } catch {}
+
+      try {
+        await serviceClient.from('tenant_invoices').update({
+          status: 'UNPAID',
+          last_failed_attempt_at: now.toISOString()
+        }).eq('id', targetInvoice.id)
+      } catch {}
 
       if (attemptNum >= 2) {
         await recordAutoDebitAlertInternal(serviceClient, {

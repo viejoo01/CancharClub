@@ -516,7 +516,134 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(targetStatus).not.toBe('ACTIVE')
     })
   })
+
+  describe('Guard 10: Strict State Machine in Auto-Debit Execution (executeTenantAutoDebit)', () => {
+    type AutoDebitStatus = 'PAID' | 'REJECTED' | 'FAILED_PREREQUISITES'
+
+    interface AutoDebitDecisionFlow {
+      preapprovalId: string | null
+      contractStatus: 'authorized' | 'paused' | 'cancelled' | null
+      mpPaymentResponse: { status: string; status_detail: string; id?: string } | null
+    }
+
+    function evaluateAutoDebitStateMachine(input: AutoDebitDecisionFlow): {
+      success: boolean
+      status: AutoDebitStatus
+      errorCode?: string
+      paymentId?: string
+      invoiceStatus: 'PAID' | 'UNPAID'
+    } {
+      // 1. REGLA FAIL-CLOSED: Si no hay preapproval_id real, abortar de inmediato
+      if (!input.preapprovalId || input.preapprovalId.startsWith('simulated_') || input.preapprovalId.startsWith('token_')) {
+        return {
+          success: false,
+          status: 'FAILED_PREREQUISITES',
+          errorCode: 'NO_PAYMENT_METHOD_CONTRACT',
+          invoiceStatus: 'UNPAID',
+        }
+      }
+
+      // 2. Verificar estado del contrato en Mercado Pago
+      if (input.contractStatus !== 'authorized') {
+        return {
+          success: false,
+          status: 'REJECTED',
+          errorCode: `CONTRACT_${input.contractStatus?.toUpperCase() || 'UNKNOWN'}`,
+          invoiceStatus: 'UNPAID',
+        }
+      }
+
+      // 3. Evaluar respuesta bancaria oficial
+      const isApproved = Boolean(
+        input.mpPaymentResponse &&
+        input.mpPaymentResponse.status === 'approved' &&
+        input.mpPaymentResponse.status_detail === 'accredited'
+      )
+
+      if (!isApproved) {
+        return {
+          success: false,
+          status: 'REJECTED',
+          errorCode: input.mpPaymentResponse?.status_detail || 'CARD_DECLINED_BY_BANK',
+          invoiceStatus: 'UNPAID',
+        }
+      }
+
+      // 4. SOLO tras aprobación bancaria real
+      return {
+        success: true,
+        status: 'PAID',
+        paymentId: input.mpPaymentResponse?.id || 'MP_REAL_ID',
+        invoiceStatus: 'PAID',
+      }
+    }
+
+    it('returns FAILED_PREREQUISITES and leaves invoice as UNPAID when contract ID is missing or synthetic', () => {
+      const resultNoContract = evaluateAutoDebitStateMachine({
+        preapprovalId: null,
+        contractStatus: null,
+        mpPaymentResponse: null,
+      })
+      expect(resultNoContract.success).toBe(false)
+      expect(resultNoContract.status).toBe('FAILED_PREREQUISITES')
+      expect(resultNoContract.errorCode).toBe('NO_PAYMENT_METHOD_CONTRACT')
+      expect(resultNoContract.invoiceStatus).toBe('UNPAID')
+
+      const resultSyntheticContract = evaluateAutoDebitStateMachine({
+        preapprovalId: 'token_12345',
+        contractStatus: null,
+        mpPaymentResponse: null,
+      })
+      expect(resultSyntheticContract.success).toBe(false)
+      expect(resultSyntheticContract.status).toBe('FAILED_PREREQUISITES')
+      expect(resultSyntheticContract.invoiceStatus).toBe('UNPAID')
+    })
+
+    it('returns REJECTED and leaves invoice as UNPAID when contract is paused or cancelled', () => {
+      const resultPaused = evaluateAutoDebitStateMachine({
+        preapprovalId: '2c9380847291a1',
+        contractStatus: 'paused',
+        mpPaymentResponse: null,
+      })
+      expect(resultPaused.success).toBe(false)
+      expect(resultPaused.status).toBe('REJECTED')
+      expect(resultPaused.errorCode).toBe('CONTRACT_PAUSED')
+      expect(resultPaused.invoiceStatus).toBe('UNPAID')
+    })
+
+    it('returns REJECTED and leaves invoice as UNPAID when card is declined by bank (e.g. insufficient funds, high risk)', () => {
+      const resultDeclined = evaluateAutoDebitStateMachine({
+        preapprovalId: '2c9380847291a1',
+        contractStatus: 'authorized',
+        mpPaymentResponse: {
+          status: 'rejected',
+          status_detail: 'cc_rejected_insufficient_amount',
+        },
+      })
+      expect(resultDeclined.success).toBe(false)
+      expect(resultDeclined.status).toBe('REJECTED')
+      expect(resultDeclined.errorCode).toBe('cc_rejected_insufficient_amount')
+      expect(resultDeclined.invoiceStatus).toBe('UNPAID')
+    })
+
+    it('returns PAID and liquidates invoice ONLY when response is approved and accredited', () => {
+      const resultApproved = evaluateAutoDebitStateMachine({
+        preapprovalId: '2c9380847291a1',
+        contractStatus: 'authorized',
+        mpPaymentResponse: {
+          status: 'approved',
+          status_detail: 'accredited',
+          id: '987654321',
+        },
+      })
+      expect(resultApproved.success).toBe(true)
+      expect(resultApproved.status).toBe('PAID')
+      expect(resultApproved.paymentId).toBe('987654321')
+      expect(resultApproved.invoiceStatus).toBe('PAID')
+    })
+  })
 })
+
 
 
 

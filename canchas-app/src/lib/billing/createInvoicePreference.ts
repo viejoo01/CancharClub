@@ -25,6 +25,10 @@ export async function createInvoicePreference(invoice: InvoiceForPreference) {
         currency_id: 'ARS'
       }],
       external_reference: invoice.id,
+      payment_methods: {
+        installments: 1,
+        default_installments: 1
+      },
       back_urls: {
         success: `${appUrl}/dashboard/billing?status=success`,
         failure: `${appUrl}/dashboard/billing?status=failure`

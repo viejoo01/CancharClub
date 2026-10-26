@@ -113,6 +113,10 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
           name: tenant.name || 'Club'
         },
         external_reference: invoice.id,
+        payment_methods: {
+          installments: 1,
+          default_installments: 1
+        },
         back_urls: {
           success: `${appUrl}/dashboard/billing?payment=success&invoice=${invoice.id}`,
           failure: `${appUrl}/dashboard/billing?payment=failure&invoice=${invoice.id}`,

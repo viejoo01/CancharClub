@@ -928,6 +928,10 @@ export async function createTenantInvoicePreference(tenantId: string, invoiceId?
           }
         ],
         external_reference: externalRef,
+        payment_methods: {
+          installments: 1,
+          default_installments: 1,
+        },
         back_urls: {
           success: `${appUrl}/dashboard?billing_success=true`,
           pending: `${appUrl}/billing/suspended?pending=true`,
@@ -3053,6 +3057,10 @@ export async function createReactivationPreferenceAction(tenantId: string, overr
           }
         ],
         external_reference: externalRef,
+        payment_methods: {
+          installments: 1,
+          default_installments: 1,
+        },
         back_urls: {
           success: `${appUrl}/dashboard/plan?reactivation_success=true`,
           pending: `${appUrl}/dashboard/plan?reactivation_pending=true`,

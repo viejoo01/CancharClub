@@ -7,6 +7,13 @@
 ALTER TABLE public.tenant_invoices 
 ADD COLUMN IF NOT EXISTS last_failed_attempt_at TIMESTAMPTZ;
 
+-- 1.1 Agregar columnas para persistencia de tarjeta en tenants
+ALTER TABLE public.tenants 
+ADD COLUMN IF NOT EXISTS card_brand TEXT;
+
+ALTER TABLE public.tenants 
+ADD COLUMN IF NOT EXISTS card_linked BOOLEAN DEFAULT false;
+
 -- 2. Tabla de auditoría e historial de intentos de cobro automático (Auto-Debit State Machine)
 CREATE TABLE IF NOT EXISTS public.auto_debit_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

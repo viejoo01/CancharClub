@@ -1400,7 +1400,8 @@ export default function ClubPlanPage() {
                               </Badge>
                               <PayInvoiceButton
                                 invoiceId={inv.id}
-                                amount={isOverdue ? invReactivation.totalAmount : Number(inv.amount)}
+                                amount={Number(inv.amount)}
+                                dueDate={inv.due_date || inv.created_at}
                                 status={inv.status}
                                 className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
                               />

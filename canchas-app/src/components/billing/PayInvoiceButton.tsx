@@ -3,15 +3,17 @@
 import { useState } from 'react'
 import { CreditCard, Loader2, AlertCircle } from 'lucide-react'
 import { createInvoicePreference } from '@/app/actions/createInvoicePreference'
+import { calculateInvoiceSurcharge } from '@/lib/billing/dunning'
 
 export interface PayInvoiceButtonProps {
   invoiceId: string
   amount: number
+  dueDate?: string | Date | null
   status: 'UNPAID' | 'PAID' | string
   className?: string
 }
 
-export function PayInvoiceButton({ invoiceId, amount, status, className }: PayInvoiceButtonProps) {
+export function PayInvoiceButton({ invoiceId, amount, dueDate, status, className }: PayInvoiceButtonProps) {
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -22,6 +24,8 @@ export function PayInvoiceButton({ invoiceId, amount, status, className }: PayIn
       </span>
     )
   }
+
+  const breakdown = calculateInvoiceSurcharge(amount, dueDate || new Date())
 
   const handlePayment = async () => {
     try {
@@ -35,7 +39,6 @@ export function PayInvoiceButton({ invoiceId, amount, status, className }: PayIn
         return
       }
 
-      // Redirigir al checkout oficial de Mercado Pago
       window.location.href = result.initPoint
     } catch {
       setErrorMessage('Ocurrió un error inesperado al procesar el pago')
@@ -45,7 +48,7 @@ export function PayInvoiceButton({ invoiceId, amount, status, className }: PayIn
   }
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex flex-col items-end gap-1">
       <button
         type="button"
         onClick={handlePayment}
@@ -55,15 +58,21 @@ export function PayInvoiceButton({ invoiceId, amount, status, className }: PayIn
         {loading ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Generando pago...</span>
+            <span>Generando enlace...</span>
           </>
         ) : (
           <>
             <CreditCard className="w-4 h-4" />
-            <span>Pagar ${Number(amount).toLocaleString('es-AR')}</span>
+            <span>Pagar ${breakdown.totalAmount.toLocaleString('es-AR')}</span>
           </>
         )}
       </button>
+
+      {breakdown.surchargeDays > 0 && (
+        <span className="text-[11px] font-medium text-amber-400">
+          Incluye +{breakdown.surchargePercentage}% de mora ({breakdown.surchargeDays} día{breakdown.surchargeDays > 1 ? 's' : ''})
+        </span>
+      )}
 
       {errorMessage && (
         <span className="inline-flex items-center gap-1 text-xs text-rose-400 font-medium">

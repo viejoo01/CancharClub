@@ -216,6 +216,7 @@ export default async function BillingDashboardPage({ searchParams }: BillingPage
                       <PayInvoiceButton 
                         invoiceId={invoice.id} 
                         amount={invoice.amount} 
+                        dueDate={invoice.due_date || invoice.created_at}
                         status={invoice.status} 
                       />
                     </td>

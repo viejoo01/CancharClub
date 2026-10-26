@@ -2,10 +2,13 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
+import { calculateInvoiceSurcharge } from '@/lib/billing/dunning'
 
 export interface CreatePreferenceResult {
   success: boolean
   initPoint?: string
+  totalAmount?: number
+  surchargeAmount?: number
   error?: string
 }
 
@@ -51,7 +54,7 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
   // 3. Consultar la factura impaga
   const { data: invoice, error: invoiceErr } = await serviceClient
     .from('tenant_invoices')
-    .select('id, amount, status, month, year, billing_period')
+    .select('id, amount, status, month, year, billing_period, due_date, created_at')
     .eq('id', invoiceId)
     .eq('tenant_id', tenant.id)
     .maybeSingle()
@@ -61,8 +64,13 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
   }
 
   if (invoice.status === 'PAID') {
-    return { success: false, error: 'La factura ya se encuentra pagada' }
+    return { success: false, error: 'La factura ya se encuentra saldada' }
   }
+
+  // 2. Calcular recargo dinámico por mora
+  const baseAmount = Number(invoice.amount)
+  const dueDate = invoice.due_date || invoice.created_at
+  const breakdown = calculateInvoiceSurcharge(baseAmount, dueDate)
 
   try {
     // 4. Crear la preferencia en Mercado Pago
@@ -75,17 +83,31 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
     const preference = new Preference(client)
     const periodStr = invoice.billing_period || (invoice.month && invoice.year ? `${invoice.month}/${invoice.year}` : 'Suscripción')
 
+    // Estructurar ítems para Mercado Pago
+    const items = [
+      {
+        id: invoice.id,
+        title: `CancharClub - Abono Mensual (${periodStr})`,
+        quantity: 1,
+        unit_price: breakdown.baseAmount,
+        currency_id: 'ARS'
+      }
+    ]
+
+    // Si devengó recargo (Día 8+), se agrega como ítem transparente
+    if (breakdown.surchargeDays > 0) {
+      items.push({
+        id: `${invoice.id}-mora`,
+        title: `Recargo por mora (${breakdown.surchargeDays} día${breakdown.surchargeDays > 1 ? 's' : ''} al 3% diario)`,
+        quantity: 1,
+        unit_price: breakdown.surchargeAmount,
+        currency_id: 'ARS'
+      })
+    }
+
     const response = await preference.create({
       body: {
-        items: [
-          {
-            id: invoice.id,
-            title: `CancharClub - Abono Mensual (${periodStr})`,
-            quantity: 1,
-            unit_price: Number(invoice.amount),
-            currency_id: 'ARS'
-          }
-        ],
+        items,
         payer: {
           email: tenant.email || user.email || 'club@cancharclub.com.ar',
           name: tenant.name || 'Club'
@@ -104,7 +126,7 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
     const initPoint = response.init_point || response.sandbox_init_point
 
     if (!initPoint) {
-      return { success: false, error: 'Mercado Pago no devolvió una URL de pago' }
+      return { success: false, error: 'Mercado Pago no devolvió la URL de cobro' }
     }
 
     await serviceClient
@@ -114,7 +136,9 @@ export async function createInvoicePreference(invoiceId: string): Promise<Create
 
     return {
       success: true,
-      initPoint
+      initPoint,
+      totalAmount: breakdown.totalAmount,
+      surchargeAmount: breakdown.surchargeAmount
     }
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Error al conectar con la pasarela de pagos'

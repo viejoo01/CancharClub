@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { calculateClubSaaSFee, calculateSaaSMultiplier, calculateReactivationFee } from '@/lib/saas-pricing'
 import { mapMpRejectionDetail } from '@/lib/card-validation'
+import { calculateInvoiceSurcharge } from '@/lib/billing/dunning'
 
 describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
   describe('Guard 1: Card Rejection & Payment Gateway Strictness', () => {
@@ -819,6 +820,72 @@ describe('SaaS Billing Critical Guard & Recurrence Prevention Tests', () => {
       expect(isApproved).toBe(true)
       expect(resultingInvoiceStatus).toBe('PAID')
       expect(resultingTenantStatus).toBe('ACTIVE')
+    })
+  })
+
+  describe('Guard 8: Dunning Ladder Surcharge Calculation (calculateInvoiceSurcharge)', () => {
+    it('freezes price with 0% surcharge during days 1 to 7 post-due date', () => {
+      const baseAmount = 100000
+      const now = new Date()
+
+      // Exact due date today (0 days overdue)
+      const dueToday = new Date(now.getTime() - 2 * 60 * 60 * 1000)
+      const resToday = calculateInvoiceSurcharge(baseAmount, dueToday)
+      expect(resToday.daysOverdue).toBe(0)
+      expect(resToday.surchargeDays).toBe(0)
+      expect(resToday.surchargePercentage).toBe(0)
+      expect(resToday.surchargeAmount).toBe(0)
+      expect(resToday.totalAmount).toBe(100000)
+
+      // 5 days overdue (within 1-7 days grace period)
+      const due5DaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000)
+      const res5Days = calculateInvoiceSurcharge(baseAmount, due5DaysAgo)
+      expect(res5Days.daysOverdue).toBe(5)
+      expect(res5Days.surchargeDays).toBe(0)
+      expect(res5Days.surchargePercentage).toBe(0)
+      expect(res5Days.surchargeAmount).toBe(0)
+      expect(res5Days.totalAmount).toBe(100000)
+
+      // 7 days overdue (last day of grace period)
+      const due7DaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const res7Days = calculateInvoiceSurcharge(baseAmount, due7DaysAgo)
+      expect(res7Days.daysOverdue).toBe(7)
+      expect(res7Days.surchargeDays).toBe(0)
+      expect(res7Days.surchargePercentage).toBe(0)
+      expect(res7Days.surchargeAmount).toBe(0)
+      expect(res7Days.totalAmount).toBe(100000)
+    })
+
+    it('applies 3% daily surcharge starting from day 8 inclusive', () => {
+      const baseAmount = 100000
+      const now = new Date()
+
+      // Day 8: 1 day of surcharge = 3%
+      const due8DaysAgo = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000)
+      const res8Days = calculateInvoiceSurcharge(baseAmount, due8DaysAgo)
+      expect(res8Days.daysOverdue).toBe(8)
+      expect(res8Days.surchargeDays).toBe(1)
+      expect(res8Days.surchargePercentage).toBe(3)
+      expect(res8Days.surchargeAmount).toBe(3000)
+      expect(res8Days.totalAmount).toBe(103000)
+
+      // Day 9: 2 days of surcharge = 6%
+      const due9DaysAgo = new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000)
+      const res9Days = calculateInvoiceSurcharge(baseAmount, due9DaysAgo)
+      expect(res9Days.daysOverdue).toBe(9)
+      expect(res9Days.surchargeDays).toBe(2)
+      expect(res9Days.surchargePercentage).toBe(6)
+      expect(res9Days.surchargeAmount).toBe(6000)
+      expect(res9Days.totalAmount).toBe(106000)
+
+      // Day 15: 8 days of surcharge = 24%
+      const due15DaysAgo = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000)
+      const res15Days = calculateInvoiceSurcharge(baseAmount, due15DaysAgo)
+      expect(res15Days.daysOverdue).toBe(15)
+      expect(res15Days.surchargeDays).toBe(8)
+      expect(res15Days.surchargePercentage).toBe(24)
+      expect(res15Days.surchargeAmount).toBe(24000)
+      expect(res15Days.totalAmount).toBe(124000)
     })
   })
 })

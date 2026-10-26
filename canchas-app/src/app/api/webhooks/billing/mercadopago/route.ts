@@ -159,8 +159,8 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
     if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
       const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
       if (!isValid) {
-        console.warn('[Billing Webhook] Firma X-Signature inválida — rechazando petición')
-        return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
+        console.warn('[Billing Webhook] Firma X-Signature inválida — descartando procesamiento de forma segura')
+        return NextResponse.json({ received: true, ignored: true, warning: 'Firma inválida' }, { status: 200 })
       }
     } else if (isProd && !xSignature) {
       console.warn('[Billing Webhook] Notificación recibida sin cabecera X-Signature. Procediendo bajo arquitectura Fail-Closed con validación estricta en API oficial de MP.')
@@ -171,13 +171,14 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
       notification.type === 'payment' ||
       notification.type === 'subscription_authorized_payment' ||
       notification.type === 'subscription_preapproval' ||
+      rawNotif.entity === 'preapproval' ||
       notification.action === 'payment.created' ||
       notification.action === 'payment.updated' ||
       notification.action === 'created' ||
       notification.action === 'updated'
 
     if (!isPaymentEvent) {
-      return NextResponse.json({ received: true, ignored: true, type: notification.type })
+      return NextResponse.json({ received: true, ignored: true, type: notification.type }, { status: 200 })
     }
 
     const paymentId = notification.data?.id

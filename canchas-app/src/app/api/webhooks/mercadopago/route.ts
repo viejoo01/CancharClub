@@ -192,7 +192,8 @@ export async function POST(request: NextRequest) {
   const isSubscriptionEvent =
     notification.type === 'subscription_authorized_payment' ||
     notification.type === 'subscription_preapproval' ||
-    (typeof queryType === 'string' && queryType.includes('subscription'))
+    rawNotif.entity === 'preapproval' ||
+    (typeof queryType === 'string' && (queryType.includes('subscription') || queryType.includes('preapproval')))
 
   if (isSubscriptionEvent) {
     console.log('[MP Webhook] Evento de suscripción SaaS detectado en webhook general. Enrutando a handleBillingWebhook...')
@@ -226,8 +227,8 @@ export async function POST(request: NextRequest) {
   if (xSignature && webhookSecret && webhookSecret !== 'test_webhook_secret') {
     const isValid = verifyMercadoPagoSignature(request, rawBody, webhookSecret)
     if (!isValid) {
-      console.warn('[MP Webhook] Firma inválida — descartando notificación maliciosa')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      console.warn('[MP Webhook] Firma inválida o no coincidente — descartando procesamiento de forma segura')
+      return NextResponse.json({ received: true, ignored: true, warning: 'Invalid signature' }, { status: 200 })
     }
   } else if (process.env.NODE_ENV === 'production' && !webhookSecret) {
     console.error('[MP Webhook] ALERTA DE SEGURIDAD: MP_WEBHOOK_SECRET no configurado en producción')

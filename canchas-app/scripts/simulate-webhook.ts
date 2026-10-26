@@ -141,6 +141,46 @@ async function runWebhookSimulation() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // TEST 3.5: Simulación oficial del Panel de Desarrollador de MP (id 123456)
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 3.5. Simulación del Panel de Desarrollador de Mercado Pago ---')
+  try {
+    // 1. Simulación suscripciones / preapproval (exactamente lo que envía el dashboard de MP)
+    const reqSimSub = createMockRequest('http://localhost:3000/api/webhooks/mercadopago', {
+      action: 'updated',
+      application_id: '3674151516054628',
+      data: { id: '123456' },
+      date: '2021-11-01T02:02:02Z',
+      entity: 'preapproval',
+      id: '123456',
+      type: 'subscription_preapproval',
+      version: 8
+    })
+    const resSimSub = await POST(reqSimSub)
+    const jsonSimSub = await resSimSub.json()
+
+    assert(resSimSub.status === 200, 'Simulación subscription_preapproval retorna HTTP 200 OK')
+    assert(jsonSimSub.received === true, 'Simulación subscription_preapproval incluye received: true')
+    assert(jsonSimSub.simulated === true, 'Simulación subscription_preapproval identificada como simulada')
+
+    // 2. Simulación pagos legacy
+    const reqSimPay = createMockRequest('http://localhost:3000/api/webhooks/mercadopago', {
+      action: 'payment.created',
+      data: { id: '123456' },
+      type: 'payment'
+    })
+    const resSimPay = await POST(reqSimPay)
+    const jsonSimPay = await resSimPay.json()
+
+    assert(resSimPay.status === 200, 'Simulación de pago retorna HTTP 200 OK')
+    assert(jsonSimPay.received === true, 'Simulación de pago incluye received: true')
+    assert(jsonSimPay.simulated === true, 'Simulación de pago identificada como simulada')
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    assert(false, 'Manejo de simulación del panel de desarrollador de MP', msg)
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // TEST 4: Prueba HTTP contra servidor local (si está activo en http://localhost:3000)
   // ─────────────────────────────────────────────────────────────────────────────
   console.log('\n--- 4. Conectividad HTTP Local (http://localhost:3000) ---')

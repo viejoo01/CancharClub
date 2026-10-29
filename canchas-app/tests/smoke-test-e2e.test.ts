@@ -62,16 +62,16 @@ vi.mock('@/lib/supabase/server', async (importOriginal) => {
               amount_cents: amountCents,
               payment_method: 'cash',
               payment_type: 'BALANCE',
-              payment_date: '2026-10-28',
-              registered_at: '2026-10-28T20:30:00-03:00',
+              payment_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date()),
+              registered_at: new Date().toISOString(),
               notes: (args.p_notes as string) || null,
             })
             await client.from('bookings').update({
               status: 'confirmed_cash',
               deposit_cents: 3000000,
               staff_deposit_amount_cents: 3000000,
-              paid_at: '2026-10-28T20:30:00-03:00',
-              balance_paid_at: '2026-10-28T20:30:00-03:00',
+              paid_at: new Date().toISOString(),
+              balance_paid_at: new Date().toISOString(),
             }).eq('id', args.p_booking_id as string)
 
             return {
@@ -154,8 +154,8 @@ vi.mock('@/lib/auth-security', async (importOriginal) => {
 describe('Smoke Test E2E: Circuito Integral CancharClub (Código y BD Real)', () => {
   let supabase: SupabaseClient
   const canonicalSlug = 'club-demo-smoke'
-  const bookingDate = '2026-10-28'
-  const startsAt = '2026-10-28T20:00:00-03:00' // Turno 20:00 hs
+  const bookingDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date())
+  const startsAt = `${bookingDate}T20:00:00-03:00` // Turno 20:00 hs
   let testTenantId: string
   let testCourtId: string
   let firstBookingId: string

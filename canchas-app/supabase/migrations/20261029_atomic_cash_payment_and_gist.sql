@@ -121,7 +121,7 @@ BEGIN
 
   -- C. Blindaje contra cobro de turnos de abonados fijos
   IF v_booking.recurring_slot_id IS NOT NULL 
-     OR v_booking.payment_method = 'abono_fijo' 
+     OR v_booking.payment_method::text = 'abono_fijo' 
      OR (v_booking.staff_notes IS NOT NULL AND v_booking.staff_notes ILIKE '%ABONO FIJO%') THEN
     RAISE EXCEPTION 'ABONO_FIJO_RESTRICTED: Este turno corresponde a un Abonado Fijo cubierto por mensualidad. El cobro del abono se realiza de forma única desde la sección Turnos Fijos.';
   END IF;
@@ -130,7 +130,7 @@ BEGIN
   -- REGLA DE INTEGRIDAD FINANCIERA:
   -- Si status = 'pending_deposit', ningún pago fue acreditado aún ($0 acreditado),
   -- por lo que el cliente adeuda la totalidad del valor de la cancha.
-  IF LOWER(v_booking.status) IN ('pending_deposit', 'pending_lock', 'pending') THEN
+  IF LOWER(v_booking.status::text) IN ('pending_deposit', 'pending_lock', 'pending') THEN
     SELECT COALESCE(SUM(amount_cents), 0)
     INTO v_total_accredited_cents
     FROM public.booking_payments
@@ -210,13 +210,13 @@ BEGIN
     deposit_cents = v_new_total_accredited_cents,
     staff_deposit_amount_cents = v_new_total_accredited_cents,
     payment_method = CASE
-      WHEN v_booking.payment_method IS NOT NULL AND v_booking.payment_method != 'cash' AND v_total_accredited_cents > 0
+      WHEN v_booking.payment_method IS NOT NULL AND v_booking.payment_method::text != 'cash' AND v_total_accredited_cents > 0
       THEN v_booking.payment_method
-      ELSE 'cash'
+      ELSE 'cash'::public.payment_method
     END,
     paid_at = COALESCE(v_booking.paid_at, v_now_timestamptz),
     balance_paid_at = CASE WHEN v_is_fully_paid THEN v_now_timestamptz ELSE v_booking.balance_paid_at END,
-    status = v_new_status,
+    status = v_new_status::public.booking_status,
     balance_due = ROUND((v_new_balance_due_cents::NUMERIC / 100.0), 2),
     staff_notes = v_updated_notes,
     updated_at = v_now_timestamptz

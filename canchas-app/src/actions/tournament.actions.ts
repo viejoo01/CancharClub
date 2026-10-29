@@ -67,6 +67,24 @@ export async function getTournaments(tenantId: string): Promise<Tournament[]> {
   }
 }
 
+function sanitizeTournamentDetails(
+  tour: TournamentWithDetails,
+  isStaff: boolean
+): TournamentWithDetails {
+  if (isStaff) return tour
+
+  return {
+    ...tour,
+    categories: tour.categories.map((cat) => ({
+      ...cat,
+      waitlists: (cat.waitlists || []).map((w) => ({
+        ...w,
+        phone: w.phone ? `${w.phone.slice(0, 4)}****${w.phone.slice(-2)}` : '',
+      })),
+    })),
+  }
+}
+
 /** Obtener un torneo por ID con categorías, equipos y partidos */
 export async function getTournamentById(tournamentId: string): Promise<TournamentWithDetails | null> {
   try {
@@ -74,7 +92,12 @@ export async function getTournamentById(tournamentId: string): Promise<Tournamen
 
     const cached = tournamentDetailsCache.get(tournamentId)
     if (cached && cached.expiresAt > Date.now()) {
-      return cached.data
+      let isStaff = false
+      if (cached.data.tenant_id) {
+        const auth = await assertTenantMember(cached.data.tenant_id)
+        isStaff = auth.authorized
+      }
+      return sanitizeTournamentDetails(cached.data, isStaff)
     }
 
     const supabase = await createServiceClient()
@@ -93,43 +116,81 @@ export async function getTournamentById(tournamentId: string): Promise<Tournamen
       .from('tournament_categories')
       .select('*')
       .eq('tournament_id', tournamentId)
+      .order('created_at', { ascending: true })
 
-    const fullCategories = await Promise.all(
-      (categories || []).map(async (cat) => {
-        const [{ data: teams }, { data: matches }, { data: waitlists }] = await Promise.all([
-          supabase
-            .from('tournament_teams')
-            .select('*')
-            .eq('category_id', cat.id)
-            .order('created_at', { ascending: true }),
-          supabase
-            .from('tournament_matches')
-            .select('*')
-            .eq('category_id', cat.id)
-            .order('match_number', { ascending: true }),
-          supabase
-            .from('tournament_waitlists')
-            .select('*')
-            .eq('category_id', cat.id)
-            .in('status', ['WAITING', 'NOTIFIED'])
-            .order('created_at', { ascending: true }),
-        ])
+    if (!categories || categories.length === 0) {
+      const emptyResult: TournamentWithDetails = {
+        ...(tournament as Tournament),
+        categories: [],
+      }
+      tournamentDetailsCache.set(tournamentId, { data: emptyResult, expiresAt: Date.now() + 60000 })
+      return emptyResult
+    }
 
-        return {
-          ...cat,
-          teams: (teams as TournamentTeam[]) || [],
-          matches: (matches as TournamentMatch[]) || [],
-          waitlists: (waitlists as TournamentWaitlistEntry[]) || [],
-        }
-      })
-    )
+    const categoryIds = categories.map((c) => c.id)
+
+    // 3. Ejecutar exactamente 3 consultas consolidadas en paralelo (Elimina el cuello de botella N+1)
+    const [teamsRes, matchesRes, waitlistsRes] = await Promise.all([
+      supabase
+        .from('tournament_teams')
+        .select('*')
+        .in('category_id', categoryIds)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('tournament_matches')
+        .select('*')
+        .in('category_id', categoryIds)
+        .order('match_number', { ascending: true }),
+      supabase
+        .from('tournament_waitlists')
+        .select('*')
+        .in('category_id', categoryIds)
+        .in('status', ['WAITING', 'NOTIFIED'])
+        .order('created_at', { ascending: true }),
+    ])
+
+    // 4. Agrupar en memoria por category_id
+    const teamsByCat = new Map<string, TournamentTeam[]>()
+    for (const team of (teamsRes.data || []) as TournamentTeam[]) {
+      const list = teamsByCat.get(team.category_id) || []
+      list.push(team)
+      teamsByCat.set(team.category_id, list)
+    }
+
+    const matchesByCat = new Map<string, TournamentMatch[]>()
+    for (const match of (matchesRes.data || []) as TournamentMatch[]) {
+      const list = matchesByCat.get(match.category_id) || []
+      list.push(match)
+      matchesByCat.set(match.category_id, list)
+    }
+
+    const waitlistsByCat = new Map<string, TournamentWaitlistEntry[]>()
+    for (const waitlist of (waitlistsRes.data || []) as TournamentWaitlistEntry[]) {
+      const list = waitlistsByCat.get(waitlist.category_id) || []
+      list.push(waitlist)
+      waitlistsByCat.set(waitlist.category_id, list)
+    }
+
+    // 5. Ensamblar estructura requerida
+    const fullCategories = (categories as TournamentCategory[]).map((cat) => ({
+      ...cat,
+      teams: teamsByCat.get(cat.id) || [],
+      matches: matchesByCat.get(cat.id) || [],
+      waitlists: waitlistsByCat.get(cat.id) || [],
+    }))
 
     const result: TournamentWithDetails = {
       ...(tournament as Tournament),
       categories: fullCategories,
     }
     tournamentDetailsCache.set(tournamentId, { data: result, expiresAt: Date.now() + 60000 })
-    return result
+
+    let isStaff = false
+    if (tournament.tenant_id) {
+      const auth = await assertTenantMember(tournament.tenant_id)
+      isStaff = auth.authorized
+    }
+    return sanitizeTournamentDetails(result, isStaff)
   } catch (err) {
     console.error('[getTournamentById] Error:', err)
     return null
@@ -1268,6 +1329,7 @@ export async function deleteTeam(teamId: string): Promise<{ success: boolean; er
             notified_at: new Date().toISOString(),
           })
           .eq('id', nextWaitlist.id)
+          .eq('status', 'WAITING')
 
         const { data: tourData } = await supabase
           .from('tournaments')
@@ -1405,9 +1467,12 @@ export async function createTournamentRegistrationPaymentPreference(teamId: stri
     }
 
     const tenantObj = catObj?.tournament?.tenant
-    const mpToken = tenantObj?.mp_access_token || process.env.MP_ACCESS_TOKEN || ''
+    const mpToken = tenantObj?.mp_access_token || ''
     if (!mpToken || mpToken.length < 10) {
-      return { success: false, error: 'El club no tiene conectada su cuenta de cobro de Mercado Pago todavía.' }
+      return { 
+        success: false, 
+        error: 'El club no tiene conectada su cuenta de cobro de Mercado Pago todavía. Por favor aboná la inscripción mediante Transferencia Bancaria al club.' 
+      }
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
@@ -1585,19 +1650,44 @@ export async function joinTournamentWaitlist(payload: {
 }
 
 /**
- * Obtener lista de espera de una categoría
+ * Obtener lista de espera de una categoría con protección de PII
  */
 export async function getTournamentWaitlists(categoryId: string): Promise<TournamentWaitlistEntry[]> {
   try {
     const supabase = await createServiceClient()
+    
+    // Validar autorización de tenant para determinar acceso a PII (teléfonos)
+    const { data: cat } = await supabase
+      .from('tournament_categories')
+      .select('id, tournament:tournaments(tenant_id)')
+      .eq('id', categoryId)
+      .maybeSingle()
+
+    const tenantObj = cat?.tournament as unknown as { tenant_id?: string } | null
+    const tenantId = tenantObj?.tenant_id
+
+    let isStaff = false
+    if (tenantId) {
+      const auth = await assertTenantMember(tenantId)
+      isStaff = auth.authorized
+    }
+
     const { data, error } = await supabase
       .from('tournament_waitlists')
       .select('*')
       .eq('category_id', categoryId)
       .order('created_at', { ascending: true })
 
-    if (error) return []
-    return (data as TournamentWaitlistEntry[]) || []
+    if (error || !data) return []
+    
+    return (data as TournamentWaitlistEntry[]).map((entry) => ({
+      ...entry,
+      phone: isStaff
+        ? entry.phone
+        : entry.phone
+        ? `${entry.phone.slice(0, 4)}****${entry.phone.slice(-2)}`
+        : '',
+    }))
   } catch {
     return []
   }
@@ -1615,11 +1705,21 @@ export async function promoteWaitlistEntryToTeam(waitlistId: string): Promise<{
     const supabase = await createServiceClient()
     const { data: entry } = await supabase
       .from('tournament_waitlists')
-      .select('*')
+      .select('*, category:tournament_categories(id, tournament:tournaments(tenant_id))')
       .eq('id', waitlistId)
       .maybeSingle()
 
     if (!entry) return { success: false, error: 'Registro de lista de espera no encontrado' }
+
+    const catObj = entry.category as unknown as { id?: string; tournament?: { tenant_id?: string } } | null
+    const tenantId = entry.tenant_id || catObj?.tournament?.tenant_id
+
+    if (tenantId) {
+      const auth = await assertTenantMember(tenantId)
+      if (!auth.authorized) {
+        return { success: false, error: auth.error || 'No tienes permisos para gestionar la lista de espera de este torneo' }
+      }
+    }
 
     // Inscribir oficialmente
     const res = await addTeamToCategory({
@@ -1634,7 +1734,7 @@ export async function promoteWaitlistEntryToTeam(waitlistId: string): Promise<{
       return { success: false, error: res.error || 'No se pudo inscribir el equipo' }
     }
 
-    // Actualizar estado de lista de espera a ENROLLED
+    // Actualizar estado de lista de espera a ENROLLED de forma atómica
     await supabase
       .from('tournament_waitlists')
       .update({ status: 'ENROLLED' })

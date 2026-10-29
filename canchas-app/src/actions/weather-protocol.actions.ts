@@ -127,7 +127,7 @@ export async function executeRainCancellation(params: {
 
     const { data: bookings, error: fetchErr } = await supabase
       .from('bookings')
-      .select('id, customer_name, customer_phone, deposit_cents, price_total_cents, booked_at, staff_notes, court_id, redis_lock_key, courts(id, name, sport, slot_duration_minutes)')
+      .select('id, status, customer_name, customer_phone, deposit_cents, price_total_cents, booked_at, staff_notes, court_id, redis_lock_key, courts(id, name, sport, slot_duration_minutes)')
       .eq('tenant_id', effectiveTenantId)
       .in('court_id', params.courtIds)
       .filter('booked_at', 'ov', `[${new Date(startWindow).toISOString()},${new Date(endWindow).toISOString()}]`)
@@ -237,7 +237,24 @@ export async function executeRainCancellation(params: {
         }
       }
 
-      const creditedAmount = Math.round((Number(b.deposit_cents) || 0) / 100)
+      // Solo se emite crédito si el turno estaba confirmado o pagado, o si se constató un pago en booking_payments.
+      // Queda terminantemente prohibido emitir créditos para reservas en 'pending_deposit' que jamás fueron cobradas.
+      const normalizedStatus = String((b as unknown as { status?: string }).status || '').toLowerCase()
+      const isConfirmedPaidStatus = ['confirmed', 'confirmed_cash', 'completed', 'deposit_paid'].includes(normalizedStatus)
+      
+      let eligibleForCredit = isConfirmedPaidStatus
+      if (!eligibleForCredit && normalizedStatus === 'pending_deposit') {
+        const { data: payRow } = await supabase
+          .from('booking_payments')
+          .select('id')
+          .eq('booking_id', b.id)
+          .limit(1)
+        if (payRow && payRow.length > 0) {
+          eligibleForCredit = true
+        }
+      }
+
+      const creditedAmount = eligibleForCredit ? Math.round((Number(b.deposit_cents) || 0) / 100) : 0
 
       // Acreditar saldo a favor en customer_credits con idempotencia estricta
       if (creditedAmount > 0) {

@@ -171,7 +171,7 @@ export async function loginWithEmail(formData: FormData) {
   // Buscar estrictamente el club asignado en la base de datos
   const { data: t } = await serviceClient
     .from('tenants')
-    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods, description, plan_id')
+    .select('id, name, slug, subscription_status, is_active, base_slots_plan, payment_methods, description, plan_id, created_at')
     .eq('id', profile.tenant_id)
     .maybeSingle()
 
@@ -276,8 +276,25 @@ export async function loginWithEmail(formData: FormData) {
     cookieStore.set('demo_user_name', profile?.full_name || 'Dueño del Club', uiCookieOpts)
   }
 
-  // SI EL CLUB AÚN NO VINCULÓ TARJETA, EXIGIRLA ANTES DE ENTRAR AL PANEL
-  if (!hasCard && profile.role !== 'SUPERADMIN') {
+  let isTrialActive = false
+  if (t?.description) {
+    try {
+      const meta = JSON.parse(t.description)
+      if (meta.trial_ends_at && new Date(meta.trial_ends_at) > new Date()) {
+        isTrialActive = true
+      }
+    } catch {}
+  }
+  if (!isTrialActive && t?.created_at) {
+    const trialEnd = new Date(new Date(t.created_at).getTime() + 15 * 86400000)
+    if (trialEnd > new Date()) {
+      isTrialActive = true
+    }
+  }
+
+  // SI EL CLUB AÚN NO VINCULÓ TARJETA Y YA TERMINÓ SU PRUEBA GRATIS, EXIGIRLA ANTES DE ENTRAR AL PANEL
+  // (Durante los 15 días de prueba gratis, se permite el acceso directo al dashboard sin bloqueo)
+  if (!hasCard && !isTrialActive && profile.role !== 'SUPERADMIN') {
     redirect('/onboarding/tarjeta')
   }
 
@@ -321,60 +338,65 @@ export async function registerClub(formData: FormData) {
     }
   }
 
-  // 2. Comprobar también en Supabase Auth si el usuario ya está asociado a otro club
-  const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
-  const existingAuthUser = usersData?.users?.find(u => u.email?.toLowerCase() === email)
-  if (existingAuthUser) {
-    const { data: profile } = await serviceClient
-      .from('profiles')
-      .select('tenant_id')
-      .eq('id', existingAuthUser.id)
-      .maybeSingle()
-    if (profile?.tenant_id) {
-      return {
-        success: false,
-        error: `El correo "${email}" ya se encuentra registrado por otro club. Por favor elegí otro nombre.`,
-      }
-    }
-  }
-
-
-
-  // 3. Crear o actualizar usuario en Supabase Auth con confirmación automática
+  // 2. Comprobar en profiles / Supabase Auth si el usuario ya está asociado a otro club
   let userId: string | null = null
+  let isNewlyCreatedUser = false
 
-  if (existingAuthUser) {
-    // Si existía sin tenant, reutilizarlo
-    userId = existingAuthUser.id
-    const currentMeta = { ...(existingAuthUser.user_metadata || {}) }
-    delete currentMeta.assigned_password
-    delete currentMeta.initial_password
-    delete currentMeta.password
+  // Intentar crear el usuario directamente en Supabase Auth
+  const { data: userData, error: userError } = await serviceClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: clubName,
+      phone: phone || undefined,
+    },
+  })
 
-    await serviceClient.auth.admin.updateUserById(userId, {
-      password,
-      email_confirm: true,
-      user_metadata: {
-        ...currentMeta,
-        full_name: clubName,
-        phone: phone || undefined,
-      },
-    })
-  } else {
-    const { data: userData, error: userError } = await serviceClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: clubName,
-        phone: phone || undefined,
-      },
-    })
+  if (!userError && userData?.user) {
+    userId = userData.user.id
+    isNewlyCreatedUser = true
+  } else if (userError) {
+    // Si el usuario ya existe en Auth, verificar si ya pertenece a un club activo
+    const isAlreadyExists =
+      userError.message?.toLowerCase().includes('already') ||
+      userError.message?.toLowerCase().includes('exists') ||
+      userError.status === 422
 
-    if (userError) {
+    if (isAlreadyExists) {
+      // Buscar perfil existente
+      const { data: profile } = await serviceClient
+        .from('profiles')
+        .select('id, tenant_id')
+        .ilike('email', email)
+        .maybeSingle()
+
+      if (profile?.tenant_id) {
+        return {
+          success: false,
+          error: `El correo "${email}" ya se encuentra registrado por otro club. Por favor elegí otro nombre.`,
+        }
+      }
+
+      if (profile?.id) {
+        const existingId = profile.id
+        userId = existingId
+        await serviceClient.auth.admin.updateUserById(existingId, {
+          password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: clubName,
+            phone: phone || undefined,
+          },
+        })
+      } else {
+        return {
+          success: false,
+          error: `El correo "${email}" ya se encuentra registrado en el sistema de autenticación.`,
+        }
+      }
+    } else {
       return { success: false, error: userError.message }
-    } else if (userData?.user) {
-      userId = userData.user.id
     }
   }
 
@@ -382,15 +404,25 @@ export async function registerClub(formData: FormData) {
     return { success: false, error: 'No se pudo generar la cuenta de usuario' }
   }
 
-  // 2. Crear Tenant con columnas exactas de Supabase
   const baseSlug = clubName
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
+    .replace(/(^-|-$)/g, '') || 'club'
 
-  const slug = `${baseSlug || 'club'}-${Date.now().toString().slice(-4)}`
+  // Generar slug limpio y verificar unicidad en la base de datos de forma eficiente
+  let slug = baseSlug
+  const { data: existingSlugRow } = await serviceClient
+    .from('tenants')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle()
+
+  if (existingSlugRow) {
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000).toString()
+    slug = `${baseSlug}-${randomSuffix}`
+  }
 
   const rawSports = formData.get('sports') as string | null
   let selectedSports: string[] = []
@@ -454,11 +486,14 @@ export async function registerClub(formData: FormData) {
 
   if (tenantError || !tenant) {
     console.error('Error inserting tenant:', tenantError)
+    if (isNewlyCreatedUser && userId) {
+      await serviceClient.auth.admin.deleteUser(userId).catch(() => {})
+    }
     return { success: false, error: tenantError?.message || 'Error al crear el club' }
   }
 
   // 3. Asignar perfil como TENANT_ADMIN vinculado al tenant
-  await serviceClient
+  const { error: profileError } = await serviceClient
     .from('profiles')
     .upsert({
       id: userId,
@@ -467,6 +502,17 @@ export async function registerClub(formData: FormData) {
       role: 'TENANT_ADMIN',
       phone: phone || null,
     })
+
+  if (profileError) {
+    console.error('Error assigning profile to tenant:', profileError)
+    try {
+      await serviceClient.from('tenants').delete().eq('id', tenant.id)
+    } catch {}
+    if (isNewlyCreatedUser && userId) {
+      await serviceClient.auth.admin.deleteUser(userId).catch(() => {})
+    }
+    return { success: false, error: 'Error al asociar el perfil administrador al club' }
+  }
 
   // Telemetría inmediata al Superadmin
   sendSuperadminAlert({
@@ -534,24 +580,26 @@ export async function registerClub(formData: FormData) {
       .insert(courtsToInsert)
       .select('id')
 
-    // Sembrar reglas de precios base estándar ($30.000 ARS) para cada cancha creada
+    // Sembrar reglas de precios base estándar ($30.000 ARS) para cada cancha creada respetando el esquema DDL exacto
     if (insertedCourts && insertedCourts.length > 0) {
       const priceRulesToInsert = []
       for (const court of insertedCourts) {
-        for (let day = 0; day <= 6; day++) {
-          priceRulesToInsert.push({
-            tenant_id: tenant.id,
-            court_id: court.id,
-            day_of_week: day,
-            start_time: '08:00:00',
-            end_time: '23:59:59',
-            price_cents: 3000000, // $30.000 ARS por turno estándar
-            deposit_pct: 30,
-            is_active: true,
-          })
-        }
+        priceRulesToInsert.push({
+          tenant_id: tenant.id,
+          court_id: court.id,
+          name: 'Tarifa Estándar Diaria',
+          day_of_week: [1, 2, 3, 4, 5, 6, 7],
+          time_from: '08:00:00',
+          time_to: '23:59:59',
+          price_cents: 3000000, // $30.000 ARS por turno estándar
+          priority: 0,
+          is_active: true,
+        })
       }
-      await serviceClient.from('price_rules').insert(priceRulesToInsert)
+      const { error: ruleInsertErr } = await serviceClient.from('price_rules').insert(priceRulesToInsert)
+      if (ruleInsertErr) {
+        console.warn('[registerClub] Error sembrando price_rules iniciales:', ruleInsertErr.message)
+      }
     }
   } catch (courtErr) {
     console.warn('[registerClub] Error sembrando canchas iniciales:', courtErr)

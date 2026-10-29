@@ -26,6 +26,7 @@ import { getArgentinaTimeStr, getArgentinaTodayIso, parseArgentinaDate, cleanNot
 import { getVenueBookings } from '@/config/venues-data'
 import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE, type SaaSPlanId } from '@/config/saas-plans'
 import { syncPreapprovalAmountIfNeeded } from '@/actions/saas-billing.actions'
+import { advanceWaitlistCascade } from '@/actions/waitlist.actions'
 
 // ─── NORMALIZADORES DE ENUMS POSTGRESQL ───────────────────────────────────────
 
@@ -181,6 +182,34 @@ export async function createCourt(payload: {
       console.warn('[createCourt] Error syncing preapproval amount:', syncErr)
     })
   } catch {}
+
+  // Sembrar regla de precio base estándar para que la nueva cancha sea inmediatamente reservable online
+  try {
+    const { data: existingRule } = await supabase
+      .from('price_rules')
+      .select('price_cents')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('is_active', true)
+      .order('price_cents', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const standardPriceCents = Number(existingRule?.price_cents) || 3000000
+
+    await supabase.from('price_rules').insert({
+      tenant_id: effectiveTenantId,
+      court_id: data.id,
+      name: `Tarifa Estándar - ${data.name}`,
+      day_of_week: [1, 2, 3, 4, 5, 6, 7],
+      time_from: '08:00:00',
+      time_to: '23:59:59',
+      price_cents: standardPriceCents,
+      priority: 0,
+      is_active: true,
+    })
+  } catch (priceErr) {
+    console.warn('[createCourt] Error sembrando tarifa inicial para cancha:', priceErr)
+  }
 
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
@@ -644,11 +673,23 @@ export async function getCalendarBookings(tenantId: string | null | undefined, d
 
       const rawStatusLower = (b.status || '').toLowerCase()
       const isCancelled = rawStatusLower.includes('cancel')
+      const isPendingDeposit = !isAbono && (rawStatusLower === 'pending_deposit' || rawStatusLower === 'pending' || rawStatusLower === 'pending_lock')
       const isConfirmedCash = b.status === 'confirmed_cash' && depositArs >= totalArs
-      const isPendingDeposit = !isAbono && (b.status === 'pending_deposit' || b.status === 'pending') && depositArs < totalArs
-      const isFullyPaid = isAbono || isConfirmedCash || (depositArs >= totalArs && totalArs > 0)
-      const totalPaid = isAbono ? totalArs : (isFullyPaid ? totalArs : depositArs)
-      const balanceDue = isAbono ? 0 : Math.max(0, totalArs - totalPaid)
+      const isFullyPaid = isAbono || isConfirmedCash || (!isPendingDeposit && depositArs >= totalArs && totalArs > 0)
+
+      // REGLA DE INTEGRIDAD FINANCIERA:
+      // Si status === 'pending_deposit', ningún pago fue acreditado aún ($0 acreditado),
+      // por lo que el cliente adeuda la totalidad del valor de la cancha.
+      const totalPaid = isAbono
+        ? totalArs
+        : isPendingDeposit
+        ? 0
+        : (isFullyPaid ? totalArs : depositArs)
+      const balanceDue = isAbono
+        ? 0
+        : isPendingDeposit
+        ? totalArs
+        : Math.max(0, totalArs - totalPaid)
 
       const statusFormatted = isCancelled
         ? 'CANCELLED'
@@ -2506,21 +2547,14 @@ export async function getClubOccupiedSlots(
       }
 
       // 3. Consultar turnos con prioridad activa de Lista de Espera (10 min de exclusividad)
-      const nowIso = new Date().toISOString()
-
-      // Limpieza y auto-expiración no-bloqueante de prioridades vencidas
+      // Cascada automática de prioridades vencidas para notificar al siguiente jugador en cola
       try {
-        await supabase
-          .from('waitlists')
-          .update({ status: 'EXPIRED' })
-          .eq('tenant_id', tenantId)
-          .eq('date', dateIso)
-          .eq('status', 'NOTIFIED')
-          .lte('priority_expires_at', nowIso)
-      } catch {
-        // Silencioso en caso de contingencia
+        await advanceWaitlistCascade(tenantId)
+      } catch (cascadeErr) {
+        console.warn('[getOccupiedSlots] Waitlist cascade warning:', cascadeErr)
       }
 
+      const nowIso = new Date().toISOString()
       const { data: activeWl } = await supabase
         .from('waitlists')
         .select('id, court_id, time_slot, priority_expires_at')
@@ -2587,7 +2621,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
 
       const { data: priceRules } = await supabase
         .from('price_rules')
-        .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, priority, is_active')
+        .select('id, court_id, name, day_of_week, time_from, time_to, price_cents, deposit_pct, priority, is_active')
         .eq('tenant_id', t.id)
         .eq('is_active', true)
         .order('priority', { ascending: false })
@@ -2602,7 +2636,7 @@ export async function getPublicClubs(): Promise<ClubData[]> {
         timeFrom: (r.time_from || '00:00:00').substring(0, 5),
         timeTo: (r.time_to?.startsWith('24:00') ? '24:00' : (r.time_to || '23:59:59').substring(0, 5)),
         priceArs: Math.round((Number(r.price_cents) || 2000000) / 100),
-        depositPct: 50,
+        depositPct: Number(r.deposit_pct) || 50,
       }))
 
       const courtsMapped: CourtDefinition[] = (courts && courts.length > 0)

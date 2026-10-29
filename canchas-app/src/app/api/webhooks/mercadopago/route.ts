@@ -750,25 +750,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'DB update failed' }, { status: 500 })
     }
 
-    // Inserción relacional inmutable en booking_payments
+    // Inserción relacional inmutable en booking_payments con protección de idempotencia
     if (newStatus === 'confirmed') {
       try {
         const depositAmt = payment.transaction_amount || 0
-        await supabase.from('booking_payments').insert({
+        const paymentIdStr = String(payment.id)
+        const nowIso = depositPaidAt || new Date().toISOString()
+
+        await supabase.from('booking_payments').upsert({
           tenant_id: booking.tenant_id,
           booking_id: booking.id,
           amount_ars: depositAmt,
           amount_cents: Math.round(Number(depositAmt) * 100),
           payment_method: 'mercadopago',
           payment_type: 'DEPOSIT',
-          payment_date: (depositPaidAt || new Date().toISOString()).split('T')[0],
-          registered_at: depositPaidAt || new Date().toISOString(),
-          mp_payment_id: String(payment.id),
+          payment_date: nowIso.split('T')[0],
+          registered_at: nowIso,
+          mp_payment_id: paymentIdStr,
           mp_status: payment.status,
           notes: 'Seña confirmada vía Mercado Pago',
-        })
+        }, { onConflict: 'mp_payment_id' })
+
+        // Registrar en processed_payments para control global de duplicados
+        await supabase
+          .from('processed_payments')
+          .upsert({
+            payment_id: paymentIdStr,
+            source: 'booking_deposit',
+            tenant_id: booking.tenant_id,
+            amount_cents: Math.round(Number(depositAmt) * 100),
+            processed_at: nowIso,
+          }, { onConflict: 'payment_id' })
       } catch (insertPayErr) {
-        console.warn('[MP Webhook] Notice inserting into booking_payments:', insertPayErr)
+        console.warn('[MP Webhook] Notice inserting into booking_payments/processed_payments:', insertPayErr)
       }
     }
 

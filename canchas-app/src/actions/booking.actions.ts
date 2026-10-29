@@ -54,8 +54,14 @@ async function resolveCourtUuid(
   courtId?: string | null,
   courtName?: string | null
 ): Promise<string> {
-  if (courtId && isValidUuid(courtId)) {
-    return courtId
+  if (courtId && isValidUuid(courtId) && tenantId && isValidUuid(tenantId)) {
+    const { data: court } = await supabase
+      .from('courts')
+      .select('id')
+      .eq('id', courtId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+    if (court?.id) return court.id
   }
   if (tenantId && isValidUuid(tenantId)) {
     if (courtName) {
@@ -78,7 +84,7 @@ async function resolveCourtUuid(
       .maybeSingle()
     if (firstCourt?.id) return firstCourt.id
   }
-  return crypto.randomUUID()
+  throw new Error('COURT_NOT_FOUND: No se encontró la cancha especificada para este club')
 }
 
 // ─── ACTION: Iniciar checkout online (adquirir lock + crear booking + preferencia MP) ─
@@ -88,17 +94,34 @@ export async function initiateOnlineCheckout(
   courtSlotDuration: 'MIN_60' | 'MIN_90' | 'MIN_120'
 ): Promise<CheckoutResponse> {
   try {
-    // 0. VERIFICACIÓN DE DUNNING (Suspensión Progresiva del Club)
-    //    Si el club está en PARTIALLY_SUSPENDED o LOCKED, rechazar reservas web
-    const cookieStore = await cookies()
-    const demoStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
+    // 0. VERIFICACIÓN DE TENANT VÁLIDO (Zero-Trust)
+    if (!payload.tenant_id || !isValidUuid(payload.tenant_id)) {
+      return {
+        success: false,
+        error: 'El club especificado no es válido o no existe.',
+        error_code: 'TENANT_NOT_FOUND',
+      }
+    }
 
+    const effectiveTenantId = payload.tenant_id
+
+    // 0.05 VERIFICACIÓN DE DUNNING (Suspensión Progresiva del Club)
+    //    Si el club está en PARTIALLY_SUSPENDED, PAUSED o LOCKED, rechazar reservas web
+    const isProd = process.env.NODE_ENV === 'production'
     const supabaseCheck = await createServiceClient()
     const { data: tenantCheck } = await supabaseCheck
       .from('tenants')
       .select('subscription_status, name, is_active')
-      .eq('id', payload.tenant_id)
+      .eq('id', effectiveTenantId)
       .maybeSingle()
+
+    if (!tenantCheck) {
+      return {
+        success: false,
+        error: 'El club especificado no existe o no se encuentra registrado.',
+        error_code: 'TENANT_NOT_FOUND',
+      }
+    }
 
     if (tenantCheck?.is_active === false) {
       return {
@@ -108,7 +131,13 @@ export async function initiateOnlineCheckout(
       }
     }
 
-    const effectiveStatus: TenantSubscriptionStatus = demoStatus || tenantCheck?.subscription_status || 'ACTIVE'
+    let demoStatus: TenantSubscriptionStatus | undefined
+    if (!isProd) {
+      const cookieStore = await cookies()
+      demoStatus = cookieStore.get('demo_subscription_status')?.value as TenantSubscriptionStatus | undefined
+    }
+
+    const effectiveStatus: TenantSubscriptionStatus = (isProd ? tenantCheck?.subscription_status : (demoStatus || tenantCheck?.subscription_status)) || 'ACTIVE'
 
     if (effectiveStatus === 'PARTIALLY_SUSPENDED' || effectiveStatus === 'PAUSED' || effectiveStatus === 'LOCKED') {
       return {
@@ -131,7 +160,7 @@ export async function initiateOnlineCheckout(
 
     // 0.2 VERIFICACIÓN DE JUGADOR BLOQUEADO / LISTA NEGRA
     if (payload.customer_phone) {
-      const blocked = await isPlayerBlocked(payload.tenant_id, payload.customer_phone)
+      const blocked = await isPlayerBlocked(effectiveTenantId, payload.customer_phone)
       if (blocked) {
         return {
           success: false,
@@ -149,12 +178,18 @@ export async function initiateOnlineCheckout(
 
     // 1.1 Resolver Court UUID y clave de bloqueo canónica
     const supabase = await createServiceClient()
-    const effectiveTenantId = (payload.tenant_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.tenant_id))
-      ? payload.tenant_id
-      : '00000000-0000-0000-0000-000000000001'
+    let effectiveCourtId: string
+    try {
+      effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
+    } catch {
+      return {
+        success: false,
+        error: 'La cancha seleccionada no existe o no pertenece a este club.',
+        error_code: 'COURT_NOT_FOUND',
+      }
+    }
 
-    const effectiveCourtId = await resolveCourtUuid(supabase, effectiveTenantId, payload.court_id, payload.court_name)
-    const canonicalCourtId = effectiveCourtId || payload.court_id
+    const canonicalCourtId = effectiveCourtId
     const lockKey = buildLockKey(canonicalCourtId, payload.starts_at)
 
     // 1.5 GESTIÓN DE PRIORIDAD EXCLUSIVA DE LISTA DE ESPERA (10 MINUTOS)
@@ -163,21 +198,28 @@ export async function initiateOnlineCheckout(
 
     if (payload.claim_id) {
       const waitlistCheck = await verifyWaitlistClaim(payload.claim_id)
-      if (waitlistCheck.valid && waitlistCheck.entry) {
-        const entry = waitlistCheck.entry
-        const claimMatchesDate = !entry.date || entry.date === dayStr
-        const claimMatchesTime = !entry.time_slot || entry.time_slot.startsWith(slotHourMin)
-        const claimMatchesCourt = !entry.court_id || entry.court_id === payload.court_id || entry.court_id === canonicalCourtId
-
-        if (claimMatchesDate && claimMatchesTime && claimMatchesCourt) {
-          isWaitlistClaimValid = true
-          // El jugador posee prioridad exclusiva legítima: liberar cualquier bloqueo remanente de la reserva previa cancelada
-          await forceReleaseBookingLock(lockKey)
-          if (payload.court_id && payload.court_id !== canonicalCourtId) {
-            await forceReleaseBookingLock(buildLockKey(payload.court_id, payload.starts_at))
-          }
+      if (!waitlistCheck.valid || !waitlistCheck.entry) {
+        return {
+          success: false,
+          error: waitlistCheck.error || 'La prioridad de lista de espera ha expirado o ya no es válida.',
+          error_code: 'WAITLIST_PRIORITY_ACTIVE',
         }
       }
+
+      const entry = waitlistCheck.entry
+      const claimMatchesDate = !entry.date || entry.date === dayStr
+      const claimMatchesTime = !entry.time_slot || entry.time_slot.startsWith(slotHourMin)
+      const claimMatchesCourt = !entry.court_id || entry.court_id === payload.court_id || entry.court_id === canonicalCourtId
+
+      if (!claimMatchesDate || !claimMatchesTime || !claimMatchesCourt) {
+        return {
+          success: false,
+          error: 'El reclamo de lista de espera no corresponde a la fecha, horario o cancha seleccionada.',
+          error_code: 'VALIDATION_ERROR',
+        }
+      }
+
+      isWaitlistClaimValid = true
     } else {
       // Si el checkout NO viene con reclamo de lista de espera, verificar si el slot está reservado con prioridad activa para otro jugador
       const activePriorities = await getWaitlistActivePriorities(effectiveTenantId, dayStr)
@@ -200,12 +242,7 @@ export async function initiateOnlineCheckout(
 
     // 2. ADQUIRIR LOCK EN REDIS + MEMORIA (atómico: SET NX PX)
     //    Si falla → slot ya tomado por otro checkout simultáneo
-    let lockAcquired = await acquireBookingLock(lockKey, bookingId)
-    if (!lockAcquired && isWaitlistClaimValid) {
-      // Reintento forzado para jugador con prioridad legítima de lista de espera
-      await forceReleaseBookingLock(lockKey)
-      lockAcquired = await acquireBookingLock(lockKey, bookingId)
-    }
+    const lockAcquired = await acquireBookingLock(lockKey, bookingId)
 
     if (!lockAcquired) {
       return {
@@ -251,26 +288,96 @@ export async function initiateOnlineCheckout(
     }
 
     // 2.2 RECALCULAR PRECIO OFICIAL EN EL SERVIDOR (Protección contra manipulación de precios)
-    let finalTotalArs = Number(payload.total_amount_ars) || 0
-    let finalDepositArs = Number(payload.deposit_amount_ars) || 0
+    const slotDurationMins = courtSlotDuration === 'MIN_120' ? 120 : courtSlotDuration === 'MIN_90' ? 90 : 60
+    let finalTotalArs = 0
+    let officialDepositArs = 0
 
-    if (effectiveCourtId && effectiveTenantId) {
-      try {
-        const official = await resolveOfficialSlotPrice({
-          tenantId: effectiveTenantId,
-          courtId: effectiveCourtId,
-          startsAt: payload.starts_at,
-        })
-        if (official && official.totalAmountArs > 0) {
-          finalTotalArs = official.totalAmountArs
-          if (payload.deposit_amount_ars <= 0) {
-            finalDepositArs = 0
-          } else {
-            finalDepositArs = Math.min(finalTotalArs, official.depositAmountArs)
-          }
+    if (!effectiveCourtId || !effectiveTenantId) {
+      await releaseBookingLock(lockKey, bookingId)
+      return {
+        success: false,
+        error: 'No se pudo identificar la cancha o el club para calcular la tarifa oficial.',
+        error_code: 'VALIDATION_ERROR',
+      }
+    }
+
+    try {
+      const official = await resolveOfficialSlotPrice({
+        tenantId: effectiveTenantId,
+        courtId: effectiveCourtId,
+        startsAt: payload.starts_at,
+        durationMinutes: slotDurationMins,
+      })
+      if (!official || official.totalAmountArs <= 0) {
+        await releaseBookingLock(lockKey, bookingId)
+        return {
+          success: false,
+          error: 'No se pudo determinar una tarifa válida para el turno seleccionado.',
+          error_code: 'PRICE_RESOLUTION_FAILED',
         }
-      } catch (priceErr) {
-        console.warn('[initiateOnlineCheckout] Error recalculando precio oficial:', priceErr)
+      }
+      finalTotalArs = official.totalAmountArs
+      officialDepositArs = official.depositAmountArs
+    } catch (priceErr) {
+      console.error('[initiateOnlineCheckout] Error recalculando precio oficial:', priceErr)
+      await releaseBookingLock(lockKey, bookingId)
+      return {
+        success: false,
+        error: 'Error de servidor recalculando la tarifa del turno.',
+        error_code: 'PRICE_CALCULATION_ERROR',
+      }
+    }
+
+    // 2.2.1 Validación y débito atómico previo de saldo de billetera virtual (customer_credits)
+    // Blindaje contra free-booking bypass: el saldo DEBE debitarse exitosamente ANTES de insertar la reserva.
+    const walletRequestedArs = Math.max(0, Number(payload.wallet_applied_ars) || 0)
+    let walletActuallyAppliedArs = 0
+
+    if (walletRequestedArs > 0) {
+      if (!payload.customer_phone) {
+        await releaseBookingLock(lockKey, bookingId)
+        return {
+          success: false,
+          error: 'Número de WhatsApp requerido para aplicar saldo a favor de billetera.',
+          error_code: 'INVALID_PHONE_WALLET',
+        }
+      }
+
+      // El descuento de billetera no puede superar la seña oficial requerida
+      const maxApplicableWallet = Math.min(walletRequestedArs, officialDepositArs)
+
+      const walletRes = await applyWalletCreditAction(
+        payload.customer_phone,
+        maxApplicableWallet,
+        effectiveTenantId,
+        bookingId
+      )
+
+      if (!walletRes.success || walletRes.appliedAmount <= 0) {
+        await releaseBookingLock(lockKey, bookingId)
+        return {
+          success: false,
+          error: walletRes.error || 'Saldo a favor insuficiente o ya utilizado en otra reserva.',
+          error_code: 'INSUFFICIENT_WALLET_BALANCE',
+        }
+      }
+
+      walletActuallyAppliedArs = walletRes.appliedAmount
+    }
+
+    // El saldo a pagar en el checkout es la seña requerida menos el saldo efectivamente debitado
+    const finalDepositArs = Math.max(0, officialDepositArs - walletActuallyAppliedArs)
+
+    // Si el usuario intentó forzar deposit_amount_ars <= 0 sin haber cubierto la seña con billetera:
+    if (officialDepositArs > 0 && finalDepositArs > 0 && Number(payload.deposit_amount_ars) <= 0 && walletActuallyAppliedArs < officialDepositArs) {
+      if (walletActuallyAppliedArs > 0) {
+        await refundWalletCreditForBooking(effectiveTenantId, bookingId)
+      }
+      await releaseBookingLock(lockKey, bookingId)
+      return {
+        success: false,
+        error: 'El monto de la seña no cubre el mínimo requerido por el club.',
+        error_code: 'INVALID_DEPOSIT_AMOUNT',
       }
     }
 
@@ -308,7 +415,8 @@ export async function initiateOnlineCheckout(
 
     const paymentLabel = payload.payment_method === 'MERCADOPAGO' ? 'Mercado Pago' : 'Transferencia'
     const customerNotesPart = payload.customer_notes?.trim() ? ` - ${payload.customer_notes.trim()}` : ''
-    const noteText = `Reserva Online 24hs - Seña: $${finalDepositArs} (${paymentLabel})${customerNotesPart}`
+    const walletNotePart = walletActuallyAppliedArs > 0 ? ` [Billetera: -$${walletActuallyAppliedArs}]` : ''
+    const noteText = `Reserva Online 24hs - Seña: $${finalDepositArs} (${paymentLabel})${walletNotePart}${customerNotesPart}`
 
     let dbInsertSuccess = false
 
@@ -327,6 +435,14 @@ export async function initiateOnlineCheckout(
     } catch (cleanupErr) {
       console.warn('[initiateOnlineCheckout] Limpieza preventiva notice:', cleanupErr)
     }
+
+    // REGLA DE INTEGRIDAD FINANCIERA:
+    // Si la reserva inicia en pending_deposit, la seña NO ha sido acreditada todavía ($0 acreditado),
+    // por lo que el saldo pendiente adeudado es el total de la cancha (menos eventual billetera aplicada).
+    const initialAccreditedArs = initialStatus === 'pending_deposit'
+      ? walletActuallyAppliedArs
+      : (finalDepositArs + walletActuallyAppliedArs)
+    const initialBalanceDueArs = Math.max(0, finalTotalArs - initialAccreditedArs)
 
     const { error: insertError } = await supabase
       .from('bookings')
@@ -350,6 +466,11 @@ export async function initiateOnlineCheckout(
 
     if (insertError) {
       await releaseBookingLock(lockKey, bookingId)
+      // Revertir atómicamente el saldo de billetera consumido si falló el insert de la reserva
+      if (walletActuallyAppliedArs > 0) {
+        await refundWalletCreditForBooking(effectiveTenantId, bookingId)
+      }
+
       const isExclusionConflict =
         insertError.code === '23P01' ||
         insertError.message?.toLowerCase().includes('exclusion') ||
@@ -376,20 +497,6 @@ export async function initiateOnlineCheckout(
       await markWaitlistAsClaimed(payload.claim_id)
     }
 
-    // Débito atómico del saldo a favor de la billetera virtual si fue utilizado en el checkout
-    if (dbInsertSuccess && payload.wallet_applied_ars && payload.wallet_applied_ars > 0 && payload.customer_phone) {
-      try {
-        await applyWalletCreditAction(
-          payload.customer_phone,
-          payload.wallet_applied_ars,
-          effectiveTenantId,
-          bookingId
-        )
-      } catch (walletErr) {
-        console.warn('[initiateOnlineCheckout] Notice applying wallet credit:', walletErr)
-      }
-    }
-
     // Registrar también en memoria para respuesta instantánea (0ms) en la grilla con aislamiento por club
     addVenueBooking({
       id: bookingId,
@@ -400,12 +507,12 @@ export async function initiateOnlineCheckout(
       customer_email: payload.customer_email,
       starts_at: startsAtIso,
       ends_at: endsAtIso,
-      status: 'CONFIRMED',
+      status: initialStatus === 'pending_deposit' ? 'PENDING_DEPOSIT' : 'CONFIRMED',
       origin: 'ONLINE_PORTAL',
       total_amount_ars: finalTotalArs,
       deposit_amount_ars: finalDepositArs,
-      total_paid: finalDepositArs,
-      balance_due: Math.max(0, finalTotalArs - finalDepositArs),
+      total_paid: initialAccreditedArs,
+      balance_due: initialBalanceDueArs,
       internal_notes: noteText,
       courts: {
         name: payload.court_name || 'Cancha',
@@ -1030,10 +1137,35 @@ export async function registerCashPayment(params: {
       }
     }
 
-    const amountCents = Math.round(params.amount_ars * 100)
-    const currentDeposit = Number(booking.deposit_cents) || 0
+    // 1. REGLA DE INTEGRIDAD FINANCIERA: Saldo Pendiente (Seña Requerida vs Cobrada)
+    //    Consultar pagos reales acreditados en booking_payments
+    const { data: paymentRows, error: payRowsErr } = await supabase
+      .from('booking_payments')
+      .select('amount_cents, payment_method')
+      .eq('booking_id', params.booking_id)
+      .eq('tenant_id', booking.tenant_id)
+
+    if (payRowsErr) {
+      console.error('[registerCashPayment] Error al consultar booking_payments:', payRowsErr.message)
+      return { success: false, error: 'Error al verificar los pagos acreditados de la reserva' }
+    }
+
+    const totalAccreditedFromPayments = (paymentRows || []).reduce(
+      (sum, p) => sum + (Number(p.amount_cents) || 0),
+      0
+    )
+
+    const rawStatus = (booking.status || '').toLowerCase()
+    const isPendingDeposit = rawStatus === 'pending_deposit' || rawStatus === 'pending_lock' || rawStatus === 'pending'
+
+    // Si status === 'pending_deposit', los pagos acreditados son exactamente los asentados en booking_payments
+    // Si no hay registros de pago, los pagos acreditados son $0, por lo que el cliente debe el total de la cancha.
+    const currentAccreditedCents = isPendingDeposit
+      ? totalAccreditedFromPayments
+      : (totalAccreditedFromPayments > 0 ? totalAccreditedFromPayments : (Number(booking.deposit_cents) || 0))
+
     const totalPriceCents = Number(booking.price_total_cents) || 0
-    const pendingBalanceCents = Math.max(0, totalPriceCents - currentDeposit)
+    const pendingBalanceCents = Math.max(0, totalPriceCents - currentAccreditedCents)
 
     if (pendingBalanceCents <= 0) {
       return {
@@ -1042,12 +1174,19 @@ export async function registerCashPayment(params: {
       }
     }
 
+    const amountCents = Math.round(params.amount_ars * 100)
+    if (amountCents <= 0) {
+      return {
+        success: false,
+        error: 'El monto ingresado a cobrar debe ser mayor a cero.',
+      }
+    }
+
     // Topar el monto a cobrar al saldo restante pendiente
     const effectiveAmountCents = Math.min(amountCents, pendingBalanceCents)
 
     // Protección anti-doble clic / concurrencia: si en los últimos 45 segundos ya se registró un cobro idéntico
     const now = new Date()
-    const nowIso = now.toISOString()
     const recentCobroMatches = [...(booking.staff_notes || '').matchAll(/Cobro\s+\$?([\d\.,]+)[^\[]*\[([^\]]+)\]/gi)]
     const isRecentDuplicate = recentCobroMatches.some((m) => {
       const clean = m[1].replace(/\./g, '').replace(/,/g, '.')
@@ -1062,73 +1201,46 @@ export async function registerCashPayment(params: {
       return { success: true }
     }
 
-    const newDepositCents = currentDeposit + effectiveAmountCents
+    const validStaffId = authCheck.user?.id && isValidUuid(authCheck.user.id) ? authCheck.user.id : null
+    // 2. EJECUTAR RPC ATÓMICA EN POSTGRESQL (Transaccionalidad Atómica en Cobro de Mostrador)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('register_cash_payment_atomic', {
+      p_booking_id: params.booking_id,
+      p_tenant_id: booking.tenant_id,
+      p_amount_cents: effectiveAmountCents,
+      p_staff_id: validStaffId,
+      p_notes: params.notes || null,
+    })
 
-    const methodStr = String(params.payment_method).toUpperCase()
-    const methodEnum = methodStr.includes('TRANSFER') ? 'bank_transfer'
-      : (methodStr.includes('MERCADO') || methodStr.includes('MP') || methodStr.includes('QR')) ? 'mercadopago'
-      : 'cash'
+    if (rpcError) {
+      console.error('[registerCashPayment] Error en register_cash_payment_atomic:', rpcError.message)
+      const isFunctionMissing =
+        rpcError.code === 'PGRST202' ||
+        rpcError.message?.toLowerCase().includes('function') ||
+        rpcError.message?.toLowerCase().includes('does not exist')
 
-    const isFullyPaid = newDepositCents >= totalPriceCents
-    const newStatus = isFullyPaid ? 'confirmed_cash' : 'confirmed'
+      return {
+        success: false,
+        error: isFunctionMissing
+          ? 'Error de infraestructura crítica: la función atómica de cobro (register_cash_payment_atomic) no está instalada en la base de datos. Se requiere aplicar la migración 20261029_atomic_cash_payment_and_gist.sql en Supabase.'
+          : (rpcError.message || 'Error al ejecutar cobro atómico en el servidor'),
+      }
+    }
 
+    if (!rpcData || typeof rpcData !== 'object' || !(rpcData as { success?: boolean }).success) {
+      return {
+        success: false,
+        error: (rpcData as { error?: string })?.error || 'No se pudo procesar el cobro atómico en el servidor',
+      }
+    }
+
+    // 4. REGISTRAR NOTIFICACIÓN Y REVALIDAR RUTAS
     const timeStr = getArgentinaTimeStr(now)
+    const methodStr = String(params.payment_method).toUpperCase()
     const methodSpanish = methodStr.includes('TRANSFER') ? 'Transferencia'
       : (methodStr.includes('MERCADO') || methodStr.includes('MP')) ? 'Mercado Pago'
       : 'Efectivo'
-    const formattedAmount = (effectiveAmountCents / 100).toLocaleString('es-AR')
-    const noteEntry = `Cobro $${formattedAmount} (${methodSpanish}) a las ${timeStr} hs [${nowIso}]${params.notes ? ` - ${params.notes}` : ''}`
-    const updatedNotes = booking.staff_notes ? `${booking.staff_notes} | ${noteEntry}` : noteEntry
-
-    // Preservar método online previo si existió seña online
-    const finalPaymentMethod = (booking.payment_method && booking.payment_method !== 'cash' && currentDeposit > 0)
-      ? booking.payment_method
-      : methodEnum
-
-    // Preservar paid_at original de la seña si ya existía para no alterar la hora del cobro inicial en la caja
-    const finalPaidAt = booking.paid_at || nowIso
-
-    const { error: upErr } = await supabase
-      .from('bookings')
-      .update({
-        deposit_cents: newDepositCents,
-        staff_deposit_amount_cents: newDepositCents,
-        payment_method: finalPaymentMethod,
-        paid_at: finalPaidAt,
-        status: newStatus,
-        staff_notes: updatedNotes,
-        updated_at: nowIso,
-      })
-      .eq('id', params.booking_id)
-
-    if (upErr) {
-      console.error('[registerCashPayment] Error updating booking payment:', upErr.message)
-      return { success: false, error: upErr.message }
-    }
-
-    // Inserción relacional inmutable en booking_payments
-    const amountArs = Math.round(effectiveAmountCents / 100)
-    const paymentType = currentDeposit === 0 ? 'DEPOSIT' : 'BALANCE'
-    const todayDate = nowIso.split('T')[0]
-
-    try {
-      await supabase.from('booking_payments').insert({
-        tenant_id: booking.tenant_id,
-        booking_id: params.booking_id,
-        amount_ars: amountArs,
-        amount_cents: effectiveAmountCents,
-        payment_method: methodEnum,
-        payment_type: paymentType,
-        payment_date: todayDate,
-        registered_at: nowIso,
-        notes: params.notes || null,
-      })
-    } catch (insertPayErr) {
-      console.warn('[registerCashPayment] Notice inserting into booking_payments:', insertPayErr)
-    }
-
-    // Registrar en el historial de notificaciones y alertas
     const customerDisplayName = booking.customer_name?.trim() || 'Cliente'
+
     void recordClubNotification({
       tenantId: booking.tenant_id,
       type: 'PAYMENT_RECEIVED',
@@ -2181,17 +2293,52 @@ export async function cancelBookingByPlayer(
       return { success: false, error: 'No es posible cancelar una reserva que ya fue finalizada o registrada.' }
     }
 
-    // Verificar que el turno sea futuro y no haya comenzado
+    // Verificar que el turno sea futuro, no haya comenzado y respete la ventana de cancelación previa (cancellation_hours)
     if (booking.booked_at) {
       const match = String(booking.booked_at).match(/\["?(.*?)"?,\s*"?(.*?)"?\)/)
       if (match && match[1]) {
         const rawStart = match[1].includes(' ') ? match[1].replace(' ', 'T') : match[1]
         const isoNormalized = rawStart.endsWith('+00') ? rawStart.replace('+00', 'Z') : rawStart
         const slotStart = new Date(isoNormalized)
-        if (!isNaN(slotStart.getTime()) && slotStart.getTime() <= Date.now()) {
-          return {
-            success: false,
-            error: 'No es posible cancelar el turno porque el horario del partido ya comenzó o ha transcurrido.'
+        if (!isNaN(slotStart.getTime())) {
+          if (slotStart.getTime() <= Date.now()) {
+            return {
+              success: false,
+              error: 'No es posible cancelar el turno porque el horario del partido ya comenzó o ha transcurrido.'
+            }
+          }
+
+          // Consultar el límite de horas de anticipación configurado por el club
+          let minCancellationHours = 24
+          if (booking.tenant_id) {
+            try {
+              const { data: tenantRow } = await supabase
+                .from('tenants')
+                .select('cancellation_hours, description')
+                .eq('id', booking.tenant_id)
+                .maybeSingle()
+
+              if (tenantRow?.cancellation_hours != null && Number(tenantRow.cancellation_hours) >= 0) {
+                minCancellationHours = Number(tenantRow.cancellation_hours)
+              } else if (tenantRow?.description) {
+                try {
+                  const meta = JSON.parse(tenantRow.description)
+                  if (meta.cancellation_hours != null && Number(meta.cancellation_hours) >= 0) {
+                    minCancellationHours = Number(meta.cancellation_hours)
+                  }
+                } catch {}
+              }
+            } catch (tenantErr) {
+              console.warn('[cancelBookingByPlayer] Error fetching cancellation_hours:', tenantErr)
+            }
+          }
+
+          const hoursNotice = (slotStart.getTime() - Date.now()) / (1000 * 60 * 60)
+          if (hoursNotice < minCancellationHours) {
+            return {
+              success: false,
+              error: `La política de cancelación online de este club requiere al menos ${minCancellationHours} hora(s) de anticipación. Por favor comunicate directamente con el club para gestionar tu solicitud.`
+            }
           }
         }
       }

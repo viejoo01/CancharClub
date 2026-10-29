@@ -224,6 +224,16 @@ export async function POST(req: NextRequest) {
       const tenantToken = tenant?.mp_access_token
 
       if (!tenantToken || tenantToken.includes('MOCK') || tenantToken.length < 10) {
+        if (process.env.NODE_ENV === 'production') {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'El club no tiene configurada una cuenta de Mercado Pago activa para recibir señas online. Por favor seleccioná pago por Transferencia Bancaria.',
+            },
+            { status: 400 }
+          )
+        }
+
         const simulatedUrl = `${baseUrl}/reserva/${payload.booking_id}/confirmado?simulated=true`
         return NextResponse.json({
           success: true,

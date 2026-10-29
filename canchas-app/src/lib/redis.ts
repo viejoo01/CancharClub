@@ -34,8 +34,22 @@ const LOCK_TTL_MS = (parseInt(process.env.BOOKING_LOCK_TTL_SECONDS || '420')) * 
 // Registro de candados en memoria de proceso (previene colisiones simultáneas en el mismo servidor)
 const LOCAL_LOCKS = new Map<string, { bookingId: string; expiresAt: number }>()
 
+function cleanExpiredLocalLocks(): void {
+  const now = Date.now()
+  for (const [key, val] of LOCAL_LOCKS.entries()) {
+    if (val.expiresAt <= now) {
+      LOCAL_LOCKS.delete(key)
+    }
+  }
+}
+
 function acquireLocalLock(lockKey: string, bookingId: string): boolean {
   const now = Date.now()
+  // Limpieza periódica cada vez que el mapa crece para prevenir memory leaks
+  if (LOCAL_LOCKS.size > 50) {
+    cleanExpiredLocalLocks()
+  }
+
   const existing = LOCAL_LOCKS.get(lockKey)
   if (existing && existing.expiresAt > now) {
     if (existing.bookingId === bookingId) return true

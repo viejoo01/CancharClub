@@ -1223,18 +1223,17 @@ export async function createTenantFromSuperadmin(input: {
     if (insertedCourts && insertedCourts.length > 0) {
       const priceRulesToInsert = []
       for (const c of insertedCourts) {
-        for (let day = 0; day <= 6; day++) {
-          priceRulesToInsert.push({
-            tenant_id: tenant.id,
-            court_id: c.id,
-            day_of_week: day,
-            start_time: '08:00:00',
-            end_time: '23:59:59',
-            price_cents: effectiveMaxPrice * 100,
-            deposit_pct: 30,
-            is_active: true,
-          })
-        }
+        priceRulesToInsert.push({
+          tenant_id: tenant.id,
+          court_id: c.id,
+          name: 'Tarifa Estándar Diaria',
+          day_of_week: [1, 2, 3, 4, 5, 6, 7],
+          time_from: '08:00:00',
+          time_to: '23:59:59',
+          price_cents: effectiveMaxPrice * 100,
+          priority: 0,
+          is_active: true,
+        })
       }
       await supabase.from('price_rules').insert(priceRulesToInsert)
     }

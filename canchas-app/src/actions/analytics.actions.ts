@@ -577,55 +577,103 @@ export interface BlindAuditRecord {
   closed_at: string
 }
 
+export interface BlindAuditInput {
+  date: string
+  declaredCash: number
+  notes?: string
+  tenantId?: string
+}
+
+export interface BlindAuditResponse {
+  success: boolean
+  error?: string
+  status?: 'EXACT' | 'OVER' | 'SHORT'
+  diffCash?: number
+  expectedCash?: number
+  declaredCash?: number
+}
+
 /**
- * Guarda el arqueo ciego de caja en la base de datos (cash_shifts con fallback inmutable a audit_log).
+ * Guarda el arqueo ciego de caja recalculando de forma Zero-Trust estrictamente en el Servidor.
+ * Obtiene el saldo teórico fidedigno internamente y persiste en cash_shifts (o fallback en audit_log).
  */
 export async function saveBlindAuditAction(
-  tenantId: string,
-  payload: {
-    cashierName?: string
-    declaredCash: number
-    expectedCash: number
-    diffCash: number
-    status: 'EXACT' | 'OVER' | 'SHORT'
-    notes?: string
-  }
-): Promise<{ success: boolean; error?: string }> {
+  param1: BlindAuditInput | string,
+  legacyPayload?: { date?: string; declaredCash: number; notes?: string }
+): Promise<BlindAuditResponse> {
   try {
-    const effectiveTenantId = (await resolveEffectiveTenantId(tenantId)) || tenantId
+    let payload: BlindAuditInput
+    let explicitTenantId: string | undefined
+
+    if (typeof param1 === 'string') {
+      explicitTenantId = param1
+      payload = {
+        date: legacyPayload?.date || '',
+        declaredCash: legacyPayload?.declaredCash ?? 0,
+        notes: legacyPayload?.notes,
+      }
+    } else {
+      payload = param1
+      explicitTenantId = param1.tenantId
+    }
+
+    if (!payload.date) {
+      return { success: false, error: 'Fecha requerida para el arqueo ciego' }
+    }
+
+    const effectiveTenantId = (await resolveEffectiveTenantId(explicitTenantId)) || explicitTenantId
+    if (!effectiveTenantId) {
+      return { success: false, error: 'Sesión no válida o club no identificado' }
+    }
+
     const auth = await assertTenantMember(effectiveTenantId)
     if (!auth.authorized) {
       return { success: false, error: auth.error || 'No autorizado' }
     }
 
+    // 1. Invocar internamente getDailyCashReport en el backend de forma fidedigna e inmutable
+    const report = await getDailyCashReport(effectiveTenantId, payload.date)
+    const expectedCash = report?.totalCash ?? 0
+    const declaredCash = Math.max(0, Number(payload.declaredCash) || 0)
+    const diffCash = declaredCash - expectedCash
+    const status: 'EXACT' | 'OVER' | 'SHORT' = 
+      diffCash === 0 ? 'EXACT' : diffCash > 0 ? 'OVER' : 'SHORT'
+
     const supabase = await createServiceClient()
     const nowIso = new Date().toISOString()
+    const cashierNotes = payload.notes?.trim() || null
 
-    // 1. Intentar persistir en tabla dedicada cash_shifts
+    // 2. Intentar persistir en tabla dedicada cash_shifts
     const { error: shiftErr } = await supabase.from('cash_shifts').insert({
       tenant_id: effectiveTenantId,
-      cashier_name: payload.cashierName || null,
-      declared_cash_cents: Math.round(payload.declaredCash * 100),
-      expected_cash_cents: Math.round(payload.expectedCash * 100),
-      diff_cash_cents: Math.round(payload.diffCash * 100),
-      status: payload.status,
-      notes: payload.notes || null,
+      cashier_name: cashierNotes,
+      declared_cash_cents: Math.round(declaredCash * 100),
+      expected_cash_cents: Math.round(expectedCash * 100),
+      diff_cash_cents: Math.round(diffCash * 100),
+      status,
+      notes: cashierNotes,
       closed_at: nowIso,
     })
 
     if (!shiftErr) {
       revalidatePath('/dashboard/caja')
-      return { success: true }
+      return {
+        success: true,
+        status,
+        diffCash,
+        expectedCash,
+        declaredCash,
+      }
     }
 
-    // 2. Fallback inmutable a audit_log
+    // 3. Fallback inmutable a audit_log
     const fallbackAudit = {
-      cashier_name: payload.cashierName || '',
-      declared_cash: payload.declaredCash,
-      expected_cash: payload.expectedCash,
-      diff_cash: payload.diffCash,
-      status: payload.status,
-      notes: payload.notes || '',
+      cashier_name: cashierNotes || '',
+      declared_cash: declaredCash,
+      expected_cash: expectedCash,
+      diff_cash: diffCash,
+      status,
+      notes: cashierNotes || '',
       closed_at: nowIso,
     }
 
@@ -643,7 +691,13 @@ export async function saveBlindAuditAction(
     }
 
     revalidatePath('/dashboard/caja')
-    return { success: true }
+    return {
+      success: true,
+      status,
+      diffCash,
+      expectedCash,
+      declaredCash,
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error inesperado al guardar arqueo'
     console.error('[saveBlindAuditAction] Exception:', msg)

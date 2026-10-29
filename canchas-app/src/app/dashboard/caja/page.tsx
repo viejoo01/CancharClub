@@ -18,7 +18,9 @@ import {
   AlertCircle,
   Lock,
   BookOpen,
-  Coins
+  Coins,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -88,6 +90,7 @@ export default function CajaPage() {
 
   // Estado de Arqueo Ciego
   const [showBlindAuditModal, setShowBlindAuditModal] = useState(false)
+  const [hideCashBalance, setHideCashBalance] = useState(false)
   const [declaredCash, setDeclaredCash] = useState('')
   const [cashierName, setCashierName] = useState('')
   const [savingAudit, setSavingAudit] = useState(false)
@@ -234,7 +237,9 @@ export default function CajaPage() {
           <Button 
             onClick={() => {
               setDeclaredCash('')
+              setCashierName('')
               setAuditResult(null)
+              setHideCashBalance(true)
               setShowBlindAuditModal(true)
             }} 
             variant="outline" 
@@ -273,14 +278,33 @@ export default function CajaPage() {
         <Card className="border-slate-800 bg-slate-900/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold uppercase">
-              <span>Efectivo en Caja</span>
+              <div className="flex items-center gap-1.5">
+                <span>Efectivo en Caja</span>
+                <button
+                  type="button"
+                  onClick={() => setHideCashBalance(prev => !prev)}
+                  title={hideCashBalance ? 'Mostrar saldo en caja' : 'Ocultar saldo para arqueo ciego'}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors inline-flex items-center"
+                >
+                  {hideCashBalance ? (
+                    <EyeOff className="w-3.5 h-3.5 text-amber-400" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+              </div>
               <Banknote className="w-4 h-4 text-emerald-400" />
             </div>
-            <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalCash ?? 0)}
+            <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1 tracking-tight">
+              {loading ? 'Cargando...' : hideCashBalance ? '••••••' : formatARS(report?.totalCash ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">Dinero físico en cajón de mostrador</CardContent>
+          <CardContent className="text-[11px] text-slate-400 flex items-center justify-between">
+            <span>Dinero físico en cajón de mostrador</span>
+            {hideCashBalance && (
+              <span className="text-[10px] text-amber-400 font-medium">Modo ciego activo</span>
+            )}
+          </CardContent>
         </Card>
         <Card className="border-slate-800 bg-slate-900/60">
           <CardHeader className="pb-2">
@@ -462,24 +486,50 @@ export default function CajaPage() {
                 </Button>
                 <Button
                   type="button"
-                  disabled={!declaredCash || isNaN(Number(declaredCash))}
-                  onClick={() => {
-                    const declared = Number(declaredCash) || 0
-                    const expected = report?.totalCash ?? 0
-                    const diff = declared - expected
-                    const status = diff === 0 ? 'EXACT' : diff > 0 ? 'OVER' : 'SHORT'
-                    setAuditResult({
-                      declared,
-                      expected,
-                      diff,
-                      status,
-                      timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-                      notes: cashierName
-                    })
+                  disabled={!declaredCash || isNaN(Number(declaredCash)) || savingAudit}
+                  onClick={async () => {
+                    const declared = Number(declaredCash)
+                    if (isNaN(declared) || declared < 0) {
+                      toast.error('Por favor ingresá un monto válido de efectivo')
+                      return
+                    }
+                    setSavingAudit(true)
+                    try {
+                      const res = await saveBlindAuditAction({
+                        date: selectedDate,
+                        declaredCash: declared,
+                        notes: cashierName.trim() ? `Encargado: ${cashierName.trim()}` : undefined,
+                      })
+
+                      if (res.success && res.status) {
+                        setAuditResult({
+                          declared: res.declaredCash ?? declared,
+                          expected: res.expectedCash ?? 0,
+                          diff: res.diffCash ?? 0,
+                          status: res.status,
+                          timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+                          notes: cashierName.trim() || undefined,
+                        })
+                        toast.success('¡Arqueo ciego registrado y auditado!')
+                      } else {
+                        toast.error('Error al registrar arqueo: ' + (res.error || 'Desconocido'))
+                      }
+                    } catch {
+                      toast.error('Error de conexión al guardar el arqueo')
+                    } finally {
+                      setSavingAudit(false)
+                    }
                   }}
                   className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs h-10 px-5 shadow-lg shadow-amber-950/40"
                 >
-                  Comparar y Cerrar Arqueo
+                  {savingAudit ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                      <span>Auditando...</span>
+                    </>
+                  ) : (
+                    'Confirmar Arqueo'
+                  )}
                 </Button>
               </DialogFooter>
             </div>
@@ -516,7 +566,7 @@ export default function CajaPage() {
                   {auditResult.diff === 0 ? '$0 de Diferencia' : (auditResult.diff > 0 ? `+${formatARS(auditResult.diff)}` : formatARS(auditResult.diff))}
                 </div>
                 <div className="text-[11px] opacity-80">
-                  Arqueo realizado a las {auditResult.timestamp} hs {auditResult.notes ? `por ${auditResult.notes}` : ''}
+                  Arqueo auditado a las {auditResult.timestamp} hs {auditResult.notes ? `por ${auditResult.notes}` : ''}
                 </div>
               </div>
 
@@ -526,7 +576,7 @@ export default function CajaPage() {
                   <span className="font-bold text-white font-mono">{formatARS(auditResult.declared)}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400">Efectivo Teórico Esperado (Sistema):</span>
+                  <span className="text-slate-400">Efectivo Teórico Esperado (Servidor):</span>
                   <span className="font-bold text-slate-300 font-mono">{formatARS(auditResult.expected)}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
@@ -539,41 +589,20 @@ export default function CajaPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setAuditResult(null)}
+                  onClick={() => {
+                    setAuditResult(null)
+                    setDeclaredCash('')
+                  }}
                   className="text-xs border-slate-700 text-slate-300"
                 >
-                  Volver a Contar
+                  Nuevo Arqueo
                 </Button>
                 <Button
                   type="button"
-                  disabled={savingAudit}
-                  onClick={async () => {
-                    if (!tenantId || !auditResult) return
-                    setSavingAudit(true)
-                    try {
-                      const res = await saveBlindAuditAction(tenantId, {
-                        cashierName: cashierName.trim() || undefined,
-                        declaredCash: auditResult.declared,
-                        expectedCash: auditResult.expected,
-                        diffCash: auditResult.diff,
-                        status: auditResult.status,
-                        notes: auditResult.notes,
-                      })
-                      if (res.success) {
-                        toast.success('¡Arqueo ciego archivado y registrado en auditoría!')
-                        setShowBlindAuditModal(false)
-                      } else {
-                        toast.error('Error al registrar arqueo: ' + res.error)
-                      }
-                    } catch {
-                      toast.error('Error al guardar el arqueo')
-                    } finally {
-                      setSavingAudit(false)
-                    }
-                  }}
+                  onClick={() => setShowBlindAuditModal(false)}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-5"
                 >
-                  {savingAudit ? 'Archivando...' : 'Aceptar y Finalizar'}
+                  Aceptar y Cerrar
                 </Button>
               </DialogFooter>
             </div>

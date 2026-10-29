@@ -16,32 +16,41 @@ export interface PlayerWallet {
   }[]
 }
 
-function getPhoneSearchVariants(rawPhone: string): { cleanPhone: string; orCondition: string } {
+function getPhoneSearchVariants(rawPhone: string): { cleanPhone: string; variants: string[]; orCondition: string } {
   const clean = (rawPhone || '').replace(/\D/g, '')
-  const suffix = clean.length >= 8 ? clean.slice(-8) : clean
   const variants = new Set<string>()
   if (clean) {
     variants.add(clean)
     variants.add(`+${clean}`)
-    if (clean.startsWith('549')) {
-      const local = clean.slice(3)
-      variants.add(local)
-    } else if (clean.startsWith('54')) {
-      const local = clean.slice(2)
-      variants.add(local)
-      variants.add(`549${local}`)
-    } else {
-      variants.add(`549${clean}`)
-      variants.add(`+549${clean}`)
+    // Normalización de celulares argentinos (ej: 549381..., 54381..., 0381..., 381...)
+    let national = clean
+    if (clean.startsWith('549') && clean.length >= 11) {
+      national = clean.slice(3)
+    } else if (clean.startsWith('54') && clean.length >= 10) {
+      national = clean.slice(2)
+    } else if (clean.startsWith('0') && clean.length >= 10) {
+      national = clean.slice(1)
+    }
+
+    if (national.length >= 8) {
+      variants.add(national)
+      variants.add(`549${national}`)
+      variants.add(`+549${national}`)
+      variants.add(`54${national}`)
+      variants.add(`+54${national}`)
+      variants.add(`0${national}`)
     }
   }
 
+  // Anclaje al final sólo si tiene al menos 10 dígitos (código de área + abonado completo)
+  // para evitar colisiones entre distintas características de Argentina.
+  const suffix = clean.length >= 10 ? clean.slice(-10) : ''
   const conditions = [
     ...Array.from(variants).map(v => `customer_phone.eq."${v}"`),
-    ...(suffix ? [`customer_phone.ilike."%${suffix}%"`] : []),
+    ...(suffix ? [`customer_phone.ilike."%${suffix}"`] : []),
   ]
 
-  return { cleanPhone: clean, orCondition: conditions.join(',') }
+  return { cleanPhone: clean, variants: Array.from(variants), orCondition: conditions.join(',') }
 }
 
 /**
@@ -123,7 +132,7 @@ export async function applyWalletCreditAction(
   tenantId?: string,
   bookingId?: string
 ): Promise<{ success: boolean; appliedAmount: number; remainingBalance: number; error?: string }> {
-  const { cleanPhone, orCondition } = getPhoneSearchVariants(rawPhone)
+  const { cleanPhone, variants, orCondition } = getPhoneSearchVariants(rawPhone)
   if (cleanPhone.length < 8) {
     return { success: false, appliedAmount: 0, remainingBalance: 0, error: 'Número de teléfono inválido' }
   }
@@ -140,6 +149,39 @@ export async function applyWalletCreditAction(
     const nowIso = new Date().toISOString()
     const cleanTenantId = tenantId.trim()
     const supabase = await createServiceClient()
+
+    // 1. Intentar consumo atómico mediante PostgreSQL RPC con bloqueo exclusivo FOR UPDATE
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('consume_customer_credits_atomic', {
+        p_tenant_id: cleanTenantId,
+        p_phone_variants: variants,
+        p_amount_to_use: Math.round(amountToUse),
+        p_booking_id: bookingId || null,
+        p_reason: bookingId ? `Utilizado en reserva ${bookingId.slice(0, 8)}` : 'Utilizado en reserva',
+      })
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const resObj = rpcRes as { success: boolean; applied_amount?: number; remaining_balance?: number; error?: string }
+        if (resObj.success) {
+          return {
+            success: true,
+            appliedAmount: Number(resObj.applied_amount) || 0,
+            remainingBalance: Number(resObj.remaining_balance) || 0,
+          }
+        } else if (resObj.error && !resObj.error.includes('function') && !resObj.error.includes('does not exist')) {
+          return {
+            success: false,
+            appliedAmount: 0,
+            remainingBalance: 0,
+            error: resObj.error,
+          }
+        }
+      }
+    } catch (rpcEx) {
+      console.warn('[applyWalletCreditAction] RPC fallback to optimistic client-side update:', rpcEx)
+    }
+
+    // 2. Fallback de concurrencia optimista con chequeo de estado 'AVAILABLE'
     const { data: availableCredits, error } = await supabase
       .from('customer_credits')
       .select('id, amount_ars, status, expires_at, customer_phone, customer_name')
@@ -289,6 +331,24 @@ export async function refundWalletCreditForBooking(
 
   try {
     const supabase = await createServiceClient()
+
+    // 1. Intentar reversión atómica mediante PostgreSQL RPC
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('refund_customer_credits_atomic', {
+        p_tenant_id: tenantId,
+        p_booking_id: bookingId,
+      })
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const resObj = rpcRes as { success: boolean; refunded_count?: number }
+        if (resObj.success) {
+          return { success: true, refundedCount: Number(resObj.refunded_count) || 0 }
+        }
+      }
+    } catch (rpcEx) {
+      console.warn('[refundWalletCreditForBooking] RPC fallback to client query:', rpcEx)
+    }
+
     const shortId = bookingId.slice(0, 8)
 
     const { data: usedCredits, error: findErr } = await supabase

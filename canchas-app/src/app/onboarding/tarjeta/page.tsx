@@ -576,6 +576,18 @@ function OnboardingCardContent() {
                 </>
               )}
             </Button>
+
+            {/* Acceso Alternativo durante la Prueba Gratuita de 15 Días */}
+            <div className="pt-2 text-center">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => router.push('/dashboard')}
+                className="w-full text-xs text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl py-3 font-semibold cursor-pointer"
+              >
+                Explorar el panel ahora y vincular tarjeta más tarde →
+              </Button>
+            </div>
           </form>
         </Card>
       </main>

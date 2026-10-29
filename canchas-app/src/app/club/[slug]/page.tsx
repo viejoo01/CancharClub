@@ -1203,7 +1203,7 @@ export default function ClubPublicPage({
           )}
 
           {isPublicPaused ? (
-            <div className="bg-gradient-to-b from-amber-950/40 to-slate-900 border border-amber-800/60 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
+            <div className="bg-linear-to-b from-amber-950/40 to-slate-900 border border-amber-800/60 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center">
                 <AlertCircle className="w-6 h-6" />
               </div>
@@ -1226,6 +1226,33 @@ export default function ClubPublicPage({
                   Consultar Turnos por WhatsApp
                 </a>
               </Button>
+            </div>
+          ) : club.courts.length === 0 ? (
+            <div className="bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-white text-base">Club en Configuración Inicial</h3>
+                <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                  {club.name} está finalizando la configuración de sus canchas y horarios en CancharClub. Muy pronto vas a poder reservar turnos online en segundos.
+                </p>
+              </div>
+              {club.whatsappPhone && (
+                <Button
+                  asChild
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-5 rounded-2xl shadow-lg shadow-emerald-950/40"
+                >
+                  <a
+                    href={buildWhatsAppLink(club.whatsappPhone, `¡Hola ${club.name}! Vi su perfil en CancharClub y quisiera consultar disponibilidad de canchas.`)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Phone className="w-4 h-4 mr-2" />
+                    Consultar Disponibilidad por WhatsApp
+                  </a>
+                </Button>
+              )}
             </div>
           ) : filteredSlots.length === 0 ? (
             <div className="p-8 text-center bg-slate-900/50 rounded-3xl border border-slate-800 space-y-3">

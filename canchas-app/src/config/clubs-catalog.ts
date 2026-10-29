@@ -503,36 +503,70 @@ export function generateClubSlots(
       let depositPct = court.depositPercentage || 0.5
 
       if (club.priceRules && club.priceRules.length > 0) {
-        // Filtrar reglas que correspondan a esta cancha (o aplicables a todas) y a este día de la semana
-        const applicableRules = club.priceRules.filter(rule => {
-          const matchesCourt = !rule.courtId || rule.courtId === court.id
-          const matchesDay = !rule.dayOfWeek || rule.dayOfWeek.length === 0 || (Array.isArray(rule.dayOfWeek) && rule.dayOfWeek.includes(dayOfWeek))
-          return matchesCourt && matchesDay
-        })
+        const slotStartMins = totalMinutes
+        const slotEndMins = totalMinutes + duration
 
-        // Buscar regla donde el horario del turno esté contenido en [timeFrom, timeTo]
-        const matchingRule = applicableRules
-          .filter(rule => time >= rule.timeFrom && time <= rule.timeTo)
-          .sort((a, b) => b.timeFrom.localeCompare(a.timeFrom))[0]
+        // Filtrar reglas que correspondan a esta cancha (o aplicables a todas) y a este día de la semana (normalizando Domingo 0 y 7)
+        const matchingRulesWithOverlap = club.priceRules
+          .filter(rule => {
+            const matchesCourt = !rule.courtId || rule.courtId === court.id
+            const matchesDay =
+              !rule.dayOfWeek ||
+              rule.dayOfWeek.length === 0 ||
+              (Array.isArray(rule.dayOfWeek) &&
+                (rule.dayOfWeek.includes(dayOfWeek) ||
+                  (dayOfWeek === 0 && rule.dayOfWeek.includes(7)) ||
+                  (dayOfWeek === 7 && rule.dayOfWeek.includes(0))))
+            return matchesCourt && matchesDay
+          })
+          .map(rule => {
+            const [rfH, rfM] = (rule.timeFrom || '00:00').split(':').map(Number)
+            const [rtH, rtM] = (rule.timeTo || '23:59').split(':').map(Number)
+            let toM = (rtH || 0) * 60 + (rtM || 0)
+            if (toM === 0) toM = 24 * 60
+            const fromM = (rfH || 0) * 60 + (rfM || 0)
+            const overlapMins = Math.max(0, Math.min(slotEndMins, toM) - Math.max(slotStartMins, fromM))
+            return { rule, overlapMins }
+          })
+          .filter(item => item.overlapMins > 0)
+          .sort((a, b) => {
+            // Cancha específica primero
+            const aCourtSpec = a.rule.courtId === court.id ? 1 : 0
+            const bCourtSpec = b.rule.courtId === court.id ? 1 : 0
+            if (bCourtSpec !== aCourtSpec) return bCourtSpec - aCourtSpec
+            // Mayor tarifa primero (protección suplemento luz nocturna en turnos cross-boundary)
+            if (b.rule.priceArs !== a.rule.priceArs) return b.rule.priceArs - a.rule.priceArs
+            // Mayor solapamiento
+            return b.overlapMins - a.overlapMins
+          })
 
-        if (matchingRule) {
-          totalPrice = matchingRule.priceArs
-          depositPct = (matchingRule.depositPct || 50) / 100
-        } else if (applicableRules.length > 0) {
-          // Si no hubo coincidencia horaria estricta en el día, aplicar la tarifa más cercana del día
-          totalPrice = applicableRules[0].priceArs
-          depositPct = (applicableRules[0].depositPct || 50) / 100
+        if (matchingRulesWithOverlap.length > 0) {
+          const chosen = matchingRulesWithOverlap[0].rule
+          totalPrice = chosen.priceArs
+          depositPct = (chosen.depositPct || 50) / 100
         } else {
-          // Si no hay regla específica configurada para este día (ej: fin de semana aún no diferenciado),
-          // heredar la franja horaria correspondiente de la cancha
-          const courtRules = club.priceRules.filter(rule => !rule.courtId || rule.courtId === court.id)
-          const timeFallback = courtRules
-            .filter(rule => time >= rule.timeFrom && time <= rule.timeTo)
-            .sort((a, b) => b.timeFrom.localeCompare(a.timeFrom))[0]
-          if (timeFallback) {
-            totalPrice = timeFallback.priceArs
-            depositPct = (timeFallback.depositPct || 50) / 100
+          // Si no hubo regla para este día, buscar si hay una regla general sin restricción de día para la cancha
+          const generalCourtRules = club.priceRules.filter(
+            rule => (!rule.courtId || rule.courtId === court.id) && (!rule.dayOfWeek || rule.dayOfWeek.length === 0)
+          )
+          const fallbackMatches = generalCourtRules
+            .map(rule => {
+              const [rfH, rfM] = (rule.timeFrom || '00:00').split(':').map(Number)
+              const [rtH, rtM] = (rule.timeTo || '23:59').split(':').map(Number)
+              let toM = (rtH || 0) * 60 + (rtM || 0)
+              if (toM === 0) toM = 24 * 60
+              const fromM = (rfH || 0) * 60 + (rfM || 0)
+              const overlapMins = Math.max(0, Math.min(slotEndMins, toM) - Math.max(slotStartMins, fromM))
+              return { rule, overlapMins }
+            })
+            .filter(item => item.overlapMins > 0)
+            .sort((a, b) => b.rule.priceArs - a.rule.priceArs)
+
+          if (fallbackMatches.length > 0) {
+            totalPrice = fallbackMatches[0].rule.priceArs
+            depositPct = (fallbackMatches[0].rule.depositPct || 50) / 100
           }
+          // Si no hay reglas generales, conserva de forma segura el precio base de la cancha (court.pricePerHour)
         }
       }
 

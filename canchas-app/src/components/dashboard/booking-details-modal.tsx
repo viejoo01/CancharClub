@@ -540,19 +540,30 @@ export function BookingDetailsModal({
   const balanceDueArs = currentBalance
   const balanceText = balanceDueArs > 0 ? formatARS(balanceDueArs) : '$ 0'
 
+  const isPending = depositPaidArs === 0 && (booking.status === 'pending_deposit' || booking.status === 'pending_payment' || booking.status === 'pending')
+  const waHeader = isPending
+    ? `*SOLICITUD DE TURNO REGISTRADA - ${effectiveClubName.toUpperCase()}*`
+    : `*TURNO CONFIRMADO - ${effectiveClubName.toUpperCase()}*`
+  const waIntro = isPending
+    ? `Hola *${booking.customer_name}*, registramos tu solicitud de reserva. El turno quedará formalmente confirmado una vez acreditado el pago de la seña correspondiente:`
+    : `Hola *${booking.customer_name}*, tu reserva quedó validada y agendada con éxito:`
+  const waClosing = isPending
+    ? 'Por favor completá o informá el pago de la seña para asegurar la cancha.'
+    : 'Te recordamos presentarte 10 minutos antes.'
+
   const waMessage = 
-`🎾 *¡TURNO CONFIRMADO EN ${effectiveClubName.toUpperCase()}!* ⚽
+`${waHeader}
 
-Hola *${booking.customer_name}*, tu reserva quedó validada y agendada con éxito:
+${waIntro}
 
-📅 *Fecha:* ${displayBookingDate}
-⏰ *Horario:* ${displayBookingTime} hs
-🏟️ *Cancha:* ${courtDisplayName}
-💵 *Total:* ${formatARS(totalAmountArs)}
-💳 *Seña abonada:* ${formatARS(depositPaidArs)}
-💰 *Saldo restante a pagar en cancha:* ${balanceText}
+• *Fecha:* ${displayBookingDate}
+• *Horario:* ${displayBookingTime} hs
+• *Cancha:* ${courtDisplayName}
+• *Total:* ${formatARS(totalAmountArs)}
+• *Seña abonada:* ${formatARS(depositPaidArs)}
+• *Saldo restante a pagar en cancha:* ${balanceText}
 
-¡Te esperamos! Te recordamos llegar 10 minutos antes.
+${waClosing}
 _Comprobante automático emitido por CancharClub._`
 
   const waUrl = booking.customer_phone

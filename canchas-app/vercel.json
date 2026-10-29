@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/recurring-slots-rollforward",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/waitlist-cascade",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

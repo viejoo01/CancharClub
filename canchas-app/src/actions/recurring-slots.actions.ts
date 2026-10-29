@@ -368,29 +368,58 @@ export async function deleteRecurringSlot(
     // 2. Si se cancelan reservas futuras generadas por este abono
     const cancelBookings = options?.cancelFutureBookings ?? true
     if (cancelBookings && targetTenantId) {
-      // Cancelar por recurring_slot_id
-      await serviceClient
+      const todayIso = getArgentinaTodayIso()
+
+      // Consultar reservas vinculadas a este abono y cancelar ÚNICAMENTE las de hoy en adelante (preservando el pasado)
+      const { data: slotBookings } = await serviceClient
         .from('bookings')
-        .update({
-          status: 'cancelled',
-          staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
-        })
+        .select('id, booked_at')
         .eq('tenant_id', targetTenantId)
         .eq('recurring_slot_id', slotId)
         .neq('status', 'cancelled')
 
-      // También cancelar reservas asociadas identificadas por notas
-      if (slotCustomerName && slotCourtId) {
+      for (const b of slotBookings || []) {
+        const bookedAtStr = String(b.booked_at || '')
+        const dateMatch = bookedAtStr.match(/\d{4}-\d{2}-\d{2}/)
+        const bookingDate = dateMatch ? dateMatch[0] : null
+        // PRESERVAR HISTORIAL CONTABLE Y DEPORTIVO: Omitir turnos que ya se jugaron en el pasado
+        if (bookingDate && bookingDate < todayIso) {
+          continue
+        }
         await serviceClient
           .from('bookings')
           .update({
             status: 'cancelled',
             staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
           })
+          .eq('id', b.id)
+      }
+
+      // También cancelar reservas futuras asociadas identificadas por notas
+      if (slotCustomerName && slotCourtId) {
+        const { data: noteBookings } = await serviceClient
+          .from('bookings')
+          .select('id, booked_at')
           .eq('tenant_id', targetTenantId)
           .eq('court_id', slotCourtId)
           .ilike('staff_notes', `%ABONO FIJO: ${slotCustomerName}%`)
           .neq('status', 'cancelled')
+
+        for (const b of noteBookings || []) {
+          const bookedAtStr = String(b.booked_at || '')
+          const dateMatch = bookedAtStr.match(/\d{4}-\d{2}-\d{2}/)
+          const bookingDate = dateMatch ? dateMatch[0] : null
+          if (bookingDate && bookingDate < todayIso) {
+            continue
+          }
+          await serviceClient
+            .from('bookings')
+            .update({
+              status: 'cancelled',
+              staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
+            })
+            .eq('id', b.id)
+        }
       }
     }
 
@@ -531,7 +560,41 @@ export async function generateMonthlyBookingsForSlot(
       const endsAtIso = new Date(slotStartDate.getTime() + durationMinutes * 60000).toISOString()
       const bookingRange = `[${startsAtIso},${endsAtIso})`
 
-      // Verificar si ya existe una reserva activa para este horario y cancha (operador 'ov' de Postgres para solapamiento de rangos)
+      // 1. Si este abono ya generó un turno en esta fecha (incluso si fue cancelado puntualmente por el club), no revivirlo
+      const { data: alreadyGeneratedSlot } = await supabase
+        .from('bookings')
+        .select('id, status')
+        .eq('tenant_id', slot.tenant_id)
+        .eq('court_id', slot.court_id)
+        .eq('recurring_slot_id', slot.id)
+        .filter('booked_at', 'ov', bookingRange)
+        .limit(1)
+        .maybeSingle()
+
+      if (alreadyGeneratedSlot) {
+        alreadyExistingCount++
+        continue
+      }
+
+      // 2. Verificar si la cancha está bloqueada por mantenimiento, lluvia o evento privado (court_blocks)
+      try {
+        const { data: existingBlock } = await supabase
+          .from('court_blocks')
+          .select('id, reason')
+          .eq('court_id', slot.court_id)
+          .filter('block_range', 'ov', bookingRange)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingBlock) {
+          alreadyExistingCount++
+          continue
+        }
+      } catch {
+        // Continuar si la tabla no está disponible
+      }
+
+      // 3. Verificar si ya existe una reserva activa para este horario y cancha (operador 'ov' de Postgres para solapamiento de rangos)
       const { data: existingBooking } = await supabase
         .from('bookings')
         .select('id, customer_name, status')

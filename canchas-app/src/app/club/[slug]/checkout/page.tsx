@@ -68,6 +68,9 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
   const rawTotalParam = Number(searchParams.get('total'))
   const rawDepositParam = Number(searchParams.get('deposit'))
 
+  const courtObj = club.courts?.find((c) => c.id === courtId || c.name === courtName)
+  const sport = ((searchParams.get('sport') as SportType) || (courtObj?.sport as SportType) || (club.sports?.[0] as SportType) || 'FUTBOL') as SportType
+
   // Cálculo inteligente: si no viene en los parámetros URL, computar de las reglas de tarifas del club
   const calculatedPricing = useMemo(() => {
     if (rawTotalParam > 0) {
@@ -82,12 +85,44 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
         const parts = date.split('-').map(Number)
         if (parts.length === 3) dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay()
       }
-      const matchingRule = club.priceRules.find((r) =>
-        (!r.courtId || r.courtId === courtId) &&
-        (!r.dayOfWeek || r.dayOfWeek.length === 0 || r.dayOfWeek.includes(dayOfWeek)) &&
-        time >= r.timeFrom && time <= r.timeTo
-      )
-      if (matchingRule) {
+
+      const [sh, sm] = (time || '00:00').split(':').map(Number)
+      const slotStartMins = (sh || 0) * 60 + (sm || 0)
+      const isPadel = sport.toUpperCase().includes('PADEL')
+      const duration = courtObj?.slotDurationMinutes || (isPadel ? 90 : 60)
+      const slotEndMins = slotStartMins + duration
+
+      const matchingRulesWithOverlap = club.priceRules
+        .filter((r) => {
+          const courtMatch = !r.courtId || r.courtId === courtId
+          const dayMatch =
+            !r.dayOfWeek ||
+            r.dayOfWeek.length === 0 ||
+            r.dayOfWeek.includes(dayOfWeek) ||
+            (dayOfWeek === 0 && r.dayOfWeek.includes(7)) ||
+            (dayOfWeek === 7 && r.dayOfWeek.includes(0))
+          return courtMatch && dayMatch
+        })
+        .map((r) => {
+          const [rfH, rfM] = (r.timeFrom || '00:00').split(':').map(Number)
+          const [rtH, rtM] = (r.timeTo || '23:59').split(':').map(Number)
+          let toM = (rtH || 0) * 60 + (rtM || 0)
+          if (toM === 0) toM = 24 * 60
+          const fromM = (rfH || 0) * 60 + (rfM || 0)
+          const overlapMins = Math.max(0, Math.min(slotEndMins, toM) - Math.max(slotStartMins, fromM))
+          return { rule: r, overlapMins }
+        })
+        .filter((item) => item.overlapMins > 0)
+        .sort((a, b) => {
+          const aCourtSpec = a.rule.courtId === courtId ? 1 : 0
+          const bCourtSpec = b.rule.courtId === courtId ? 1 : 0
+          if (bCourtSpec !== aCourtSpec) return bCourtSpec - aCourtSpec
+          if (b.rule.priceArs !== a.rule.priceArs) return b.rule.priceArs - a.rule.priceArs
+          return b.overlapMins - a.overlapMins
+        })
+
+      if (matchingRulesWithOverlap.length > 0) {
+        const matchingRule = matchingRulesWithOverlap[0].rule
         const t = matchingRule.priceArs
         const depPct = (matchingRule.depositPct || 50) / 100
         return { total: t, deposit: Math.round(t * depPct) }
@@ -95,12 +130,10 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
     }
     const defaultPrice = club.startingPrice || 25000
     return { total: defaultPrice, deposit: Math.round(defaultPrice * 0.5) }
-  }, [rawTotalParam, rawDepositParam, club, date, time, courtId])
+  }, [rawTotalParam, rawDepositParam, club, date, time, courtId, courtObj, sport])
 
   const total = calculatedPricing.total
   const deposit = calculatedPricing.deposit
-  const courtObj = club.courts?.find((c) => c.id === courtId || c.name === courtName)
-  const sport = ((searchParams.get('sport') as SportType) || (courtObj?.sport as SportType) || (club.sports?.[0] as SportType) || 'FUTBOL') as SportType
 
   const paramTenant = searchParams.get('tenantId')
   const [resolvedTenantId, setResolvedTenantId] = useState<string>(
@@ -294,7 +327,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       const activeClaimToken = effectiveClaimId || claimId || undefined
       const res = await initiateOnlineCheckout(
         {
-          tenant_id: resolvedTenantId || (club?.id && club.id.length > 10 ? club.id : '00000000-0000-0000-0000-000000000001'),
+          tenant_id: resolvedTenantId || club?.id || '',
           court_id: courtId,
           court_name: courtName,
           customer_name: customerName,

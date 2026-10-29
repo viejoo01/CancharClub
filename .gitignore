@@ -15,6 +15,7 @@ canchas-app/build/
 canchas-app/.env*
 !.env.example
 !canchas-app/.env.example
+!canchas-app/.env.test.example
 
 # Temporary and local data
 backups/

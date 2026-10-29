@@ -1,5 +1,6 @@
 import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
 import { DashboardDailySummary } from '@/components/dashboard/dashboard-daily-summary'
+import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist'
 import type { QuickBookingPriceRule } from '@/components/dashboard/quick-booking-modal'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
@@ -46,7 +47,7 @@ export default async function DashboardPage(props: {
   }
 
   // Parallelize all independent data fetches
-  const [rawCourtsResult, bookings, schedule, priceRules] = await Promise.all([
+  const [rawCourtsResult, bookings, schedule, priceRules, tenantResult] = await Promise.all([
     tenantId
       ? supabase
           .from('courts')
@@ -57,6 +58,13 @@ export default async function DashboardPage(props: {
     tenantId ? getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]> : Promise.resolve([] as CalendarBooking[]),
     tenantId ? getClubSchedule(tenantId) : Promise.resolve(undefined),
     tenantId ? (getClubPriceRules(tenantId) as unknown as Promise<QuickBookingPriceRule[]>) : Promise.resolve([] as QuickBookingPriceRule[]),
+    tenantId
+      ? supabase
+          .from('tenants')
+          .select('name, slug, bank_alias, bank_cbu, mp_access_token')
+          .eq('id', tenantId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   const rawCourts = rawCourtsResult.data
@@ -72,6 +80,11 @@ export default async function DashboardPage(props: {
       }))
     : []
 
+  const tenant = tenantResult?.data
+  const tenantSlug = tenant?.slug || 'mi-club'
+  const tenantName = tenant?.name || 'Mi Club'
+  const hasBankConfigured = Boolean(tenant?.bank_alias || tenant?.bank_cbu || tenant?.mp_access_token)
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">
@@ -84,6 +97,13 @@ export default async function DashboardPage(props: {
           </p>
         </div>
       </div>
+
+      <OnboardingChecklist
+        tenantSlug={tenantSlug}
+        tenantName={tenantName}
+        courtsCount={courts.length}
+        hasBankConfigured={hasBankConfigured}
+      />
 
       <DashboardDailySummary
         bookings={bookings as unknown as CalendarBooking[]}

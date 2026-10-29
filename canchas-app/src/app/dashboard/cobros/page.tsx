@@ -10,7 +10,11 @@ import {
   CheckCircle2, 
   ShieldAlert,
   Zap,
-  Clock
+  Clock,
+  CreditCard,
+  Link2,
+  Unlink,
+  ExternalLink
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,7 +24,9 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { 
   getTenantPaymentSettings, 
-  saveTenantBankSettings
+  saveTenantBankSettings,
+  saveTenantMpCredentials,
+  disconnectTenantMpAccount
 } from '@/actions/tenant-payment-settings.actions'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
 import { setGlobalCachedTenantId } from '@/providers/tenant-provider'
@@ -52,6 +58,15 @@ export default function CobrosConfigPage() {
   const [isSavedInDb, setIsSavedInDb] = useState(() => Boolean(cached?.accountHolder && (cached?.alias || cached?.cbu)))
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
+  // Mercado Pago del Club
+  const [mpConnected, setMpConnected] = useState(() => Boolean(cached?.mpConnected))
+  const [mpCollectorId, setMpCollectorId] = useState<string | null>(() => cached?.mpCollectorId || null)
+  const [mpPublicKey, setMpPublicKey] = useState<string | null>(() => cached?.mpPublicKey || null)
+  const [mpAccessTokenInput, setMpAccessTokenInput] = useState('')
+  const [mpPublicKeyInput, setMpPublicKeyInput] = useState('')
+  const [savingMp, setSavingMp] = useState(false)
+  const [disconnectingMp, setDisconnectingMp] = useState(false)
+
   const draftKey = tenantId ? `canchar_draft_bank_settings_${tenantId}` : 'canchar_draft_bank_settings'
 
   useEffect(() => {
@@ -69,6 +84,9 @@ export default function CobrosConfigPage() {
           }
           const hasDbData = Boolean(settings.accountHolder && (settings.alias || settings.cbu))
           setIsSavedInDb(hasDbData)
+          setMpConnected(settings.mpConnected)
+          setMpCollectorId(settings.mpCollectorId || null)
+          setMpPublicKey(settings.mpPublicKey || null)
 
           // Revisar si había borrador en sessionStorage
           let draft: Record<string, string> | null = null
@@ -527,6 +545,184 @@ export default function CobrosConfigPage() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* ─── 2. MERCADO PAGO DEL CLUB (SEÑAS AUTOMÁTICAS 24HS) ─── */}
+      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg">
+        <CardHeader className="border-b border-slate-800 pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-white">
+                  Cobros Online con Mercado Pago (Señas Automáticas)
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-400">
+                  Permite a tus clientes pagar la seña al instante con tarjeta de crédito, débito o dinero en cuenta
+                </CardDescription>
+              </div>
+            </div>
+            <div>
+              {mpConnected ? (
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[11px] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Conectado Directo
+                </Badge>
+              ) : (
+                <Badge className="bg-slate-800 text-slate-400 border-slate-700 text-[11px]">
+                  No Vinculado
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-5 space-y-4">
+          {mpConnected ? (
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold text-white">Cuenta de Mercado Pago Activa</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Las señas cobradas por Mercado Pago ingresan 100% directo a tu cuenta de Mercado Pago.
+                  </p>
+                  {mpCollectorId && (
+                    <span className="text-[10px] font-mono text-slate-400 block">
+                      Collector ID: <span className="text-slate-300">{mpCollectorId}</span>
+                      {mpPublicKey && ` • Public Key: ${mpPublicKey.slice(0, 12)}...`}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm('¿Seguro que deseas desvincular Mercado Pago? Los jugadores solo podrán abonar por transferencia.')) {
+                      return
+                    }
+                    setDisconnectingMp(true)
+                    try {
+                      const res = await disconnectTenantMpAccount(tenantId)
+                      if (res.success) {
+                        toast.success('Mercado Pago desvinculado')
+                        setMpConnected(false)
+                        setMpCollectorId(null)
+                        setMpPublicKey(null)
+                      } else {
+                        toast.error(res.error || 'Error al desvincular')
+                      }
+                    } catch {
+                      toast.error('Error al desvincular cuenta')
+                    } finally {
+                      setDisconnectingMp(false)
+                    }
+                  }}
+                  disabled={disconnectingMp}
+                  variant="outline"
+                  className="h-9 px-4 rounded-xl border-rose-500/30 text-rose-400 hover:bg-rose-950/30 text-xs font-semibold gap-1.5 shrink-0"
+                >
+                  {disconnectingMp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+                  <span>Desvincular Cuenta</span>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!mpAccessTokenInput.trim()) {
+                  toast.error('Por favor ingresá tu Access Token de Producción')
+                  return
+                }
+                setSavingMp(true)
+                try {
+                  const res = await saveTenantMpCredentials(tenantId, {
+                    accessToken: mpAccessTokenInput.trim(),
+                    publicKey: mpPublicKeyInput.trim() || undefined,
+                  })
+                  if (res.success) {
+                    toast.success(`¡Mercado Pago vinculado exitosamente${res.accountName ? ` (${res.accountName})` : ''}!`)
+                    setMpConnected(true)
+                    setMpCollectorId(res.collectorId || null)
+                    setMpAccessTokenInput('')
+                    setMpPublicKeyInput('')
+                  } else {
+                    toast.error(res.error || 'Error al vincular Mercado Pago')
+                  }
+                } catch {
+                  toast.error('Error al conectar con Mercado Pago')
+                } finally {
+                  setSavingMp(false)
+                }
+              }}
+              className="space-y-4"
+            >
+              <div className="p-3.5 rounded-xl bg-sky-950/20 border border-sky-500/30 text-xs text-slate-300 space-y-1">
+                <span className="font-bold text-sky-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-sky-400" />
+                  Acreditación directa en tu cuenta bancaria o de Mercado Pago
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Ingresá tus credenciales de producción de Mercado Pago Developers. El sistema las validará en tiempo real con la API de Mercado Pago y las resguardará con encriptación estricta.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="mpAccessToken" className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Access Token de Producción (APP_USR-...) *</span>
+                    <a
+                      href="https://www.mercadopago.com.ar/developers/panel/app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
+                    >
+                      <span>Obtener en MP Developers</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </Label>
+                  <Input
+                    id="mpAccessToken"
+                    type="password"
+                    value={mpAccessTokenInput}
+                    onChange={(e) => setMpAccessTokenInput(e.target.value)}
+                    placeholder="APP_USR-xxxxxxxxxxxxxxxx-xxxxxx-xxxxxxxxxxxxxxxx-xxxxxxxx"
+                    className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-slate-200 focus:border-sky-500"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="mpPublicKey" className="text-xs font-semibold text-slate-300">
+                    Public Key de Producción (Opcional)
+                  </Label>
+                  <Input
+                    id="mpPublicKey"
+                    value={mpPublicKeyInput}
+                    onChange={(e) => setMpPublicKeyInput(e.target.value)}
+                    placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-slate-200 focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <Button
+                  type="submit"
+                  disabled={savingMp}
+                  className="h-10 px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-md shadow-sky-950/40 gap-1.5"
+                >
+                  {savingMp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                  <span>Vincular Cuenta de Mercado Pago</span>
+                </Button>
+              </div>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

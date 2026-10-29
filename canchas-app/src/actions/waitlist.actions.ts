@@ -300,12 +300,19 @@ export async function advanceWaitlistCascade(tenantId?: string): Promise<{
       expiredCount++
 
       // 2. Verificar si el turno ya fue ocupado en bookings por reserva manual o admin
-      const { data: booked } = await supabase
+      const startsAt = `${exp.date}T${exp.time_slot}:00-03:00`
+      const { data: alreadyBooked } = await supabase
         .from('bookings')
         .select('id')
         .eq('tenant_id', exp.tenant_id)
+        .eq('court_id', exp.court_id)
+        .eq('starts_at', startsAt)
         .neq('status', 'cancelled')
         .limit(1)
+
+      if (alreadyBooked && alreadyBooked.length > 0) {
+        continue
+      }
 
       // 3. Disparar notificación al SIGUIENTE jugador en la fila
       const cascadeResult = await processWaitlistOnCancellation({

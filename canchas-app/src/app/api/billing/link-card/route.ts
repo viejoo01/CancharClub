@@ -9,7 +9,7 @@ const mpClient = new MercadoPagoConfig({
 
 export async function POST(req: Request) {
   try {
-    const { token, paymentMethodId, issuerId } = await req.json()
+    const { token, paymentMethodId } = await req.json()
     const supabase = await createClient()
 
     // 1. Obtener datos del tenant logueado

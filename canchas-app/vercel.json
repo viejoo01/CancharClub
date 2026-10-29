@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/waitlist-cascade",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 10 * * *"
     }
   ]
 }

@@ -274,7 +274,7 @@ export default function ReportesPage() {
               </p>
             </Card>
 
-            <Card className="bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 p-4 space-y-1">
+            <Card className="bg-linear-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 p-4 space-y-1">
               <div className="flex items-center justify-between text-xs text-emerald-400 font-semibold">
                 <span>Potencial de Ingreso</span>
                 <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -339,7 +339,7 @@ export default function ReportesPage() {
             </div>
 
             <div className="overflow-x-auto pb-2 touch-momentum">
-              <div className="min-w-[650px] space-y-2">
+              <div className="min-w-162.5 space-y-2">
                 {/* Header Días */}
                 <div className="grid grid-cols-[140px_repeat(7,1fr)] gap-2 text-center text-xs font-bold text-slate-400 pb-1 border-b border-slate-800">
                   <div className="text-left font-bold text-slate-500">Franja Horaria</div>
@@ -368,7 +368,7 @@ export default function ReportesPage() {
                       return (
                         <div
                           key={`${slot.key}-${dayName}`}
-                          className={`min-h-[64px] rounded-xl border p-2 flex flex-col items-center justify-center transition-all ${getCellColor(
+                          className={`min-h-16 rounded-xl border p-2 flex flex-col items-center justify-center transition-all ${getCellColor(
                             pct
                           )}`}
                         >

@@ -79,17 +79,17 @@ export function ClubScheduleModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-120 bg-slate-950 border-slate-800 text-slate-100">
+      <DialogContent className="sm:max-w-120">
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-bold text-white">
+              <DialogTitle className="text-lg font-bold text-slate-900 dark:text-white">
                 Horario de Apertura y Cierre
               </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400">
+              <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
                 Los turnos de las canchas se generarán estrictamente dentro de esta franja.
               </DialogDescription>
             </div>
@@ -98,12 +98,12 @@ export function ClubScheduleModal({
 
         <form onSubmit={handleSubmit} className="space-y-5 py-2">
           {/* Horario de Apertura */}
-          <div className="space-y-2 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
+          <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80">
             <div className="flex items-center justify-between">
-              <Label htmlFor="openingTime" className="text-xs font-bold text-slate-200">
+              <Label htmlFor="openingTime" className="text-xs font-bold text-slate-700 dark:text-slate-200">
                 Horario de Apertura (Primer turno)
               </Label>
-              <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+              <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/30">
                 Abre {openingTime} hs
               </span>
             </div>
@@ -114,7 +114,7 @@ export function ClubScheduleModal({
                 type="time"
                 value={openingTime}
                 onChange={(e) => setOpeningTime(e.target.value)}
-                className="h-11 bg-slate-950 border-slate-700 text-white font-mono text-base focus:ring-emerald-500 cursor-pointer"
+                className="h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-base focus:ring-emerald-500 cursor-pointer"
                 required
               />
             </div>
@@ -129,8 +129,8 @@ export function ClubScheduleModal({
                   onClick={() => setOpeningTime(preset)}
                   className={`text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
                     openingTime === preset
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700'
+                      ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
                   {preset}
@@ -138,18 +138,18 @@ export function ClubScheduleModal({
               ))}
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              No aparecerán canchas disponibles antes de las <strong className="text-white">{openingTime} hs</strong>. El primer turno del día comenzará puntualmente a esa hora.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              No aparecerán canchas disponibles antes de las <strong className="text-slate-900 dark:text-white">{openingTime} hs</strong>. El primer turno del día comenzará puntualmente a esa hora.
             </p>
           </div>
 
           {/* Horario de Cierre */}
-          <div className="space-y-2 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
+          <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80">
             <div className="flex items-center justify-between">
-              <Label htmlFor="closingTime" className="text-xs font-bold text-slate-200">
+              <Label htmlFor="closingTime" className="text-xs font-bold text-slate-700 dark:text-slate-200">
                 Horario de Cierre (Último turno)
               </Label>
-              <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+              <span className="text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-200 dark:border-cyan-500/30">
                 Cierra {closingTime} hs
               </span>
             </div>
@@ -160,7 +160,7 @@ export function ClubScheduleModal({
                 type="time"
                 value={closingTime}
                 onChange={(e) => setClosingTime(e.target.value)}
-                className="h-11 bg-slate-950 border-slate-700 text-white font-mono text-base focus:ring-cyan-500 cursor-pointer"
+                className="h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-base focus:ring-cyan-500 cursor-pointer"
                 required
               />
             </div>
@@ -175,8 +175,8 @@ export function ClubScheduleModal({
                   onClick={() => setClosingTime(preset)}
                   className={`text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
                     closingTime === preset
-                      ? 'bg-cyan-500 text-slate-950 font-bold'
-                      : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700'
+                      ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
                   {preset}
@@ -184,18 +184,18 @@ export function ClubScheduleModal({
               ))}
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              El club finalizará su jornada a las <strong className="text-white">{closingTime} hs</strong>. Ningún turno posterior estará disponible.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              El club finalizará su jornada a las <strong className="text-slate-900 dark:text-white">{closingTime} hs</strong>. Ningún turno posterior estará disponible.
             </p>
           </div>
 
           {/* Resumen en vivo */}
-          <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <div className="font-bold text-white">Configuración activa de turnos:</div>
+              <div className="font-bold text-slate-900 dark:text-white">Configuración activa de turnos:</div>
               <div className="mt-0.5">
-                Primer turno disponible: <span className="font-bold text-emerald-400">{openingTime} hs</span> — Último turno: <span className="font-bold text-cyan-400">{closingTime} hs</span>.
+                Primer turno disponible: <span className="font-bold text-emerald-600 dark:text-emerald-400">{openingTime} hs</span> — Último turno: <span className="font-bold text-cyan-600 dark:text-cyan-400">{closingTime} hs</span>.
               </div>
             </div>
           </div>
@@ -205,7 +205,7 @@ export function ClubScheduleModal({
               type="button"
               variant="outline"
               onClick={onClose}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               disabled={loading}
             >
               Cancelar

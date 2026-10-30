@@ -209,17 +209,17 @@ export function RainProtocolModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleReset}>
-      <DialogContent className="sm:max-w-175 max-h-[92dvh] overflow-y-auto w-[96vw] sm:w-full bg-slate-900 border-slate-800 text-slate-100 p-4 sm:p-6 shadow-2xl">
+      <DialogContent className="sm:max-w-175 max-h-[92dvh] overflow-y-auto w-[96vw] sm:w-full p-4 sm:p-6 shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-500/20 border border-blue-200 dark:border-blue-500/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 shadow-inner">
               <CloudRain className="w-6 h-6 animate-pulse" />
             </div>
             <div>
-              <DialogTitle className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <DialogTitle className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                 Protocolo Climático (Lluvia / Mal Tiempo)
               </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400">
+              <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
                 Cancelación masiva de turnos con cálculo del próximo turno disponible y mensaje de WhatsApp para el jugador.
               </DialogDescription>
             </div>
@@ -228,8 +228,8 @@ export function RainProtocolModal({
 
         {!result ? (
           <div className="space-y-4 py-2">
-            <div className="p-3.5 rounded-2xl bg-blue-950/40 border border-blue-800/60 text-xs text-blue-200 flex items-start gap-3 leading-relaxed">
-              <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 text-xs text-blue-900 dark:text-blue-200 flex items-start gap-3 leading-relaxed">
+              <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <span>
                 Al activar el protocolo, las reservas afectadas se marcarán como <strong>suspendidas por lluvia</strong> y sus señas quedarán guardadas a favor del cliente. Además, <strong>el sistema calculará automáticamente el próximo turno libre más cercano</strong> para ofrecerle una reagenda inmediata por WhatsApp.
               </span>
@@ -237,40 +237,40 @@ export function RainProtocolModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <Label htmlFor="rainDate" className="text-xs text-slate-300 font-semibold">Fecha</Label>
+                <Label htmlFor="rainDate" className="text-xs text-slate-700 dark:text-slate-300 font-semibold">Fecha</Label>
                 <Input
                   id="rainDate"
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-950 border-slate-800 text-xs mt-1 text-white focus:border-blue-500"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-xs mt-1 text-slate-900 dark:text-white focus:border-blue-500"
                 />
               </div>
               <div>
-                <Label htmlFor="timeFrom" className="text-xs text-slate-300 font-semibold">Desde Hora</Label>
+                <Label htmlFor="timeFrom" className="text-xs text-slate-700 dark:text-slate-300 font-semibold">Desde Hora</Label>
                 <Input
                   id="timeFrom"
                   type="time"
                   value={timeFrom}
                   onChange={(e) => setTimeFrom(e.target.value)}
-                  className="bg-slate-950 border-slate-800 text-xs mt-1 text-white focus:border-blue-500"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-xs mt-1 text-slate-900 dark:text-white focus:border-blue-500"
                 />
               </div>
               <div>
-                <Label htmlFor="timeTo" className="text-xs text-slate-300 font-semibold">Hasta Hora</Label>
+                <Label htmlFor="timeTo" className="text-xs text-slate-700 dark:text-slate-300 font-semibold">Hasta Hora</Label>
                 <Input
                   id="timeTo"
                   type="time"
                   value={timeTo}
                   onChange={(e) => setTimeTo(e.target.value)}
-                  className="bg-slate-950 border-slate-800 text-xs mt-1 text-white focus:border-blue-500"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-xs mt-1 text-slate-900 dark:text-white focus:border-blue-500"
                 />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs text-slate-300 font-semibold">Canchas Afectadas por la Lluvia:</Label>
+                <Label className="text-xs text-slate-700 dark:text-slate-300 font-semibold">Canchas Afectadas por la Lluvia:</Label>
                 <button
                   type="button"
                   onClick={() => {
@@ -280,7 +280,7 @@ export function RainProtocolModal({
                       setSelectedCourts(courts.map(c => c.id))
                     }
                   }}
-                  className="text-[11px] text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors font-semibold"
                 >
                   {selectedCourts.length === courts.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
                 </button>
@@ -296,20 +296,20 @@ export function RainProtocolModal({
                       onClick={() => toggleCourt(court.id)}
                       className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
                         isSelected
-                          ? 'bg-blue-600/20 border-blue-500 text-white shadow-xs'
-                          : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
+                          ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-400 dark:border-blue-500 text-blue-950 dark:text-white shadow-xs font-semibold'
+                          : 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800/80 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div className="truncate pr-2">
-                        <div className="text-xs font-semibold truncate text-white">{court.name}</div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-xs font-semibold truncate text-slate-900 dark:text-white">{court.name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
                           {court.is_indoor ? 'Techada' : 'Descubierta (Expuesta al clima)'}
                         </div>
                       </div>
                       <Badge
                         variant={isSelected ? 'default' : 'outline'}
                         className={`text-[10px] shrink-0 font-medium ${
-                          isSelected ? 'bg-blue-600 text-white border-transparent' : 'border-slate-700 text-slate-400'
+                          isSelected ? 'bg-blue-600 text-white border-transparent' : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
                         }`}
                       >
                         {isSelected ? 'Afectada' : 'Excluida'}
@@ -396,25 +396,25 @@ export function RainProtocolModal({
                   return (
                     <div
                       key={notif.bookingId}
-                      className="p-3.5 sm:p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 transition-all hover:border-slate-700 shadow-md"
+                      className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3 transition-all hover:border-slate-300 dark:hover:border-slate-700 shadow-xs dark:shadow-md"
                     >
                       {/* Cabecera del turno cancelado */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/80">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm">{notif.customerName}</span>
+                            <span className="font-bold text-slate-900 dark:text-white text-sm">{notif.customerName}</span>
                             {isDone ? (
-                              <Badge className="bg-emerald-600/30 text-emerald-300 border-emerald-500/40 text-[10px] gap-1">
+                              <Badge className="bg-emerald-100 dark:bg-emerald-600/30 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40 text-[10px] gap-1">
                                 <CheckCircle2 className="w-3 h-3" /> Reagendado
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[10px] border-sky-800/80 text-sky-400 bg-sky-950/30 gap-1 inline-flex items-center">
-                                <CloudRain className="w-3 h-3 text-sky-400" />
+                              <Badge variant="outline" className="text-[10px] border-sky-300 dark:border-sky-800/80 text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 gap-1 inline-flex items-center">
+                                <CloudRain className="w-3 h-3 text-sky-600 dark:text-sky-400" />
                                 <span>Suspendido</span>
                               </Badge>
                             )}
                           </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
                             <span>{notif.customerPhone || 'Sin teléfono registrado'}</span>
                             <span>•</span>
                             <span>Turno original: {notif.originalCourtName} a las {notif.originalTime} hs</span>
@@ -423,8 +423,8 @@ export function RainProtocolModal({
 
                         {notif.creditedAmount > 0 && (
                           <div className="text-right shrink-0">
-                            <span className="text-[10px] text-slate-400 block">Saldo a favor:</span>
-                            <span className="text-xs font-bold text-emerald-400">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Saldo a favor:</span>
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                               {formatARS(notif.creditedAmount)}
                             </span>
                           </div>
@@ -433,20 +433,20 @@ export function RainProtocolModal({
 
                       {/* Tarjeta de Reagenda Sugerida */}
                       {isDone && doneDetails ? (
-                        <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/50 text-xs text-emerald-200 flex items-center gap-2.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/50 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <div>
                             <strong>Turno confirmado con éxito:</strong> {doneDetails.date} a las {doneDetails.time} hs en {doneDetails.courtName}.
                           </div>
                         </div>
                       ) : currentReschedule ? (
-                        <div className="p-3 rounded-xl bg-linear-to-r from-blue-950/40 to-slate-900 border border-blue-500/30 space-y-2">
+                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-linear-to-r dark:from-blue-950/40 dark:to-slate-900 border border-blue-200 dark:border-blue-500/30 space-y-2">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-300">
-                              <CalendarDays className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-700 dark:text-blue-300">
+                              <CalendarDays className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                               <span>Próximo turno disponible sugerido:</span>
                             </div>
-                            <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30 font-medium">
+                            <span className="text-[10px] bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 px-2 py-0.5 rounded-full border border-blue-300 dark:border-blue-500/30 font-medium">
                               {currentReschedule.courtSport.replace('_', ' ')}
                             </span>
                           </div>

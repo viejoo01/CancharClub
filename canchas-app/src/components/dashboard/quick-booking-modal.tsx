@@ -368,8 +368,8 @@ export function QuickBookingModal({
                   onClick={() => setDurationMinutes(mins)}
                   className={`h-10 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
                     durationMinutes === mins
-                      ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300 shadow-sm'
-                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                      ? 'bg-emerald-600/25 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
                   {mins === 60 ? '60 min (1h)' : mins === 90 ? '90 min (1.5h)' : '120 min (2h)'}
@@ -384,7 +384,7 @@ export function QuickBookingModal({
               <div className="flex items-center justify-between">
                 <Label htmlFor="totalAmount">Precio Total ($ ARS)</Label>
                 {!isOwner && (
-                  <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
                     <Lock className="w-2.5 h-2.5" /> Solo Dueño
                   </span>
                 )}
@@ -402,12 +402,12 @@ export function QuickBookingModal({
                   }}
                   disabled={!isOwner}
                   className={`h-11 font-mono font-bold ${
-                    !isOwner ? 'bg-slate-900/80 text-slate-300 border-slate-700/60 cursor-not-allowed opacity-90 pr-8' : ''
+                    !isOwner ? 'bg-slate-100 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700/60 cursor-not-allowed opacity-90 pr-8' : ''
                   }`}
                   required
                 />
                 {!isOwner && (
-                  <Lock className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 )}
               </div>
               {!isOwner && (
@@ -431,7 +431,7 @@ export function QuickBookingModal({
           {/* Presets rápidos de cobro */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] text-slate-400 mr-1">Opciones:</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mr-1">Opciones:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -440,8 +440,8 @@ export function QuickBookingModal({
                 }}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
                   Number(depositAmount) === 0
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-500/40'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 Sin seña (Paga en club)
@@ -455,8 +455,8 @@ export function QuickBookingModal({
                 }}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
                   Number(depositAmount) > 0 && Number(depositAmount) === Number(totalAmount)
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 Pagó total ahora
@@ -473,8 +473,8 @@ export function QuickBookingModal({
                   Number(depositAmount) > 0 &&
                   Number(depositAmount) === Math.round(Number(totalAmount) / 2) &&
                   Number(depositAmount) !== Number(totalAmount)
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 Seña 50%
@@ -482,24 +482,24 @@ export function QuickBookingModal({
             </div>
 
             {/* Cuadro de resumen explicativo */}
-            <div className="p-2.5 rounded-lg text-xs bg-slate-950/70 border border-slate-800">
+            <div className="p-2.5 rounded-lg text-xs bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800">
               {Number(depositAmount) === 0 ? (
-                <span className="text-amber-400 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span className="text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                   <span>
                     El turno se registrará <strong>sin seña previa</strong>. Cobrar el 100% ({Number(totalAmount) > 0 ? `$ ${Number(totalAmount).toLocaleString('es-AR')}` : '$ 0'}) al jugar.
                   </span>
                 </span>
               ) : Number(depositAmount) >= Number(totalAmount) && Number(totalAmount) > 0 ? (
-                <span className="text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   <span>
                     El turno quedará registrado como <strong>PAGADO TOTAL</strong> ($ {Number(totalAmount).toLocaleString('es-AR')}).
                   </span>
                 </span>
               ) : (
-                <span className="text-emerald-300 flex items-center gap-1.5">
-                  <Info className="w-4 h-4 shrink-0 text-emerald-300" />
+                <span className="text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                  <Info className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
                   <span>
                     Seña cobrada: <strong>$ {Number(depositAmount).toLocaleString('es-AR')}</strong>. Restará cobrar: <strong>$ {Math.max(0, Number(totalAmount) - Number(depositAmount)).toLocaleString('es-AR')}</strong> en cancha.
                   </span>
@@ -515,7 +515,7 @@ export function QuickBookingModal({
                 id="paymentMethod"
                 value={paymentMethod === 'NONE' ? 'TRANSFER' : paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as 'CASH' | 'TRANSFER')}
-                className="flex h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="flex h-11 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="TRANSFER">Transferencia bancaria / alias</option>
                 <option value="CASH">Efectivo en mostrador</option>
@@ -524,12 +524,12 @@ export function QuickBookingModal({
           )}
 
           {/* Opción de Turno Fijo / Abono Semanal */}
-          <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-800/40 flex items-center justify-between">
+          <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 flex items-center justify-between">
             <div>
-              <div className="text-xs font-semibold text-purple-300">
+              <div className="text-xs font-semibold text-purple-800 dark:text-purple-300">
                 Turno Fijo / Abono Semanal
               </div>
-              <div className="text-[11px] text-slate-400">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
                 Reserva fija recurrente para este jugador todos los {date} a las {time} hs.
               </div>
             </div>
@@ -538,7 +538,7 @@ export function QuickBookingModal({
               id="isRecurring"
               checked={isRecurring}
               onChange={(e) => setIsRecurring(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500"
+              className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-purple-600 focus:ring-purple-500"
             />
           </div>
 

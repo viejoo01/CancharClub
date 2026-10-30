@@ -282,34 +282,34 @@ export function VenueSwitcher({
             void fetchCourts()
           }
         }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 transition-all text-left group"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/80 shadow-xs transition-all text-left group cursor-pointer"
         aria-expanded={isOpen}
       >
-        <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+        <div className="w-6 h-6 rounded-lg bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
           <Building2 className="w-3.5 h-3.5" />
         </div>
         <div className="flex flex-col">
-          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider leading-none">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider leading-none">
             Sede Activa
           </span>
           <span 
             suppressHydrationWarning
-            className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors max-w-35 sm:max-w-45 truncate leading-tight"
+            className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors max-w-35 sm:max-w-45 truncate leading-tight"
           >
             {activeVenue.branchName}
           </span>
         </div>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Menú Desplegable de Sedes */}
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-72 sm:w-80 rounded-2xl bg-slate-950 border border-slate-800 p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
-          <div className="px-3 py-2 border-b border-slate-800/80 mb-1.5 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+        <div className="absolute left-0 mt-2 w-72 sm:w-80 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200/90 dark:border-slate-800 p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
+          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1.5 flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Complejos y Sedes ({venues.length})
             </span>
-            <Badge variant="outline" className="text-[9px] border-emerald-500/40 text-emerald-400">
+            <Badge variant="outline" className="text-[9px] border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-bold">
               Multisede B2B
             </Badge>
           </div>
@@ -322,33 +322,33 @@ export function VenueSwitcher({
                   key={v.id}
                   type="button"
                   onClick={() => handleSelectVenue(v)}
-                  className={`w-full p-2.5 rounded-xl text-left flex items-start gap-2.5 transition-all ${
+                  className={`w-full p-2.5 rounded-xl text-left flex items-start gap-2.5 transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-emerald-950/40 border border-emerald-500/40 text-white'
-                      : 'hover:bg-slate-900 border border-transparent text-slate-300 hover:text-white'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/40 text-emerald-950 dark:text-white font-semibold shadow-xs'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                    isSelected ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                    isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}>
                     <Building2 className="w-3.5 h-3.5" />
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-xs font-bold truncate block">{v.branchName}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
                     </div>
-                    <p className="text-[11px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="truncate">{v.address}, {v.city}</span>
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-0.5">
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-0.5">
                         <Layers className="w-3 h-3" />
                         {v.courtsCount} canchas
                       </span>
-                      <span className="text-[10px] text-slate-500">•</span>
-                      <span className="text-[10px] text-slate-400">{v.sports.join(', ')}</span>
+                      <span className="text-[10px] text-slate-300 dark:text-slate-600">•</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">{v.sports.join(', ')}</span>
                     </div>
                   </div>
                 </button>
@@ -357,7 +357,7 @@ export function VenueSwitcher({
           </div>
 
           {/* Botón Agregar Nueva Sede */}
-          <div className="pt-2 mt-1 border-t border-slate-800/80">
+          <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800/80">
             <Button
               type="button"
               variant="outline"
@@ -366,7 +366,7 @@ export function VenueSwitcher({
                 setIsOpen(false)
                 setShowAddModal(true)
               }}
-              className="w-full h-8 rounded-xl border-dashed border-slate-700 hover:border-emerald-500/60 hover:bg-emerald-950/30 text-slate-300 hover:text-emerald-300 text-xs font-semibold gap-1.5"
+              className="w-full h-8 rounded-xl border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-700 hover:text-emerald-700 dark:text-slate-300 dark:hover:text-emerald-300 text-xs font-semibold gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Agregar Nueva Sucursal / Sede</span>
@@ -384,24 +384,24 @@ export function VenueSwitcher({
           }}
         >
           <div 
-            className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3.5 my-auto relative animate-in fade-in zoom-in-95 duration-200"
+            className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3.5 my-auto relative animate-in fade-in zoom-in-95 duration-200"
             role="dialog"
             aria-modal="true"
           >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                   <Building2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-white">Nueva Sede / Complejo</h3>
-                  <p className="text-[11px] text-slate-400">Expandí tu franquicia o club con múltiples sucursales</p>
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Nueva Sede / Complejo</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Expandí tu franquicia o club con múltiples sucursales</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="w-7 h-7 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 aria-label="Cerrar modal"
               >
                 <X className="w-4 h-4" />
@@ -410,7 +410,7 @@ export function VenueSwitcher({
 
             <form onSubmit={handleCreateVenue} className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Nombre de la Sucursal *
                 </label>
                 <input
@@ -418,14 +418,14 @@ export function VenueSwitcher({
                   placeholder="Ej. Sede Tafí Viejo (Norte)"
                   value={newBranchName}
                   onChange={(e) => setNewBranchName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none placeholder:text-slate-500"
+                  className="w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none placeholder:text-slate-400"
                   required
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Dirección y Ubicación
                 </label>
                 <input
@@ -433,12 +433,12 @@ export function VenueSwitcher({
                   placeholder="Ej. Av. Alem 1200, Tafí Viejo"
                   value={newAddress}
                   onChange={(e) => setNewAddress(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none placeholder:text-slate-500"
+                  className="w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none placeholder:text-slate-400"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Cantidad Inicial de Canchas
                 </label>
                 <input
@@ -447,7 +447,7 @@ export function VenueSwitcher({
                   max="30"
                   value={newCourtsCount}
                   onChange={(e) => setNewCourtsCount(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none"
+                  className="w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 

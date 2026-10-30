@@ -190,7 +190,7 @@ export function DashboardLayoutClient({
   ]
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-100 relative">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 relative transition-colors duration-200">
       {/* ─── 1. SIDEBAR DESKTOP ─── */}
       <div 
         className={cn(
@@ -228,7 +228,7 @@ export function DashboardLayoutClient({
           {/* Panel deslizante lateral */}
           <div
             className={cn(
-              'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-slate-950 border-r border-slate-800 shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
+              'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-[#090e1a] border-r border-slate-200/90 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
               mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
             )}
           >
@@ -283,7 +283,7 @@ export function DashboardLayoutClient({
           />
         )}
 
-        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-linear-to-b from-slate-950 to-slate-900/80 custom-scrollbar relative">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-slate-50/70 dark:bg-[#070b14] custom-scrollbar relative transition-colors duration-200">
           {/* Banner visual prominente de 15 Días de Prueba Gratuita */}
           {isTrial && !isStaff && (
             <TrialBanner
@@ -296,22 +296,22 @@ export function DashboardLayoutClient({
 
           {/* Banner de Aviso: Prueba Gratuita Revocada por Reactivación */}
           {trialForfeited && !isTrial && !isStaff && (
-            <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-200 text-xs shadow-lg shadow-amber-950/20 backdrop-blur-md">
+            <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-800 dark:text-amber-200 text-xs shadow-lg shadow-amber-950/20 backdrop-blur-md">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                   <AlertTriangle className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="font-bold text-amber-300 block text-sm">
+                  <span className="font-bold text-amber-700 dark:text-amber-300 block text-sm">
                     Plan Reactivado — Comienza a Cobrarse tu Abono Mensual
                   </span>
-                  <span className="text-slate-300 text-xs">
+                  <span className="text-slate-600 dark:text-slate-300 text-xs">
                     Al reactivar el servicio tras la solicitud de baja por arrepentimiento, se dio por finalizada la prueba gratuita de 15 días. Tu abono mensual se encuentra activo.
                   </span>
                 </div>
               </div>
               <Link href="/dashboard/plan" className="shrink-0 self-end sm:self-center">
-                <Button size="sm" variant="outline" className="h-8 text-xs border-amber-500/40 bg-amber-950/30 text-amber-300 hover:bg-amber-900/50 hover:text-white rounded-xl">
+                <Button size="sm" variant="outline" className="h-8 text-xs border-amber-500/40 bg-amber-500/10 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 dark:hover:bg-amber-900/50 hover:text-amber-900 dark:hover:text-white rounded-xl">
                   Ver Mi Plan
                 </Button>
               </Link>
@@ -353,7 +353,7 @@ export function DashboardLayoutClient({
             </div>
 
             {/* Pie de página con copyright */}
-            <footer className="mt-12 pt-6 pb-4 border-t border-slate-800/60 text-center text-xs text-slate-500 select-none">
+            <footer className="mt-12 pt-6 pb-4 border-t border-slate-200/90 dark:border-slate-800/60 text-center text-xs text-slate-500 dark:text-slate-400 select-none">
               <p>© 2026 CancharClub. Todos los derechos reservados.</p>
             </footer>
           </div>
@@ -361,7 +361,7 @@ export function DashboardLayoutClient({
 
         {/* ─── 4. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM BAR) PARA CELULARES ─── */}
         <nav 
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 pt-1.5 flex items-center justify-around shadow-2xl select-none"
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#090e1a]/95 backdrop-blur-xl border-t border-slate-200/90 dark:border-slate-800/80 px-2 pt-1.5 flex items-center justify-around shadow-lg select-none"
           style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
           aria-label="Navegación inferior móvil"
         >
@@ -378,8 +378,8 @@ export function DashboardLayoutClient({
                   className={cn(
                     'flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all duration-150 min-w-14',
                     isActiveRoute
-                      ? 'text-emerald-400 font-semibold'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'text-emerald-700 dark:text-emerald-400 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   )}
                 >
                   <div className={cn(
@@ -399,13 +399,13 @@ export function DashboardLayoutClient({
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-400 hover:text-slate-200 transition-all duration-150 min-w-14 cursor-pointer"
+              className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-all duration-150 min-w-14 cursor-pointer"
               aria-label="Ver todas las opciones"
             >
-              <div className="p-1 rounded-lg hover:bg-slate-900">
-                <Menu className="w-5 h-5 text-indigo-400" />
+              <div className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900">
+                <Menu className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <span className="text-[10px] tracking-tight mt-0.5 text-indigo-400 font-medium">
+              <span className="text-[10px] tracking-tight mt-0.5 text-indigo-600 dark:text-indigo-400 font-bold">
                 Más
               </span>
             </button>

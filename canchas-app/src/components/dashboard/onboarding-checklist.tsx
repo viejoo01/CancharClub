@@ -84,11 +84,11 @@ export function OnboardingChecklist({
   // Si está minimizado / cerrado
   if (dismissed) {
     return (
-      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs shadow-md ${className}`}>
+      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 text-xs shadow-xs ${className}`}>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-slate-300 font-medium">
-            Link público de tu club: <strong className="text-white font-mono">{tenantSlug}</strong>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-slate-600 dark:text-slate-300 font-medium">
+            Link público de tu club: <strong className="text-slate-900 dark:text-white font-mono font-bold">{tenantSlug}</strong>
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -96,16 +96,16 @@ export function OnboardingChecklist({
             size="sm"
             variant="ghost"
             onClick={handleCopyLink}
-            className="h-8 px-2.5 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl gap-1.5"
+            className="h-8 px-2.5 text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl gap-1.5 cursor-pointer font-semibold"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copied ? 'Copiado' : 'Copiar'}</span>
           </Button>
           <a
             href={`/club/${tenantSlug}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:underline px-2"
+            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline px-2"
           >
             <span>Ver portal</span>
             <ExternalLink className="w-3.5 h-3.5" />
@@ -113,7 +113,7 @@ export function OnboardingChecklist({
           <button
             type="button"
             onClick={handleRestore}
-            className="text-[11px] text-slate-500 hover:text-slate-300 ml-1 underline cursor-pointer"
+            className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 ml-1 underline cursor-pointer"
           >
             Ver checklist
           </button>
@@ -123,30 +123,30 @@ export function OnboardingChecklist({
   }
 
   return (
-    <div className={`mb-6 relative overflow-hidden rounded-3xl bg-linear-to-b from-slate-900 via-slate-900/95 to-slate-950 border border-slate-800 p-5 sm:p-6 shadow-2xl transition-all ${className}`}>
+    <div className={`mb-6 relative overflow-hidden rounded-3xl bg-white dark:bg-[#0c1222] border border-slate-200/90 dark:border-slate-800/80 p-5 sm:p-6 shadow-sm dark:shadow-2xl transition-all ${className}`}>
       {/* Luz ambiental sutil */}
-      <div className="absolute top-0 right-0 w-96 h-40 bg-emerald-500/10 blur-3xl pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-40 bg-emerald-500/10 blur-3xl pointer-events-none opacity-40 dark:opacity-100" />
 
       {/* Encabezado del Checklist */}
-      <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="flex items-start justify-between gap-4 mb-5 relative z-10">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              <Sparkles className="w-3.5 h-3.5" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Primeros Pasos de tu Club</span>
             </span>
-            <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-xs font-semibold">
+            <Badge className="bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 text-xs font-bold">
               {stepsCompleted} de {totalSteps} completados
             </Badge>
           </div>
 
-          <h3 className="text-base sm:text-lg font-black text-white tracking-tight pt-1">
+          <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight pt-1">
             {isFullyConfigured 
               ? `¡Todo Listo! Tu Club "${tenantName}" ya puede recibir reservas`
               : `Configuración Inicial para Publicar "${tenantName}"`}
           </h3>
 
-          <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+          <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
             {isFullyConfigured
               ? 'Tus canchas, horarios y cobros están activos. Compartí tu link con jugadores para que comiencen a reservar turnos las 24 horas.'
               : 'Completá estos pasos esenciales para que los turnos online se cobren directamente en tu cuenta y se sincronicen en tiempo real.'}
@@ -156,7 +156,7 @@ export function OnboardingChecklist({
         <button
           type="button"
           onClick={handleDismiss}
-          className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800/60 transition-colors cursor-pointer"
+          className="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
           title="Minimizar checklist"
         >
           <X className="w-4 h-4" />
@@ -164,36 +164,36 @@ export function OnboardingChecklist({
       </div>
 
       {/* Grid de Pasos */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5 relative z-10">
         
         {/* Paso 1: Canchas */}
         <div className={`p-4 rounded-2xl border transition-all ${
           hasCourts 
-            ? 'bg-emerald-950/20 border-emerald-500/30' 
-            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+            ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200/90 dark:border-emerald-500/30 shadow-xs' 
+            : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
         }`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                hasCourts ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                hasCourts ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
               }`}>
                 <Building2 className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-white">1. Canchas y Deportes</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">1. Canchas y Deportes</span>
             </div>
             {hasCourts ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
-              <Circle className="w-4 h-4 text-slate-600 shrink-0" />
+              <Circle className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
             )}
           </div>
-          <p className="text-[11px] text-slate-400 mb-3">
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3 leading-relaxed">
             {hasCourts 
               ? `${courtsCount} cancha${courtsCount > 1 ? 's' : ''} cargada${courtsCount > 1 ? 's' : ''} con precio base estándar.` 
               : 'Creá al menos una cancha para recibir reservas.'}
           </p>
           <Link href="/dashboard/canchas">
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-400 hover:underline">
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
               <span>{hasCourts ? 'Administrar canchas' : 'Agregar canchas'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </span>
@@ -203,33 +203,35 @@ export function OnboardingChecklist({
         {/* Paso 2: Cobros y Transferencias */}
         <div className={`p-4 rounded-2xl border transition-all ${
           hasBankConfigured 
-            ? 'bg-emerald-950/20 border-emerald-500/30' 
-            : 'bg-amber-950/20 border-amber-500/30 ring-1 ring-amber-500/20'
+            ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200/90 dark:border-emerald-500/30 shadow-xs' 
+            : 'bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-500/30 ring-1 ring-amber-200 dark:ring-amber-500/20 shadow-xs'
         }`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                hasBankConfigured ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                hasBankConfigured ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
               }`}>
                 <CreditCard className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-white">2. Datos de Cobro (Alias/CBU)</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">2. Datos de Cobro (Alias/CBU)</span>
             </div>
             {hasBankConfigured ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
-              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px] px-1.5 py-0">
+              <Badge className="bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40 text-[9px] px-1.5 py-0 font-bold">
                 Falta Cargar
               </Badge>
             )}
           </div>
-          <p className="text-[11px] text-slate-400 mb-3">
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3 leading-relaxed">
             {hasBankConfigured 
               ? 'Cuenta bancaria o Mercado Pago configurado para recibir señas.' 
               : 'Cargá tu Alias o CBU para que los jugadores te transfieran señas.'}
           </p>
           <Link href="/dashboard/cobros">
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-400 hover:underline">
+            <span className={`inline-flex items-center gap-1 text-xs font-bold hover:underline ${
+              hasBankConfigured ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+            }`}>
               <span>{hasBankConfigured ? 'Ver datos de cobro' : 'Configurar Cobros Ahora'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </span>
@@ -237,21 +239,21 @@ export function OnboardingChecklist({
         </div>
 
         {/* Paso 3: Horarios de Atención */}
-        <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 transition-all">
+        <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/90 dark:border-emerald-500/30 transition-all shadow-xs">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 flex items-center justify-center">
                 <Clock className="w-4 h-4" />
               </div>
-              <span className="text-xs font-bold text-white">3. Horarios del Complejo</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">3. Horarios del Complejo</span>
             </div>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
           </div>
-          <p className="text-[11px] text-slate-400 mb-3">
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3 leading-relaxed">
             Horario estándar activo: 08:00 a 00:00 hs de lunes a domingo.
           </p>
           <Link href="/dashboard/horarios">
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-400 hover:underline">
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
               <span>Ajustar horarios</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </span>
@@ -261,19 +263,19 @@ export function OnboardingChecklist({
       </div>
 
       {/* Barra de Publicación y Compartir Link */}
-      <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-50/90 via-slate-50 to-teal-50/80 dark:from-emerald-950/40 dark:via-slate-900 dark:to-indigo-950/40 border border-emerald-200/90 dark:border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10 shadow-xs">
         <div className="flex items-start sm:items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-200 dark:border-emerald-500/40 flex items-center justify-center text-emerald-700 dark:text-emerald-400 shrink-0 shadow-xs">
             <Share2 className="w-5 h-5" />
           </div>
           <div className="space-y-0.5 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white">Tu Link Público para Jugadores:</span>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] px-2 py-0">
+              <span className="text-xs font-bold text-slate-900 dark:text-white">Tu Link Público para Jugadores:</span>
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 text-[10px] px-2 py-0 font-bold">
                 Público y Activo
               </Badge>
             </div>
-            <p className="text-xs text-emerald-300 font-mono truncate max-w-md">
+            <p className="text-xs text-emerald-800 dark:text-emerald-300 font-mono font-bold truncate max-w-md">
               {publicUrl}
             </p>
           </div>
@@ -283,7 +285,7 @@ export function OnboardingChecklist({
           <Button
             size="sm"
             onClick={handleCopyLink}
-            className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
+            className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shadow-emerald-950/20 cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? '¡Copiado!' : 'Copiar Link'}</span>
@@ -293,7 +295,7 @@ export function OnboardingChecklist({
             size="sm"
             variant="outline"
             asChild
-            className="h-10 px-3.5 rounded-xl border-slate-700 bg-slate-900/60 hover:bg-slate-800 text-slate-200 text-xs font-semibold gap-1.5 cursor-pointer"
+            className="h-10 px-3.5 rounded-xl border-slate-300 bg-white hover:bg-slate-100 text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:bg-slate-800 dark:text-slate-200 text-xs font-bold gap-1.5 cursor-pointer shadow-xs"
           >
             <a href={`/club/${tenantSlug}`} target="_blank" rel="noreferrer">
               <span>Probar Portal</span>

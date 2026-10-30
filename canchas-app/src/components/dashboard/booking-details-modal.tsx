@@ -675,27 +675,27 @@ _Comprobante automático emitido por CancharClub._`
       <DialogContent className="sm:max-w-[620px] max-h-[92dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between pr-4">
-            <DialogTitle className="text-xl font-bold text-slate-100">{courtDisplayName}</DialogTitle>
+            <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100">{courtDisplayName}</DialogTitle>
             {getStatusBadge(currentStatus)}
           </div>
-          <DialogDescription className="text-slate-400 text-sm flex items-center gap-1.5 flex-wrap">
-            {displayBookingDate && <span className="text-slate-300 font-medium">{displayBookingDate}</span>}
-            {displayBookingDate && <span className="text-slate-600">•</span>}
+          <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm flex items-center gap-1.5 flex-wrap">
+            {displayBookingDate && <span className="text-slate-700 dark:text-slate-300 font-medium">{displayBookingDate}</span>}
+            {displayBookingDate && <span className="text-slate-300 dark:text-slate-600">•</span>}
             <span>{booking.starts_at && formatTime(booking.starts_at)} - {booking.ends_at && formatTime(booking.ends_at)} hs</span>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-sm">
           {/* Cliente Info & Reputación */}
-          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200/90 dark:border-slate-800 space-y-3">
             {/* Header del Cliente con Avatar y Teléfono */}
             <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-base shrink-0">
-                  {booking.customer_name ? booking.customer_name.charAt(0).toUpperCase() : <User className="w-5 h-5 text-emerald-400" />}
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-base shrink-0">
+                  {booking.customer_name ? booking.customer_name.charAt(0).toUpperCase() : <User className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
                 </div>
                 <div className="min-w-0">
-                  <div className="font-semibold text-slate-100 text-base flex items-center gap-2 flex-wrap">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 text-base flex items-center gap-2 flex-wrap">
                     <span className="truncate">{booking.customer_name}</span>
                     {reputation && (
                       <Badge 
@@ -868,21 +868,21 @@ _Comprobante automático emitido por CancharClub._`
 
           {/* Estado de Cobro */}
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-xs">
-              <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wide">Total</div>
-              <div className="text-sm font-bold text-slate-100 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wide">Total</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                 {formatARS(booking.total_amount_ars)}
               </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-xs">
-              <div className="text-[11px] text-emerald-400 font-medium uppercase tracking-wide">Abonado</div>
-              <div className="text-sm font-bold text-emerald-400 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide">Abonado</div>
+              <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                 {formatARS(currentPaid)}
               </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-xs">
-              <div className="text-[11px] text-amber-400 font-medium uppercase tracking-wide">Resta Pagar</div>
-              <div className="text-sm font-bold text-amber-400 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+              <div className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wide">Resta Pagar</div>
+              <div className="text-sm font-bold text-amber-600 dark:text-amber-400 mt-0.5">
                 {formatARS(currentBalance)}
               </div>
             </div>
@@ -890,32 +890,32 @@ _Comprobante automático emitido por CancharClub._`
 
           {/* Acción 1: Estado de Seña / Cobro del Turno */}
           {isAbono ? (
-            <div className="p-3.5 rounded-xl bg-purple-950/25 border border-purple-500/30 space-y-2">
-              <div className="flex items-center justify-between text-xs text-purple-300">
+            <div className="p-3.5 rounded-xl bg-purple-50 dark:bg-purple-950/25 border border-purple-200 dark:border-purple-500/30 space-y-2">
+              <div className="flex items-center justify-between text-xs text-purple-800 dark:text-purple-300">
                 <div className="flex items-center gap-2 font-bold">
-                  <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                   <span>Turno de Abonado Fijo (Cubierto por Mensualidad)</span>
                 </div>
-                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-semibold">
+                <Badge className="bg-purple-100 text-purple-900 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-300 dark:border-purple-500/40 text-[10px] font-semibold">
                   ABONO MENSUAL
                 </Badge>
               </div>
-              <p className="text-xs text-slate-300 pl-6">
+              <p className="text-xs text-slate-600 dark:text-slate-300 pl-6">
                 Este turno semanal está cubierto por la suscripción mensual del jugador. Para registrar el cobro del abono mensual de este abonado, hacelo de forma única desde la pestaña <strong>Turnos Fijos (Abonados)</strong>.
               </p>
             </div>
           ) : isPendingDeposit ? (
-            <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-500/30 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-amber-300 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   Seña Pendiente de Validación Bancaria
                 </span>
-                <span className="text-amber-400 font-mono font-bold text-sm">
+                <span className="text-amber-700 dark:text-amber-400 font-mono font-bold text-sm">
                   {formatARS(booking.deposit_amount_ars)}
                 </span>
               </div>
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
                 El jugador registró la reserva por transferencia online. Verificá el ingreso en tu cuenta bancaria o billetera y confirmá el turno:
               </p>
               <Button
@@ -929,70 +929,70 @@ _Comprobante automático emitido por CancharClub._`
               </Button>
             </div>
           ) : isFullyPaid ? (
-            <div className="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/30 space-y-1">
-              <div className="flex items-center justify-between text-xs text-emerald-300">
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/30 space-y-1">
+              <div className="flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>Turno Pagado Totalmente ({formatARS(currentPaid || booking.total_amount_ars)})</span>
                 </div>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
+                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border-0 text-[10px] font-semibold">
                   SALDADO
                 </Badge>
               </div>
-              <p className="text-[11px] text-slate-400 pl-6">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 pl-6">
                 No hay saldo pendiente. El turno se encuentra completamente abonado.
               </p>
             </div>
           ) : (hasDepositAmount || hasPaidAny) ? (
-            <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/25 space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-emerald-300">
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/25 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
                 <div className="flex items-center gap-2 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>Turno Confirmado — Seña Abonada ({formatARS(currentPaid || booking.deposit_amount_ars)})</span>
                 </div>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-0 text-[10px] font-semibold">
+                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border-0 text-[10px] font-semibold">
                   SEÑA PAGADA
                 </Badge>
               </div>
-              <p className="text-[11px] text-slate-300 pl-6">
-                Seña acreditada. Resta cobrar <strong className="text-amber-300 font-bold">{formatARS(currentBalance)}</strong> al momento del partido.
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 pl-6">
+                Seña acreditada. Resta cobrar <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatARS(currentBalance)}</strong> al momento del partido.
               </p>
             </div>
           ) : (
-            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/60 space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-slate-300">
-                <div className="flex items-center gap-2 font-semibold text-slate-200">
-                  <DollarSign className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/60 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-200">
+                  <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   <span>Turno Registrado Sin Seña Previa</span>
                 </div>
-                <Badge className="bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-semibold">
+                <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 text-[10px] font-semibold">
                   COBRO EN CANCHA
                 </Badge>
               </div>
-              <p className="text-xs text-slate-400">
-                No se registró pago de seña por adelantado. Cobrar el total de <strong className="text-slate-200">{formatARS(booking.total_amount_ars)}</strong> cuando los jugadores concurran al club.
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                No se registró pago de seña por adelantado. Cobrar el total de <strong className="text-slate-900 dark:text-slate-200">{formatARS(booking.total_amount_ars)}</strong> cuando los jugadores concurran al club.
               </p>
             </div>
           )}
 
           {/* Acción 2: Cobro rápido del saldo restante del turno (exclusivo para turnos normales con saldo) */}
           {!isAbono && currentBalance > 0 && (
-            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 shadow-lg space-y-3">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-emerald-500/40 shadow-xs dark:shadow-lg space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center border border-emerald-500/30">
+                    <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div>
-                    <div className="text-xs font-bold text-emerald-300 uppercase tracking-wide">
+                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">
                       {hasPaidAny || hasDepositAmount ? 'Terminar de Cobrar Resto' : 'Cobrar Turno en Mostrador'}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      Resta abonar al club: <strong className="text-amber-400 font-bold">{formatARS(currentBalance)}</strong>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Resta abonar al club: <strong className="text-amber-600 dark:text-amber-400 font-bold">{formatARS(currentBalance)}</strong>
                     </div>
                   </div>
                 </div>
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold px-2 py-0.5 text-xs font-mono">
+                <Badge className="bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 font-bold px-2 py-0.5 text-xs font-mono">
                   {formatARS(currentBalance)}
                 </Badge>
               </div>
@@ -1029,17 +1029,17 @@ _Comprobante automático emitido por CancharClub._`
                       setShowPayForm(true)
                       setPayAmount(currentBalance.toString())
                     }}
-                    className="text-[11px] text-slate-400 hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
+                    className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
                   >
                     ¿Monto parcial o Mercado Pago / QR? Clic acá
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleRegisterPayment} className="pt-2 border-t border-slate-800 space-y-2.5">
-                  <div className="text-[11px] font-semibold text-slate-300">Cobro con monto o medio personalizado:</div>
+                <form onSubmit={handleRegisterPayment} className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Cobro con monto o medio personalizado:</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor="payAmount" className="text-[11px] text-slate-300">Monto ($)</Label>
+                      <Label htmlFor="payAmount" className="text-[11px] text-slate-700 dark:text-slate-300">Monto ($)</Label>
                       <Input
                         id="payAmount"
                         type="number"
@@ -1050,12 +1050,12 @@ _Comprobante automático emitido por CancharClub._`
                       />
                     </div>
                     <div>
-                      <Label htmlFor="payMethod" className="text-[11px] text-slate-300">Medio</Label>
+                      <Label htmlFor="payMethod" className="text-[11px] text-slate-700 dark:text-slate-300">Medio</Label>
                       <select
                         id="payMethod"
                         value={payMethod}
                         onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO')}
-                        className="flex h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 mt-1"
+                        className="flex h-9 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 mt-1"
                       >
                         <option value="CASH">Efectivo en Caja</option>
                         <option value="TRANSFER">Transferencia / Alias</option>
@@ -1069,7 +1069,7 @@ _Comprobante automático emitido por CancharClub._`
                       size="sm"
                       variant="ghost"
                       onClick={() => setShowPayForm(false)}
-                      className="h-8 text-xs"
+                      className="h-8 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     >
                       Ocultar
                     </Button>
@@ -1089,15 +1089,15 @@ _Comprobante automático emitido por CancharClub._`
 
           {/* Nota Interna con traducción y limpieza a español */}
           {currentNotes && cleanNoteForDisplay(currentNotes) && (
-            <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-start gap-1.5 leading-relaxed">
-              <span className="font-semibold text-slate-300 shrink-0">Nota:</span>
+            <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-start gap-1.5 leading-relaxed">
+              <span className="font-semibold text-slate-800 dark:text-slate-300 shrink-0">Nota:</span>
               <span>{cleanNoteForDisplay(currentNotes)}</span>
             </div>
           )}
         </div>
 
         {/* Footer con botones alineados prolijamente y sin solapamiento */}
-        <div className="w-full border-t border-slate-800/80 pt-4 mt-2 space-y-3">
+        <div className="w-full border-t border-slate-200 dark:border-slate-800/80 pt-4 mt-2 space-y-3">
           {/* Fila 1: Botones de gestión operativa del turno (Ticket, Factura ARCA, Inasistencia, Cancelar) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
             {/* Botón Imprimir Ticket Térmico */}
@@ -1106,10 +1106,10 @@ _Comprobante automático emitido por CancharClub._`
               variant="outline"
               size="sm"
               onClick={() => setIsReceiptOpen(true)}
-              className="h-10 px-2.5 gap-2 border-slate-800 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
+              className="h-10 px-2.5 gap-2 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
               title="Imprimir ticket térmico para el cliente"
             >
-              <Printer className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Printer className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>Ticket</span>
             </Button>
 
@@ -1120,13 +1120,13 @@ _Comprobante automático emitido por CancharClub._`
               size="sm"
               disabled={loadingInvoice}
               onClick={handleEmitAfipInvoice}
-              className="h-10 px-2.5 gap-2 border-blue-900/50 bg-blue-950/30 hover:bg-blue-900/40 text-blue-300 hover:text-blue-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
+              className="h-10 px-2.5 gap-2 border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
               title="Emitir Comprobante Electrónico AFIP / ARCA con CAE"
             >
               {loadingInvoice ? (
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
               ) : (
-                <Receipt className="w-4 h-4 text-blue-400 shrink-0" />
+                <Receipt className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
               )}
               <span>Factura ARCA</span>
             </Button>
@@ -1138,13 +1138,13 @@ _Comprobante automático emitido por CancharClub._`
               size="sm"
               disabled={loadingNoShow || currentStatus === 'NO_SHOW'}
               onClick={handleMarkNoShow}
-              className="h-10 px-2.5 gap-2 border-amber-900/50 bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 hover:text-amber-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+              className="h-10 px-2.5 gap-2 border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
               title="Marcar inasistencia del cliente (No Asistió)"
             >
               {loadingNoShow ? (
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
               ) : (
-                <UserX className="w-4 h-4 text-amber-400 shrink-0" />
+                <UserX className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               )}
               <span>No Asistió</span>
             </Button>
@@ -1156,13 +1156,13 @@ _Comprobante automático emitido por CancharClub._`
               size="sm"
               disabled={loadingCancel}
               onClick={handleCancelBooking}
-              className="h-10 px-2.5 gap-2 border-rose-900/50 bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 hover:text-rose-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+              className="h-10 px-2.5 gap-2 border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 hover:text-rose-900 dark:hover:text-rose-100 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
               title="Cancelar esta reserva y liberar la cancha"
             >
               {loadingCancel ? (
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
               ) : (
-                <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
               )}
               <span>Cancelar</span>
             </Button>
@@ -1175,7 +1175,7 @@ _Comprobante automático emitido por CancharClub._`
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="h-10 px-4 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 text-xs font-medium rounded-xl cursor-pointer"
+              className="h-10 px-4 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 text-xs font-medium rounded-xl cursor-pointer"
             >
               Cerrar
             </Button>
@@ -1195,8 +1195,8 @@ _Comprobante automático emitido por CancharClub._`
                 <span>Cobrar Resto ({formatARS(currentBalance)})</span>
               </Button>
             ) : (
-              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-400 px-3 py-2 bg-emerald-950/30 border border-emerald-800/40 rounded-xl">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 px-3 py-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>Turno Totalmente Abonado</span>
               </div>
             )}

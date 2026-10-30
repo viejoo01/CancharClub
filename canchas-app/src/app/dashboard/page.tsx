@@ -89,11 +89,11 @@ export default async function DashboardPage(props: {
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white">
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
             Grilla de Turnos
           </h2>
-          <p className="text-xs text-slate-400">
-            Visualizacion y control de reservas en tiempo real para todas las canchas.
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Visualización y control de reservas en tiempo real para todas las canchas.
           </p>
         </div>
       </div>

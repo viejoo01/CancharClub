@@ -323,33 +323,33 @@ export function Sidebar({
   return (
     <aside 
       className={cn(
-        "flex flex-col bg-slate-950 select-none",
-        isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-800/80"
+        "flex flex-col bg-white dark:bg-[#090e1a] select-none transition-colors duration-200",
+        isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-200/90 dark:border-slate-800/80"
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80 bg-slate-950/50">
+      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200/90 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#090e1a]">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
+          <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-md shadow-emerald-600/20 dark:shadow-emerald-950/40">
             <Trophy className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col overflow-hidden">
-            <span className="font-bold text-sm text-white truncate tracking-tight">
+            <span className="font-bold text-sm text-slate-900 dark:text-white truncate tracking-tight">
               {tenantName}
             </span>
             {isStaff ? (
-              <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                 Encargado Operativo
               </span>
             ) : isSuperadmin ? (
-              <span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+              <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
                 Superadmin Plataforma
               </span>
             ) : (
-              <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Plan {currentPlan.courtsLabel}
               </span>
             )}
@@ -361,7 +361,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
             aria-label="Cerrar menú"
           >
             <X className="w-5 h-5" />
@@ -374,11 +374,11 @@ export function Sidebar({
             type="button"
             onClick={onCollapseToggle}
             aria-expanded={!isCollapsed}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0 ml-1"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0 ml-1"
             title="Ocultar menú lateral"
             aria-label="Ocultar menú lateral"
           >
-            <PanelLeftClose className="w-4 h-4 text-slate-400 hover:text-emerald-400 transition-colors" />
+            <PanelLeftClose className="w-4 h-4 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors" />
           </button>
         )}
       </div>
@@ -389,23 +389,23 @@ export function Sidebar({
           <Link
             href="/dashboard/plan"
             onClick={() => onClose?.()}
-            className="block mb-3 p-2.5 rounded-xl bg-linear-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/15 border border-emerald-500/30 hover:border-emerald-500/50 transition-all group cursor-pointer"
+            className="block mb-3 p-2.5 rounded-xl bg-linear-to-r from-emerald-50 via-teal-50/70 to-indigo-50 border border-emerald-200 hover:border-emerald-300 dark:from-emerald-500/15 dark:via-teal-500/10 dark:to-indigo-500/15 dark:border-emerald-500/30 dark:hover:border-emerald-500/50 transition-all group cursor-pointer shadow-xs"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                   <Sparkles className="w-3.5 h-3.5 animate-pulse" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                     <span>15 Días Gratis</span>
                     {typeof trialDaysRemaining === 'number' && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-mono font-bold">
                         {trialDaysRemaining}d
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate">
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
                     {trialDueDate ? `Vence: ${trialDueDate}` : 'Prueba Bonificada'}
                   </div>
                 </div>
@@ -415,17 +415,17 @@ export function Sidebar({
         )}
 
         <div className="flex items-center justify-between px-3 pb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
           </span>
           {!isStaff && (
             <button
               type="button"
               onClick={() => setShowCustomizeModal(true)}
-              className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-900 border border-transparent hover:border-slate-800 cursor-pointer"
+              className="text-[10px] text-slate-500 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 cursor-pointer font-semibold"
               title="Personalizar orden y visibilidad del menú"
             >
-              <SlidersHorizontal className="w-3 h-3 text-emerald-400" />
+              <SlidersHorizontal className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
               <span>Editar menú</span>
             </button>
           )}
@@ -445,14 +445,14 @@ export function Sidebar({
               onClick={() => onClose?.()}
               prefetch={true}
               className={cn(
-                'flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium transition-all duration-150',
+                'flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150',
                 isActive_item
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-950/20'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/90 shadow-xs dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
               )}
             >
               <div className="flex items-center gap-3">
-                <Icon className={cn('w-4 h-4', isActive_item ? 'text-emerald-400' : 'text-slate-400')} />
+                <Icon className={cn('w-4 h-4', isActive_item ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
                 <span>{item.title}</span>
               </div>
             </Link>
@@ -461,7 +461,7 @@ export function Sidebar({
 
         {!(!isActive && !isSuperadmin) && (
           <>
-            <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               Portal Público
             </div>
 
@@ -469,13 +469,13 @@ export function Sidebar({
               href={`/club/${tenantSlug}`}
               target="_blank"
               onClick={() => onClose?.()}
-              className="flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 transition-colors group"
+              className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition-colors group"
             >
               <div className="flex items-center gap-3">
-                <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+                <ExternalLink className="w-4 h-4 text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
                 <span>Ver Portal Jugador</span>
               </div>
-              <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">
+              <span className="text-[10px] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-bold">
                 En vivo
               </span>
             </Link>
@@ -484,15 +484,15 @@ export function Sidebar({
 
         {isSuperadmin && (
           <>
-            <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-purple-400">
+            <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
               SaaS Admin
             </div>
             <Link
               href="/superadmin"
               onClick={() => onClose?.()}
-              className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-purple-400 hover:bg-purple-950/30 border border-purple-900/30 transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 border border-purple-200 dark:border-purple-900/30 transition-colors"
             >
-              <ShieldCheck className="w-4 h-4 text-purple-400" />
+              <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
               <span>Superadmin Panel</span>
             </Link>
           </>
@@ -500,21 +500,21 @@ export function Sidebar({
       </nav>
 
       {/* Footer Acciones de Usuario (Redes Sociales, Cambiar Contraseña y Cerrar Sesión) */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-1">
+      <div className="p-3 border-t border-slate-200/90 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 space-y-1">
         <button
           type="button"
           onClick={() => {
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))
           }}
-          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium text-emerald-400/90 hover:text-emerald-300 hover:bg-emerald-950/30 transition-colors cursor-pointer group"
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 dark:text-emerald-400/90 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors cursor-pointer group"
           title="Instalar CancharClub en pantalla de inicio"
         >
           <div className="flex items-center gap-3">
-            <Smartphone className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+            <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
             <span>Instalar App Móvil</span>
           </div>
-          <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+          <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-500/30">
             PWA
           </span>
         </button>
@@ -525,9 +525,9 @@ export function Sidebar({
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-social-links-modal'))
           }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/20 transition-colors cursor-pointer"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors cursor-pointer"
         >
-          <Share2 className="w-4 h-4 text-emerald-400/80" />
+          <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400/80" />
           <span>Redes Sociales</span>
         </button>
 
@@ -537,9 +537,9 @@ export function Sidebar({
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-change-password-modal'))
           }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-amber-400 hover:bg-amber-950/20 transition-colors cursor-pointer"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
         >
-          <KeyRound className="w-4 h-4 text-amber-400/80" />
+          <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400/80" />
           <span>Cambiar Contraseña</span>
         </button>
 
@@ -555,10 +555,10 @@ export function Sidebar({
           <button
             type="submit"
             disabled={isLoggingOut}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isLoggingOut ? (
-              <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
+              <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400 shrink-0" />
             ) : (
               <LogOut className="w-4 h-4 shrink-0" />
             )}

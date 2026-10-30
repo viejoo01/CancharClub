@@ -69,14 +69,14 @@ export function Header({
   }
 
   return (
-    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md relative z-40">
+    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-200/90 dark:border-slate-800/80 bg-white/85 dark:bg-[#070b14]/85 backdrop-blur-md shadow-xs relative z-40 transition-colors">
       <div className="flex items-center gap-2.5 sm:gap-4">
         {/* Botón menú hamburguesa para celulares */}
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
+            className="md:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer"
             aria-label="Abrir menú de navegación"
           >
             <Menu className="w-5 h-5" />
@@ -88,19 +88,19 @@ export function Header({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="hidden md:flex p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-900 border border-slate-800/80 transition-all cursor-pointer items-center justify-center group"
+            className="hidden md:flex p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-900/60 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-800/80 transition-all cursor-pointer items-center justify-center group"
             title={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
             aria-label={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
           >
             {isSidebarCollapsed ? (
-              <PanelLeftOpen className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <PanelLeftOpen className="w-5 h-5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
             ) : (
-              <PanelLeftClose className="w-5 h-5 group-hover:text-emerald-400 transition-colors" />
+              <PanelLeftClose className="w-5 h-5 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
             )}
           </button>
         )}
 
-        <h1 className="text-sm sm:text-base font-semibold text-slate-100 hidden lg:block">
+        <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 hidden lg:block tracking-tight">
           Gestión Operativa
         </h1>
 
@@ -119,18 +119,18 @@ export function Header({
               href="/dashboard/plan" 
               title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
             >
-              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
                 <span>
-                  Prueba 15 Días: <strong className="text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+                  Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
                 </span>
               </Badge>
             </Link>
           ) : (
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-500/10 border-emerald-500/30 text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>
-                Prueba 15 Días: <strong className="text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+                Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
               </span>
             </Badge>
           )
@@ -139,28 +139,28 @@ export function Header({
         {mpConnected ? (
           isOwner ? (
             <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
-              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 transition-colors cursor-pointer">
-                <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/30 transition-colors cursor-pointer shadow-xs">
+                <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
               </Badge>
             </Link>
           ) : (
-            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-default" title="Mercado Pago activo para cobro online de señas">
-              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
+            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 cursor-default shadow-xs" title="Mercado Pago activo para cobro online de señas">
+              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
             </Badge>
           )
         ) : (
           isOwner ? (
             <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
-              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-600 transition-colors cursor-pointer">
-                <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-200 bg-slate-100/90 text-slate-700 hover:text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:text-white dark:hover:border-slate-600 transition-colors cursor-pointer shadow-xs">
+                <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 dark:text-sky-400" />
                 <span className="hidden md:inline">Señas:</span> Transferencia / Alias
               </Badge>
             </Link>
           ) : (
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-300 cursor-default" title="Señas por transferencia directa">
-              <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-200 bg-slate-100/90 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300 cursor-default shadow-xs" title="Señas por transferencia directa">
+              <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 dark:text-sky-400" />
               <span className="hidden md:inline">Señas:</span> Transferencia / Alias
             </Badge>
           )
@@ -172,7 +172,7 @@ export function Header({
           <Button
             onClick={onQuickBookClick}
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-md shadow-emerald-950/40 gap-1.5 cursor-pointer"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md shadow-emerald-950/20 gap-1.5 cursor-pointer rounded-xl"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Turno</span>
@@ -183,49 +183,49 @@ export function Header({
 
         <ThemeToggle />
 
-        <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block" />
 
         {/* Menú de Usuario / Perfil con Cambiar Contraseña */}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             onClick={() => setUserMenuOpen((prev) => !prev)}
-            className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors cursor-pointer text-left"
+            className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 transition-colors cursor-pointer text-left"
             aria-expanded={userMenuOpen}
             aria-haspopup="true"
           >
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-200">
+            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-slate-800 border border-emerald-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-emerald-800 dark:text-slate-200 shadow-xs">
               {userName.charAt(0).toUpperCase()}
             </div>
-            <span className="text-xs text-slate-300 font-medium hidden md:inline truncate max-w-32">
+            <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold hidden md:inline truncate max-w-32">
               {userName}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden md:block" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 hidden md:block" />
           </button>
 
           {/* Dropdown flotante */}
           {userMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-3 py-2 border-b border-slate-800/80 mb-1">
-                <p className="text-xs font-bold text-white truncate">{userName}</p>
-                <p className="text-[11px] text-slate-400 truncate">{tenantName || 'CancharClub'}</p>
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{tenantName || 'CancharClub'}</p>
               </div>
 
               <button
                 type="button"
                 onClick={handleOpenSocialLinks}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
               >
-                <Share2 className="w-4 h-4 text-emerald-400" />
+                <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Redes Sociales</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleOpenChangePassword}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
               >
-                <KeyRound className="w-4 h-4 text-amber-400" />
+                <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>Cambiar Contraseña</span>
               </button>
 
@@ -235,18 +235,18 @@ export function Header({
                   setUserMenuOpen(false)
                   window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))
                 }}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 transition-colors cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors cursor-pointer text-left"
               >
                 <div className="flex items-center gap-2.5">
-                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span>Instalar App Móvil</span>
                 </div>
-                <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 px-1 rounded font-bold">
+                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300 px-1 rounded font-bold">
                   PWA
                 </span>
               </button>
 
-              <div className="h-px bg-slate-800/80 my-1" />
+              <div className="h-px bg-slate-100 dark:bg-slate-800/80 my-1" />
 
               <form 
                 action="/auth/logout" 
@@ -259,10 +259,10 @@ export function Header({
                 <button
                   type="submit"
                   disabled={isLoggingOut}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer text-left disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer text-left disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isLoggingOut ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400 shrink-0" />
                   ) : (
                     <LogOut className="w-4 h-4 shrink-0" />
                   )}

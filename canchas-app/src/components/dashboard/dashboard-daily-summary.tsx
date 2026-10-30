@@ -130,104 +130,104 @@ export function DashboardDailySummary({
       {/* Grid de 4 Cards de Resumen "Lo de hoy" */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Turnos de Hoy */}
-        <Card className="bg-slate-900/80 border-slate-800/80 backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
           <div>
-            <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
               <span className="flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-emerald-400" />
+                <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 Turnos de Hoy
               </span>
-              <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 border-slate-700">
+              <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700">
                 {dateFormatted.split(',')[0]}
               </Badge>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-white tracking-tight">
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                 {stats.activeCount}
               </span>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 reservas agendadas
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
-            <span className="text-emerald-400 font-medium flex items-center gap-1">
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px]">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
               {stats.confirmedCount} confirmadas
             </span>
             {stats.pendingCount > 0 ? (
-              <span className="text-amber-400 font-medium flex items-center gap-1">
+              <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 {stats.pendingCount} pendientes
               </span>
             ) : (
-              <span className="text-slate-500">0 pendientes</span>
+              <span className="text-slate-400 dark:text-slate-500">0 pendientes</span>
             )}
           </div>
         </Card>
 
         {/* Card 2: Ocupación Estimada */}
-        <Card className="bg-slate-900/80 border-slate-800/80 backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
           <div>
-            <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
               <span className="flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-teal-400" />
+                <TrendingUp className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 Ocupación
               </span>
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
                 {stats.activeCourtsCount} {stats.activeCourtsCount === 1 ? 'cancha activa' : 'canchas activas'}
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-white tracking-tight">
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                 {stats.occupancyRate}%
               </span>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 capacidad diaria
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center gap-2">
-            <div className="h-1.5 flex-1 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-2">
+            <div className="h-1.5 flex-1 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden border border-slate-200/80 dark:border-slate-800">
               <div 
                 className="h-full bg-linear-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
                 style={{ width: `${stats.occupancyRate}%` }}
               />
             </div>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
               {stats.occupancyRate >= 70 ? 'Alta demanda' : stats.occupancyRate >= 30 ? 'Demanda media' : 'Baja demanda'}
             </span>
           </div>
         </Card>
 
         {/* Card 3: Ingreso Estimado Hoy */}
-        <Card className="bg-slate-900/80 border-slate-800/80 backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
           <div>
-            <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
               <span className="flex items-center gap-1.5">
-                <DollarSign className="w-4 h-4 text-emerald-400" />
+                <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 Ingreso Previsto Hoy
               </span>
-              <span className="text-[11px] text-emerald-400 font-semibold flex items-center">
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center">
                 <CreditCard className="w-3 h-3 mr-0.5" />
                 Canchas
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-emerald-400 tracking-tight font-mono">
+              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight font-mono">
                 {formatARS(stats.totalIncome)}
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] flex-wrap gap-1">
-            <span className="text-slate-400">
-              Señas: <strong className="text-white font-mono">{formatARS(stats.depositsCollected)}</strong>
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px] flex-wrap gap-1">
+            <span className="text-slate-500 dark:text-slate-400">
+              Señas: <strong className="text-slate-800 dark:text-white font-mono font-semibold">{formatARS(stats.depositsCollected)}</strong>
             </span>
-            <span className="text-slate-400">
-              Caja resto: <strong className="text-amber-400 font-mono">{formatARS(stats.pendingToCollect)}</strong>
+            <span className="text-slate-500 dark:text-slate-400">
+              Caja resto: <strong className="text-amber-600 dark:text-amber-400 font-mono font-semibold">{formatARS(stats.pendingToCollect)}</strong>
             </span>
             {stats.abonosCount > 0 && (
-              <span className="text-purple-400 font-semibold w-full text-[10px] text-right">
+              <span className="text-purple-600 dark:text-purple-400 font-semibold w-full text-[10px] text-right">
                 +{stats.abonosCount} abono(s) mensual(es) al día
               </span>
             )}
@@ -235,33 +235,33 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 4: Acciones & Atajos Rápidos */}
-        <Card className="bg-slate-900/80 border-slate-800/80 backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
           <div>
-            <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
               <span className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-400" />
+                <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                 Control Rápido
               </span>
-              <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-500/20">
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
                 EN VIVO
               </span>
             </div>
-            <p className="text-xs text-slate-300 mt-2 font-medium">
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 font-medium">
               {stats.hasPendingPayments
                 ? `${stats.pendingCount} cobro(s) a verificar en mostrador o MP.`
                 : 'Turnos y estados sincronizados al instante.'}
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center gap-2">
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-2">
             <Link
               href="/dashboard/cobros"
-              className="flex-1 text-center py-1 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold transition-colors"
+              className="flex-1 text-center py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold border border-slate-200/80 dark:border-transparent transition-colors"
             >
               Caja y Cobros
             </Link>
             <Link
               href="/dashboard/metricas"
-              className="flex-1 text-center py-1 px-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-[11px] font-bold transition-colors border border-emerald-500/30 flex items-center justify-center gap-1"
+              className="flex-1 text-center py-1.5 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/30 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold transition-colors border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center gap-1"
             >
               <span>Métricas</span>
               <ArrowUpRight className="w-3 h-3" />

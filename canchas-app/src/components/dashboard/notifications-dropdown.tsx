@@ -197,20 +197,20 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
         onClick={() => setIsOpen(prev => !prev)}
         className={`relative p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
           unreadCount > 0
-            ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/50 hover:border-emerald-500/60 shadow-xs shadow-emerald-950/40'
-            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 shadow-xs'
+            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850 shadow-xs'
         }`}
         aria-label={`Notificaciones y alertas (${unreadCount} sin leer)`}
         aria-expanded={isOpen}
       >
         {unreadCount > 0 ? (
-          <BellRing className="w-4 h-4 text-emerald-400 animate-pulse" />
+          <BellRing className="w-4 h-4 text-emerald-600 dark:text-emerald-400 animate-pulse" />
         ) : (
-          <Bell className="w-4 h-4 text-slate-300" />
+          <Bell className="w-4 h-4 text-slate-600 dark:text-slate-300" />
         )}
 
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-extrabold text-slate-950 ring-2 ring-slate-950 shadow-sm animate-in zoom-in-75">
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-500 text-[10px] font-extrabold text-white dark:text-slate-950 ring-2 ring-white dark:ring-slate-950 shadow-sm animate-in zoom-in-75">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -218,19 +218,19 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
 
       {/* Popover flotante del Centro de Notificaciones */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-85 sm:w-105 max-w-[calc(100vw-24px)] rounded-3xl bg-slate-900/95 border border-slate-800/90 shadow-2xl backdrop-blur-xl z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-85 sm:w-105 max-w-[calc(100vw-24px)] rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xl backdrop-blur-xl z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
           {/* Encabezado */}
-          <div className="p-3 sm:p-3.5 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between gap-2">
+          <div className="p-3 sm:p-3.5 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-950/70 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Bell className="w-3.5 h-3.5" />
               </div>
               <div className="flex items-center gap-1.5 min-w-0">
-                <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
                   Notificaciones
                 </h3>
                 {unreadCount > 0 && (
-                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] py-0 px-1.5 h-4 font-mono font-bold shrink-0">
+                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40 text-[10px] py-0 px-1.5 h-4 font-mono font-bold shrink-0">
                     {unreadCount} nuevas
                   </Badge>
                 )}
@@ -246,7 +246,7 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                     e.stopPropagation()
                     void markAllAsRead()
                   }}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-lg transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 border border-emerald-200 dark:border-emerald-500/30 rounded-lg transition-colors cursor-pointer"
                   title="Marcar todas como leídas"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
@@ -260,8 +260,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                 onClick={toggleSound}
                 className={`p-1.5 rounded-lg border transition-colors cursor-pointer text-xs ${
                   soundEnabled
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
                 title={soundEnabled ? 'Sonido de timbre activado' : 'Sonido silenciado'}
               >
@@ -274,8 +274,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                 onClick={() => setShowPushModal(true)}
                 className={`p-1.5 rounded-lg border transition-colors cursor-pointer text-xs ${
                   pushPermission === 'granted'
-                    ? 'bg-slate-800 text-emerald-400 border-slate-700 hover:bg-slate-750'
-                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
                 title="Ajustes de alertas de escritorio"
               >
@@ -285,14 +285,14 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
           </div>
 
           {/* Filtros rápidos por Categoría */}
-          <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-800/60 bg-slate-950/30 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-950/30 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setSelectedTab('ALL')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
                 selectedTab === 'ALL'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
               }`}
             >
               Todas ({stats.total})
@@ -302,8 +302,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
               onClick={() => setSelectedTab('BOOKINGS')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
                 selectedTab === 'BOOKINGS'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
               }`}
             >
               Turnos ({stats.bookingsCount})
@@ -313,8 +313,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
               onClick={() => setSelectedTab('PAYMENTS')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
                 selectedTab === 'PAYMENTS'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
               }`}
             >
               Pagos ({stats.paymentsCount})
@@ -324,8 +324,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
               onClick={() => setSelectedTab('ALERTS')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
                 selectedTab === 'ALERTS'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
               }`}
             >
               Alertas ({stats.alertsCount})
@@ -364,8 +364,8 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                     onClick={() => {
                       if (!notif.read) void markAsRead(notif.id)
                     }}
-                    className={`p-3 sm:p-3.5 transition-colors cursor-pointer flex items-start gap-3 hover:bg-slate-800/50 relative group ${
-                      !notif.read ? 'bg-emerald-950/20' : 'opacity-90'
+                    className={`p-3 sm:p-3.5 transition-colors cursor-pointer flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 relative group ${
+                      !notif.read ? 'bg-emerald-50/70 dark:bg-emerald-950/20' : 'opacity-90'
                     }`}
                   >
                     {/* Icono con badge visual */}
@@ -392,24 +392,24 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                               e.stopPropagation()
                               void markAsRead(notif.id)
                             }}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-emerald-400 hover:text-emerald-200 hover:bg-emerald-500/20 transition-all cursor-pointer"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all cursor-pointer"
                             title="Marcar como vista"
                           >
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400/80" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-xs shadow-emerald-400/80" />
                             <span className="hidden group-hover:inline">Marcar vista</span>
                           </button>
                         ) : (
-                          <span className="text-[10px] text-slate-600 flex items-center gap-0.5" title="Notificación vista">
-                            <Check className="w-3 h-3 text-slate-500" />
+                          <span className="text-[10px] text-slate-400 dark:text-slate-600 flex items-center gap-0.5" title="Notificación vista">
+                            <Check className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                           </span>
                         )}
                       </div>
 
-                      <h4 className="text-xs font-bold text-white mt-1 leading-snug truncate">
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white mt-1 leading-snug truncate">
                         {notif.title}
                       </h4>
 
-                      <p className="text-[11px] text-slate-300/90 mt-0.5 leading-relaxed line-clamp-2">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300/90 mt-0.5 leading-relaxed line-clamp-2">
                         {notif.message}
                       </p>
 
@@ -421,21 +421,21 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/60 transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/30 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors"
                           >
-                            <MessageSquare className="w-3 h-3 text-emerald-400" />
+                            <MessageSquare className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                             <span>WhatsApp</span>
                           </a>
                         )}
 
                         {typeof notif.metadata?.amount_ars === 'number' && notif.metadata.amount_ars > 0 && (
-                          <span className="text-[10px] font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                          <span className="text-[10px] font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                             ${notif.metadata.amount_ars.toLocaleString('es-AR')}
                           </span>
                         )}
 
                         {notif.metadata?.court_name && (
-                          <span className="text-[10px] text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-transparent">
                             {notif.metadata.court_name}
                           </span>
                         )}
@@ -448,11 +448,11 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
           </div>
 
           {/* Pie de Popover: Enlace a Historial Completo */}
-          <div className="p-3 bg-slate-950/80 border-t border-slate-800/80 flex items-center justify-between gap-2">
+          <div className="p-3 bg-slate-50/80 dark:bg-slate-950/80 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => void sendTestNotification('BOOKING')}
-              className="text-[11px] text-slate-400 hover:text-emerald-400 transition-colors flex items-center gap-1 cursor-pointer font-medium"
+              className="text-[11px] text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors flex items-center gap-1 cursor-pointer font-medium"
             >
               <Sparkles className="w-3 h-3" />
               <span>Probar Alerta</span>
@@ -461,7 +461,7 @@ export function NotificationsDropdown({ tenantId }: NotificationsDropdownProps) 
             <Link
               href="/dashboard/notificaciones"
               onClick={() => setIsOpen(false)}
-              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5 cursor-pointer py-1 px-2 rounded-lg hover:bg-slate-850"
+              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors flex items-center gap-1.5 cursor-pointer py-1 px-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850"
             >
               <span>Ver Todo el Historial</span>
               <ArrowRight className="w-3.5 h-3.5" />

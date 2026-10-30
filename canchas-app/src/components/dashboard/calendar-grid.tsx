@@ -727,10 +727,15 @@ export function CalendarGrid({
   return (
     <div className="flex flex-col h-full space-y-3 sm:space-y-4 w-full">
       {/* Barra de Control y Filtros */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md">
         {/* Selector de Fecha */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleToday} className="text-xs h-10 px-3 min-w-[52px]">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleToday} 
+            className="text-xs h-10 px-3 min-w-[52px] bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold cursor-pointer"
+          >
             Hoy
           </Button>
           <Button
@@ -738,27 +743,27 @@ export function CalendarGrid({
             variant="outline"
             size="sm"
             onClick={scrollToNow}
-            className="text-xs h-10 px-2.5 bg-amber-950/30 border-amber-500/30 text-amber-300 hover:bg-amber-900/50 hover:text-amber-100 flex items-center gap-1.5 cursor-pointer shadow-xs"
+            className="text-xs h-10 px-2.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 hover:text-amber-800 dark:hover:text-amber-100 flex items-center gap-1.5 cursor-pointer shadow-xs font-semibold"
             title="Desplazarse en la grilla al horario actual"
           >
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>Ahora</span>
           </Button>
-          <div className="flex items-center bg-slate-950 rounded-xl border border-slate-800 p-0.5 sm:p-1">
+          <div className="flex items-center bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-0.5 sm:p-1">
             <button
               onClick={handlePrevDay}
-              className="p-2 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-2 sm:p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Día anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-white capitalize flex items-center gap-1.5 sm:gap-2">
-              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
+            <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-slate-900 dark:text-white capitalize flex items-center gap-1.5 sm:gap-2">
+              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-none">{formattedDateTitle}</span>
             </div>
             <button
               onClick={handleNextDay}
-              className="p-2 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-2 sm:p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Día siguiente"
             >
               <ChevronRight className="w-4 h-4" />
@@ -768,20 +773,20 @@ export function CalendarGrid({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-10 rounded-xl border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+            className="h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-medium"
           />
         </div>
 
         {/* Filtros de deporte y acciones */}
         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           {/* Filtros de deporte con scroll horizontal suave */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setSelectedSport('ALL')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
                 selectedSport === 'ALL'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-900'
               }`}
             >
               Todas
@@ -790,10 +795,10 @@ export function CalendarGrid({
               <button
                 key={sp}
                 onClick={() => setSelectedSport(sp)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
                   selectedSport === sp
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-900'
                 }`}
               >
                 {sp}
@@ -807,10 +812,10 @@ export function CalendarGrid({
               variant="outline"
               size="sm"
               onClick={() => setIsScheduleModalOpen(true)}
-              className="text-xs bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 hover:text-white gap-1.5 h-8 px-2.5 cursor-pointer"
+              className="text-xs bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 hover:text-emerald-900 dark:hover:text-white gap-1.5 h-9 px-2.5 cursor-pointer font-semibold"
               title="Configurar horario de apertura y cierre del club"
             >
-              <Clock className="w-3.5 h-3.5 text-emerald-400" />
+              <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span className="hidden sm:inline">Horario:</span> {schedule.opening_time} - {schedule.closing_time} hs
             </Button>
 
@@ -819,22 +824,22 @@ export function CalendarGrid({
               variant="outline"
               size="sm"
               onClick={() => setIsRainModalOpen(true)}
-              className="text-xs bg-blue-950/40 border-blue-500/40 text-blue-300 hover:bg-blue-900/60 hover:text-white gap-1.5 h-8 px-2.5"
+              className="text-xs bg-sky-50 dark:bg-blue-950/40 border-sky-200 dark:border-blue-500/40 text-sky-800 dark:text-blue-300 hover:bg-sky-100 dark:hover:bg-blue-900/60 hover:text-sky-900 dark:hover:text-white gap-1.5 h-9 px-2.5 font-semibold"
             >
-              <CloudRain className="w-3.5 h-3.5 text-blue-400" />
+              <CloudRain className="w-3.5 h-3.5 text-sky-600 dark:text-blue-400" />
               <span className="hidden sm:inline">Protocolo</span> Lluvia
             </Button>
 
             {/* Selector de Densidad de Grilla (Compacto / Cómodo) para recepción */}
             {filteredCourts.length > 0 && (
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => changeGridDensity('compact')}
                   className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                     gridDensity === 'compact'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60'
                   }`}
                   title="Modo Compacto: Columnas ajustadas para ver más canchas en pantalla"
                 >
@@ -846,7 +851,7 @@ export function CalendarGrid({
                   className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                     gridDensity === 'normal'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60'
                   }`}
                   title="Modo Cómodo: Celdas amplias con nombres completos"
                 >
@@ -856,8 +861,8 @@ export function CalendarGrid({
             )}
 
             {/* Indicador Realtime */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-400 font-semibold shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-700 dark:text-emerald-400 font-bold shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
               <span className="hidden sm:inline">Sincronización en Vivo</span>
               <span className="sm:hidden">En Vivo</span>
             </div>
@@ -865,66 +870,66 @@ export function CalendarGrid({
         </div>
 
         {/* Atajos de teclado en Recepción (Visible en pantallas medianas y grandes) */}
-        <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400 select-none">
-          <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Atajos de Recepción:</span>
+        <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 select-none">
+          <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Atajos de Recepción:</span>
           <span className="inline-flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">N</kbd>
-            <span>Nuevo Turno</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">N</kbd>
+            <span className="text-slate-700 dark:text-slate-300">Nuevo Turno</span>
           </span>
-          <span className="text-slate-700">•</span>
+          <span className="text-slate-300 dark:text-slate-700">•</span>
           <span className="inline-flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">C</kbd>
-            <span>Cantina</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">C</kbd>
+            <span className="text-slate-700 dark:text-slate-300">Cantina</span>
           </span>
-          <span className="text-slate-700">•</span>
+          <span className="text-slate-300 dark:text-slate-700">•</span>
           <span className="inline-flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">F</kbd>
-            <span>Caja</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">F</kbd>
+            <span className="text-slate-700 dark:text-slate-300">Caja</span>
           </span>
-          <span className="text-slate-700">•</span>
+          <span className="text-slate-300 dark:text-slate-700">•</span>
           <span className="inline-flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono font-bold">T</kbd>
-            <span>Hora Actual</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">T</kbd>
+            <span className="text-slate-700 dark:text-slate-300">Hora Actual</span>
           </span>
         </div>
       </div>
 
       {/* Indicador de desplazamiento horizontal de canchas con botones asistidos */}
-      <div className="flex items-center justify-between px-2 py-1 text-[11px] text-slate-400 select-none">
+      <div className="flex items-center justify-between px-2 py-1 text-[11px] text-slate-500 dark:text-slate-400 select-none">
         <span className="flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-700/60">
-            <ChevronLeft className="w-3 h-3 text-slate-500" />
-            <span className="text-slate-300 font-medium">
+          <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-200 dark:border-slate-700/60">
+            <ChevronLeft className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+            <span className="text-slate-700 dark:text-slate-300 font-medium">
               {filteredCourts.length > 5 ? 'Deslizá horizontalmente para ver todas las canchas' : 'Deslizá para ver canchas'}
             </span>
-            <ChevronRight className="w-3 h-3 text-slate-500" />
+            <ChevronRight className="w-3 h-3 text-slate-400 dark:text-slate-500" />
           </span>
         </span>
         <div className="flex items-center gap-2">
           {filteredCourts.length > 2 && (
-            <div className="flex items-center gap-1 bg-slate-950 rounded-lg border border-slate-800 p-0.5">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 p-0.5">
               <button
                 type="button"
                 onClick={() => scrollCourtsHorizontally('left')}
-                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
                 title="Desplazar a canchas anteriores"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="px-1.5 text-[10px] font-semibold text-slate-400">
+              <span className="px-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
                 Mover
               </span>
               <button
                 type="button"
                 onClick={() => scrollCourtsHorizontally('right')}
-                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
                 title="Desplazar a canchas siguientes"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
-          <span className="text-emerald-400 font-semibold bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+          <span className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-500/30">
             {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
           </span>
         </div>
@@ -932,13 +937,13 @@ export function CalendarGrid({
 
       {/* Matriz de Calendario o Estado Vacío */}
       {filteredCourts.length === 0 ? (
-        <div className="flex-1 rounded-2xl border border-slate-800/80 bg-slate-950/80 p-12 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+        <div className="flex-1 rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 p-12 flex flex-col items-center justify-center text-center space-y-4 shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
             <Clock className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">No hay canchas registradas en este club</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">No hay canchas registradas en este club</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
               Para visualizar y gestionar la grilla de turnos, primero agregá las canchas (Fútbol, Pádel, etc.) en el menú Canchas.
             </p>
           </div>
@@ -954,7 +959,7 @@ export function CalendarGrid({
         <div 
           ref={gridContainerRef}
           onWheel={handleGridWheel}
-          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-800/80 bg-slate-950/80 shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
+          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 shadow-md dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
           style={{ scrollBehavior: 'smooth' }}
         >
         <div 
@@ -963,26 +968,26 @@ export function CalendarGrid({
         >
           {/* Header de Canchas (Columnas) - Sticky Top con Frozen Header */}
           <div 
-            className="grid w-full border-b border-slate-800 sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md shadow-md"
+            className="grid w-full border-b border-slate-200/90 dark:border-slate-800 sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md shadow-xs"
             style={{ gridTemplateColumns: gridTemplateCols }}
           >
             <div 
-              className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-950 shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
+              className="p-3 text-center text-xs font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-100 dark:bg-slate-950 shadow-[4px_0_12px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
               style={{ width: `${timeColWidth}px` }}
             >
-              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-400 shrink-0" />
+              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600 dark:text-emerald-400 shrink-0" />
               Hora
             </div>
             {filteredCourts.map((court) => (
               <div
                 key={court.id}
-                className="p-2.5 text-center border-r border-slate-800/80 last:border-r-0 bg-slate-900/90 flex flex-col justify-center min-w-0"
+                className="p-2.5 text-center border-r border-slate-200/90 dark:border-slate-800/80 last:border-r-0 bg-slate-50/90 dark:bg-slate-900/90 flex flex-col justify-center min-w-0"
               >
-                <div className="text-sm font-bold text-white tracking-tight truncate px-1" title={court.name}>
+                <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate px-1" title={court.name}>
                   {court.name}
                 </div>
-                <div className="text-[11px] text-emerald-400 font-medium truncate inline-flex items-center gap-1 justify-center mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold truncate inline-flex items-center gap-1 justify-center mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
                   <span className="truncate">{court.sport}</span>
                 </div>
               </div>
@@ -990,7 +995,7 @@ export function CalendarGrid({
           </div>
 
           {/* Filas de Horarios */}
-          <div className="divide-y divide-slate-800/60 w-full">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/60 w-full">
             {timeSlots.map((time) => (
               <div
                 key={time}
@@ -1000,7 +1005,7 @@ export function CalendarGrid({
               >
                 {/* Columna Hora - Sticky Left con Sombra de Elevación */}
                 <div 
-                  className="p-2 text-center text-xs font-semibold text-slate-400 border-r border-slate-800 bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.6)] select-none"
+                  className="p-2 text-center text-xs font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.04)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)] select-none"
                   style={{ width: `${timeColWidth}px` }}
                 >
                   {time}
@@ -1036,26 +1041,26 @@ export function CalendarGrid({
                       internal_notes: booking.internal_notes,
                     })
 
-                    // Estilo de color coordinado
+                    // Estilo de color coordinado nítido para Light y Dark mode
                     const colorClasses = isAbono
                       ? isHovered
-                        ? 'bg-purple-950/70 border-purple-400 text-purple-100 shadow-md'
-                        : 'bg-purple-950/40 border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/60 text-purple-100'
+                        ? 'bg-purple-100 border-purple-400 text-purple-950 shadow-sm dark:bg-purple-950/70 dark:border-purple-400 dark:text-purple-100 dark:shadow-md'
+                        : 'bg-purple-50/90 border-purple-300 hover:border-purple-400 hover:bg-purple-100 text-purple-950 dark:bg-purple-950/40 dark:border-purple-500/40 dark:hover:border-purple-400 dark:hover:bg-purple-950/60 dark:text-purple-100'
                       : isPendingValidation
                       ? isHovered
-                        ? 'bg-amber-950/80 border-amber-400 text-amber-100 shadow-md'
-                        : 'bg-amber-950/50 border-amber-500/60 hover:border-amber-400 hover:bg-amber-950/70 text-amber-100'
+                        ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-sm dark:bg-amber-950/80 dark:border-amber-400 dark:text-amber-100 dark:shadow-md'
+                        : 'bg-amber-50/90 border-amber-300 hover:border-amber-400 hover:bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:border-amber-500/60 dark:hover:border-amber-400 dark:hover:bg-amber-950/70 dark:text-amber-100'
                       : isFullyPaid
                       ? isHovered
-                        ? 'bg-emerald-950/70 border-emerald-400 text-emerald-100 shadow-md'
-                        : 'bg-emerald-950/40 border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-950/60 text-emerald-100'
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-950 shadow-sm dark:bg-emerald-950/70 dark:border-emerald-400 dark:text-emerald-100 dark:shadow-md'
+                        : 'bg-emerald-50/90 border-emerald-300 hover:border-emerald-400 hover:bg-emerald-100 text-emerald-950 dark:bg-emerald-950/40 dark:border-emerald-500/40 dark:hover:border-emerald-400 dark:hover:bg-emerald-950/60 dark:text-emerald-100'
                       : isConfirmed
                       ? isHovered
-                        ? 'bg-cyan-950/70 border-cyan-400 text-cyan-100 shadow-md'
-                        : 'bg-cyan-950/40 border-cyan-500/40 hover:border-cyan-400 hover:bg-cyan-950/60 text-cyan-100'
+                        ? 'bg-cyan-100 border-cyan-400 text-cyan-950 shadow-sm dark:bg-cyan-950/70 dark:border-cyan-400 dark:text-cyan-100 dark:shadow-md'
+                        : 'bg-cyan-50/90 border-cyan-300 hover:border-cyan-400 hover:bg-cyan-100 text-cyan-950 dark:bg-cyan-950/40 dark:border-cyan-500/40 dark:hover:border-cyan-400 dark:hover:bg-cyan-950/60 dark:text-cyan-100'
                       : isHovered
-                      ? 'bg-amber-950/70 border-amber-400 text-amber-100 shadow-md'
-                      : 'bg-amber-950/40 border-amber-500/40 hover:border-amber-400 hover:bg-amber-950/60 text-amber-100'
+                      ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-sm dark:bg-amber-950/70 dark:border-amber-400 dark:text-amber-100 dark:shadow-md'
+                      : 'bg-amber-50/90 border-amber-300 hover:border-amber-400 hover:bg-amber-100 text-amber-950 dark:bg-amber-950/40 dark:border-amber-500/40 dark:hover:border-amber-400 dark:hover:bg-amber-950/60 dark:text-amber-100'
 
                     // Caso 1: Turno de 1 solo slot de 30 min
                     if (isStart && isEnd) {
@@ -1065,37 +1070,37 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="p-1.5 border-r border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0"
+                          className="p-1.5 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0"
                         >
                           <div
                             className={`h-full w-full rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
-                                <span className="font-bold text-xs truncate block">
+                                <span className="font-bold text-xs truncate block text-slate-900 dark:text-white">
                                   {booking.customer_name}
                                 </span>
                                 {isPendingValidation ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 border border-amber-400/40 tracking-wider">
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
                                     VALIDAR SEÑA
                                   </span>
                                 ) : isAbono ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
                                     ABONO FIJO
                                   </span>
                                 ) : null}
                               </div>
                               {isPendingValidation ? (
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
                               ) : isFullyPaid ? (
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               ) : (
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
-                              <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
+                            <div className="flex items-center justify-between mt-1 text-[11px] gap-1">
+                              <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{formatARS(booking.total_amount_ars)}</span>
                               {!isAbono && booking.balance_due > 0 ? (
                                 <button
                                   type="button"
@@ -1103,18 +1108,18 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
-                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                  <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                   <span className="truncate">
                                     {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar ${formatARS(booking.balance_due)}`}
                                   </span>
                                 </button>
                               ) : isAbono ? (
-                                <span className="text-purple-300 font-semibold text-[10px] shrink-0">Abono al día</span>
+                                <span className="text-purple-700 dark:text-purple-300 font-bold text-[10px] shrink-0">Abono al día</span>
                               ) : (
-                                <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
+                                <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] shrink-0">Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1130,37 +1135,37 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                         >
                           <div
                             className={`h-full min-h-[66px] w-full rounded-t-xl rounded-b-none p-2.5 flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-[1px] relative z-10 ${colorClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
-                                <span className="font-bold text-xs truncate block">
+                                <span className="font-bold text-xs truncate block text-slate-900 dark:text-white">
                                   {booking.customer_name}
                                 </span>
                                 {isPendingValidation ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 border border-amber-400/40 tracking-wider">
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
                                     VALIDAR SEÑA
                                   </span>
                                 ) : isAbono ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40 tracking-wider">
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
                                     ABONO FIJO
                                   </span>
                                 ) : null}
                               </div>
                               {isPendingValidation ? (
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
                               ) : isFullyPaid ? (
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               ) : (
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] opacity-90 gap-1">
-                              <span className="truncate">{formatARS(booking.total_amount_ars)}</span>
+                            <div className="flex items-center justify-between mt-1 text-[11px] gap-1">
+                              <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{formatARS(booking.total_amount_ars)}</span>
                               {!isAbono && booking.balance_due > 0 ? (
                                 <button
                                   type="button"
@@ -1168,18 +1173,18 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
-                                  <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                  <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                   <span className="truncate">
                                     {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
                                   </span>
                                 </button>
                               ) : isAbono ? (
-                                <span className="text-purple-300 font-semibold text-[10px] shrink-0">Abono al día</span>
+                                <span className="text-purple-700 dark:text-purple-300 font-bold text-[10px] shrink-0">Abono al día</span>
                               ) : (
-                                <span className="text-emerald-400 font-semibold text-[10px] shrink-0">Saldado</span>
+                                <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] shrink-0">Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1195,15 +1200,15 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 py-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                          className="px-1.5 py-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                         >
                           <div
                             className={`h-full min-h-[72px] w-full rounded-none px-2.5 py-1.5 flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-[1px] relative z-10 ${colorClasses}`}
                           >
-                            <span className="text-[10px] font-medium opacity-70 italic truncate">
+                            <span className="text-[10px] font-medium opacity-80 italic truncate text-slate-700 dark:text-slate-300">
                               {gridDensity === 'compact' ? 'En curso' : 'Turno en curso...'}
                             </span>
-                            <span className="text-[10px] opacity-75 font-semibold truncate">
+                            <span className="text-[10px] font-bold truncate text-slate-900 dark:text-white">
                               {booking.customer_name}
                             </span>
                           </div>
@@ -1218,14 +1223,14 @@ export function CalendarGrid({
                         onClick={() => setSelectedBooking(booking)}
                         onMouseEnter={() => setHoveredBookingId(booking.id)}
                         onMouseLeave={() => setHoveredBookingId(null)}
-                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
                       >
                         <div
                           className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
                         >
-                          <div className="flex items-center justify-between w-full h-full text-[11px] opacity-90 mt-auto gap-1">
-                            <div className="flex items-center gap-1.5 font-semibold text-slate-300 truncate">
-                              <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <div className="flex items-center justify-between w-full h-full text-[11px] mt-auto gap-1">
+                            <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300 truncate">
+                              <Clock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
                               <span className="truncate">{gridDensity === 'compact' ? `${endTime} hs` : `Hasta las ${endTime} hs`}</span>
                             </div>
                             {!isAbono && booking.balance_due > 0 ? (
@@ -1235,20 +1240,20 @@ export function CalendarGrid({
                                   e.stopPropagation()
                                   setSelectedBooking(booking)
                                 }}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-[10px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                 title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                               >
-                                <DollarSign className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                 <span className="truncate">
                                   {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
                                 </span>
                               </button>
                             ) : isAbono ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-purple-950/80 border border-purple-700/60 text-purple-300 shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-700/60 text-purple-900 dark:text-purple-300 shrink-0">
                                 Abono al día
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-900/80 border border-slate-700/60 text-slate-300 shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 shrink-0">
                                 {totalSlots === 2 ? '1 h' : `${totalSlots * 30}m`}
                               </span>
                             )}
@@ -1266,18 +1271,18 @@ export function CalendarGrid({
                         setQuickBookSlot({ courtId: court.id, time })
                         setIsQuickBookOpen(true)
                       }}
-                      className="p-1 border-r border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-950/20 transition-colors relative min-h-[72px] min-w-0"
+                      className="p-1 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-emerald-950/20 transition-colors relative min-h-[72px] min-w-0"
                     >
                       {/* Área visible en desktop con hover */}
-                      <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-md border border-emerald-500/20">
+                      <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-400/60 dark:group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/80 px-2 py-1 rounded-md border border-emerald-300/80 dark:border-emerald-500/20 shadow-xs">
                           <Plus className="w-3 h-3" />
                           Reservar
                         </span>
                       </div>
                       {/* Área táctil visible en mobile siempre */}
                       <div className="sm:hidden h-full w-full rounded-lg flex items-center justify-center">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500/60 px-1.5 py-0.5 rounded border border-dashed border-emerald-600/25">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700/70 dark:text-emerald-500/60 px-1.5 py-0.5 rounded border border-dashed border-emerald-400/40 dark:border-emerald-600/25">
                           <Plus className="w-2.5 h-2.5" />
                         </span>
                       </div>
@@ -1289,11 +1294,11 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 px-2 py-1 text-[11px] text-slate-400 select-none">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 px-2 py-1 text-[11px] text-slate-500 dark:text-slate-400 select-none">
         <span className="text-slate-500 hidden sm:inline">
-          Tip de recepción: Mantené <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[10px]">Shift</kbd> + rueda del mouse para desplazarte entre canchas.
+          Tip de recepción: Mantené <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] shadow-2xs">Shift</kbd> + rueda del mouse para desplazarte entre canchas.
         </span>
-        <span className="text-emerald-400 font-medium">
+        <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
           {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'} ({gridDensity === 'compact' ? 'Modo Compacto' : 'Modo Cómodo'})
         </span>
       </div>

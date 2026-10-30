@@ -1,6 +1,8 @@
 /* src/app/globals.css */
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ─── Design Tokens ────────────────────────────────────────────────────────── */
 :root {
   /* Brand */

@@ -18,10 +18,9 @@ import {
 import { InflationAdjustModal } from '@/components/dashboard/inflation-adjust-modal'
 import { DynamicPricingModal } from '@/components/dashboard/dynamic-pricing-modal'
 import { formatARS } from '@/lib/utils'
-import { createPriceRule, updatePriceRule, getClubPriceRules, deletePriceRule } from '@/actions/club.actions'
+import { createPriceRule, updatePriceRule, getClubPriceRules, deletePriceRule, getClubCourts } from '@/actions/club.actions'
 import { toast } from 'sonner'
 import { useTenantId, useUserRole } from '@/hooks/use-tenant-id'
-import { createClient } from '@/lib/supabase/client'
 
 function formatSport(sport?: string | null): string {
   if (!sport) return 'General'
@@ -133,22 +132,24 @@ export default function PreciosPage() {
         setLoadingRules(true)
       }
 
-      // Cargar tarifas y canchas en paralelo
-      const supabase = createClient()
-      const [, courtsRes] = await Promise.all([
+      // Cargar tarifas y canchas en paralelo via Server Actions
+      const [, courtsList] = await Promise.all([
         reloadRules(tenantId!, isInitial && !hasCached),
-        supabase
-          .from('courts')
-          .select('id, name, sport, created_at')
-          .eq('tenant_id', tenantId!)
-          .eq('is_active', true)
-          .order('created_at', { ascending: true })
+        getClubCourts(tenantId!).catch(() => [])
       ])
 
       if (isMounted) {
-        if (courtsRes.data) {
-          cachedCourtsMap.set(tenantId!, courtsRes.data)
-          setAvailableCourts(courtsRes.data)
+        if (courtsList && courtsList.length > 0) {
+          const activeCourts = courtsList
+            .filter(c => c.is_active !== false)
+            .map(c => ({
+              id: c.id,
+              name: c.name,
+              sport: c.sport,
+              created_at: c.created_at || new Date().toISOString()
+            }))
+          cachedCourtsMap.set(tenantId!, activeCourts)
+          setAvailableCourts(activeCourts)
         }
         setLoadingRules(false)
       }

@@ -46,7 +46,7 @@ import { toast } from 'sonner'
 import type { RecurringSlot } from '@/types/database'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
-import { createClient } from '@/lib/supabase/client'
+import { getClubCourts } from '@/actions/club.actions'
 
 
 const DAYS_NAME = [
@@ -253,14 +253,13 @@ export default function TurnosFijosPage() {
   useEffect(() => {
     if (!tenantId) return
     let isMounted = true
-    // Load courts from DB
-    const supabase = createClient()
-    supabase.from('courts').select('id, name, sport, created_at').eq('tenant_id', tenantId).order('created_at', { ascending: true }).then(({ data }: { data: unknown }) => {
-      const courtsList = data as { id: string; name: string; sport: string }[] | null
+    // Load courts from Server Action
+    getClubCourts(tenantId).then((courtsList) => {
       if (courtsList && courtsList.length > 0) {
-        cachedDbCourtsMap.set(tenantId, courtsList)
-        setDbCourts(courtsList)
-        setCourtId((prev) => prev || courtsList[0].id)
+        const formatted = courtsList.map(c => ({ id: c.id, name: c.name, sport: c.sport }))
+        cachedDbCourtsMap.set(tenantId, formatted)
+        setDbCourts(formatted)
+        setCourtId((prev) => prev || formatted[0].id)
       }
     })
     // Load recurring slots

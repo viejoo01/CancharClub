@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import {
   ArrowLeft,
   MessageCircle,
@@ -24,10 +25,14 @@ import {
   Maximize2,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
-import { RegisterClubModal } from '@/components/public/register-club-modal'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
 import { SAAS_PLANS_LIST, type SaaSPlanId } from '@/config/saas-plans'
 import { buildWhatsAppLink } from '@/lib/utils'
+
+const RegisterClubModal = dynamic(
+  () => import('@/components/public/register-club-modal').then((mod) => mod.RegisterClubModal),
+  { ssr: false }
+)
 
 export default function SumarClubLandingPage() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)

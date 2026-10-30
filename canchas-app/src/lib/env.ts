@@ -1,3 +1,5 @@
+import 'server-only'
+
 // src/lib/env.ts
 // ==============================================================================
 // VALIDACIÓN Y GESTIÓN CENTRALIZADA DE VARIABLES DE ENTORNO

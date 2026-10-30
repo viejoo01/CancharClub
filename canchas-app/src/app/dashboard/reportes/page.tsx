@@ -23,7 +23,7 @@ import { exportToCsv, printCleanPdfReport } from '@/lib/export'
 import { toast } from 'sonner'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
-import { createClient } from '@/lib/supabase/client'
+import { getTenantClubInfo } from '@/actions/club.actions'
 
 // tenant isolation: useTenantId hook
 
@@ -53,19 +53,13 @@ export default function ReportesPage() {
     if (!tenantId) return
     if (cachedTenantMeta.has(tenantId)) return
 
-    const supabase = createClient()
-    supabase
-      .from('tenants')
-      .select('name, slug')
-      .eq('id', tenantId)
-      .maybeSingle()
-      .then(({ data: t }: { data: { name?: string | null; slug?: string | null } | null }) => {
-        if (t?.name) {
-          cachedTenantMeta.set(tenantId, { name: t.name, slug: t.slug || '' })
-          setClubName(t.name)
-          if (t.slug) setClubSlug(t.slug)
-        }
-      })
+    getTenantClubInfo(tenantId).then((t) => {
+      if (t?.name) {
+        cachedTenantMeta.set(tenantId, { name: t.name, slug: t.slug || '' })
+        setClubName(t.name)
+        if (t.slug) setClubSlug(t.slug)
+      }
+    })
   }, [tenantId])
 
   const loadReport = useCallback(async (isInitial = false) => {

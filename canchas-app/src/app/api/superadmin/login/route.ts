@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createHmac, timingSafeEqual, createHash } from 'crypto'
 import { checkSuperadminLoginRateLimit, getClientIp } from '@/lib/rate-limiter'
+import { clearUserProfileServerCache } from '@/lib/auth-security'
 
 const COOKIE_NAME = 'sa_session'
 const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000 // 8 horas máximo
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
+  clearUserProfileServerCache()
   // Logout: eliminar la cookie de sesión en ambos paths
   const res = NextResponse.json({ ok: true })
   res.cookies.set(COOKIE_NAME, '', {

@@ -27,6 +27,8 @@ import {
   type ClubHighlightInfo, 
   getClubSocialLinks,
   getClubServicesAndLocation,
+  getClubCourts,
+  getTenantClubInfo,
 } from '@/actions/club.actions'
 import { extractSocialHandle, type ClubSocialLinks, type ClubServicesAndLocationData } from '@/config/clubs-catalog'
 import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
@@ -38,7 +40,6 @@ import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { useTenantId, useTenantPlan } from '@/hooks/use-tenant-id'
 import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE } from '@/config/saas-plans'
-import { createClient } from '@/lib/supabase/client'
 
 interface Court {
   id: string
@@ -214,41 +215,24 @@ export default function CanchasPage() {
 
   const loadCourtsData = useCallback(async (isInitial = false) => {
     if (!tenantId) return
-    const supabase = createClient()
     try {
-      const [courtsRes, sched, hInfo, sLinks, sLoc] = await Promise.all([
-        supabase
-          .from('courts')
-          .select('id, name, sport, slot_duration_minutes, surface, has_lights, is_indoor, is_active, created_at')
-          .eq('tenant_id', tenantId)
-          .order('created_at', { ascending: true }),
+      const [courtsList, sched, hInfo, sLinks, sLoc] = await Promise.all([
+        getClubCourts(tenantId).catch(() => []),
         getClubSchedule(tenantId).catch(() => null),
         getClubHighlightInfo(tenantId).catch(() => null),
         getClubSocialLinks(tenantId).catch(() => null),
         getClubServicesAndLocation(tenantId).catch(() => null),
       ])
 
-      const { data, error } = courtsRes
-      if (data && !error) {
-        interface CourtDbRow {
-          id: string
-          name: string
-          sport: SportType
-          slot_duration_minutes: number | null
-          surface: CourtSurface | null
-          has_lights: boolean | null
-          is_indoor: boolean | null
-          is_active: boolean | null
-          created_at?: string | null
-        }
-        const mapped: Court[] = (data as unknown as CourtDbRow[]).map(c => ({
+      if (courtsList) {
+        const mapped: Court[] = courtsList.map(c => ({
           id: c.id,
           name: c.name,
           sport: c.sport,
           slot_duration: c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
-          surface: c.surface || 'CESPED_SINTETICO',
-          has_lighting: !!c.has_lights,
-          is_indoor: !!c.is_indoor,
+          surface: (c.surface || 'CESPED_SINTETICO') as CourtSurface,
+          has_lighting: Boolean(c.has_lights || c.has_lighting),
+          is_indoor: Boolean(c.is_indoor),
           is_active: c.is_active ?? true,
           created_at: c.created_at ?? null,
         }))
@@ -298,18 +282,10 @@ export default function CanchasPage() {
     window.addEventListener('focus', handleSync)
     document.addEventListener('visibilitychange', handleSync)
 
-    // Obtener slug del club desde la BD
-    const supabase = createClient()
-    supabase
-      .from('profiles')
-      .select('tenants(slug)')
-      .eq('tenant_id', tenantId)
-      .maybeSingle()
-      .then(({ data }: { data: unknown }) => {
-        const profileData = data as { tenants?: { slug?: string } | null } | null
-        const slug = profileData?.tenants?.slug
-        if (slug) setClubSlug(slug)
-      })
+    // Obtener slug del club desde Server Action
+    getTenantClubInfo(tenantId).then((data) => {
+      if (data?.slug) setClubSlug(data.slug)
+    })
 
     return () => {
       clearInterval(interval)

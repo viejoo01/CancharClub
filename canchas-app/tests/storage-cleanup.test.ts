@@ -53,12 +53,14 @@ describe('Storage Cleanup Security Engine', () => {
     mockLocal.setItem('canchar_cached_tenant_id', 'tenant-123')
     mockLocal.setItem('canchar_player_phone', '3816839320')
     mockLocal.setItem('demo_user_role', 'admin')
+    mockLocal.setItem('sb-abcdefghij-auth-token', 'supabase-jwt-token')
     mockLocal.setItem('canchar_theme', 'dark')
     mockLocal.setItem('other_app_key', 'safe')
     mockSession.setItem('active_session_token', 'secret123')
 
     expect(mockLocal.getItem('canchar_today_schedule_snapshot')).toBeTruthy()
     expect(mockSession.getItem('active_session_token')).toBeTruthy()
+    expect(mockLocal.getItem('sb-abcdefghij-auth-token')).toBeTruthy()
 
     clearClientSensitiveStorage()
 
@@ -67,10 +69,12 @@ describe('Storage Cleanup Security Engine', () => {
     expect(mockLocal.getItem('canchar_cached_tenant_id')).toBeNull()
     expect(mockLocal.getItem('canchar_player_phone')).toBeNull()
     expect(mockLocal.getItem('demo_user_role')).toBeNull()
+    expect(mockLocal.getItem('sb-abcdefghij-auth-token')).toBeNull()
     expect(mockSession.getItem('active_session_token')).toBeNull()
 
     // Non-sensitive theme preference and unrelated keys preserved
     expect(mockLocal.getItem('canchar_theme')).toBe('dark')
     expect(mockLocal.getItem('other_app_key')).toBe('safe')
+
   })
 })

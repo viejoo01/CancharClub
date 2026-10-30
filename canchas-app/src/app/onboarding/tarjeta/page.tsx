@@ -35,6 +35,7 @@ import {
 } from '@/lib/card-validation'
 import { tokenizeCardWithMercadoPagoClient } from '@/lib/mercadopago-client'
 import { logout } from '@/actions/auth.actions'
+import { clearClientSensitiveStorage } from '@/lib/storage-cleanup'
 import { SAAS_PLANS } from '@/config/saas-plans'
 import { formatARS } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -278,6 +279,7 @@ function OnboardingCardContent() {
   }
 
   const handleLogout = async () => {
+    clearClientSensitiveStorage()
     await logout()
   }
 

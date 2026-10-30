@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CancharClubIcon } from '@/components/shared/canchar-club-logo'
-import { createClient } from '@/lib/supabase/client'
+import { getCurrentUserContextAction } from '@/actions/auth.actions'
 
 function AppDispatcherContent() {
   const router = useRouter()
@@ -59,12 +59,11 @@ function AppDispatcherContent() {
       // 2. Verificar si hay un rol previo guardado en este dispositivo
       const savedRole = localStorage.getItem('canchar_user_role')
 
-      // 3. Verificar si el usuario ya tiene sesión de club activa en Supabase
+      // 3. Verificar si el usuario ya tiene sesión de club activa via Server Action
       try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        const ctx = await getCurrentUserContextAction()
 
-        if (session?.user) {
+        if (ctx.isAuthenticated && ctx.userId) {
           // Si tiene sesión activa de club y no eligió explícitamente ser jugador, va a su dashboard
           if (savedRole !== 'player') {
             router.replace('/dashboard')
@@ -72,7 +71,7 @@ function AppDispatcherContent() {
           }
         }
       } catch {
-        // Fallback silencioso si falla el cliente Supabase
+        // Fallback silencioso si falla la verificación
       }
 
       // 4. Si tiene rol guardado de Jugador

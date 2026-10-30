@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, LayoutDashboard, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { clearClientSensitiveStorage } from '@/lib/storage-cleanup'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,7 @@ export default function SuperadminLayout({
   const router = useRouter()
 
   async function handleLogout() {
+    clearClientSensitiveStorage()
     try {
       await fetch('/api/superadmin/login', { method: 'DELETE' })
     } catch {}

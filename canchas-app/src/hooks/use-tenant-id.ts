@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { getCurrentUserContextAction } from '@/actions/auth.actions'
 import {
   useTenantContext,
   useTenantSlugContext,
@@ -48,20 +48,12 @@ export function useTenantId(): string | null {
     if (contextTenantId || fallbackTenantId) return
 
     let isMounted = true
-    const supabase = createClient()
     async function loadTenant() {
       try {
-        const { data } = await supabase.auth.getUser()
-        const user = data?.user
-        if (!user || !isMounted) return
-        const { data: profile } = (await supabase
-          .from('profiles')
-          .select('tenant_id')
-          .eq('id', user.id)
-          .maybeSingle()) as { data: { tenant_id?: string | null } | null }
-        if (profile?.tenant_id && isMounted) {
-          setGlobalCachedTenantId(profile.tenant_id)
-          setFallbackTenantId(profile.tenant_id)
+        const ctx = await getCurrentUserContextAction()
+        if (ctx.tenantId && isMounted) {
+          setGlobalCachedTenantId(ctx.tenantId)
+          setFallbackTenantId(ctx.tenantId)
         }
       } catch {}
     }
@@ -97,19 +89,11 @@ export function useUserRole(): { role: string; isOwner: boolean } {
     if (contextRole) return
 
     let isMounted = true
-    const supabase = createClient()
     async function loadRole() {
       try {
-        const { data } = await supabase.auth.getUser()
-        const user = data?.user
-        if (!user || !isMounted) return
-        const { data: profile } = (await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle()) as { data: { role?: string | null } | null }
-        if (profile?.role && isMounted) {
-          setAsyncRole(profile.role)
+        const ctx = await getCurrentUserContextAction()
+        if (ctx.role && isMounted) {
+          setAsyncRole(ctx.role)
         }
       } catch {}
     }

@@ -26,6 +26,9 @@ export const metadata: Metadata = {
     default: 'CancharClub | Gestión y Reservas de Canchas Deportivas',
   },
   description: siteConfig.description,
+  alternates: {
+    canonical: 'https://cancharclub.com.ar',
+  },
   keywords: [
     'CancharClub',
     'Canchar',
@@ -100,9 +103,46 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="CancharClub" />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-        <meta httpEquiv="Pragma" content="no-cache" />
-        <meta httpEquiv="Expires" content="0" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@graph': [
+                {
+                  '@type': 'Organization',
+                  '@id': 'https://cancharclub.com.ar/#organization',
+                  name: 'CancharClub',
+                  url: 'https://cancharclub.com.ar',
+                  logo: 'https://cancharclub.com.ar/icon-512.png',
+                  description: 'Plataforma de gestión integral y reservas online para complejos deportivos en Argentina.',
+                  sameAs: [
+                    'https://instagram.com/cancharclub',
+                    'https://x.com/cancharclub'
+                  ],
+                  contactPoint: {
+                    '@type': 'ContactPoint',
+                    telephone: '+5493816001122',
+                    contactType: 'customer service',
+                    areaServed: 'AR',
+                    availableLanguage: 'Spanish'
+                  }
+                },
+                {
+                  '@type': 'WebSite',
+                  '@id': 'https://cancharclub.com.ar/#website',
+                  url: 'https://cancharclub.com.ar',
+                  name: 'CancharClub',
+                  description: 'Gestión y Reservas de Canchas Deportivas',
+                  publisher: {
+                    '@id': 'https://cancharclub.com.ar/#organization'
+                  },
+                  inLanguage: 'es-AR'
+                }
+              ]
+            })
+          }}
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `

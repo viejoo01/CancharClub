@@ -11,7 +11,6 @@ import {
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { loginWithEmail, clearAuthCookies } from '@/actions/auth.actions'
-import { createClient } from '@/lib/supabase/client'
 
 function LoginForm() {
   const searchParams = useSearchParams()
@@ -29,13 +28,11 @@ function LoginForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const displayError = errorMessage || initialUrlError
 
-  // Al cargar la pantalla de login, purgar cualquier sesión o cookie anterior
+  // Al cargar la pantalla de login, purgar cualquier sesión o cookie anterior en el servidor
   // para garantizar aislamiento total y evitar que credenciales inválidas abran otro club.
   useEffect(() => {
     try {
-      clearAuthCookies()
-      const supabase = createClient()
-      supabase.auth.signOut().catch(() => {})
+      void clearAuthCookies()
     } catch {}
   }, [])
 

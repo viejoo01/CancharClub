@@ -8,34 +8,69 @@ import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { formatClubEmail } from '@/lib/utils'
 import { sendSuperadminAlert } from '@/lib/superadmin-notifications'
-import { validatePasswordStrength } from '@/lib/auth-security'
+import { validatePasswordStrength, clearUserProfileServerCache } from '@/lib/auth-security'
 
 const STALE_AUTH_COOKIES = [
+  'sa_session',
   'canchar_tenant_id',
-  'demo_tenant_id',
-  'demo_tenant_name',
-  'demo_tenant_slug',
+  'canchar_tenant_slug',
+  'canchar_cached_tenant_id',
+  'canchar_user_role',
+  'canchar_active_venue_id',
+  'canchar_active_venue_name',
+  'new_club_pending_activation',
   'demo_user_role',
   'demo_user_name',
   'demo_subscription_status',
   'demo_plan_id',
+  'demo_tenant_name',
+  'demo_tenant_slug',
+  'demo_tenant_id',
   'demo_is_active',
   'demo_has_card',
   'demo_card_last4',
   'demo_card_brand',
   'demo_card_holder',
-  'new_club_pending_activation',
-  'canchar_active_venue_id',
-  'canchar_active_venue_name',
-  'sa_session',
+  'demo_trial_ends_at',
+  'demo_trial_forfeited',
+  'demo_terms_accepted_at',
 ]
 
 export async function clearAuthCookies() {
   try {
+    try {
+      const supabase = await createClient()
+      await supabase.auth.signOut({ scope: 'global' })
+    } catch {}
+
+    clearUserProfileServerCache()
+
     const cookieStore = await cookies()
-    const supabase = await createClient()
-    await supabase.auth.signOut()
-    STALE_AUTH_COOKIES.forEach(c => cookieStore.delete(c))
+    const allCookies = cookieStore.getAll()
+    const allCandidateNames = new Set([
+      ...allCookies.map(c => c.name),
+      ...STALE_AUTH_COOKIES,
+    ])
+
+    for (const name of allCandidateNames) {
+      if (
+        name.startsWith('sb-') ||
+        name.startsWith('canchar_') ||
+        name.startsWith('demo_') ||
+        STALE_AUTH_COOKIES.includes(name)
+      ) {
+        try {
+          cookieStore.delete(name)
+          cookieStore.set(name, '', {
+            path: '/',
+            maxAge: 0,
+            expires: new Date(0),
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+          })
+        } catch {}
+      }
+    }
     return { success: true }
   } catch (err) {
     console.error('Error clearing auth cookies:', err)
@@ -640,29 +675,42 @@ export async function registerClub(formData: FormData) {
 }
 
 export async function logout() {
-  const supabase = await createClient()
-  await supabase.auth.signOut()
+  try {
+    const supabase = await createClient()
+    await supabase.auth.signOut({ scope: 'global' })
+  } catch (err) {
+    console.warn('[logout action] Error en Supabase signOut:', err)
+  }
+
+  clearUserProfileServerCache()
+
   const cookieStore = await cookies()
-  const cookiesToDelete = [
-    'demo_user_role',
-    'demo_user_name',
-    'demo_subscription_status',
-    'demo_plan_id',
-    'demo_tenant_name',
-    'demo_tenant_slug',
-    'demo_tenant_id',
-    'canchar_tenant_id',
-    'demo_is_active',
-    'demo_has_card',
-    'demo_card_last4',
-    'demo_card_brand',
-    'demo_card_holder',
-    'demo_terms_accepted_at',
-    'new_club_pending_activation',
-    'canchar_active_venue_id',
-    'canchar_active_venue_name',
-  ]
-  cookiesToDelete.forEach(c => cookieStore.delete(c))
+  const allCookies = cookieStore.getAll()
+  const allCandidateNames = new Set([
+    ...allCookies.map(c => c.name),
+    ...STALE_AUTH_COOKIES,
+  ])
+
+  for (const name of allCandidateNames) {
+    if (
+      name.startsWith('sb-') ||
+      name.startsWith('canchar_') ||
+      name.startsWith('demo_') ||
+      STALE_AUTH_COOKIES.includes(name)
+    ) {
+      try {
+        cookieStore.delete(name)
+        cookieStore.set(name, '', {
+          path: '/',
+          maxAge: 0,
+          expires: new Date(0),
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        })
+      } catch {}
+    }
+  }
+
   redirect('/')
 }
 
@@ -740,4 +788,39 @@ export async function changeOwnPassword(payload: {
     return { success: false, error: 'Error inesperado al cambiar la contraseña.' }
   }
 }
+
+/**
+ * Resuelve el contexto de autenticación y tenant del usuario actual desde el servidor.
+ * Permite que los componentes cliente consulten el usuario/rol sin hacer llamadas directas a Supabase desde el navegador.
+ */
+export async function getCurrentUserContextAction(): Promise<{
+  userId: string | null
+  tenantId: string | null
+  role: string | null
+  isAuthenticated: boolean
+}> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return { userId: null, tenantId: null, role: null, isAuthenticated: false }
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('tenant_id, role')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    return {
+      userId: user.id,
+      tenantId: profile?.tenant_id || null,
+      role: profile?.role || null,
+      isAuthenticated: true,
+    }
+  } catch {
+    return { userId: null, tenantId: null, role: null, isAuthenticated: false }
+  }
+}
+
 

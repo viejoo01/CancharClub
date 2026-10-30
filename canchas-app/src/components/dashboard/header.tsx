@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone, PanelLeftClose, PanelLeftOpen, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -44,6 +44,7 @@ export function Header({
 }: HeaderProps) {
   const { isOwner } = useUserRole()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Cerrar al hacer click afuera
@@ -251,15 +252,21 @@ export function Header({
                 action="/auth/logout" 
                 method="post"
                 onSubmit={() => {
+                  setIsLoggingOut(true)
                   clearClientSensitiveStorage()
                 }}
               >
                 <button
                   type="submit"
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer text-left"
+                  disabled={isLoggingOut}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer text-left disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Cerrar Sesión</span>
+                  {isLoggingOut ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
+                  ) : (
+                    <LogOut className="w-4 h-4 shrink-0" />
+                  )}
+                  <span>{isLoggingOut ? 'Cerrando sesión...' : 'Cerrar Sesión'}</span>
                 </button>
               </form>
             </div>

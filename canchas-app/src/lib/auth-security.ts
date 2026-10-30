@@ -58,6 +58,19 @@ export function verifySuperadminSessionToken(token: string, secret: string): boo
 const userProfileServerCache = new Map<string, { profile: AuthUserProfile; expiresAt: number }>()
 
 /**
+ * Invalida inmediatamente el caché en memoria de perfiles de usuario en el servidor.
+ * Se invoca durante el cierre de sesión para evitar que accesos posteriores reutilicen
+ * perfiles residuales almacenados en la memoria del isolate de Node.js.
+ */
+export function clearUserProfileServerCache(tokenKey?: string): void {
+  if (tokenKey) {
+    userProfileServerCache.delete(tokenKey)
+  } else {
+    userProfileServerCache.clear()
+  }
+}
+
+/**
  * Obtiene el perfil del usuario autenticado actual desde Supabase Auth o cookies de sesión.
  * Retorna null si no hay sesión activa.
  */

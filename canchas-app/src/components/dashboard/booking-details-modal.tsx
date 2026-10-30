@@ -55,7 +55,7 @@ import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
 import { siteConfig } from '@/config/site'
 import { useTenantId } from '@/hooks/use-tenant-id'
-import { createClient } from '@/lib/supabase/client'
+import { getTenantClubInfo } from '@/actions/club.actions'
 
 interface BookingDetailsModalProps {
   isOpen: boolean
@@ -99,16 +99,10 @@ export function BookingDetailsModal({
 
   useEffect(() => {
     if (!tenantId) return
-    const supabase = createClient()
-    supabase
-      .from('tenants')
-      .select('name, slug')
-      .eq('id', tenantId)
-      .maybeSingle()
-      .then(({ data }: { data: { name?: string | null; slug?: string | null } | null }) => {
-        if (data?.name) setClubName(data.name)
-        if (data?.slug) setClubSlug(data.slug)
-      })
+    getTenantClubInfo(tenantId).then((data) => {
+      if (data?.name) setClubName(data.name)
+      if (data?.slug) setClubSlug(data.slug)
+    })
   }, [tenantId])
 
   const [localStatus, setLocalStatus] = useState<string | null>(null)

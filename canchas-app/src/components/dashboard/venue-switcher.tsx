@@ -3,8 +3,8 @@
 import { useState, useMemo, useSyncExternalStore, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useTenantId } from '@/hooks/use-tenant-id'
+import { getClubCourts } from '@/actions/club.actions'
 import { 
   Building2, 
   MapPin, 
@@ -105,31 +105,8 @@ export function VenueSwitcher({
 
   const fetchCourts = useCallback(async () => {
     try {
-      const supabase = createClient()
-      let targetTenantId = effectiveTenantId
-
-      if (!targetTenantId) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('tenant_id')
-            .eq('id', user.id)
-            .maybeSingle()
-          if (profile?.tenant_id) {
-            targetTenantId = profile.tenant_id
-          }
-        }
-      }
-
-      let query = supabase.from('courts').select('id, sport, is_active')
-      if (targetTenantId) {
-        query = query.eq('tenant_id', targetTenantId)
-      }
-
-      const { data, error } = await query
-      if (data && !error) {
-        const courtsList = data as Array<{ id: string; sport?: string | null; is_active?: boolean | null }>
+      const courtsList = await getClubCourts(effectiveTenantId)
+      if (courtsList && courtsList.length > 0) {
         const uniqueSports = Array.from(new Set(courtsList.map(c => c.sport).filter(Boolean))) as string[]
         const formatted: string[] = uniqueSports.map(s => {
           if (s === 'FUTBOL11' || s === 'FUTBOL_11') return 'Fútbol 11'

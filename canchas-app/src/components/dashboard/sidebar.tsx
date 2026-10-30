@@ -29,7 +29,8 @@ import {
   Bell,
   SlidersHorizontal,
   Smartphone,
-  PanelLeftClose
+  PanelLeftClose,
+  Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SAAS_PLANS, type SaaSPlanId, type SaaSFeatureKey } from '@/config/saas-plans'
@@ -233,6 +234,7 @@ export function Sidebar({
   const effectiveTenantId = tenantId || hookTenantId || null
 
   const [showCustomizeModal, setShowCustomizeModal] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [preferences, setPreferences] = useState<SidebarNavPreferences>(() => {
     if (typeof window === 'undefined') return { order: [], hidden: [] }
     try {
@@ -545,16 +547,22 @@ export function Sidebar({
           action="/auth/logout" 
           method="post" 
           onSubmit={() => {
+            setIsLoggingOut(true)
             clearClientSensitiveStorage()
             onClose?.()
           }}
         >
           <button
             type="submit"
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer"
+            disabled={isLoggingOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <LogOut className="w-4 h-4" />
-            <span>Cerrar Sesión</span>
+            {isLoggingOut ? (
+              <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
+            ) : (
+              <LogOut className="w-4 h-4 shrink-0" />
+            )}
+            <span>{isLoggingOut ? 'Cerrando sesión...' : 'Cerrar Sesión'}</span>
           </button>
         </form>
       </div>

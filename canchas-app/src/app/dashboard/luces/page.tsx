@@ -43,9 +43,9 @@ import {
   type RelayType,
   type CloudLightConfig
 } from '@/actions/lights.actions'
+import { getClubCourts } from '@/actions/club.actions'
 import { useTenantId } from '@/hooks/use-tenant-id'
 import { PlanFeatureGuard } from '@/components/dashboard/plan-feature-guard'
-import { createClient } from '@/lib/supabase/client'
 
 interface CourtUIItem {
   court_id: string
@@ -95,17 +95,13 @@ export default function LucesPage() {
 
     async function loadData() {
       try {
-        const supabase = createClient()
-        const [{ data: courtsData }, savedConfigs, lightMetrics] = await Promise.all([
-          supabase
-            .from('courts')
-            .select('id, name, has_lights, light_is_on, created_at')
-            .eq('tenant_id', activeTenantId)
-            .eq('is_active', true)
-            .order('created_at', { ascending: true }),
+        const [courtsList, savedConfigs, lightMetrics] = await Promise.all([
+          getClubCourts(activeTenantId).catch(() => []),
           getCourtLightConfigs(activeTenantId),
           getLightMetricsAction(activeTenantId)
         ])
+
+        const courtsData = (courtsList || []).filter(c => c.is_active !== false)
 
         if (!isMounted) return
 

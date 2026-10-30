@@ -81,12 +81,24 @@ export async function proxy(request: NextRequest) {
     },
   })
 
-  // Cabeceras estrictas anti-caché para páginas dinámicas y panel de administración
-  if (!pathname.startsWith('/api/availability') && !pathname.startsWith('/_next')) {
+  // Cabeceras HTTP diferenciadas: Rutas privadas blindadas (no-store), Rutas públicas con Edge CDN cache
+  const isPrivateOrAuthPath =
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/superadmin') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/billing') ||
+    pathname.includes('/checkout') ||
+    (pathname.startsWith('/api') && !pathname.startsWith('/api/availability') && !pathname.startsWith('/api/manifest'))
+
+  if (isPrivateOrAuthPath) {
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
     response.headers.set('Pragma', 'no-cache')
     response.headers.set('Expires', '0')
     response.headers.set('Surrogate-Control', 'no-store')
+  } else if (!pathname.startsWith('/_next')) {
+    // Rutas públicas (Landing, Clubes, Torneos, llms.txt): permitir caché en CDN Edge con revalidación suave
+    response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=600')
   }
 
   // ─── RATE LIMITING (Protección contra ataques de fuerza bruta y spam) ───

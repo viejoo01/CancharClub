@@ -95,17 +95,17 @@ export function GracePeriodBanner({
   }
 
   return (
-    <div className={`w-full border-b transition-all animate-in slide-in-from-top duration-300 ${
+    <div className={`w-full transition-all animate-in slide-in-from-top duration-300 mb-4 p-3.5 sm:px-5 sm:py-3.5 rounded-2xl border shadow-sm relative z-10 backdrop-blur-md ${
       isPartiallySuspended
-        ? 'bg-gradient-to-r from-red-950/90 via-amber-950/80 to-red-950/90 border-red-800/80 text-red-200'
-        : 'bg-gradient-to-r from-amber-950/90 via-orange-950/80 to-amber-950/90 border-amber-800/80 text-amber-200'
-    } p-3 sm:px-6 shadow-lg relative z-10 backdrop-blur-md`}>
-      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+        ? 'bg-rose-50/90 border-rose-200 text-rose-950 dark:bg-rose-950/40 dark:border-rose-500/30 dark:text-rose-100'
+        : 'bg-amber-50/90 border-amber-200 text-amber-950 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-100'
+    }`}>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-xl border flex-shrink-0 ${
             isPartiallySuspended
-              ? 'bg-red-500/20 border-red-500/40 text-red-400'
-              : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+              ? 'bg-rose-100 border-rose-300 text-rose-700 dark:bg-rose-500/20 dark:border-rose-500/40 dark:text-rose-400'
+              : 'bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/40 dark:text-amber-400'
           }`}>
             {isPartiallySuspended ? (
               <ShieldAlert className="w-5 h-5 animate-pulse" />
@@ -115,56 +115,56 @@ export function GracePeriodBanner({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-xs sm:text-sm text-white">
+              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
                 {isPartiallySuspended
                   ? 'Club en Pausa por Falta de Pago: Reservas Públicas Deshabilitadas'
                   : isPaymentPending
                   ? 'Abono Mensual Impago — Pago Pendiente de Suscripción'
                   : 'Aviso de Pago Pendiente (Período de Gracia)'}
               </span>
-              <Badge className={`text-[10px] uppercase font-mono px-2 py-0.5 ${
+              <Badge className={`text-[10px] uppercase font-mono px-2 py-0.5 font-bold ${
                 isPartiallySuspended
-                  ? 'bg-rose-500/30 text-rose-200 border-rose-500/40 font-bold'
+                  ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-500/20 dark:text-rose-300 dark:border-rose-500/40'
                   : isPaymentPending
-                  ? 'bg-amber-500/30 text-amber-300 border-amber-500/40 font-bold'
-                  : 'bg-amber-500/30 text-amber-300 border-amber-500/40'
+                  ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40'
+                  : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40'
               }`}>
                 {isPartiallySuspended ? 'EN PAUSA' : isPaymentPending ? 'PAGO PENDIENTE' : status}
               </Badge>
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
+            <p className="text-xs text-slate-700 dark:text-slate-300 mt-0.5">
               {isPartiallySuspended ? (
                 <>
-                  Las reservas online para clientes están <strong className="text-rose-300">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo para reactivar: <strong>${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (cuota base + 3% diario por mora).
+                  Las reservas online para clientes están <strong className="text-rose-700 dark:text-rose-300 font-bold">en pausa por no abonar la suscripción a tiempo</strong>. Podés regularizarla ahora para reactivarlas inmediatamente. Saldo para reactivar: <strong className="font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (cuota base + 3% diario por mora).
                 </>
               ) : isPaymentPending ? (
                 reactivation.daysOverdue > 0 ? (
                   <>
-                    Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (${amountArs.toLocaleString('es-AR')} cuota + {reactivation.daysOverdue}d de mora al 3%/día: +${reactivation.surchargeAmount.toLocaleString('es-AR')}). Regularizá tu abono para evitar la suspensión.
+                    Tu abono mensual venció el <strong className="text-slate-900 dark:text-white">{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a regularizar con mora: <strong className="text-amber-800 dark:text-amber-300 font-mono font-bold">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (${amountArs.toLocaleString('es-AR')} cuota + {reactivation.daysOverdue}d de mora al 3%/día: +${reactivation.surchargeAmount.toLocaleString('es-AR')}). Regularizá tu abono para evitar la suspensión.
                   </>
                 ) : (
                   <>
-                    Tu abono mensual venció el <strong>{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a abonar: <strong className="text-amber-300 font-mono">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (Período de tolerancia sin recargo hasta el <strong>{reactivation.toleranceEndDate}</strong>). A partir del día 8 se aplicará mora del 3% diario.
+                    Tu abono mensual venció el <strong className="text-slate-900 dark:text-white">{reactivation.dueDate || effectiveDueDate}</strong>. Saldo a abonar: <strong className="text-amber-800 dark:text-amber-300 font-mono font-bold">${reactivation.totalAmount.toLocaleString('es-AR')}</strong> (Período de tolerancia sin recargo hasta el <strong className="text-slate-900 dark:text-white">{reactivation.toleranceEndDate}</strong>). A partir del día 8 se aplicará mora del 3% diario.
                   </>
                 )
               ) : (
                 <>
-                  Tu factura mensual vence el <strong>{effectiveDueDate}</strong>. Abona a tiempo para evitar la pausa de reservas web el día 13.
+                  Tu factura mensual vence el <strong className="text-slate-900 dark:text-white">{effectiveDueDate}</strong>. Aboná a tiempo para evitar la pausa de reservas web el día 13.
                 </>
               )}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
           <Button
             size="sm"
             onClick={handlePayMonthlyInvoice}
             disabled={isRedirecting}
-            className={`rounded-xl text-xs font-semibold shadow-md cursor-pointer transition-all ${
+            className={`rounded-xl text-xs font-bold shadow-sm cursor-pointer transition-all ${
               isPartiallySuspended
-                ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/30'
-                : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/30'
+                ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
             }`}
           >
             {isRedirecting ? (
@@ -190,7 +190,7 @@ export function GracePeriodBanner({
           {isGrace && (
             <button
               onClick={() => setIsDismissed(true)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
               title="Cerrar aviso temporalmente"
             >
               <X className="w-4 h-4" />

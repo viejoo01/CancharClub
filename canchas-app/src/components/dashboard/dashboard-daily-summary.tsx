@@ -9,7 +9,6 @@ import {
   AlertCircle, 
   ArrowUpRight,
   Sparkles,
-  CreditCard,
   CheckCircle2,
   Clock,
 } from 'lucide-react'
@@ -130,19 +129,23 @@ export function DashboardDailySummary({
       {/* Grid de 4 Cards de Resumen "Lo de hoy" */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Turnos de Hoy */}
-        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
-              <span className="flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                Turnos de Hoy
-              </span>
-              <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 border border-violet-200/80 dark:border-violet-500/30 flex items-center justify-center shrink-0">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Turnos de Hoy
+                </span>
+              </div>
+              <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 px-2 py-0.5">
                 {dateFormatted.split(',')[0]}
               </Badge>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                 {stats.activeCount}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -150,13 +153,13 @@ export function DashboardDailySummary({
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px]">
-            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px]">
+            <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
               {stats.confirmedCount} confirmadas
             </span>
             {stats.pendingCount > 0 ? (
-              <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+              <span className="text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 {stats.pendingCount} pendientes
               </span>
@@ -167,19 +170,23 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 2: Ocupación Estimada */}
-        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
-              <span className="flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                Ocupación
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                {stats.activeCourtsCount} {stats.activeCourtsCount === 1 ? 'cancha activa' : 'canchas activas'}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-200/80 dark:border-sky-500/30 flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Ocupación
+                </span>
+              </div>
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {stats.activeCourtsCount} {stats.activeCourtsCount === 1 ? 'cancha' : 'canchas'}
               </span>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                 {stats.occupancyRate}%
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -187,10 +194,10 @@ export function DashboardDailySummary({
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-2">
-            <div className="h-1.5 flex-1 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden border border-slate-200/80 dark:border-slate-800">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
+            <div className="h-1.5 flex-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-linear-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
+                className="h-full bg-linear-to-r from-sky-500 to-emerald-500 rounded-full transition-all duration-700"
                 style={{ width: `${stats.occupancyRate}%` }}
               />
             </div>
@@ -201,33 +208,36 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 3: Ingreso Estimado Hoy */}
-        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
-              <span className="flex items-center gap-1.5">
-                <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                Ingreso Previsto Hoy
-              </span>
-              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center">
-                <CreditCard className="w-3 h-3 mr-0.5" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Ingreso Previsto Hoy
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
                 Canchas
               </span>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight font-mono">
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight font-mono">
                 {formatARS(stats.totalIncome)}
               </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px] flex-wrap gap-1">
-            <span className="text-slate-500 dark:text-slate-400">
-              Señas: <strong className="text-slate-800 dark:text-white font-mono font-semibold">{formatARS(stats.depositsCollected)}</strong>
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] flex-wrap gap-1">
+            <span className="text-slate-600 dark:text-slate-400">
+              Señas: <strong className="text-slate-900 dark:text-white font-mono">{formatARS(stats.depositsCollected)}</strong>
             </span>
-            <span className="text-slate-500 dark:text-slate-400">
-              Caja resto: <strong className="text-amber-600 dark:text-amber-400 font-mono font-semibold">{formatARS(stats.pendingToCollect)}</strong>
+            <span className="text-slate-600 dark:text-slate-400">
+              Caja resto: <strong className="text-amber-700 dark:text-amber-400 font-mono">{formatARS(stats.pendingToCollect)}</strong>
             </span>
             {stats.abonosCount > 0 && (
-              <span className="text-purple-600 dark:text-purple-400 font-semibold w-full text-[10px] text-right">
+              <span className="text-purple-700 dark:text-purple-400 font-semibold w-full text-[10px] text-right">
                 +{stats.abonosCount} abono(s) mensual(es) al día
               </span>
             )}
@@ -235,14 +245,19 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 4: Acciones & Atajos Rápidos */}
-        <Card className="bg-white dark:bg-slate-900/80 border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md p-3.5 rounded-2xl relative overflow-hidden flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700/80 transition-all">
+        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-xs font-semibold">
-              <span className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-                Control Rápido
-              </span>
-              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Control Rápido
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 EN VIVO
               </span>
             </div>
@@ -252,10 +267,10 @@ export function DashboardDailySummary({
                 : 'Turnos y estados sincronizados al instante.'}
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-2">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
             <Link
               href="/dashboard/cobros"
-              className="flex-1 text-center py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold border border-slate-200/80 dark:border-transparent transition-colors"
+              className="flex-1 text-center py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold border border-slate-200/80 dark:border-slate-700 transition-colors"
             >
               Caja y Cobros
             </Link>

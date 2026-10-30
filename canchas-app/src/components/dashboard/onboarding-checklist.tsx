@@ -80,6 +80,7 @@ export function OnboardingChecklist({
   const stepsCompleted = (hasCourts ? 1 : 0) + (hasBankConfigured ? 1 : 0) + 1 // Horarios default 8 a 00 siempre activos
   const totalSteps = 3
   const isFullyConfigured = stepsCompleted === totalSteps
+  const [expanded, setExpanded] = useState(false)
 
   // Si está minimizado / cerrado
   if (dismissed) {
@@ -122,6 +123,61 @@ export function OnboardingChecklist({
     )
   }
 
+  // Si ya está 100% configurado y no fue expandido manualmente: modo Hero Compacto
+  if (isFullyConfigured && !expanded) {
+    return (
+      <div className={`mb-4 p-3.5 sm:px-5 sm:py-3.5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-sm transition-all flex flex-col sm:flex-row items-center justify-between gap-3 ${className}`}>
+        <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+            <Share2 className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-900 dark:text-white">Tu Link Público para Jugadores</span>
+              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 text-[10px] px-2 py-0 font-bold">
+                Público y Activo
+              </Badge>
+            </div>
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 font-mono font-medium truncate max-w-sm sm:max-w-md">
+              {publicUrl}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+          <Button
+            size="sm"
+            onClick={handleCopyLink}
+            className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-sm cursor-pointer"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? '¡Copiado!' : 'Copiar Link'}</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            asChild
+            className="h-8 px-3 rounded-xl border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold gap-1.5 cursor-pointer"
+          >
+            <a href={`/club/${tenantSlug}`} target="_blank" rel="noreferrer">
+              <span>Probar Portal</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </Button>
+
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 ml-1 underline cursor-pointer"
+          >
+            Ver checklist (3/3)
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`mb-6 relative overflow-hidden rounded-3xl bg-white dark:bg-[#0c1222] border border-slate-200/90 dark:border-slate-800/80 p-5 sm:p-6 shadow-sm dark:shadow-2xl transition-all ${className}`}>
       {/* Luz ambiental sutil */}
@@ -153,14 +209,25 @@ export function OnboardingChecklist({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
-          title="Minimizar checklist"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {isFullyConfigured && (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer font-medium"
+            >
+              Ocultar
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+            title="Minimizar checklist"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Grid de Pasos */}

@@ -49,79 +49,18 @@ html:not(.dark) {
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
-
-  --color-slate-950: #f8fafc;
-  --color-slate-900: #ffffff;
-  --color-slate-800: #e2e8f0;
-  --color-slate-700: #cbd5e1;
-  --color-slate-600: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-slate-400: #475569;
-  --color-slate-300: #334155;
-  --color-slate-200: #1e293b;
-  --color-slate-100: #0f172a;
 }
 
 /* ─── Dark Mode Theme (html.dark) ────────────────────────────────────────── */
 html.dark {
   color-scheme: dark;
   --surface-0: #0f172a;
-  --surface-1: #020617;
+  --surface-1: #070b14;
   --surface-2: #1e293b;
   --surface-3: #334155;
-  --text-primary: #f1f5f9;
+  --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-
-  --color-slate-950: #020617;
-  --color-slate-900: #0f172a;
-  --color-slate-800: #1e293b;
-  --color-slate-700: #334155;
-  --color-slate-600: #475569;
-  --color-slate-500: #64748b;
-  --color-slate-400: #94a3b8;
-  --color-slate-300: #cbd5e1;
-  --color-slate-200: #e2e8f0;
-  --color-slate-100: #f8fafc;
-}
-
-/* Ensure text contrast for titles in light mode */
-html:not(.dark) h1.text-white,
-html:not(.dark) h2.text-white,
-html:not(.dark) h3.text-white,
-html:not(.dark) h4.text-white,
-html:not(.dark) .font-bold.text-white,
-html:not(.dark) .font-extrabold.text-white,
-html:not(.dark) .font-semibold.text-white,
-html:not(.dark) [class*="CardTitle"].text-white {
-  color: #0f172a;
-}
-
-/* Ensure solid buttons retain crisp white text in light mode */
-html:not(.dark) .bg-emerald-600,
-html:not(.dark) .bg-emerald-500,
-html:not(.dark) .bg-indigo-600,
-html:not(.dark) .bg-indigo-500,
-html:not(.dark) .bg-purple-600,
-html:not(.dark) .bg-rose-600,
-html:not(.dark) .bg-sky-600 {
-  color: #ffffff !important;
-}
-
-html:not(.dark) .bg-emerald-600 *,
-html:not(.dark) .bg-emerald-500 *,
-html:not(.dark) .bg-indigo-600 *,
-html:not(.dark) .bg-indigo-500 *,
-html:not(.dark) .bg-purple-600 *,
-html:not(.dark) .bg-rose-600 *,
-html:not(.dark) .bg-sky-600 * {
-  color: #ffffff !important;
-}
-
-/* Light mode card shadows and borders */
-html:not(.dark) .shadow-xl,
-html:not(.dark) .shadow-2xl {
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.04), 0 2px 4px -2px rgb(0 0 0 / 0.04);
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────────── */

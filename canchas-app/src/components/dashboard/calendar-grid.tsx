@@ -11,7 +11,8 @@ import {
   CheckCircle, 
   AlertCircle,
   CloudRain,
-  DollarSign
+  DollarSign,
+  Monitor
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
@@ -579,8 +580,16 @@ export function CalendarGrid({
       })
   }, [activeCourts, selectedSport])
 
-  // Densidad de grilla para complejos deportivos (Compacto vs Cómodo)
+  // Densidad de grilla y modo recepción (Adaptable a monitores de 24" y laptops)
   const [gridDensity, setGridDensity] = useState<'normal' | 'compact'>('normal')
+  const [isReceptionMode, setIsReceptionMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return localStorage.getItem('canchar_reception_focus_mode') === 'true'
+    } catch {
+      return false
+    }
+  })
 
   // Cargar preferencia guardada o auto-activar vista compacta si el club tiene 5 o más canchas
   useEffect(() => {
@@ -604,9 +613,32 @@ export function CalendarGrid({
     } catch {}
   }
 
-  // Ancho de columnas según densidad seleccionada
-  const colWidth = gridDensity === 'compact' ? 145 : 190
-  const timeColWidth = 76
+  const toggleReceptionFocusMode = () => {
+    setIsReceptionMode(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('canchar_reception_focus_mode', String(next))
+      } catch {}
+      // Enviar eventos sincronizados a sidebar y métricas diarias
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('canchar-toggle-sidebar', { detail: { collapsed: next } }))
+        window.dispatchEvent(new CustomEvent('canchar-toggle-reception-mode', { detail: { enabled: next } }))
+      }
+      if (next) {
+        changeGridDensity('compact')
+        toast.info('Modo Recepción 24" activo: Espacio maximizado para ver todas las canchas y turnos', { duration: 3500 })
+      } else {
+        toast.info('Modo estándar restaurado', { duration: 2500 })
+      }
+      return next
+    })
+  }
+
+  // Ancho y dimensiones adaptativas según densidad seleccionada y cantidad de canchas
+  // En monitores de 24 pulgadas (1920x1080), 132px permite mostrar hasta 11-13 canchas completas sin scroll horizontal
+  const isCompact = gridDensity === 'compact'
+  const colWidth = isCompact ? 132 : 172
+  const timeColWidth = isCompact ? 68 : 76
 
   // Scroll horizontal asistido para el panel de recepción
   const scrollCourtsHorizontally = (direction: 'left' | 'right') => {
@@ -830,6 +862,24 @@ export function CalendarGrid({
               <span className="hidden sm:inline">Protocolo</span> Lluvia
             </Button>
 
+            {/* Modo Enfoque Recepción 24" */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggleReceptionFocusMode}
+              className={`text-xs h-9 px-2.5 font-semibold gap-1.5 cursor-pointer transition-all ${
+                isReceptionMode
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm hover:bg-emerald-700'
+                  : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title="Modo Enfoque Recepción: Maximiza todo el ancho y alto de pantalla para monitores de 24 pulgadas"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">{isReceptionMode ? 'Modo 24" Activo' : 'Modo 24" Recepción'}</span>
+              <span className="xl:hidden">24&quot;</span>
+            </Button>
+
             {/* Selector de Densidad de Grilla (Compacto / Cómodo) para recepción */}
             {filteredCourts.length > 0 && (
               <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -959,7 +1009,7 @@ export function CalendarGrid({
         <div 
           ref={gridContainerRef}
           onWheel={handleGridWheel}
-          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-235px)] sm:max-h-[calc(100vh-220px)] min-h-[480px] rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 shadow-md dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
+          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-180px)] min-h-[480px] rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 shadow-md dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
           style={{ scrollBehavior: 'smooth' }}
         >
         <div 
@@ -972,7 +1022,7 @@ export function CalendarGrid({
             style={{ gridTemplateColumns: gridTemplateCols }}
           >
             <div 
-              className="p-3 text-center text-xs font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-100 dark:bg-slate-950 shadow-[4px_0_12px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)]"
+              className={`${isCompact ? 'p-2' : 'p-3'} text-center text-xs font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-100 dark:bg-slate-950 shadow-[4px_0_12px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)]`}
               style={{ width: `${timeColWidth}px` }}
             >
               <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -981,12 +1031,12 @@ export function CalendarGrid({
             {filteredCourts.map((court) => (
               <div
                 key={court.id}
-                className="p-2.5 text-center border-r border-slate-200/90 dark:border-slate-800/80 last:border-r-0 bg-slate-50/90 dark:bg-slate-900/90 flex flex-col justify-center min-w-0"
+                className={`${isCompact ? 'p-1.5 sm:p-2' : 'p-2.5'} text-center border-r border-slate-200/90 dark:border-slate-800/80 last:border-r-0 bg-slate-50/90 dark:bg-slate-900/90 flex flex-col justify-center min-w-0`}
               >
-                <div className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate px-1" title={court.name}>
+                <div className={`${isCompact ? 'text-xs sm:text-sm' : 'text-sm'} font-bold text-slate-900 dark:text-white tracking-tight truncate px-1`} title={court.name}>
                   {court.name}
                 </div>
-                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold truncate inline-flex items-center gap-1 justify-center mt-0.5">
+                <div className={`${isCompact ? 'text-[10px]' : 'text-[11px]'} text-emerald-600 dark:text-emerald-400 font-semibold truncate inline-flex items-center gap-1 justify-center mt-0.5`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0" />
                   <span className="truncate">{court.sport}</span>
                 </div>
@@ -1000,12 +1050,12 @@ export function CalendarGrid({
               <div
                 key={time}
                 data-time={time}
-                className="grid w-full min-h-[72px]"
+                className={`grid w-full transition-all duration-150 ${isCompact ? 'min-h-11.5' : 'min-h-16'}`}
                 style={{ gridTemplateColumns: gridTemplateCols }}
               >
                 {/* Columna Hora - Sticky Left con Sombra de Elevación */}
                 <div 
-                  className="p-2 text-center text-xs font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.04)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)] select-none"
+                  className={`${isCompact ? 'p-1 sm:p-1.5 text-[11px]' : 'p-2 text-xs'} text-center font-bold text-slate-700 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 sticky left-0 z-10 flex items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.04)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.6)] select-none`}
                   style={{ width: `${timeColWidth}px` }}
                 >
                   {time}
@@ -1070,23 +1120,23 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="p-1.5 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0"
+                          className={`${isCompact ? 'p-1' : 'p-1.5'} border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0`}
                         >
                           <div
-                            className={`h-full w-full rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
+                            className={`h-full w-full rounded-xl ${isCompact ? 'p-1.5' : 'p-2.5'} flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
-                                <span className="font-bold text-xs truncate block text-slate-900 dark:text-white">
+                                <span className={`font-bold truncate block text-slate-900 dark:text-white ${isCompact ? 'text-[11px] leading-tight' : 'text-xs'}`}>
                                   {booking.customer_name}
                                 </span>
                                 {isPendingValidation ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
-                                    VALIDAR SEÑA
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
+                                    VALIDAR
                                   </span>
                                 ) : isAbono ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
-                                    ABONO FIJO
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
+                                    ABONO
                                   </span>
                                 ) : null}
                               </div>
@@ -1099,7 +1149,7 @@ export function CalendarGrid({
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] gap-1">
+                            <div className={`flex items-center justify-between ${isCompact ? 'mt-0.5 text-[10px]' : 'mt-1 text-[11px]'} gap-1`}>
                               <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{formatARS(booking.total_amount_ars)}</span>
                               {!isAbono && booking.balance_due > 0 ? (
                                 <button
@@ -1108,18 +1158,18 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                  className={`inline-flex items-center gap-1 ${isCompact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0`}
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
                                   <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                   <span className="truncate">
-                                    {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar ${formatARS(booking.balance_due)}`}
+                                    {isCompact ? formatARS(booking.balance_due) : `Cobrar ${formatARS(booking.balance_due)}`}
                                   </span>
                                 </button>
                               ) : isAbono ? (
-                                <span className="text-purple-700 dark:text-purple-300 font-bold text-[10px] shrink-0">Abono al día</span>
+                                <span className={`text-purple-700 dark:text-purple-300 font-bold ${isCompact ? 'text-[9px]' : 'text-[10px]'} shrink-0`}>Abono</span>
                               ) : (
-                                <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] shrink-0">Saldado</span>
+                                <span className={`text-emerald-700 dark:text-emerald-400 font-bold ${isCompact ? 'text-[9px]' : 'text-[10px]'} shrink-0`}>Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1135,23 +1185,23 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 pt-1.5 pb-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                          className={`${isCompact ? 'px-1 pt-1' : 'px-1.5 pt-1.5'} pb-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                         >
                           <div
-                            className={`h-full min-h-[66px] w-full rounded-t-xl rounded-b-none p-2.5 flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-[1px] relative z-10 ${colorClasses}`}
+                            className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 p-2.5'} w-full rounded-t-xl rounded-b-none flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-px relative z-10 ${colorClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
-                                <span className="font-bold text-xs truncate block text-slate-900 dark:text-white">
+                                <span className={`font-bold truncate block text-slate-900 dark:text-white ${isCompact ? 'text-[11px] leading-tight' : 'text-xs'}`}>
                                   {booking.customer_name}
                                 </span>
                                 {isPendingValidation ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
-                                    VALIDAR SEÑA
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase px-1 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/30 dark:text-amber-200 dark:border-amber-400/40 tracking-wider">
+                                    VALIDAR
                                   </span>
                                 ) : isAbono ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
-                                    ABONO FIJO
+                                  <span className="inline-block mt-0.5 text-[8px] font-extrabold uppercase px-1 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-500/30 dark:text-purple-200 dark:border-purple-400/40 tracking-wider">
+                                    ABONO
                                   </span>
                                 ) : null}
                               </div>
@@ -1164,7 +1214,7 @@ export function CalendarGrid({
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-1 text-[11px] gap-1">
+                            <div className={`flex items-center justify-between ${isCompact ? 'mt-0.5 text-[10px]' : 'mt-1 text-[11px]'} gap-1`}>
                               <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{formatARS(booking.total_amount_ars)}</span>
                               {!isAbono && booking.balance_due > 0 ? (
                                 <button
@@ -1173,18 +1223,18 @@ export function CalendarGrid({
                                     e.stopPropagation()
                                     setSelectedBooking(booking)
                                   }}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                  className={`inline-flex items-center gap-1 ${isCompact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} rounded bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0`}
                                   title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                                 >
                                   <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                   <span className="truncate">
-                                    {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
+                                    {isCompact ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
                                   </span>
                                 </button>
                               ) : isAbono ? (
-                                <span className="text-purple-700 dark:text-purple-300 font-bold text-[10px] shrink-0">Abono al día</span>
+                                <span className={`text-purple-700 dark:text-purple-300 font-bold ${isCompact ? 'text-[9px]' : 'text-[10px]'} shrink-0`}>Abono</span>
                               ) : (
-                                <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[10px] shrink-0">Saldado</span>
+                                <span className={`text-emerald-700 dark:text-emerald-400 font-bold ${isCompact ? 'text-[9px]' : 'text-[10px]'} shrink-0`}>Saldado</span>
                               )}
                             </div>
                           </div>
@@ -1200,15 +1250,15 @@ export function CalendarGrid({
                           onClick={() => setSelectedBooking(booking)}
                           onMouseEnter={() => setHoveredBookingId(booking.id)}
                           onMouseLeave={() => setHoveredBookingId(null)}
-                          className="px-1.5 py-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                          className={`${isCompact ? 'px-1' : 'px-1.5'} py-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                         >
                           <div
-                            className={`h-full min-h-[72px] w-full rounded-none px-2.5 py-1.5 flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-[1px] relative z-10 ${colorClasses}`}
+                            className={`h-full ${isCompact ? 'min-h-11 px-2 py-0.5' : 'min-h-16 px-2.5 py-1.5'} w-full rounded-none flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-px relative z-10 ${colorClasses}`}
                           >
                             <span className="text-[10px] font-medium opacity-80 italic truncate text-slate-700 dark:text-slate-300">
-                              {gridDensity === 'compact' ? 'En curso' : 'Turno en curso...'}
+                              {isCompact ? 'En curso' : 'Turno en curso...'}
                             </span>
-                            <span className="text-[10px] font-bold truncate text-slate-900 dark:text-white">
+                            <span className={`font-bold truncate text-slate-900 dark:text-white ${isCompact ? 'text-[10px]' : 'text-xs'}`}>
                               {booking.customer_name}
                             </span>
                           </div>
@@ -1223,15 +1273,15 @@ export function CalendarGrid({
                         onClick={() => setSelectedBooking(booking)}
                         onMouseEnter={() => setHoveredBookingId(booking.id)}
                         onMouseLeave={() => setHoveredBookingId(null)}
-                        className="px-1.5 pb-1.5 pt-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0"
+                        className={`${isCompact ? 'px-1 pb-1' : 'px-1.5 pb-1.5'} pt-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                       >
                         <div
-                          className={`h-full min-h-[66px] w-full rounded-b-xl rounded-t-none px-2.5 py-2 flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-[1px] relative z-10 ${colorClasses}`}
+                          className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 px-2.5 py-2'} w-full rounded-b-xl rounded-t-none flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-px relative z-10 ${colorClasses}`}
                         >
-                          <div className="flex items-center justify-between w-full h-full text-[11px] mt-auto gap-1">
-                            <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300 truncate">
-                              <Clock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                              <span className="truncate">{gridDensity === 'compact' ? `${endTime} hs` : `Hasta las ${endTime} hs`}</span>
+                          <div className={`flex items-center justify-between w-full h-full ${isCompact ? 'text-[10px]' : 'text-[11px]'} mt-auto gap-1`}>
+                            <div className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300 truncate">
+                              <Clock className={`${isCompact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-cyan-600 dark:text-cyan-400 shrink-0`} />
+                              <span className="truncate">{isCompact ? `${endTime} hs` : `Hasta las ${endTime} hs`}</span>
                             </div>
                             {!isAbono && booking.balance_due > 0 ? (
                               <button
@@ -1240,20 +1290,20 @@ export function CalendarGrid({
                                   e.stopPropagation()
                                   setSelectedBooking(booking)
                                 }}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 text-[10px] font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                                className={`inline-flex items-center gap-1 ${isCompact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} rounded-md bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500/25 dark:hover:bg-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-100 border border-emerald-600 dark:border-emerald-500/40 font-bold shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0`}
                                 title={`Cobrar resto de ${formatARS(booking.balance_due)}`}
                               >
                                 <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                 <span className="truncate">
-                                  {gridDensity === 'compact' ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
+                                  {isCompact ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
                                 </span>
                               </button>
                             ) : isAbono ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-700/60 text-purple-900 dark:text-purple-300 shrink-0">
-                                Abono al día
+                              <span className={`font-bold uppercase tracking-wider ${isCompact ? 'px-1 py-0.2 text-[8px]' : 'px-1.5 py-0.5 text-[10px]'} rounded-md bg-purple-100 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-700/60 text-purple-900 dark:text-purple-300 shrink-0`}>
+                                Abono
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 shrink-0">
+                              <span className={`font-bold uppercase tracking-wider ${isCompact ? 'px-1 py-0.2 text-[8px]' : 'px-1.5 py-0.5 text-[10px]'} rounded-md bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 shrink-0`}>
                                 {totalSlots === 2 ? '1 h' : `${totalSlots * 30}m`}
                               </span>
                             )}
@@ -1271,11 +1321,11 @@ export function CalendarGrid({
                         setQuickBookSlot({ courtId: court.id, time })
                         setIsQuickBookOpen(true)
                       }}
-                      className="p-1 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-emerald-950/20 transition-colors relative min-h-[72px] min-w-0"
+                      className={`border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-emerald-950/20 transition-colors relative min-w-0 ${isCompact ? 'min-h-11.5 p-0.5 sm:p-1' : 'min-h-16 p-1'}`}
                     >
                       {/* Área visible en desktop con hover */}
                       <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-400/60 dark:group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/80 px-2 py-1 rounded-md border border-emerald-300/80 dark:border-emerald-500/20 shadow-xs">
+                        <span className={`inline-flex items-center gap-1 font-semibold text-emerald-800 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/80 rounded-md border border-emerald-300/80 dark:border-emerald-500/20 shadow-xs ${isCompact ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-1'}`}>
                           <Plus className="w-3 h-3" />
                           Reservar
                         </span>

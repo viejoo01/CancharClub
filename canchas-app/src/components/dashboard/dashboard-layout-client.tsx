@@ -142,6 +142,29 @@ export function DashboardLayoutClient({
     return () => window.removeEventListener('open-social-links-modal', handleOpenSocial)
   }, [])
 
+  // Escuchar evento de colapso de sidebar desde la grilla (Modo Enfoque Recepción)
+  useEffect(() => {
+    const handleToggleSidebarEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ collapsed?: boolean }>
+      setSidebarCollapsed(prev => {
+        const next = typeof customEvent.detail?.collapsed === 'boolean'
+          ? customEvent.detail.collapsed
+          : !prev
+        try {
+          localStorage.setItem('canchar_sidebar_collapsed', String(next))
+        } catch {}
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.dispatchEvent(new Event('resize'))
+          }, 320)
+        }
+        return next
+      })
+    }
+    window.addEventListener('canchar-toggle-sidebar', handleToggleSidebarEvent)
+    return () => window.removeEventListener('canchar-toggle-sidebar', handleToggleSidebarEvent)
+  }, [])
+
   // Prevenir scroll en el fondo cuando el drawer móvil está abierto
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -283,7 +306,7 @@ export function DashboardLayoutClient({
           />
         )}
 
-        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-slate-50/70 dark:bg-[#070b14] custom-scrollbar relative transition-colors duration-200">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5 pb-20 md:pb-6 bg-slate-50/70 dark:bg-[#070b14] custom-scrollbar relative transition-colors duration-200">
           {/* Banner visual prominente de 15 Días de Prueba Gratuita */}
           {isTrial && !isStaff && (
             <TrialBanner

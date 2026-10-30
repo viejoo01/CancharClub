@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { 
   CalendarDays, 
@@ -11,6 +11,8 @@ import {
   Sparkles,
   CheckCircle2,
   Clock,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +42,42 @@ export function DashboardDailySummary({
   priceRules = [],
   dateIso
 }: DashboardDailySummaryProps) {
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return localStorage.getItem('canchar_kpi_summary_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    const handleReceptionMode = (e: Event) => {
+      const customEvent = e as CustomEvent<{ enabled?: boolean }>
+      setIsCollapsed(prev => {
+        const next = typeof customEvent.detail?.enabled === 'boolean'
+          ? customEvent.detail.enabled
+          : !prev
+        try {
+          localStorage.setItem('canchar_kpi_summary_collapsed', String(next))
+        } catch {}
+        return next
+      })
+    }
+    window.addEventListener('canchar-toggle-reception-mode', handleReceptionMode)
+    return () => window.removeEventListener('canchar-toggle-reception-mode', handleReceptionMode)
+  }, [])
+
+  const toggleCollapsed = () => {
+    setIsCollapsed(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('canchar_kpi_summary_collapsed', String(next))
+      } catch {}
+      return next
+    })
+  }
+
   const stats = useMemo(() => {
     const isCancelled = (status: string) => 
       status === 'CANCELLED_USER' || status === 'CANCELLED_CLUB' || status === 'RAIN_CANCELLED' || status === 'CANCELLED'
@@ -126,8 +164,80 @@ export function DashboardDailySummary({
         </div>
       )}
 
-      {/* Grid de 4 Cards de Resumen "Lo de hoy" */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Resumen Diario: Modo Compacto de Recepción vs Modo Detallado */}
+      {isCollapsed ? (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/80 shadow-xs transition-all duration-200">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-xs">
+            {/* Turnos */}
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-xs" />
+              <span className="font-bold text-slate-900 dark:text-white">
+                {stats.activeCount}
+              </span>
+              <span className="text-slate-500 dark:text-slate-400">
+                turnos ({stats.confirmedCount} confirmados{stats.pendingCount > 0 ? `, ${stats.pendingCount} pend.` : ''})
+              </span>
+            </div>
+
+            {/* Ocupación */}
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs" />
+              <span className="font-bold text-slate-900 dark:text-white">
+                {stats.occupancyRate}%
+              </span>
+              <span className="text-slate-500 dark:text-slate-400">
+                ocupación ({stats.activeCourtsCount} {stats.activeCourtsCount === 1 ? 'cancha' : 'canchas'})
+              </span>
+            </div>
+
+            {/* Previsto */}
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />
+              <span className="font-bold text-emerald-700 dark:text-emerald-400 font-mono">
+                {formatARS(stats.totalIncome)}
+              </span>
+              <span className="text-slate-500 dark:text-slate-400 hidden md:inline">
+                previsto (Señas: <strong className="text-slate-800 dark:text-slate-200 font-mono">{formatARS(stats.depositsCollected)}</strong> / Caja: <strong className="text-amber-700 dark:text-amber-400 font-mono">{formatARS(stats.pendingToCollect)}</strong>)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/dashboard/cobros"
+              className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold transition-colors"
+            >
+              Caja
+            </Link>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 text-[11px] font-bold transition-colors cursor-pointer"
+              title="Expandir las 4 tarjetas de métricas diarias"
+            >
+              <span>Ver métricas</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Resumen operativo del día
+            </span>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] font-semibold transition-colors cursor-pointer border border-slate-200/80 dark:border-slate-700/60"
+              title="Minimizar métricas para ganar 140px de espacio vertical en la grilla de turnos"
+            >
+              <span>Minimizar para recepción</span>
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {/* Grid de 4 Cards de Resumen "Lo de hoy" */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Turnos de Hoy */}
         <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
@@ -285,5 +395,7 @@ export function DashboardDailySummary({
         </Card>
       </div>
     </div>
-  )
+  )}
+</div>
+)
 }

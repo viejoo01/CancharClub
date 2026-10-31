@@ -758,20 +758,30 @@ export default function TorneosDashboardPage() {
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
               {tournaments.map((t) => {
                 const isFoot = isFootballSport(t.sport)
+                const isSelected = selectedTournament?.id === t.id
                 return (
                   <button
                     key={t.id}
                     onClick={() => loadTournamentDetails(t.id)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border whitespace-nowrap ${
-                      selectedTournament?.id === t.id
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 border whitespace-nowrap cursor-pointer ${
+                      isSelected
                         ? 'bg-amber-500/15 border-amber-500/60 text-amber-300 shadow-md shadow-amber-950/40'
                         : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     {isFoot ? <Shield className="w-3.5 h-3.5 text-emerald-400" /> : <Trophy className="w-3.5 h-3.5 text-amber-400" />}
                     <span>{t.name}</span>
-                    <span className="text-[10px] opacity-75">
-                      ({t.sport.replace('_', ' ')})
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-slate-300">
+                      {t.sport.replace('_', ' ')}
+                    </span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                      t.status === 'IN_PROGRESS'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : t.status === 'COMPLETED'
+                        ? 'bg-slate-800 text-slate-400'
+                        : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                    }`}>
+                      {t.status === 'IN_PROGRESS' ? 'En Juego' : t.status === 'COMPLETED' ? 'Finalizado' : 'Inscripción Abierta'}
                     </span>
                   </button>
                 )
@@ -787,19 +797,25 @@ export default function TorneosDashboardPage() {
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">
                       Categoría:
                     </span>
-                    {selectedTournament.categories.map((cat) => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setSelectedCategoryId(cat.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap ${
-                          selectedCategoryId === cat.id
-                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {cat.name} ({cat.teams.length}/{cat.max_teams} {getParticipantLabel(selectedTournament.sport, true)})
-                      </button>
-                    ))}
+                    {selectedTournament.categories.length === 0 ? (
+                      <span className="text-xs text-amber-400 italic">
+                        Sin categorías creadas
+                      </span>
+                    ) : (
+                      selectedTournament.categories.map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSelectedCategoryId(cat.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap cursor-pointer ${
+                            selectedCategoryId === cat.id
+                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {cat.name} ({cat.teams.length}/{cat.max_teams} {getParticipantLabel(selectedTournament.sport, true)})
+                        </button>
+                      ))
+                    )}
                   </div>
 
                   {/* Selector y Acciones de Formato */}
@@ -891,16 +907,16 @@ export default function TorneosDashboardPage() {
                         <Button
                           size="sm"
                           onClick={() => setIsTeamOpen(true)}
-                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1 self-start sm:self-auto"
+                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1 self-start sm:self-auto cursor-pointer"
                         >
                           <Plus className="w-3 h-3" />
-                          Anotar {getParticipantLabelCapitalized(selectedTournament.sport)}
+                          Inscribir {getParticipantLabelCapitalized(selectedTournament.sport)}
                         </Button>
                       </div>
 
                       {activeCategory.teams.length === 0 ? (
                         <div className="text-center py-6 text-slate-500 text-xs">
-                          No hay {getParticipantLabel(selectedTournament.sport, true)} inscriptos en esta categoría todavía. Hacé click en &ldquo;Anotar {getParticipantLabelCapitalized(selectedTournament.sport)}&rdquo; para sumar participantes.
+                          No hay {getParticipantLabel(selectedTournament.sport, true)} inscriptos en esta categoría todavía. Hacé click en &ldquo;Inscribir {getParticipantLabelCapitalized(selectedTournament.sport)}&rdquo; para sumar participantes.
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">

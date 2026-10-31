@@ -207,18 +207,6 @@ export default function JugadoresPage() {
             Control de asistencia, no-shows, volumen de reservas y fidelidad por jugador.
           </p>
         </div>
-
-        {/* Buscador */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre o teléfono..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-colors"
-          />
-        </div>
       </div>
 
       {/* KPI Cards */}
@@ -283,62 +271,76 @@ export default function JugadoresPage() {
         </Card>
       </div>
 
-      {/* Filtros de Pestañas */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-        <button
-          onClick={() => setTierFilter('ALL')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            tierFilter === 'ALL'
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          Todos ({players.length})
-        </button>
-        <button
-          onClick={() => setTierFilter('EXEMPLARY')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            tierFilter === 'EXEMPLARY'
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Star className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Ejemplares ({players.filter((p) => p.tier === 'EXEMPLARY').length})</span>
-        </button>
-        <button
-          onClick={() => setTierFilter('RELIABLE')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            tierFilter === 'RELIABLE'
-              ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <ThumbsUp className="w-3.5 h-3.5 text-sky-400" />
-          <span>Confiables ({players.filter((p) => p.tier === 'RELIABLE').length})</span>
-        </button>
-        <button
-          onClick={() => setTierFilter('HIGH_RISK')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            tierFilter === 'HIGH_RISK'
-              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-          <span>En Riesgo ({players.filter((p) => p.is_high_risk || p.tier === 'HIGH_RISK').length})</span>
-        </button>
-        <button
-          onClick={() => setTierFilter('BLOCKED')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            tierFilter === 'BLOCKED'
-              ? 'bg-rose-600/30 text-rose-300 border border-rose-500/60'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Ban className="w-3.5 h-3.5 text-rose-400" />
-          <span>Restringidos ({players.filter((p) => p.is_blocked).length})</span>
-        </button>
+      {/* Barra de Filtros de Pestañas y Buscador Integrado */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
+          <button
+            onClick={() => setTierFilter('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              tierFilter === 'ALL'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
+            }`}
+          >
+            Todos ({players.length})
+          </button>
+          <button
+            onClick={() => setTierFilter('EXEMPLARY')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              tierFilter === 'EXEMPLARY'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
+            }`}
+          >
+            <Star className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Ejemplares ({players.filter((p) => p.tier === 'EXEMPLARY').length})</span>
+          </button>
+          <button
+            onClick={() => setTierFilter('RELIABLE')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              tierFilter === 'RELIABLE'
+                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
+            }`}
+          >
+            <ThumbsUp className="w-3.5 h-3.5 text-sky-400" />
+            <span>Confiables ({players.filter((p) => p.tier === 'RELIABLE').length})</span>
+          </button>
+          <button
+            onClick={() => setTierFilter('HIGH_RISK')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              tierFilter === 'HIGH_RISK'
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            <span>En Riesgo ({players.filter((p) => p.is_high_risk || p.tier === 'HIGH_RISK').length})</span>
+          </button>
+          <button
+            onClick={() => setTierFilter('BLOCKED')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              tierFilter === 'BLOCKED'
+                ? 'bg-rose-600/30 text-rose-300 border border-rose-500/60 shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
+            }`}
+          >
+            <Ban className="w-3.5 h-3.5 text-rose-400" />
+            <span>Restringidos ({players.filter((p) => p.is_blocked).length})</span>
+          </button>
+        </div>
+
+        {/* Buscador Integrado */}
+        <div className="relative w-full lg:w-72 shrink-0">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Buscar por nombre o teléfono..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500/50 transition-colors"
+          />
+        </div>
       </div>
 
       {/* Tabla de Jugadores */}
@@ -441,8 +443,17 @@ export default function JugadoresPage() {
                           </div>
                         </td>
 
-                        <td className="py-3 px-4 font-mono text-slate-300">
-                          <span className="text-emerald-400 font-bold">{player.completed_bookings}</span> / {player.total_bookings}
+                        <td className="py-3 px-4 font-mono text-xs text-slate-300">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-emerald-400 font-bold">{player.completed_bookings}</span>
+                            <span className="text-slate-500">/</span>
+                            <span>{player.total_bookings}</span>
+                            {player.cancelled_count > 0 && (
+                              <span className="text-[10px] text-slate-500 font-normal">
+                                ({player.cancelled_count} canc.)
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-3 px-4">

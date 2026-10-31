@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   UserCheck,
   ShieldCheck,
@@ -17,6 +17,10 @@ import {
   EyeOff,
   AlertTriangle,
   CheckCircle2,
+  Search,
+  Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -55,6 +59,20 @@ export default function EquipoPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState<StaffRole>('TENANT_STAFF')
+
+  // Search & Help States
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showRoleInfo, setShowRoleInfo] = useState(false)
+
+  const filteredStaff = useMemo(() => {
+    if (!searchQuery.trim()) return staff
+    const q = searchQuery.toLowerCase().trim()
+    return staff.filter(s =>
+      s.full_name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      (s.phone && s.phone.includes(q))
+    )
+  }, [staff, searchQuery])
 
   const loadStaff = useCallback(async (isInitial = false) => {
     if (!tenantId) return
@@ -251,43 +269,68 @@ export default function EquipoPage() {
         </div>
       </div>
 
-      {/* Explicación de Roles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="bg-slate-900/60 border-slate-800 backdrop-blur">
-          <CardContent className="p-4 flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
-              <UserCheck className="w-5 h-5 text-sky-400" />
-            </div>
-            <div>
-              <p className="font-semibold text-white text-sm">Encargado</p>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Acceso operativo del club: <strong>Calendario de Turnos</strong>, <strong>Caja Diaria</strong>, <strong>Turnos Fijos</strong>, <strong>Cantina</strong>, <strong>Control de Luces</strong> y <strong>Torneos</strong> (según las funciones contratadas en el plan del club). No puede alterar reglas de precios, canchas ni facturación general.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/60 border-slate-800 backdrop-blur">
-          <CardContent className="p-4 flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="font-semibold text-white text-sm">Administrador del Club</p>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Control administrativo total: creación y edición de <strong>Canchas</strong>, definición de <strong>Reglas de Precios</strong>, reportes avanzados de ocupación, gestión de personal y configuración de cuentas de cobro.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Botón / Toggle para Información de Roles y Permisos */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setShowRoleInfo(!showRoleInfo)}
+          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1"
+        >
+          <Info className="w-3.5 h-3.5 text-sky-400" />
+          <span>{showRoleInfo ? 'Ocultar guía de permisos por rol' : '¿Qué puede hacer cada rol? (Encargado vs Administrador)'}</span>
+          {showRoleInfo ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
       </div>
+
+      {showRoleInfo && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+          <Card className="bg-slate-900/60 border-slate-800 backdrop-blur">
+            <CardContent className="p-4 flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
+                <UserCheck className="w-5 h-5 text-sky-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-white text-sm">Encargado</p>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  Acceso operativo del club: <strong>Calendario de Turnos</strong>, <strong>Caja Diaria</strong>, <strong>Turnos Fijos</strong>, <strong>Cantina</strong>, <strong>Control de Luces</strong> y <strong>Torneos</strong> (según las funciones contratadas en el plan del club). No puede alterar reglas de precios, canchas ni facturación general.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/60 border-slate-800 backdrop-blur">
+            <CardContent className="p-4 flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-white text-sm">Administrador del Club</p>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  Control administrativo total: creación y edición de <strong>Canchas</strong>, definición de <strong>Reglas de Precios</strong>, reportes avanzados de ocupación, gestión de personal y configuración de cuentas de cobro.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Lista del Personal */}
       <Card className="bg-slate-900/60 border-slate-800">
-        <CardHeader className="p-4 border-b border-slate-800 flex flex-row items-center justify-between">
+        <CardHeader className="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <CardTitle className="text-base text-white font-semibold">
-            Colaboradores Activos ({staff.length})
+            Colaboradores Activos ({filteredStaff.length}{filteredStaff.length !== staff.length ? ` de ${staff.length}` : ''})
           </CardTitle>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Buscar colaborador..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-hidden focus:border-emerald-500/50"
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading && staff.length === 0 ? (
@@ -303,6 +346,14 @@ export default function EquipoPage() {
                 Hacé click en &quot;Añadir Colaborador&quot; para sumar a tus encargados.
               </p>
             </div>
+          ) : filteredStaff.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+              <Search className="w-8 h-8 text-slate-600 mb-2" />
+              <p className="text-sm font-medium">No se encontraron colaboradores</p>
+              <p className="text-xs text-slate-500 mt-1">
+                No hay resultados para &ldquo;{searchQuery}&rdquo;. Probá con otro término.
+              </p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -316,7 +367,7 @@ export default function EquipoPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-                  {staff.map((member) => {
+                  {filteredStaff.map((member) => {
                     const isAdmin = member.role === 'TENANT_ADMIN'
                     const initials = member.full_name
                       .split(' ')

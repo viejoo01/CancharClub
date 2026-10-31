@@ -188,6 +188,8 @@ export default function PreciosPage() {
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 0])
   const [loading, setLoading] = useState(false)
   const [filterSport, setFilterSport] = useState<string>('ALL')
+  const [filterCourtId, setFilterCourtId] = useState<string>('ALL')
+  const [viewMode, setViewMode] = useState<'GROUPED' | 'INDIVIDUAL'>('GROUPED')
 
   const availableSports = useMemo(() => {
     const map = new Map<string, { key: string; label: string; icon: string; count: number }>()
@@ -210,10 +212,61 @@ export default function PreciosPage() {
   }, [availableCourts])
 
   const filteredRules = useMemo(() => {
-    if (filterSport === 'ALL') return rules
-    const normFilter = filterSport.replace('_', '').toUpperCase()
-    return rules.filter(r => (r.court_sport || '').replace('_', '').toUpperCase() === normFilter)
-  }, [rules, filterSport])
+    return rules.filter(r => {
+      if (filterSport !== 'ALL') {
+        const normFilter = filterSport.replace('_', '').toUpperCase()
+        if ((r.court_sport || '').replace('_', '').toUpperCase() !== normFilter) return false
+      }
+      if (filterCourtId !== 'ALL') {
+        if (r.court_id !== filterCourtId) return false
+      }
+      return true
+    })
+  }, [rules, filterSport, filterCourtId])
+
+  const groupedRules = useMemo(() => {
+    interface GroupItem {
+      key: string
+      name: string
+      time_from: string
+      time_to: string
+      price_ars: number
+      deposit_pct: number
+      days_of_week: number[]
+      sports: string[]
+      courts: { id?: string | null; name: string; sport?: string | null }[]
+      rules: PriceRuleItem[]
+    }
+    const map = new Map<string, GroupItem>()
+    for (const r of filteredRules) {
+      const daysKey = [...(r.days_of_week || [])].sort().join(',')
+      const groupKey = `${r.name}_${r.time_from}_${r.time_to}_${r.price_ars}_${r.deposit_pct}_${daysKey}`
+      const existing = map.get(groupKey)
+      if (existing) {
+        if (r.court_name && !existing.courts.some(c => c.name === r.court_name)) {
+          existing.courts.push({ id: r.court_id, name: r.court_name, sport: r.court_sport })
+        }
+        if (r.court_sport && !existing.sports.includes(r.court_sport)) {
+          existing.sports.push(r.court_sport)
+        }
+        existing.rules.push(r)
+      } else {
+        map.set(groupKey, {
+          key: groupKey,
+          name: r.name,
+          time_from: r.time_from,
+          time_to: r.time_to,
+          price_ars: r.price_ars,
+          deposit_pct: r.deposit_pct,
+          days_of_week: r.days_of_week,
+          sports: r.court_sport ? [r.court_sport] : [],
+          courts: r.court_name ? [{ id: r.court_id, name: r.court_name, sport: r.court_sport }] : [],
+          rules: [r]
+        })
+      }
+    }
+    return Array.from(map.values())
+  }, [filteredRules])
 
   const handleOpenCreateModal = () => {
     if (!isOwner) {
@@ -440,16 +493,17 @@ export default function PreciosPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Filtro por Disciplina / Deporte */}
-          {availableSports.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+          {/* Barra de herramientas: Filtros y Modo de Vista */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+            {/* Filtro por Disciplina / Deporte */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 custom-scrollbar">
               <span className="text-[11px] font-semibold text-slate-400 mr-1 hidden sm:inline">
-                Filtrar por deporte:
+                Deporte:
               </span>
               <button
                 type="button"
                 onClick={() => setFilterSport('ALL')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border shrink-0 ${
                   filterSport === 'ALL'
                     ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
                     : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
@@ -466,7 +520,7 @@ export default function PreciosPage() {
                     key={sp.key}
                     type="button"
                     onClick={() => setFilterSport(active ? 'ALL' : sp.key)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border shrink-0 flex items-center gap-1.5 ${
                       active
                         ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
                         : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
@@ -481,105 +535,286 @@ export default function PreciosPage() {
                 )
               })}
             </div>
-          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filteredRules.map((rule) => {
-              const señaMonto = Math.round((rule.price_ars * rule.deposit_pct) / 100)
+            {/* Controles de Vista: Cancha Específica y Agrupamiento */}
+            <div className="flex items-center gap-2 shrink-0">
+              {availableCourts.length > 1 && (
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs">
+                  <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                  <select
+                    value={filterCourtId}
+                    onChange={(e) => setFilterCourtId(e.target.value)}
+                    className="bg-transparent text-slate-200 text-xs focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="ALL" className="bg-slate-900 text-slate-200">Todas las canchas</option>
+                    {availableCourts.map(c => (
+                      <option key={c.id} value={c.id} className="bg-slate-900 text-slate-200">{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-              return (
-                <Card key={rule.id} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                        <Badge variant="default" className="bg-slate-800 text-slate-200 border-slate-700 font-semibold">
-                          {rule.days_of_week.length === 7
-                            ? 'Todos los días (Lun-Dom)'
-                            : rule.days_of_week.length === 2 && rule.days_of_week.includes(6) && rule.days_of_week.includes(0)
-                            ? 'Fines de semana (Sáb, Dom)'
-                            : rule.days_of_week.length === 5 && !rule.days_of_week.includes(6) && !rule.days_of_week.includes(0)
-                            ? 'Lun a Vie'
-                            : [1, 2, 3, 4, 5, 6, 0].filter(d => rule.days_of_week.includes(d)).map(d => daysMap[d]).join(', ')}
-                        </Badge>
-                        {rule.court_sport && (
-                          <Badge variant="outline" className="text-[10px] bg-emerald-950/40 border-emerald-500/30 text-emerald-300 font-medium gap-1 py-0.5">
-                            <span>{getSportIcon(rule.court_sport)}</span>
-                            <span>{formatSport(rule.court_sport)}</span>
+              <div className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('GROUPED')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    viewMode === 'GROUPED'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Agrupar tarifas idénticas aplicadas a múltiples canchas"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Por Esquema ({groupedRules.length})</span>
+                  <span className="sm:hidden">Esquemas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('INDIVIDUAL')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    viewMode === 'INDIVIDUAL'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Ver cada regla individualmente por cancha"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Individuales ({filteredRules.length})</span>
+                  <span className="sm:hidden">Por Cancha</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Renderizado en Modo Esquemas Agrupados */}
+          {viewMode === 'GROUPED' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {groupedRules.map((group) => {
+                const señaMonto = Math.round((group.price_ars * group.deposit_pct) / 100)
+
+                return (
+                  <Card key={group.key} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors flex flex-col justify-between">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                          <Badge variant="default" className="bg-slate-800 text-slate-200 border-slate-700 font-semibold text-[11px]">
+                            {group.days_of_week.length === 7
+                              ? 'Todos los días (Lun-Dom)'
+                              : group.days_of_week.length === 2 && group.days_of_week.includes(6) && group.days_of_week.includes(0)
+                              ? 'Fines de semana (Sáb, Dom)'
+                              : group.days_of_week.length === 5 && !group.days_of_week.includes(6) && !group.days_of_week.includes(0)
+                              ? 'Lun a Vie'
+                              : [1, 2, 3, 4, 5, 6, 0].filter(d => group.days_of_week.includes(d)).map(d => daysMap[d]).join(', ')}
                           </Badge>
+                          {group.sports.map((sp) => (
+                            <Badge key={sp} variant="outline" className="text-[10px] bg-emerald-950/40 border-emerald-500/30 text-emerald-300 font-medium gap-1 py-0.5">
+                              <span>{getSportIcon(sp)}</span>
+                              <span>{formatSport(sp)}</span>
+                            </Badge>
+                          ))}
+                        </div>
+                        <span className="text-xl font-extrabold text-emerald-400 shrink-0">
+                          {formatARS(group.price_ars)}
+                        </span>
+                      </div>
+
+                      <CardTitle className="text-base flex items-center justify-between gap-2">
+                        <span>{group.name}</span>
+                        {group.courts.length > 1 && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                            {group.courts.length} canchas
+                          </span>
+                        )}
+                      </CardTitle>
+
+                      <CardDescription className="flex items-center gap-1.5 mt-1 text-xs">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{group.time_from} a {group.time_to === '24:00' || group.time_to === '00:00' ? '00:00' : group.time_to} hs</span>
+                      </CardDescription>
+
+                      {/* Lista de Canchas a las que aplica este esquema */}
+                      <div className="pt-2">
+                        <div className="text-[11px] font-medium text-slate-400 mb-1.5 flex items-center gap-1">
+                          <Layers className="w-3 h-3 text-emerald-400" />
+                          <span>Aplica a:</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {group.courts.map((court) => (
+                            <span
+                              key={court.name}
+                              className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700 font-medium"
+                            >
+                              {court.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="border-t border-slate-800/80 pt-3 text-xs space-y-2 mt-auto">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <Percent className="w-3.5 h-3.5 text-emerald-400" /> Seña exigida online:
+                        </span>
+                        <span className="font-bold text-slate-100">
+                          {group.deposit_pct}% ({formatARS(señaMonto)})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Saldo a liquidar en club:
+                        </span>
+                        <span className="font-medium text-slate-300">
+                          {formatARS(group.price_ars - señaMonto)}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
+                        {isOwner ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenEditModal(group.rules[0])}
+                              className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
+                              title="Editar este esquema de tarifa"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>{group.rules.length > 1 ? 'Editar Esquema' : 'Editar'}</span>
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                if (group.rules.length === 1) {
+                                  handleDeleteRule(group.rules[0].id, group.name)
+                                } else {
+                                  if (confirm(`¿Eliminar las ${group.rules.length} tarifas de "${group.name}" en todas las canchas?`)) {
+                                    group.rules.forEach(r => handleDeleteRule(r.id, r.name))
+                                  }
+                                }
+                              }}
+                              className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
+                              title="Eliminar tarifa"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Eliminar</span>
+                            </Button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5">
+                            <Lock className="w-3.5 h-3.5 text-amber-400/80" />
+                            <span className="text-[11px] text-slate-400">Tarifa fijada por el dueño</span>
+                          </div>
                         )}
                       </div>
-                      <span className="text-xl font-extrabold text-emerald-400">
-                        {formatARS(rule.price_ars)}
-                      </span>
-                    </div>
-                    <CardTitle className="text-base">{rule.name}</CardTitle>
-                    <CardDescription className="flex items-center justify-between gap-1 mt-1 text-xs">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{rule.time_from} a {rule.time_to === '24:00' || rule.time_to === '00:00' ? '00:00' : rule.time_to} hs</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-slate-400 font-medium">
-                        <Layers className="w-3 h-3 text-emerald-400" />
-                        <span>{rule.court_name}</span>
-                      </span>
-                    </CardDescription>
-                  </CardHeader>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          ) : (
+            /* Renderizado en Modo Reglas Individuales */
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredRules.map((rule) => {
+                const señaMonto = Math.round((rule.price_ars * rule.deposit_pct) / 100)
 
-                  <CardContent className="border-t border-slate-800/80 pt-3 text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400 flex items-center gap-1.5">
-                        <Percent className="w-3.5 h-3.5 text-emerald-400" /> Seña exigida online:
-                      </span>
-                      <span className="font-bold text-slate-100">
-                        {rule.deposit_pct}% ({formatARS(señaMonto)})
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400 flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Saldo a liquidar en club:
-                      </span>
-                      <span className="font-medium text-slate-300">
-                        {formatARS(rule.price_ars - señaMonto)}
-                      </span>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
-                      {isOwner ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenEditModal(rule)}
-                            className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
-                            title="Editar tarifa"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>Editar</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteRule(rule.id, rule.name)}
-                            className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
-                            title="Eliminar tarifa"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Eliminar</span>
-                          </Button>
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5">
-                          <Lock className="w-3.5 h-3.5 text-amber-400/80" />
-                          <span className="text-[11px] text-slate-400">Tarifa fijada por el dueño</span>
+                return (
+                  <Card key={rule.id} className="border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                          <Badge variant="default" className="bg-slate-800 text-slate-200 border-slate-700 font-semibold text-[11px]">
+                            {rule.days_of_week.length === 7
+                              ? 'Todos los días (Lun-Dom)'
+                              : rule.days_of_week.length === 2 && rule.days_of_week.includes(6) && rule.days_of_week.includes(0)
+                              ? 'Fines de semana (Sáb, Dom)'
+                              : rule.days_of_week.length === 5 && !rule.days_of_week.includes(6) && !rule.days_of_week.includes(0)
+                              ? 'Lun a Vie'
+                              : [1, 2, 3, 4, 5, 6, 0].filter(d => rule.days_of_week.includes(d)).map(d => daysMap[d]).join(', ')}
+                          </Badge>
+                          {rule.court_sport && (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-950/40 border-emerald-500/30 text-emerald-300 font-medium gap-1 py-0.5">
+                              <span>{getSportIcon(rule.court_sport)}</span>
+                              <span>{formatSport(rule.court_sport)}</span>
+                            </Badge>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+                        <span className="text-xl font-extrabold text-emerald-400">
+                          {formatARS(rule.price_ars)}
+                        </span>
+                      </div>
+                      <CardTitle className="text-base">{rule.name}</CardTitle>
+                      <CardDescription className="flex items-center justify-between gap-1 mt-1 text-xs">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{rule.time_from} a {rule.time_to === '24:00' || rule.time_to === '00:00' ? '00:00' : rule.time_to} hs</span>
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-400 font-medium">
+                          <Layers className="w-3 h-3 text-emerald-400" />
+                          <span>{rule.court_name}</span>
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+
+                    <CardContent className="border-t border-slate-800/80 pt-3 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <Percent className="w-3.5 h-3.5 text-emerald-400" /> Seña exigida online:
+                        </span>
+                        <span className="font-bold text-slate-100">
+                          {rule.deposit_pct}% ({formatARS(señaMonto)})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> Saldo a liquidar en club:
+                        </span>
+                        <span className="font-medium text-slate-300">
+                          {formatARS(rule.price_ars - señaMonto)}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
+                        {isOwner ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenEditModal(rule)}
+                              className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-300 border-emerald-500/30 gap-1.5 px-2.5 rounded-lg cursor-pointer font-medium"
+                              title="Editar tarifa"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>Editar</span>
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteRule(rule.id, rule.name)}
+                              className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 rounded-lg cursor-pointer"
+                              title="Eliminar tarifa"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Eliminar</span>
+                            </Button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5">
+                            <Lock className="w-3.5 h-3.5 text-amber-400/80" />
+                            <span className="text-[11px] text-slate-400">Tarifa fijada por el dueño</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

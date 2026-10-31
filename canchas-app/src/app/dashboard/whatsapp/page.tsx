@@ -13,7 +13,13 @@ import {
   Loader2, 
   RefreshCw,
   Key,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  Copy,
+  Check,
+  Sparkles
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -65,6 +71,9 @@ export default function WhatsAppBotPage() {
   const [apiKey, setApiKey] = useState('')
   const [phoneNumberId, setPhoneNumberId] = useState('')
   const [savingCreds, setSavingCreds] = useState(false)
+  const [showSimulatedGuide, setShowSimulatedGuide] = useState(false)
+  const [activeTemplateTab, setActiveTemplateTab] = useState<'CONFIRMATION' | 'REMINDER' | 'WAITLIST'>('CONFIRMATION')
+  const [copiedTemplate, setCopiedTemplate] = useState(false)
 
   // Turnos de hoy para recordatorios 2 horas antes
   const [todayTurnos, setTodayTurnos] = useState<Array<{
@@ -242,16 +251,37 @@ export default function WhatsAppBotPage() {
         </div>
       </div>
 
-      {/* ─── AVISO DE ESTADO ─── */}
+      {/* ─── AVISO DE ESTADO COLAPSABLE ─── */}
       {config?.provider === 'SIMULATED' && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <strong className="block text-white">Bot en Modo Simulado / Enlace Directo</strong>
-            <p className="text-slate-300 leading-relaxed">
-              El sistema procesa y genera las confirmaciones y enlaces de WhatsApp, pero para que los mensajes se envíen <strong>de forma 100% automática y silenciosa desde el servidor al celular del jugador</strong> (sin requerir que abras WhatsApp Web), necesitás ingresar tu <strong>Token de Meta Cloud API</strong> y tu <strong>Phone Number ID</strong> abajo.
-            </p>
-          </div>
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowSimulatedGuide(!showSimulatedGuide)}
+            className="w-full p-3.5 flex items-center justify-between text-left hover:bg-amber-500/5 transition cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="font-bold text-amber-300">
+                Modo Simulado activo: ¿Cómo enviar mensajes automáticos 24/7 sin abrir WhatsApp Web?
+              </span>
+            </div>
+            {showSimulatedGuide ? (
+              <ChevronUp className="w-4 h-4 text-amber-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-amber-400" />
+            )}
+          </button>
+          {showSimulatedGuide && (
+            <div className="px-4 pb-4 pt-1 border-t border-amber-500/20 text-slate-300 space-y-2">
+              <p className="leading-relaxed">
+                El sistema procesa y genera las confirmaciones y enlaces de WhatsApp (<code className="text-amber-300 font-mono">wa.me</code>). Para que los mensajes se envíen <strong>de forma 100% silenciosa y desatendida desde el servidor al celular del jugador</strong>, conectá tu <strong>Token de Meta Cloud API</strong> y tu <strong>Phone Number ID</strong> en la tarjeta inferior.
+              </p>
+              <div className="flex items-center gap-2 text-[11px] text-amber-400/90 font-medium pt-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Meta Cloud API ofrece 1.000 conversaciones por mes de servicio gratuitas directamente con WhatsApp oficial.</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -362,6 +392,146 @@ export default function WhatsAppBotPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── PLANTILLAS AUTOMÁTICAS (VISTA PREVIA REALISTA) ─── */}
+      <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden">
+        <div className="h-1 bg-linear-to-r from-emerald-500 via-teal-500 to-cyan-500" />
+        <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base text-white flex items-center gap-2">
+              <Eye className="w-5 h-5 text-emerald-400" />
+              Vista Previa de Plantillas Oficiales de WhatsApp
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Formato exacto y contenido que reciben los jugadores en su celular según el evento.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTemplateTab('CONFIRMATION')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                activeTemplateTab === 'CONFIRMATION'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Confirmación
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTemplateTab('REMINDER')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                activeTemplateTab === 'REMINDER'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Recordatorio 2hs
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTemplateTab('WAITLIST')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                activeTemplateTab === 'WAITLIST'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Lista de Espera
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* WhatsApp Chat Simulation Bubble */}
+          <div className="bg-slate-950/80 rounded-2xl border border-slate-800/80 p-4 sm:p-6 relative">
+            <div className="max-w-md mx-auto">
+              <div className="flex items-center gap-2 mb-3 text-[11px] text-slate-500 justify-center">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Mensaje verificado emitido por CancharClub</span>
+              </div>
+
+              {/* WhatsApp Message Bubble */}
+              <div className="bg-[#054640] border border-emerald-500/20 text-emerald-50 p-4 rounded-2xl rounded-tl-xs shadow-lg space-y-2 text-xs leading-relaxed relative font-sans">
+                {activeTemplateTab === 'CONFIRMATION' && (
+                  <>
+                    <p className="font-bold text-emerald-200">¡Hola [Nombre del Jugador]! 👋</p>
+                    <p>Tu turno en <strong className="text-white">[Nombre del Club]</strong> está <strong>CONFIRMADO</strong>:</p>
+                    <div className="bg-emerald-950/60 p-2.5 rounded-lg border border-emerald-500/10 space-y-1 font-mono text-[11px]">
+                      <p>📍 <strong>Cancha:</strong> Cancha 1 (Sintético)</p>
+                      <p>📅 <strong>Fecha:</strong> Hoy, 20:00 hs</p>
+                      <p>💵 <strong>Seña recibida:</strong> $5.000 (Resta en club: $7.000)</p>
+                    </div>
+                    <p className="text-[11px] text-emerald-200/80">
+                      Llegá con 10 minutos de anticipación. Ubicación: 
+                      <span className="text-cyan-300 underline ml-1">maps.google.com/?q=Club</span>
+                    </p>
+                  </>
+                )}
+
+                {activeTemplateTab === 'REMINDER' && (
+                  <>
+                    <p className="font-bold text-teal-200">¡Recordatorio de Partido! ⏰</p>
+                    <p>Te recordamos que hoy tenés turno en <strong className="text-white">[Nombre del Club]</strong> en menos de 2 horas:</p>
+                    <div className="bg-teal-950/60 p-2.5 rounded-lg border border-teal-500/10 space-y-1 font-mono text-[11px]">
+                      <p>⏰ <strong>Horario:</strong> 20:00 a 21:30 hs</p>
+                      <p>🎾 <strong>Cancha:</strong> Cancha 2 (Blindex)</p>
+                      <p>💳 <strong>Saldo a cancelar:</strong> $7.000</p>
+                    </div>
+                    <p className="text-[11px] text-teal-200/80">
+                      ¡Que tengan un excelente partido! Si tenés algún imprevisto, avisanos respondiendo este mensaje.
+                    </p>
+                  </>
+                )}
+
+                {activeTemplateTab === 'WAITLIST' && (
+                  <>
+                    <p className="font-bold text-amber-200">¡Turno Liberado en [Nombre del Club]! ⚡</p>
+                    <p>Se acaba de cancelar un turno en el horario que estabas esperando:</p>
+                    <div className="bg-amber-950/60 p-2.5 rounded-lg border border-amber-500/10 space-y-1 font-mono text-[11px]">
+                      <p>📅 <strong>Horario:</strong> Hoy de 21:00 a 22:30 hs</p>
+                      <p>⚽ <strong>Cancha:</strong> Cancha 3</p>
+                      <p>⏳ <strong>Prioridad exclusiva:</strong> 10 minutos</p>
+                    </div>
+                    <p className="text-[11px] text-amber-200/90 font-medium">
+                      👉 Tocá el enlace para reservarlo antes de que se libere a la comunidad:
+                      <span className="text-cyan-300 underline block mt-1">cancharclub.com/club/mi-club?slot=...</span>
+                    </p>
+                  </>
+                )}
+
+                <div className="text-right text-[10px] text-emerald-400/60 font-mono mt-1 flex items-center justify-end gap-1">
+                  <span>19:42</span>
+                  <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                </div>
+              </div>
+
+              {/* Copy sample template button */}
+              <div className="mt-3 flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const textToCopy = activeTemplateTab === 'CONFIRMATION'
+                      ? '¡Hola [Nombre]! Tu turno en [Club] está confirmado: Cancha 1, Hoy 20:00 hs. Seña: $5.000. ¡Te esperamos!'
+                      : activeTemplateTab === 'REMINDER'
+                      ? '¡Recordatorio de Partido! Tu turno en [Club] es hoy a las 20:00 hs. Por favor llegá 10 min antes.'
+                      : '¡Turno Liberado en [Club]! Hoy 21:00 hs. Tenés 10 minutos de prioridad para reservarlo: cancharclub.com/club/...'
+                    navigator.clipboard.writeText(textToCopy)
+                    setCopiedTemplate(true)
+                    toast.success('Texto modelo copiado al portapapeles')
+                    setTimeout(() => setCopiedTemplate(false), 2000)
+                  }}
+                  className="text-slate-400 hover:text-white text-xs h-7 gap-1.5 cursor-pointer"
+                >
+                  {copiedTemplate ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedTemplate ? 'Copiado' : 'Copiar modelo'}</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ─── CONFIGURACIÓN DE CREDENCIALES Y PRUEBA ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

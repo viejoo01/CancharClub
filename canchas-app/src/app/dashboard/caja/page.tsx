@@ -18,7 +18,7 @@ import {
   AlertCircle,
   Lock,
   BookOpen,
-  Coins,
+  Search,
   Eye,
   EyeOff
 } from 'lucide-react'
@@ -87,6 +87,10 @@ export default function CajaPage() {
     return cachedDailyCash.get(cacheKey) || null
   })
   const [loading, setLoading] = useState(() => !cachedDailyCash.has(cacheKey))
+
+  // Filtros de movimientos
+  const [searchQuery, setSearchQuery] = useState('')
+  const [methodFilter, setMethodFilter] = useState<'ALL' | 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'CUENTA_CORRIENTE'>('ALL')
 
   // Estado de Arqueo Ciego
   const [showBlindAuditModal, setShowBlindAuditModal] = useState(false)
@@ -159,6 +163,19 @@ export default function CajaPage() {
     (b.paid_at || '').localeCompare(a.paid_at || '')
   )
 
+  const filteredEntries = entries.filter((e) => {
+    if (methodFilter !== 'ALL' && e.payment_method !== methodFilter) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      return (
+        (e.customer_name || '').toLowerCase().includes(q) ||
+        (e.court_name || '').toLowerCase().includes(q) ||
+        (e.notes || '').toLowerCase().includes(q)
+      )
+    }
+    return true
+  })
+
   const handlePrint = () => {
     toast.success('Generando reporte de arqueo para impresion...')
     window.print()
@@ -224,9 +241,34 @@ export default function CajaPage() {
             />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 no-print">
+        <div className="flex flex-wrap items-center justify-between gap-2 no-print">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button 
+              onClick={() => {
+                setDeclaredCash('')
+                setCashierName('')
+                setAuditResult(null)
+                setHideCashBalance(true)
+                setShowBlindAuditModal(true)
+              }} 
+              variant="outline" 
+              size="sm" 
+              className="gap-2 border-amber-500/40 bg-amber-950/25 text-amber-300 hover:bg-amber-900/40 text-xs h-10 font-bold"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Arqueo Ciego</span>
+            </Button>
+            <Button onClick={handleExportCSV} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Exportar CSV</span>
+            </Button>
+            <Button onClick={handlePrint} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
+              <Printer className="w-3.5 h-3.5" />
+              <span>Imprimir</span>
+            </Button>
+          </div>
           {isOwner && (
-            <Button asChild variant="outline" size="sm" className="gap-1.5 border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60 text-xs h-10">
+            <Button asChild variant="ghost" size="sm" className="gap-1.5 border border-slate-800 bg-slate-900/60 text-slate-300 hover:text-white hover:bg-slate-800 text-xs h-10 ml-auto">
               <Link href="/dashboard/cobros">
                 <Landmark className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="hidden sm:inline">Configurar Cuentas de Cobro</span>
@@ -234,29 +276,6 @@ export default function CajaPage() {
               </Link>
             </Button>
           )}
-          <Button 
-            onClick={() => {
-              setDeclaredCash('')
-              setCashierName('')
-              setAuditResult(null)
-              setHideCashBalance(true)
-              setShowBlindAuditModal(true)
-            }} 
-            variant="outline" 
-            size="sm" 
-            className="gap-2 border-amber-500/40 bg-amber-950/25 text-amber-300 hover:bg-amber-900/40 text-xs h-10 font-bold"
-          >
-            <Lock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Arqueo Ciego</span>
-          </Button>
-          <Button onClick={handleExportCSV} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
-            <Download className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Exportar CSV</span>
-          </Button>
-          <Button onClick={handlePrint} variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-xs h-10">
-            <Printer className="w-3.5 h-3.5" />
-            <span>Imprimir</span>
-          </Button>
         </div>
       </div>
 
@@ -321,14 +340,14 @@ export default function CajaPage() {
         <Card className="border-slate-800 bg-slate-900/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold uppercase">
-              <span>Señas Abonadas</span>
-              <Coins className="w-4 h-4 text-cyan-400" />
+              <span>Mercado Pago / Online</span>
+              <CreditCard className="w-4 h-4 text-cyan-400" />
             </div>
             <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalDeposits ?? 0)}
+              {loading ? 'Cargando...' : formatARS(report?.totalMP ?? 0)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-[11px] text-slate-400">Total señas de reservas online y mostrador</CardContent>
+          <CardContent className="text-[11px] text-slate-400">Cobros acreditados vía pasarela digital</CardContent>
         </Card>
       </div>
 
@@ -349,10 +368,50 @@ export default function CajaPage() {
       )}
 
       <Card className="border-slate-800 bg-slate-900/60 overflow-hidden">
-        <CardHeader className="border-b border-slate-800/80 pb-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Detalle de Cobros del Día</CardTitle>
-            <Badge variant="outline" className="text-xs">Fecha: {selectedDate}</Badge>
+        <CardHeader className="border-b border-slate-800/80 pb-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base text-white">Detalle de Cobros del Día</CardTitle>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {filteredEntries.length} {filteredEntries.length === 1 ? 'movimiento' : 'movimientos'} {searchQuery || methodFilter !== 'ALL' ? '(filtrados)' : ''}
+              </p>
+            </div>
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+              <Input
+                placeholder="Buscar cliente, cancha o nota..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-xs pl-8 h-9 text-slate-200 placeholder:text-slate-500"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            {[
+              { id: 'ALL', label: 'Todos', count: entries.length },
+              { id: 'CASH', label: 'Efectivo', count: entries.filter(e => e.payment_method === 'CASH').length },
+              { id: 'TRANSFER', label: 'Transferencias', count: entries.filter(e => e.payment_method === 'TRANSFER').length },
+              { id: 'MERCADOPAGO', label: 'Mercado Pago', count: entries.filter(e => e.payment_method === 'MERCADOPAGO').length },
+              ...(entries.some(e => e.payment_method === 'CUENTA_CORRIENTE')
+                ? [{ id: 'CUENTA_CORRIENTE', label: 'Cta Cte', count: entries.filter(e => e.payment_method === 'CUENTA_CORRIENTE').length }]
+                : [])
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setMethodFilter(tab.id as typeof methodFilter)}
+                className={`px-3 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  methodFilter === tab.id
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300">
+                  {tab.count}
+                </span>
+              </button>
+            ))}
           </div>
         </CardHeader>
         {loading ? (
@@ -366,9 +425,24 @@ export default function CajaPage() {
             <p className="text-sm">No se registraron cobros el {selectedDate}</p>
             <p className="text-xs text-slate-600">Los pagos aparecen aquí cuando se confirma una seña o saldo de una reserva.</p>
           </div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-slate-500">
+            <p className="text-sm">No se encontraron movimientos con los filtros seleccionados.</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearchQuery('')
+                setMethodFilter('ALL')
+              }}
+              className="text-xs text-emerald-400 hover:text-emerald-300"
+            >
+              Limpiar filtros
+            </Button>
+          </div>
         ) : (
           <div className="divide-y divide-slate-800/60">
-            {entries.map(e => (
+            {filteredEntries.map(e => (
               <div key={e.id} className="flex items-center justify-between p-4 hover:bg-slate-800/30 transition-colors">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">

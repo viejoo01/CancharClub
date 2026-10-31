@@ -185,7 +185,7 @@ export default function FacturacionPage() {
   const totalFacturadoMes = invoices.reduce((acc, inv) => acc + inv.montoTotal, 0)
 
   return (
-    <PlanFeatureGuard feature="facturacion_afip" featureTitle="Facturación Electrónica AFIP">
+    <PlanFeatureGuard feature="facturacion_afip" featureTitle="Facturación Electrónica ARCA (ex-AFIP)">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -193,14 +193,14 @@ export default function FacturacionPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
               <Receipt className="w-6 h-6 text-emerald-400" />
-              Facturación Electrónica AFIP (WSFEv1)
+              Facturación Electrónica ARCA (ex-AFIP)
             </h1>
             <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 font-semibold text-xs">
               CAE Oficial RG 4291
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Emití Factura B, Factura C y tickets a consumidor final con CAE automático y código QR reglamentario.
+            Emití Factura B, Factura C y tickets a consumidor final con CAE automático y código QR reglamentario de ARCA.
           </p>
         </div>
 
@@ -239,7 +239,7 @@ export default function FacturacionPage() {
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-amber-200">Facturación AFIP pendiente de configuración</h3>
+              <h3 className="text-sm font-bold text-amber-200">Facturación ARCA pendiente de configuración</h3>
               <p className="text-xs text-amber-300/80 mt-0.5">
                 Aún no registraste el CUIT ni los datos fiscales de tu club. Hacé clic para configurarlos y habilitar la emisión de facturas electrónicas oficiales con CAE.
               </p>
@@ -272,7 +272,7 @@ export default function FacturacionPage() {
 
         <Card className="bg-slate-900/70 border-slate-800 p-4 space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-            <span>Estado de Conexión AFIP</span>
+            <span>Estado de Conexión ARCA</span>
             <ShieldCheck className={`w-4 h-4 ${config.cuit ? 'text-emerald-400' : 'text-amber-400'}`} />
           </div>
           {config.cuit ? (
@@ -500,7 +500,7 @@ export default function FacturacionPage() {
             <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                Autorización directa con AFIP
+                Autorización directa con ARCA
               </span>
               <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 text-[10px]">
                 CAE 14 dígitos
@@ -627,14 +627,14 @@ export default function FacturacionPage() {
         </Dialog>
       )}
 
-      {/* Modal Configuración AFIP */}
+      {/* Modal Configuración ARCA */}
       {config && (
         <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
           <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
             <DialogHeader>
               <DialogTitle className="text-white flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-purple-400" />
-                Configuración de Facturación AFIP
+                Configuración de Facturación ARCA (ex-AFIP)
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-400">
                 Configurá el CUIT y los datos fiscales oficiales del club para emitir comprobantes electrónicos con CAE.
@@ -645,7 +645,7 @@ export default function FacturacionPage() {
               <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 text-xs text-slate-400 flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  Estos datos se registrarán para la generación de comprobantes con validez fiscal nacional según la RG 4291 de AFIP.
+                  Estos datos se registrarán para la generación de comprobantes con validez fiscal nacional según la RG 4291 de ARCA.
                 </span>
               </div>
 

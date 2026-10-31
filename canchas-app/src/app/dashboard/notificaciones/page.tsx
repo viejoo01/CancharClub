@@ -27,7 +27,6 @@ import {
   AlertTriangle,
   ChevronRight,
   Copy,
-  Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,12 +41,10 @@ import Link from 'next/link'
 function formatFullDate(isoString: string): string {
   try {
     const d = new Date(isoString)
-    return d.toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
+    return d.toLocaleTimeString('es-AR', {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
       timeZone: 'America/Argentina/Buenos_Aires',
     }) + ' hs'
   } catch {
@@ -309,103 +306,24 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* ─── TARJETAS DE MÉTRICAS / KPIS DEL HISTORIAL ─── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        {/* Total Notificaciones */}
-        <div
-          onClick={() => {
-            setCategoryFilter('ALL')
-            setUnreadOnly(false)
-          }}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            categoryFilter === 'ALL' && !unreadOnly
-              ? 'bg-slate-900/90 border-slate-700 ring-1 ring-slate-600'
-              : 'bg-slate-900/50 border-slate-800/80 hover:bg-slate-900/80'
-          }`}
-        >
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold">Total Historial</span>
-            <Layers className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="text-2xl font-black text-white mt-1.5 font-mono">{stats.total}</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Eventos registrados</div>
+      {/* ─── RESUMEN COMPACTO DE HISTORIAL (AHORRO DE ESPACIO VERTICAL) ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-xs text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>
+            <strong className="text-white font-bold">{stats.unread}</strong> {stats.unread === 1 ? 'pendiente de revisión' : 'pendientes de revisión'}
+          </span>
+          <span className="text-slate-600">•</span>
+          <span>
+            <strong className="text-slate-300 font-bold">{stats.total}</strong> eventos registrados
+          </span>
         </div>
-
-        {/* Turnos Reservados */}
-        <div
-          onClick={() => {
-            setCategoryFilter('BOOKINGS')
-            setUnreadOnly(false)
-          }}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            categoryFilter === 'BOOKINGS'
-              ? 'bg-emerald-950/30 border-emerald-500/40 ring-1 ring-emerald-500/50'
-              : 'bg-slate-900/50 border-slate-800/80 hover:bg-slate-900/80'
-          }`}
-        >
-          <div className="flex items-center justify-between text-emerald-400">
-            <span className="text-xs font-semibold">Turnos</span>
-            <CalendarDays className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-white mt-1.5 font-mono">{stats.bookingsCount}</div>
-          <div className="text-[11px] text-emerald-400/80 mt-0.5">Reservas cargadas</div>
-        </div>
-
-        {/* Pagos Recibidos */}
-        <div
-          onClick={() => {
-            setCategoryFilter('PAYMENTS')
-            setUnreadOnly(false)
-          }}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            categoryFilter === 'PAYMENTS'
-              ? 'bg-teal-950/30 border-teal-500/40 ring-1 ring-teal-500/50'
-              : 'bg-slate-900/50 border-slate-800/80 hover:bg-slate-900/80'
-          }`}
-        >
-          <div className="flex items-center justify-between text-teal-400">
-            <span className="text-xs font-semibold">Pagos y Señas</span>
-            <Wallet className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-white mt-1.5 font-mono">{stats.paymentsCount}</div>
-          <div className="text-[11px] text-teal-400/80 mt-0.5">Cobros procesados</div>
-        </div>
-
-        {/* Alertas de Turnos Enviadas */}
-        <div
-          onClick={() => {
-            setCategoryFilter('ALERTS')
-            setUnreadOnly(false)
-          }}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            categoryFilter === 'ALERTS'
-              ? 'bg-sky-950/30 border-sky-500/40 ring-1 ring-sky-500/50'
-              : 'bg-slate-900/50 border-slate-800/80 hover:bg-slate-900/80'
-          }`}
-        >
-          <div className="flex items-center justify-between text-sky-400">
-            <span className="text-xs font-semibold">Alertas Enviadas</span>
-            <CloudRain className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-white mt-1.5 font-mono">{stats.alertsCount}</div>
-          <div className="text-[11px] text-sky-400/80 mt-0.5">Clima y lista de espera</div>
-        </div>
-
-        {/* Sin Leer */}
-        <div
-          onClick={() => setUnreadOnly(prev => !prev)}
-          className={`col-span-2 sm:col-span-1 p-4 rounded-2xl border transition-all cursor-pointer ${
-            unreadOnly
-              ? 'bg-amber-950/30 border-amber-500/40 ring-1 ring-amber-500/50'
-              : 'bg-slate-900/50 border-slate-800/80 hover:bg-slate-900/80'
-          }`}
-        >
-          <div className="flex items-center justify-between text-amber-400">
-            <span className="text-xs font-semibold">No Leídas</span>
-            <Bell className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-white mt-1.5 font-mono">{stats.unread}</div>
-          <div className="text-[11px] text-amber-400/80 mt-0.5">Pendientes de revisión</div>
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <span>{stats.bookingsCount} turnos</span>
+          <span>•</span>
+          <span>{stats.paymentsCount} pagos</span>
+          <span>•</span>
+          <span>{stats.alertsCount} alertas</span>
         </div>
       </div>
 
@@ -638,11 +556,8 @@ export default function NotificationsPage() {
                             Nuevo
                           </span>
                         )}
-                        <span className="text-[11px] text-slate-400 font-medium font-mono">
-                          {formatFullDate(notif.created_at)}
-                        </span>
-                        <span className="text-[11px] text-slate-500 hidden sm:inline">
-                          ({getRelativeTime(notif.created_at)})
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          {getRelativeTime(notif.created_at)} • {formatFullDate(notif.created_at)}
                         </span>
                       </div>
                       <h3 className="text-sm sm:text-base font-bold text-white mt-1 leading-snug">

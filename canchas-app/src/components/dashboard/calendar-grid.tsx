@@ -75,6 +75,27 @@ function formatTimeArgentina(iso?: string | null): string {
   }
 }
 
+function formatSportName(raw: string): string {
+  if (!raw) return ''
+  const s = raw.trim().toUpperCase()
+  if (s === 'FUTBOL5' || s === 'FUTBOL_5' || s === 'FUTBOL 5') return 'Fútbol 5'
+  if (s === 'FUTBOL7' || s === 'FUTBOL_7' || s === 'FUTBOL 7') return 'Fútbol 7'
+  if (s === 'FUTBOL11' || s === 'FUTBOL_11' || s === 'FUTBOL 11') return 'Fútbol 11'
+  if (s === 'FUTBOL' || s === 'FÚTBOL') return 'Fútbol'
+  if (s === 'PADEL' || s === 'PÁDEL') return 'Pádel'
+  if (s === 'TENIS' || s === 'TENNIS') return 'Tenis'
+  if (s === 'BASQUET' || s === 'BASKET') return 'Básquet'
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+}
+
+function getSportColorDot(sport: string): string {
+  const s = (sport || '').toLowerCase()
+  if (s.includes('padel') || s.includes('pádel')) return 'bg-sky-400'
+  if (s.includes('futbol') || s.includes('fútbol')) return 'bg-emerald-400'
+  if (s.includes('tenis') || s.includes('tennis')) return 'bg-amber-400'
+  return 'bg-purple-400'
+}
+
 export interface CalendarBooking {
   id: string
   tenant_id?: string
@@ -913,13 +934,14 @@ export function CalendarGrid({
               type="button"
               key={sp}
               onClick={() => setSelectedSport(sp)}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer shrink-0 ${
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer shrink-0 inline-flex items-center gap-1.5 ${
                 selectedSport === sp
                   ? 'bg-emerald-600 text-white shadow-2xs font-bold'
                   : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/[0.05]'
               }`}
             >
-              {sp}
+              <span className={`w-1.5 h-1.5 rounded-full ${getSportColorDot(sp)}`} />
+              <span>{formatSportName(sp)}</span>
             </button>
           ))}
         </div>
@@ -1064,11 +1086,11 @@ export function CalendarGrid({
                   className={`${isCompact ? 'p-2' : 'p-2.5'} text-center border-r border-slate-200/80 dark:border-white/[0.08] last:border-r-0 bg-white/90 dark:bg-[#0E1526]/90 flex flex-col items-center justify-center min-w-0 transition-colors`}
                 >
                   <div className={`${isCompact ? 'text-xs' : 'text-sm'} font-bold text-slate-900 dark:text-white tracking-tight truncate max-w-full px-1`} title={court.name}>
-                    {court.name}
+                    {/^\d+$/.test(court.name.trim()) ? `Cancha ${court.name.trim()}` : court.name}
                   </div>
-                  <div className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold tracking-wide uppercase ${sportBadgeStyle}`}>
+                  <div className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold tracking-wide ${sportBadgeStyle}`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0" />
-                    <span className="truncate">{court.sport}</span>
+                    <span className="truncate">{formatSportName(court.sport)}</span>
                   </div>
                 </div>
               )

@@ -60,6 +60,24 @@ import {
 import { getClubPublicData, getClubOccupiedSlots, type OccupiedSlotInfo, geocodeClubAddress } from '@/actions/club.actions'
 import { verifyWaitlistClaim } from '@/actions/waitlist.actions'
 
+// Función auxiliar para formatear superficies técnicas a nombres legibles para el jugador
+function formatSurface(surface?: string | null): string {
+  if (!surface) return ''
+  const map: Record<string, string> = {
+    CESPED_SINTETICO: 'Césped Sintético',
+    CESPED_NATURAL: 'Césped Natural',
+    CEMENTO: 'Cemento',
+    POLVO_LADRILLO: 'Polvo de Ladrillo',
+    PARQUET: 'Parquet',
+    ALFOMBRA: 'Alfombra',
+    BLINDEX: 'Cristal / Blindex',
+    CAUCHO: 'Caucho',
+    TECHADA: 'Techada',
+    DESCUBIERTA: 'Descubierta',
+  }
+  return map[surface.toUpperCase()] || surface.replace(/_/g, ' ')
+}
+
 // Generador dinámico de los próximos 14 días para el carousel táctil móvil
 function getNextDays(count = 14) {
   const days = []
@@ -157,6 +175,7 @@ export default function ClubPublicPage({
   const [selectedDate, setSelectedDate] = useState<string>(() => getArgentinaTodayIso())
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'MAÑANA' | 'TARDE' | 'NOCHE'>('ALL')
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('ALL')
+  const [slotViewMode, setSlotViewMode] = useState<'GROUPED' | 'LIST'>('GROUPED')
 
   // Reloj reactivo para invalidar en tiempo real los turnos que ya pasaron durante el día (Zona Argentina)
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getArgentinaTimeStr())
@@ -478,6 +497,22 @@ export default function ClubPublicPage({
 
   const availableCount = filteredSlots.filter(s => s.isAvailable).length
 
+  // Agrupamiento cronológico de turnos por hora para visualización ergonómica sin scroll masivo
+  const groupedSlotsByHour = useMemo(() => {
+    const map = new Map<string, typeof filteredSlots>()
+    for (const slot of filteredSlots) {
+      const existing = map.get(slot.time) || []
+      existing.push(slot)
+      map.set(slot.time, existing)
+    }
+    const sortedHours = Array.from(map.keys()).sort((a, b) => a.localeCompare(b))
+    return sortedHours.map(hour => ({
+      hour,
+      slots: map.get(hour) || [],
+      hasAvailable: (map.get(hour) || []).some(s => s.isAvailable),
+    }))
+  }, [filteredSlots])
+
   // Obtener lista única de canchas del club para el deporte actual
   const courtsList = useMemo(() => {
     let list = club.courts.filter(c => normalizeToSportCategory(c.sport) === selectedSport)
@@ -756,11 +791,19 @@ export default function ClubPublicPage({
 
               {/* Rating y contacto rápido */}
               <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-800/80 text-xs">
-                <div className="flex items-center gap-1 text-amber-400 font-bold">
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  <span>{club.rating}</span>
-                  <span className="text-slate-400 font-normal text-[11px]">({club.reviewsCount} opiniones)</span>
-                </div>
+                {club.reviewsCount > 0 ? (
+                  <div className="flex items-center gap-1 text-amber-400 font-bold">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span>{club.rating}</span>
+                    <span className="text-slate-400 font-normal text-[11px]">({club.reviewsCount} opiniones)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-slate-300 font-medium text-xs">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-300 font-semibold">Club Habilitado</span>
+                    <span className="text-slate-400 font-normal text-[11px]">(Nuevo en CancharClub)</span>
+                  </div>
+                )}
 
                 <a
                   href={buildWhatsAppLink(club.whatsappPhone)}
@@ -1288,122 +1331,281 @@ export default function ClubPublicPage({
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredSlots.map((slot, index) => {
-                const checkoutUrl = slot.isClaimMatch && activeClaim
-                  ? `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}&claimId=${activeClaim.claimId}&name=${encodeURIComponent(activeClaim.customerName)}&phone=${encodeURIComponent(activeClaim.customerPhone)}`
-                  : `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`
-
-                return (
-                  <Card
-                    key={`${slot.courtId}-${slot.time}-${index}`}
-                    className={`transition-all rounded-2xl ${
-                      slot.isClaimMatch
-                        ? 'bg-emerald-950/40 border-2 border-emerald-400 shadow-xl shadow-emerald-950/60 ring-2 ring-emerald-500/30'
-                        : slot.isAvailable
-                        ? 'bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-950/20 active:scale-[0.99]'
-                        : 'bg-slate-900/40 border border-slate-800/70'
+            <div className="space-y-4">
+              {/* Selector de Modo de Visualización: Por Horario (Cronológico) vs Lista Completa */}
+              <div className="flex items-center justify-between bg-slate-900/60 p-2 rounded-xl border border-slate-800 text-xs">
+                <span className="text-slate-400 font-medium text-[11px]">
+                  {availableCount} {availableCount === 1 ? 'turno disponible' : 'turnos disponibles'}
+                </span>
+                <div className="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setSlotViewMode('GROUPED')}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      slotViewMode === 'GROUPED'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <CardContent className="p-3.5 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* Pill de Hora Grande */}
-                        <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black shrink-0 border ${
-                          slot.isClaimMatch
-                            ? 'bg-emerald-950 border-emerald-400 text-emerald-200 shadow-sm'
-                            : slot.isAvailable
-                            ? 'bg-slate-950 border-emerald-500/30 text-slate-100 shadow-sm'
-                            : 'bg-slate-950 border-slate-800 text-slate-400'
-                        }`}>
-                          <span className={`text-[10px] font-bold tracking-wider ${slot.isClaimMatch ? 'text-amber-300' : 'text-emerald-400'}`}>
-                            HS
+                    <Clock className="w-3 h-3" />
+                    <span>Por Horario</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlotViewMode('LIST')}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                      slotViewMode === 'LIST'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Layers className="w-3 h-3" />
+                    <span>Todas las Canchas</span>
+                  </button>
+                </div>
+              </div>
+
+              {slotViewMode === 'GROUPED' ? (
+                /* Vista Agrupada por Hora: Ergonómica y rápida para móvil */
+                <div className="space-y-3">
+                  {groupedSlotsByHour.map((hourGroup) => {
+                    const freeInHour = hourGroup.slots.filter(s => s.isAvailable).length
+
+                    return (
+                      <div
+                        key={hourGroup.hour}
+                        className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xs"
+                      >
+                        {/* Cabecera del Horario */}
+                        <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800/80">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-emerald-400 tracking-tight">
+                              HS {hourGroup.hour}
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              • {hourGroup.slots.length} {hourGroup.slots.length === 1 ? 'cancha' : 'canchas'}
+                            </span>
+                          </div>
+                          <span className={`text-[11px] font-semibold ${
+                            freeInHour > 0 ? 'text-emerald-400' : 'text-slate-500'
+                          }`}>
+                            {freeInHour > 0
+                              ? `${freeInHour} ${freeInHour === 1 ? 'disponible' : 'disponibles'}`
+                              : 'Completo'}
                           </span>
-                          <span className="text-base font-black leading-none">{slot.time}</span>
                         </div>
 
-                        {/* Información de la Cancha y Precios */}
-                        <div className="min-w-0">
-                          <div className="font-bold text-sm text-slate-100 truncate flex items-center gap-1.5">
-                            <span>{slot.courtName}</span>
-                            {slot.isClaimMatch && (
-                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
-                                Tu Turno
-                              </Badge>
+                        {/* Canchas disponibles en este horario */}
+                        <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {hourGroup.slots.map((slot, sIdx) => {
+                            const checkoutUrl = slot.isClaimMatch && activeClaim
+                              ? `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}&claimId=${activeClaim.claimId}&name=${encodeURIComponent(activeClaim.customerName)}&phone=${encodeURIComponent(activeClaim.customerPhone)}`
+                              : `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`
+
+                            return (
+                              <div
+                                key={`${slot.courtId}-${slot.time}-${sIdx}`}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all ${
+                                  slot.isClaimMatch
+                                    ? 'bg-emerald-950/60 border-emerald-400 ring-1 ring-emerald-500/40'
+                                    : slot.isAvailable
+                                    ? 'bg-slate-950/80 border-slate-800 hover:border-emerald-500/50'
+                                    : 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-bold text-xs text-slate-100 truncate flex items-center gap-1.5">
+                                    <span>{slot.courtName}</span>
+                                    {slot.isClaimMatch && (
+                                      <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
+                                        Tu Turno
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {slot.features && slot.features.length > 0 && (
+                                    <div className="flex items-center gap-1 mt-0.5 truncate">
+                                      {slot.features.slice(0, 2).map((feat, fIdx) => (
+                                        <span key={fIdx} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 font-medium truncate">
+                                          {formatSurface(feat)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="text-[11px] text-slate-400 mt-1">
+                                    Total {formatARS(slot.totalPrice)} • <span className="text-emerald-400 font-bold">Seña {formatARS(slot.depositPrice)}</span>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0">
+                                  {slot.isClaimMatch ? (
+                                    <Link href={checkoutUrl}>
+                                      <Button
+                                        size="sm"
+                                        className="h-8 px-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95"
+                                      >
+                                        <Zap className="w-3 h-3 fill-slate-950" />
+                                        <span>Reclamar</span>
+                                      </Button>
+                                    </Link>
+                                  ) : slot.isAvailable ? (
+                                    <Link href={checkoutUrl}>
+                                      <Button
+                                        size="sm"
+                                        className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xs gap-1 active:scale-95"
+                                      >
+                                        <span>Reservar</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </Button>
+                                    </Link>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setWaitlistSlot({
+                                          courtId: slot.courtId,
+                                          courtName: slot.courtName,
+                                          time: slot.time,
+                                          sport: slot.sport,
+                                        })
+                                        setIsWaitlistOpen(true)
+                                      }}
+                                      className="h-7 px-2 text-[11px] text-amber-400/90 hover:bg-amber-950/40 rounded-lg gap-1 font-semibold cursor-pointer"
+                                      title="Avisarme si se libera"
+                                    >
+                                      <Bell className="w-3 h-3 text-amber-400" />
+                                      <span>Avisar</span>
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                /* Vista Lista Clásica de Tarjetas */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {filteredSlots.map((slot, index) => {
+                    const checkoutUrl = slot.isClaimMatch && activeClaim
+                      ? `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}&claimId=${activeClaim.claimId}&name=${encodeURIComponent(activeClaim.customerName)}&phone=${encodeURIComponent(activeClaim.customerPhone)}`
+                      : `/club/${club.slug}/checkout?tenantId=${club.id}&courtId=${slot.courtId}&courtName=${encodeURIComponent(slot.courtName)}&time=${slot.time}&date=${selectedDate}&total=${slot.totalPrice}&deposit=${slot.depositPrice}&sport=${encodeURIComponent(slot.specificSport || slot.sport)}&club=${encodeURIComponent(club.name)}`
+
+                    return (
+                      <Card
+                        key={`${slot.courtId}-${slot.time}-${index}`}
+                        className={`transition-all rounded-2xl ${
+                          slot.isClaimMatch
+                            ? 'bg-emerald-950/40 border-2 border-emerald-400 shadow-xl shadow-emerald-950/60 ring-2 ring-emerald-500/30'
+                            : slot.isAvailable
+                            ? 'bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-950/20 active:scale-[0.99]'
+                            : 'bg-slate-900/40 border border-slate-800/70'
+                        }`}
+                      >
+                        <CardContent className="p-3.5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Pill de Hora Grande */}
+                            <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black shrink-0 border ${
+                              slot.isClaimMatch
+                                ? 'bg-emerald-950 border-emerald-400 text-emerald-200 shadow-sm'
+                                : slot.isAvailable
+                                ? 'bg-slate-950 border-emerald-500/30 text-slate-100 shadow-sm'
+                                : 'bg-slate-950 border-slate-800 text-slate-400'
+                            }`}>
+                              <span className={`text-[10px] font-bold tracking-wider ${slot.isClaimMatch ? 'text-amber-300' : 'text-emerald-400'}`}>
+                                HS
+                              </span>
+                              <span className="text-base font-black leading-none">{slot.time}</span>
+                            </div>
+
+                            {/* Información de la Cancha y Precios */}
+                            <div className="min-w-0">
+                              <div className="font-bold text-sm text-slate-100 truncate flex items-center gap-1.5">
+                                <span>{slot.courtName}</span>
+                                {slot.isClaimMatch && (
+                                  <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
+                                    Tu Turno
+                                  </Badge>
+                                )}
+                              </div>
+                              
+                              {/* Features chips con formato legible */}
+                              {slot.features && slot.features.length > 0 && (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  {slot.features.slice(0, 2).map((feat, fIdx) => (
+                                    <span key={fIdx} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 font-medium">
+                                      {formatSurface(feat)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="text-xs text-slate-400 mt-1">
+                                Total {formatARS(slot.totalPrice)} • <span className="text-emerald-400 font-extrabold">Seña {formatARS(slot.depositPrice)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botón de Acción Táctil */}
+                          <div className="shrink-0">
+                            {slot.isClaimMatch ? (
+                              <Link href={checkoutUrl}>
+                                <Button
+                                  size="sm"
+                                  className="h-10 px-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
+                                >
+                                  <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                                  <span>Reclamar</span>
+                                </Button>
+                              </Link>
+                            ) : slot.isAvailable ? (
+                              <Link href={checkoutUrl}>
+                                <Button
+                                  size="sm"
+                                  className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95 transition-transform"
+                                >
+                                  <span>Reservar</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </Button>
+                              </Link>
+                            ) : (
+                              <div className="flex flex-col items-end gap-1.5">
+                                <Badge variant="secondary" className={`text-[10px] ${
+                                  slot.isWaitlistPriority
+                                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}>
+                                  {slot.isWaitlistPriority ? 'Prioridad 10 min' : 'Ocupado'}
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setWaitlistSlot({
+                                      courtId: slot.courtId,
+                                      courtName: slot.courtName,
+                                      time: slot.time,
+                                      sport: slot.sport,
+                                    })
+                                    setIsWaitlistOpen(true)
+                                  }}
+                                  className="h-8 px-2.5 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-950/50 hover:text-amber-200 font-bold rounded-xl gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <Bell className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Avisarme</span>
+                                </Button>
+                              </div>
                             )}
                           </div>
-                          
-                          {/* Features chips */}
-                          {slot.features && slot.features.length > 0 && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              {slot.features.slice(0, 2).map((feat, fIdx) => (
-                                <span key={fIdx} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 font-medium">
-                                  {feat}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="text-xs text-slate-400 mt-1">
-                            Total {formatARS(slot.totalPrice)} • <span className="text-emerald-400 font-extrabold">Seña {formatARS(slot.depositPrice)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Botón de Acción Táctil */}
-                      <div className="shrink-0">
-                        {slot.isClaimMatch ? (
-                          <Link href={checkoutUrl}>
-                            <Button
-                              size="sm"
-                              className="h-10 px-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
-                            >
-                              <Zap className="w-3.5 h-3.5 fill-slate-950" />
-                              <span>Reclamar</span>
-                            </Button>
-                          </Link>
-                        ) : slot.isAvailable ? (
-                          <Link href={checkoutUrl}>
-                            <Button
-                              size="sm"
-                              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95 transition-transform"
-                            >
-                              <span>Reservar</span>
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </Button>
-                          </Link>
-                        ) : (
-                          <div className="flex flex-col items-end gap-1.5">
-                            <Badge variant="secondary" className={`text-[10px] ${
-                              slot.isWaitlistPriority
-                                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                                : 'bg-slate-800 text-slate-400'
-                            }`}>
-                              {slot.isWaitlistPriority ? 'Prioridad 10 min' : 'Ocupado'}
-                            </Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setWaitlistSlot({
-                                  courtId: slot.courtId,
-                                  courtName: slot.courtName,
-                                  time: slot.time,
-                                  sport: slot.sport,
-                                })
-                                setIsWaitlistOpen(true)
-                              }}
-                              className="h-8 px-2.5 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-950/50 hover:text-amber-200 font-bold rounded-xl gap-1.5 transition-colors cursor-pointer"
-                            >
-                              <Bell className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Avisarme</span>
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </section>

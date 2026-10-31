@@ -69,6 +69,7 @@ export default function TurnosFijosPage() {
   const [submitting, setSubmitting] = useState(false)
   const [actionSlotId, setActionSlotId] = useState<string | null>(null)
   const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => initialCourts)
+  const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL')
 
   // Form states (Alta)
   const [courtId, setCourtId] = useState(() => initialCourts[0]?.id || '')
@@ -401,13 +402,25 @@ export default function TurnosFijosPage() {
   const activeSlots = slots.filter(s => s.status === 'ACTIVE')
   const totalMonthlyRevenue = activeSlots.reduce((sum, s) => sum + Number(s.monthly_price), 0)
 
+  const todayArg = getArgentinaTodayIso()
+  const [tYear, tMonth, tDay] = todayArg.split('-').map(Number)
+  const currentPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
+
+  const overdueSlots = activeSlots.filter(s => {
+    const isPaidThisMonth = s.last_paid_period === currentPeriod || Boolean(s.notes?.includes(`[LAST_PAID:${currentPeriod}]`))
+    return !isPaidThisMonth && tDay > s.payment_due_day
+  })
+  const overdueDebt = overdueSlots.reduce((sum, s) => sum + Number(s.monthly_price), 0)
+
+  const displayedSlots = slots.filter(s => selectedDayFilter === 'ALL' || s.day_of_week === selectedDayFilter)
+
   return (
     <PlanFeatureGuard feature="turnos_fijos" featureTitle="Turnos Fijos y Abonados">
       <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-purple-400 font-semibold text-xs tracking-wider uppercase mb-1">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-wider uppercase mb-1">
             <Repeat className="w-4 h-4" />
             Abonados Recurrentes del Club
           </div>
@@ -424,7 +437,7 @@ export default function TurnosFijosPage() {
             variant="outline"
             onClick={handleCheckOverdueAndRelease}
             disabled={submitting}
-            className="flex-1 sm:flex-none border-slate-800 bg-slate-900 text-slate-300 hover:text-amber-400 text-xs gap-1.5 min-h-10 rounded-xl"
+            className="flex-1 sm:flex-none border-slate-800 bg-slate-900 text-slate-300 hover:text-amber-400 text-xs gap-1.5 min-h-10 rounded-xl cursor-pointer"
           >
             <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
             <span>Auditar Vencimientos</span>
@@ -432,7 +445,7 @@ export default function TurnosFijosPage() {
 
           <Button
             onClick={() => setIsModalOpen(true)}
-            className="flex-1 sm:flex-none bg-purple-600 hover:bg-purple-500 text-white font-bold gap-2 shadow-lg shadow-purple-950/40 rounded-xl text-xs min-h-10"
+            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 shadow-lg shadow-emerald-950/40 rounded-xl text-xs min-h-10 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Abonado Fijo</span>
@@ -446,7 +459,7 @@ export default function TurnosFijosPage() {
           <div className="text-slate-400 text-xs font-medium">Abonados Activos</div>
           <div className="text-2xl font-extrabold text-white mt-1 flex items-baseline gap-2">
             <span>{activeSlots.length}</span>
-            <span className="text-xs text-purple-400 font-medium">turnos semanales fijos</span>
+            <span className="text-xs text-emerald-400 font-medium">turnos semanales fijos</span>
           </div>
         </Card>
 
@@ -459,25 +472,64 @@ export default function TurnosFijosPage() {
         </Card>
 
         <Card className="bg-slate-900/60 border-slate-800 p-4 rounded-2xl">
-          <div className="text-slate-400 text-xs font-medium">Corte Automático por Falta de Pago</div>
-          <div className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-            Si el abonado no registra su pago antes del día límite configurado, el turno se libera a la grilla pública.
+          <div className="text-slate-400 text-xs font-medium">Abonos con Cobro Pendiente</div>
+          <div className="text-2xl font-extrabold mt-1 flex items-baseline gap-2">
+            <span className={overdueSlots.length > 0 ? 'text-rose-400' : 'text-emerald-400'}>
+              {overdueSlots.length}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">
+              {overdueSlots.length > 0 ? `vencidos (${formatARS(overdueDebt)})` : 'todos al día'}
+            </span>
           </div>
         </Card>
+      </div>
+
+      {/* Filtros por Día de la Semana */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setSelectedDayFilter('ALL')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 ${
+            selectedDayFilter === 'ALL'
+              ? 'bg-emerald-600 text-white font-bold shadow-xs'
+              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+          }`}
+        >
+          Todos ({slots.length})
+        </button>
+        {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+          const count = slots.filter(s => s.day_of_week === d).length
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setSelectedDayFilter(d)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 ${
+                selectedDayFilter === d
+                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {DAYS_NAME[d]} ({count})
+            </button>
+          )
+        })}
       </div>
 
       {/* Listado de Turnos Fijos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading && slots.length === 0 ? (
           <div className="col-span-full flex justify-center py-12">
-            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
           </div>
-        ) : slots.length === 0 ? (
+        ) : displayedSlots.length === 0 ? (
           <div className="col-span-full text-center py-12 text-slate-400 text-sm">
-            No hay turnos fijos registrados. Hacé click en &quot;Nuevo Abonado Fijo&quot; para dar de alta turnos recurrentes.
+            {slots.length === 0
+              ? 'No hay turnos fijos registrados. Hacé click en "Nuevo Abonado Fijo" para dar de alta turnos recurrentes.'
+              : 'No hay abonados para el día seleccionado.'}
           </div>
         ) : (
-          slots.map((slot) => {
+          displayedSlots.map((slot) => {
             const courtName = slot.court?.name || dbCourts.find(c => c.id === slot.court_id)?.name || 'Cancha'
             const isPaused = slot.status !== 'ACTIVE'
             const waMsg = `Hola ${slot.customer_name}, te escribimos desde el club sobre tu abono semanal de los ${DAYS_NAME[slot.day_of_week]} a las ${slot.start_time} hs en ${courtName}. Recordá que el día de corte de pago mensual es el ${slot.payment_due_day}.`
@@ -487,12 +539,12 @@ export default function TurnosFijosPage() {
               <Card 
                 key={slot.id} 
                 className={`border-slate-800 bg-slate-900/70 rounded-2xl overflow-hidden transition-all ${
-                  isPaused ? 'opacity-60 grayscale' : 'hover:border-purple-500/40 shadow-lg'
+                  isPaused ? 'opacity-60 grayscale' : 'hover:border-emerald-500/40 shadow-lg'
                 }`}
               >
                 <CardHeader className="pb-3 border-b border-slate-800/80 bg-slate-950/40">
                   <div className="flex items-center justify-between">
-                    <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-xs font-bold">
+                    <Badge className="bg-slate-800 text-slate-200 border-slate-700 text-xs font-bold">
                       {slot.day_of_week === 0 ? 'Domingos' : slot.day_of_week === 6 ? 'Sábados' : DAYS_NAME[slot.day_of_week]}
                     </Badge>
                     <button

@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, Layers, CheckCircle2, XCircle, Zap, Shield, Loader2, Pencil, Clock, Trash2, Megaphone, Share2, MapPin, AlertTriangle } from 'lucide-react'
-import { InstagramIcon, FacebookIcon, TikTokIcon } from '@/components/icons/social-icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +29,7 @@ import {
   getClubCourts,
   getTenantClubInfo,
 } from '@/actions/club.actions'
-import { extractSocialHandle, type ClubSocialLinks, type ClubServicesAndLocationData } from '@/config/clubs-catalog'
+import { type ClubSocialLinks, type ClubServicesAndLocationData } from '@/config/clubs-catalog'
 import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
 import { ClubHighlightModal } from '@/components/dashboard/club-highlight-modal'
 import { ClubSocialLinksModal } from '@/components/dashboard/club-social-links-modal'
@@ -72,6 +71,16 @@ function formatSport(sport?: string | null) {
   if (sport === 'PADEL') return 'Pádel'
   if (sport === 'BASQUET' || sport === 'BASKET') return 'Básquet'
   return sport
+}
+
+function getSportBadgeStyle(sport?: string | null) {
+  if (!sport) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: '🏟️' }
+  const s = sport.toUpperCase()
+  if (s.includes('FUTBOL')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: '⚽' }
+  if (s.includes('PADEL')) return { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30', icon: '🎾' }
+  if (s.includes('TENIS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30', icon: '🎾' }
+  if (s.includes('BASKET') || s.includes('BASQUET')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30', icon: '🏀' }
+  return { bg: 'bg-slate-800', text: 'text-slate-300', border: 'border-slate-700', icon: '🏆' }
 }
 
 // Caché en memoria por tenant_id para renderizado instantáneo (0ms)
@@ -144,7 +153,28 @@ export default function CanchasPage() {
   const [slotDuration, setSlotDuration] = useState<SlotDuration>('MIN_90')
   const [isCovered, setIsCovered] = useState(false)
   const [surface, setSurface] = useState<CourtSurface>('CESPED_SINTETICO')
+  const [sportFilter, setSportFilter] = useState<string>('ALL')
   const [loading, setLoading] = useState(false)
+
+  const availableSports = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>()
+    for (const c of courts) {
+      if (!c.sport) continue
+      const key = c.sport
+      const existing = map.get(key)
+      if (existing) {
+        existing.count++
+      } else {
+        map.set(key, { key, label: formatSport(c.sport), count: 1 })
+      }
+    }
+    return Array.from(map.values())
+  }, [courts])
+
+  const filteredCourts = useMemo(() => {
+    if (sportFilter === 'ALL') return courts
+    return courts.filter(c => c.sport === sportFilter)
+  }, [courts, sportFilter])
 
   // Estados para Editar Cancha
   const [editingCourt, setEditingCourt] = useState<Court | null>(null)
@@ -575,209 +605,52 @@ export default function CanchasPage() {
         </div>
       )}
 
-      {/* Banner de Horario Operativo del Club */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-            <Clock className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white">Horario Operativo del Club:</span>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2 py-0.5">
-                {schedule.opening_time} a {schedule.closing_time} hs
-              </Badge>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Los turnos del calendario y del portal público de reservas se generan estrictamente dentro de este rango.
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsScheduleModalOpen(true)}
-          className="text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
-        >
-          Editar Horario
-        </Button>
-      </div>
-
-      {/* Banner de Información Destacada para Jugadores */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-amber-500/30">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-            <Megaphone className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-white">Anuncio Destacado para Jugadores:</span>
-              {highlightInfo.isHighlightActive && highlightInfo.highlightText ? (
-                <>
-                  <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-2 py-0.5">
-                    {highlightInfo.highlightBadge || '🔥 Promoción Especial'}
-                  </Badge>
-                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Visible en reservas
-                  </span>
-                </>
-              ) : (
-                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
-                  Desactivado / Sin anuncio
-                </Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
-              {highlightInfo.highlightText || 'Llamá la atención de los jugadores con ofertas, torneos, novedades o beneficios en tu página pública.'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsHighlightModalOpen(true)}
-            className="text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
+      {/* Filtros rápidos por disciplina */}
+      {availableSports.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="text-xs font-semibold text-slate-400 mr-1 shrink-0">Filtrar por deporte:</span>
+          <button
+            onClick={() => setSportFilter('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+              sportFilter === 'ALL'
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+            }`}
           >
-            {highlightInfo.highlightText ? 'Editar Anuncio' : 'Crear Anuncio'}
-          </Button>
+            Todas ({courts.length})
+          </button>
+          {availableSports.map((sp) => {
+            const badgeStyle = getSportBadgeStyle(sp.key)
+            return (
+              <button
+                key={sp.key}
+                onClick={() => setSportFilter(sp.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                  sportFilter === sp.key
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{badgeStyle.icon}</span>
+                <span>{sp.label} ({sp.count})</span>
+              </button>
+            )
+          })}
         </div>
-      </div>
+      )}
 
-      {/* Banner de Redes Sociales del Club para Jugadores */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-pink-500/30">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-pink-500/10 text-pink-400 border border-pink-500/20 shrink-0">
-            <Share2 className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-white">Redes Sociales del Club (Jugadores):</span>
-              {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {socialLinks.instagram && (
-                    <Badge className="bg-pink-500/20 text-pink-300 border border-pink-500/30 text-[10px] px-2 py-0.5 gap-1">
-                      <InstagramIcon className="w-3 h-3 text-pink-400" />
-                      <span>{extractSocialHandle('instagram', socialLinks.instagram) || 'Instagram'}</span>
-                    </Badge>
-                  )}
-                  {socialLinks.facebook && (
-                    <Badge className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] px-2 py-0.5 gap-1">
-                      <FacebookIcon className="w-3 h-3 text-blue-400" />
-                      <span>{extractSocialHandle('facebook', socialLinks.facebook) || 'Facebook'}</span>
-                    </Badge>
-                  )}
-                  {socialLinks.tiktok && (
-                    <Badge className="bg-slate-800 text-slate-200 border border-slate-700 text-[10px] px-2 py-0.5 gap-1">
-                      <TikTokIcon className="w-3 h-3 text-cyan-400" />
-                      <span>{extractSocialHandle('tiktok', socialLinks.tiktok) || 'TikTok'}</span>
-                    </Badge>
-                  )}
-                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 ml-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Visible en reservas
-                  </span>
-                </div>
-              ) : (
-                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
-                  Sin redes vinculadas
-                </Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
-              {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok
-                ? 'Los jugadores pueden hacer clic directamente en tus perfiles de redes sociales en tu página de reservas.'
-                : 'Sumá los links de Instagram, Facebook y TikTok de tu club para que los jugadores puedan ver tus fotos, torneos y novedades.'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsSocialLinksModalOpen(true)}
-            className="text-xs text-pink-400 hover:text-pink-300 hover:bg-pink-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
-          >
-            {socialLinks.instagram || socialLinks.facebook || socialLinks.tiktok ? 'Editar Redes' : 'Conectar Redes'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Banner de Servicios y Ubicación (Google Maps) para Jugadores */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-sky-500/30">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
-            <MapPin className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-white">Servicios e Instalaciones y Google Maps:</span>
-              {Object.values(servicesLocation.services).some(Boolean) || servicesLocation.location.address ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {servicesLocation.services.parking && (
-                    <Badge className="bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] px-2 py-0.5">
-                      🅿️ Estacionamiento
-                    </Badge>
-                  )}
-                  {servicesLocation.services.cantina && (
-                    <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-2 py-0.5">
-                      ☕ Cantina / Bar
-                    </Badge>
-                  )}
-                  {servicesLocation.services.showers && (
-                    <Badge className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] px-2 py-0.5">
-                      🚿 Duchas
-                    </Badge>
-                  )}
-                  {servicesLocation.services.cameras && (
-                    <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] px-2 py-0.5">
-                      📹 Cámaras Partidos
-                    </Badge>
-                  )}
-                  {servicesLocation.location.address && (
-                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] px-2 py-0.5">
-                      📍 {servicesLocation.location.address}
-                    </Badge>
-                  )}
-                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1 ml-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Visible en reservas
-                  </span>
-                </div>
-              ) : (
-                <Badge variant="outline" className="text-slate-400 border-slate-700 text-xs px-2 py-0.5">
-                  Sin servicios ni dirección configurada
-                </Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-300 mt-1 line-clamp-1 max-w-2xl">
-              {servicesLocation.location.address || Object.values(servicesLocation.services).some(Boolean)
-                ? 'Los jugadores pueden ver los servicios disponibles y la ubicación exacta con mapa interactivo de Google Maps y Waze.'
-                : 'Indicá si ofrecés estacionamiento, cantina, duchas, cámaras para ver partidos y cargá la dirección con mapa de Google Maps.'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsServicesLocationModalOpen(true)}
-            className="text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-950/40 h-8 px-2.5 shrink-0 cursor-pointer"
-          >
-            {servicesLocation.location.address || Object.values(servicesLocation.services).some(Boolean) ? 'Editar Servicios y Mapa' : 'Configurar'}
-          </Button>
-        </div>
-      </div>
-
+      {/* Grilla de Canchas en primer plano */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {courts.map((court) => (
+        {filteredCourts.map((court) => {
+          const sportBadge = getSportBadgeStyle(court.sport)
+          return (
           <Card key={court.id} className="relative overflow-hidden border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <Badge variant="outline" className="mb-2">
-                    {formatSport(court.sport)}
+                  <Badge variant="outline" className={`mb-2 gap-1 font-semibold ${sportBadge.bg} ${sportBadge.text} ${sportBadge.border}`}>
+                    <span>{sportBadge.icon}</span>
+                    <span>{formatSport(court.sport)}</span>
                   </Badge>
                   <CardTitle className="text-base">{court.name}</CardTitle>
                 </div>
@@ -869,7 +742,7 @@ export default function CanchasPage() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        )})}
       </div>
 
       {/* Modal Editar Cancha */}

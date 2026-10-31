@@ -1461,19 +1461,6 @@ export default function CantinaPage() {
             </span>
           )}
         </button>
-
-        <div className="ml-auto shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsTableQrOpen(true)}
-            className="text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 rounded-xl gap-1.5 h-10 px-3.5 cursor-pointer font-medium"
-            title="Generar e imprimir cartel con código QR de la Cantina"
-          >
-            <QrCode className="w-4 h-4 text-emerald-400" />
-            <span>Código QR Cantina</span>
-          </Button>
-        </div>
       </div>
 
       {/* VISTA 1: COMANDAS EN VIVO */}
@@ -2214,8 +2201,8 @@ export default function CantinaPage() {
                         </div>
                       </div>
 
-                      {/* Lista Vertical de Artículos: Uno abajo del otro con letra clara y prolija */}
-                      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 divide-y divide-slate-800/60 overflow-hidden shadow-sm">
+                      {/* Grilla Táctil de Artículos (Grid 1 a 3 columnas) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {group.items.map((p) => {
                           const isOutOfStock = p.stock <= 0
                           const isLowStock = p.stock > 0 && p.stock < 10
@@ -2224,36 +2211,34 @@ export default function CantinaPage() {
                             <div
                               key={p.id}
                               onClick={() => addToCart(p)}
-                              className="px-4 py-3 sm:px-5 sm:py-3.5 flex items-center justify-between gap-4 hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-emerald-500/50 hover:bg-slate-800/40 transition-all cursor-pointer group flex flex-col justify-between shadow-2xs gap-3"
                             >
-                              {/* Nombre del Artículo y Estado de Stock */}
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors tracking-wide truncate">
+                              <div className="min-w-0">
+                                <div className="text-xs sm:text-sm font-bold text-slate-100 group-hover:text-emerald-300 transition-colors tracking-tight line-clamp-2">
                                   {p.name}
                                 </div>
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="mt-1">
                                   {isOutOfStock ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-400">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-400">
                                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                       Sin stock
                                     </span>
                                   ) : isLowStock ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400">
                                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                                       Stock bajo: {p.stock} u.
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
-                                      Stock disponible: {p.stock} u.
+                                      Stock: {p.stock} u.
                                     </span>
                                   )}
                                 </div>
                               </div>
 
-                              {/* Precio y Botón (+) */}
-                              <div className="flex items-center gap-3 shrink-0">
-                                <span className="font-extrabold text-emerald-400 text-sm sm:text-base font-mono">
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                                <span className="font-extrabold text-emerald-400 text-sm font-mono">
                                   {formatARS(p.price)}
                                 </span>
                                 <Button
@@ -2263,9 +2248,10 @@ export default function CantinaPage() {
                                     e.stopPropagation()
                                     addToCart(p)
                                   }}
-                                  className="h-8 w-8 p-0 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-500 transition-all"
+                                  className="h-7 w-7 p-0 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 group-hover:bg-emerald-600 group-hover:text-white transition-all cursor-pointer"
+                                  title="Agregar al comprobante"
                                 >
-                                  <Plus className="w-4 h-4" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </Button>
                               </div>
                             </div>

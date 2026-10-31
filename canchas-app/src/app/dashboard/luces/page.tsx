@@ -18,6 +18,8 @@ import {
   ShieldAlert,
   Bot,
   SlidersHorizontal,
+  PowerOff,
+  X,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -83,6 +85,8 @@ export default function LucesPage() {
   const [preMinutes, setPreMinutes] = useState(5)
   const [postMinutes, setPostMinutes] = useState(5)
   const [savingConfig, setSavingConfig] = useState(false)
+  const [showCloudBanner, setShowCloudBanner] = useState(true)
+  const [turningOffAll, setTurningOffAll] = useState(false)
   const [metrics, setMetrics] = useState<{ hoursSaved: number; estimatedSavingsArs: number }>({
     hoursSaved: 0,
     estimatedSavingsArs: 0,
@@ -281,6 +285,50 @@ export default function LucesPage() {
     }
   }
 
+  const handleTurnOffAllLights = async () => {
+    const activeCourts = courts.filter(c => c.is_on)
+    if (activeCourts.length === 0) {
+      toast.info('No hay luces encendidas actualmente')
+      return
+    }
+
+    setTurningOffAll(true)
+    setCourts(prev => prev.map(c => ({
+      ...c,
+      is_on: false,
+      last_state_change: c.is_on ? 'Apagado general ahora' : c.last_state_change
+    })))
+    toast.success(`Apagando reflectores de ${activeCourts.length} ${activeCourts.length === 1 ? 'cancha' : 'canchas'}...`)
+
+    try {
+      await Promise.all(
+        activeCourts.map(c =>
+          toggleCourtLight(
+            c.court_id,
+            'off',
+            c.relay_ip_or_id,
+            c.relay_type || 'SHELLY_CLOUD',
+            0,
+            c.cloud_config
+          )
+        )
+      )
+    } catch {
+      toast.error('Error al despachar comando masivo de apagado')
+    } finally {
+      setTurningOffAll(false)
+    }
+  }
+
+  const handleSetAllAuto = (targetAuto: boolean) => {
+    setCourts(prev => prev.map(c => ({ ...c, is_auto_mode: targetAuto })))
+    toast.success(
+      targetAuto
+        ? 'Modo automático activado en todas las canchas'
+        : 'Modo manual fijado en todas las canchas'
+    )
+  }
+
   const activeLightsCount = courts.filter(c => c.is_on).length
 
   return (
@@ -298,7 +346,34 @@ export default function LucesPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {activeLightsCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={turningOffAll}
+                onClick={handleTurnOffAllLights}
+                className="border-rose-500/40 bg-rose-950/30 text-rose-300 hover:bg-rose-900/50 text-xs font-bold gap-1.5 h-9"
+              >
+                {turningOffAll ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <PowerOff className="w-3.5 h-3.5 text-rose-400" />
+                )}
+                <span>Apagar Todas ({activeLightsCount})</span>
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSetAllAuto(!courts.every(c => c.is_auto_mode))}
+              className="border-slate-800 bg-slate-900/80 text-slate-200 hover:text-white text-xs font-semibold gap-1.5 h-9"
+            >
+              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{courts.every(c => c.is_auto_mode) ? 'Desactivar Auto Masivo' : 'Activar Auto en Todas'}</span>
+            </Button>
+
             <Button
               variant="outline"
               size="sm"
@@ -306,8 +381,10 @@ export default function LucesPage() {
               className="border-slate-800 bg-slate-900/80 text-slate-200 hover:text-white text-xs font-semibold gap-1.5 h-9"
             >
               <FileText className="w-4 h-4 text-emerald-400" />
-              <span>Diagrama de Conexión Física</span>
+              <span className="hidden md:inline">Diagrama de Conexión</span>
+              <span className="md:hidden">Diagrama</span>
             </Button>
+
             <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs py-1.5 px-3 flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>IoT Operativo</span>
@@ -315,21 +392,25 @@ export default function LucesPage() {
           </div>
         </div>
 
-        {/* Panel Informativo */}
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-start sm:items-center gap-2.5">
-            <Cloud className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
-            <div>
-              <p className="font-bold text-white">Integración en la Nube y Red Local</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Compatible con Shelly Cloud REST API (sin abrir puertos en tu router), Sonoff eWeLink y relés Tasmota locales.
+        {/* Panel Informativo Colapsable */}
+        {showCloudBanner && (
+          <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 text-xs flex items-center justify-between gap-3 relative transition-all">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
+              <p className="text-[11px] text-slate-300 truncate sm:whitespace-normal">
+                <span className="font-bold text-white">Integración IoT Cloud &amp; LAN: </span>
+                Compatible con Shelly Cloud REST API (sin abrir puertos en router), Sonoff eWeLink y relés Tasmota locales.
               </p>
             </div>
+            <button
+              onClick={() => setShowCloudBanner(false)}
+              className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 shrink-0 transition-colors"
+              title="Cerrar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-950/40 text-[11px] shrink-0 font-medium">
-            Sincronización Automática con Calendario
-          </Badge>
-        </div>
+        )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -394,21 +475,30 @@ export default function LucesPage() {
                 key={court.court_id} 
                 className={`transition-all duration-300 border rounded-2xl overflow-hidden ${
                   court.is_on 
-                    ? 'bg-slate-900/90 border-amber-500/50 shadow-lg shadow-amber-950/20' 
+                    ? 'bg-gradient-to-b from-amber-950/25 via-slate-900/95 to-slate-900 border-amber-500/50 ring-1 ring-amber-500/30 shadow-xl shadow-amber-950/40' 
                     : 'bg-slate-900/40 border-slate-800/80 hover:border-slate-700'
                 }`}
               >
                 <CardHeader className="pb-3 border-b border-slate-800/60">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                        court.is_on ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                        court.is_on ? 'bg-amber-500/25 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.35)]' : 'bg-slate-800 text-slate-400'
                       }`}>
-                        <Lightbulb className="w-5 h-5" />
+                        <Lightbulb className={`w-5 h-5 ${court.is_on ? 'animate-pulse' : ''}`} />
                       </div>
                       <div>
                         <CardTitle className="text-base font-bold text-white">{court.court_name}</CardTitle>
-                        <span className="font-mono text-[11px] text-slate-400">{court.relay_ip_or_id}</span>
+                        {court.relay_ip_or_id === 'Sin relé vinculado' ? (
+                          <button
+                            onClick={() => openConfigModal(court)}
+                            className="font-mono text-[11px] text-amber-400/90 hover:text-amber-300 underline flex items-center gap-1 mt-0.5"
+                          >
+                            <span>+ Vincular Relé IoT</span>
+                          </button>
+                        ) : (
+                          <span className="font-mono text-[11px] text-slate-400">{court.relay_ip_or_id}</span>
+                        )}
                       </div>
                     </div>
 
@@ -480,7 +570,7 @@ export default function LucesPage() {
                         }`}
                       >
                         <Power className="w-4 h-4" />
-                        <span>{court.is_on ? 'Apagar' : 'Encender'}</span>
+                        <span>{court.is_on ? 'Apagar Luz' : 'Encender'}</span>
                       </Button>
                     </div>
                   </div>

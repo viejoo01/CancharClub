@@ -69,88 +69,45 @@ export function OnboardingChecklist({
     } catch {}
   }
 
-  const handleRestore = () => {
-    setDismissed(false)
-    try {
-      localStorage.removeItem(`canchar_checklist_dismissed_${tenantSlug}`)
-    } catch {}
-  }
-
   const hasCourts = courtsCount > 0
   const stepsCompleted = (hasCourts ? 1 : 0) + (hasBankConfigured ? 1 : 0) + 1 // Horarios default 8 a 00 siempre activos
   const totalSteps = 3
   const isFullyConfigured = stepsCompleted === totalSteps
   const [expanded, setExpanded] = useState(false)
 
-  // Si está minimizado / cerrado
+  // Si está minimizado / cerrado: no ocupa espacio vertical en la grilla
   if (dismissed) {
-    return (
-      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 text-xs shadow-xs ${className}`}>
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-slate-600 dark:text-slate-300 font-medium">
-            Link público de tu club: <strong className="text-slate-900 dark:text-white font-mono font-bold">{tenantSlug}</strong>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleCopyLink}
-            className="h-8 px-2.5 text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl gap-1.5 cursor-pointer font-semibold"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? 'Copiado' : 'Copiar'}</span>
-          </Button>
-          <a
-            href={`/club/${tenantSlug}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline px-2"
-          >
-            <span>Ver portal</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-          <button
-            type="button"
-            onClick={handleRestore}
-            className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 ml-1 underline cursor-pointer"
-          >
-            Ver checklist
-          </button>
-        </div>
-      </div>
-    )
+    return null
   }
 
-  // Si ya está 100% configurado y no fue expandido manualmente: modo Hero Compacto
+  // Si ya está 100% configurado y no fue expandido manualmente: modo Hero Compacto con botón de cerrar
   if (isFullyConfigured && !expanded) {
     return (
-      <div className={`mb-4 p-3.5 sm:px-5 sm:py-3.5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-sm transition-all flex flex-col sm:flex-row items-center justify-between gap-3 ${className}`}>
-        <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-            <Share2 className="w-4 h-4" />
+      <div className={`mb-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-white/[0.08] shadow-2xs transition-all flex flex-col sm:flex-row items-center justify-between gap-2.5 backdrop-blur-md ${className}`}>
+        <div className="flex items-center gap-2.5 w-full sm:w-auto min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+            <Share2 className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 dark:text-white">Tu Link Público para Jugadores</span>
-              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 text-[10px] px-2 py-0 font-bold">
-                Público y Activo
+              <span className="text-xs font-bold text-slate-900 dark:text-white">Link Público para Jugadores</span>
+              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 text-[9px] px-1.5 py-0 font-bold">
+                Activo
               </Badge>
             </div>
-            <p className="text-xs text-emerald-700 dark:text-emerald-400 font-mono font-medium truncate max-w-sm sm:max-w-md">
+            <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono font-medium truncate max-w-sm sm:max-w-md">
               {publicUrl}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end shrink-0">
           <Button
             size="sm"
             onClick={handleCopyLink}
-            className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-sm cursor-pointer"
+            className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1 shadow-2xs cursor-pointer"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
             <span>{copied ? '¡Copiado!' : 'Copiar Link'}</span>
           </Button>
 
@@ -158,20 +115,21 @@ export function OnboardingChecklist({
             size="sm"
             variant="outline"
             asChild
-            className="h-8 px-3 rounded-xl border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold gap-1.5 cursor-pointer"
+            className="h-7 px-2.5 rounded-lg border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-800 dark:text-slate-200 text-xs font-semibold gap-1 cursor-pointer"
           >
             <a href={`/club/${tenantSlug}`} target="_blank" rel="noreferrer">
               <span>Probar Portal</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3 h-3" />
             </a>
           </Button>
 
           <button
             type="button"
-            onClick={() => setExpanded(true)}
-            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 ml-1 underline cursor-pointer"
+            onClick={handleDismiss}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer ml-1"
+            title="Ocultar aviso para ganar espacio en la grilla"
           >
-            Ver checklist (3/3)
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

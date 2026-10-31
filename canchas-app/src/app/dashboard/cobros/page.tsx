@@ -14,7 +14,10 @@ import {
   CreditCard,
   Link2,
   Unlink,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Info
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -66,6 +69,10 @@ export default function CobrosConfigPage() {
   const [mpPublicKeyInput, setMpPublicKeyInput] = useState('')
   const [savingMp, setSavingMp] = useState(false)
   const [disconnectingMp, setDisconnectingMp] = useState(false)
+
+  // Selector de Sección y Banner
+  const [activeCobroTab, setActiveCobroTab] = useState<'BANK' | 'MERCADOPAGO'>('BANK')
+  const [showGuaranteeBanner, setShowGuaranteeBanner] = useState(false)
 
   const draftKey = tenantId ? `canchar_draft_bank_settings_${tenantId}` : 'canchar_draft_bank_settings'
 
@@ -274,23 +281,73 @@ export default function CobrosConfigPage() {
         </p>
       </div>
 
-      {/* Banner de Garantía y Transparencia */}
-      <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/30 flex items-start gap-3.5 shadow-md">
-        <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
-          <ShieldCheck className="w-5 h-5" />
+      {/* Botón / Toggle para Banner de Garantía y Transparencia */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setShowGuaranteeBanner(!showGuaranteeBanner)}
+          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-0.5"
+        >
+          <Info className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{showGuaranteeBanner ? 'Ocultar información de garantía' : 'Garantía CancharClub: 100% de las señas directo a tu cuenta'}</span>
+          {showGuaranteeBanner ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {showGuaranteeBanner && (
+        <div className="p-4 rounded-2xl bg-linear-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/30 flex items-start gap-3.5 shadow-md animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 text-xs">
+            <h4 className="font-extrabold text-white text-sm">
+              Tus señas van directamente a tu cuenta, sin intermediarios
+            </h4>
+            <p className="text-slate-300 leading-relaxed">
+              <strong>CancharClub nunca retiene ni toca la recaudación de tus canchas.</strong> Cuando un jugador abona una seña por transferencia o Mercado Pago, el dinero se acredita íntegramente en tu cuenta configurada. La plataforma solo te cobra el abono mensual fijo del software.
+            </p>
+          </div>
         </div>
-        <div className="space-y-1 text-xs">
-          <h4 className="font-extrabold text-white text-sm">
-            Tus señas van directamente a tu cuenta, sin intermediarios
-          </h4>
-          <p className="text-slate-300 leading-relaxed">
-            <strong>CancharClub nunca retiene ni toca la recaudación de tus canchas.</strong> Cuando un jugador abona una seña por transferencia, el dinero se acredita íntegramente en tu cuenta configurada. La plataforma solo te cobra el abono mensual fijo del software.
-          </p>
-        </div>
+      )}
+
+      {/* Selector de Medios de Cobro (Pestañas) */}
+      <div className="inline-flex rounded-xl bg-slate-900/80 p-1 border border-slate-800 text-xs font-semibold">
+        <button
+          type="button"
+          onClick={() => setActiveCobroTab('BANK')}
+          className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+            activeCobroTab === 'BANK'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>Transferencias Bancarias (Alias / CBU)</span>
+          {isSavedInDb && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCobroTab('MERCADOPAGO')}
+          className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+            activeCobroTab === 'MERCADOPAGO'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          <span>Mercado Pago Online</span>
+          {mpConnected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+          )}
+        </button>
       </div>
 
       {/* ─── 1. DATOS BANCARIOS (TRANSFERENCIA DIRECTA CON CBU/ALIAS) ─── */}
-      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg">
+      {activeCobroTab === 'BANK' && (
+      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg animate-in fade-in duration-200">
         <CardHeader className="border-b border-slate-800 pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -372,13 +429,29 @@ export default function CobrosConfigPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="cbu" className="text-xs font-semibold text-slate-300">
-                  CBU o CVU (22 dígitos)
+                <Label htmlFor="cbu" className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>CBU o CVU (22 dígitos)</span>
+                  {cbu.trim().length > 0 && (
+                    <span className={`text-[10px] font-mono ${
+                      cbu.replace(/\D/g, '').length === 22
+                        ? 'text-emerald-400 font-bold'
+                        : 'text-amber-400 font-semibold'
+                    }`}>
+                      {cbu.replace(/\D/g, '').length === 22
+                        ? '✓ 22 dígitos correctos'
+                        : `${cbu.replace(/\D/g, '').length}/22 dígitos`}
+                    </span>
+                  )}
                 </Label>
                 <Input
                   id="cbu"
                   value={cbu}
-                  onChange={handleFieldChange('cbu', setCbu)}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/[^0-9]/g, '')
+                    setCbu(clean)
+                    setHasUnsavedChanges(true)
+                  }}
+                  maxLength={22}
                   placeholder="0000003100098765432101"
                   className="h-10 rounded-xl bg-slate-950 border-slate-800 text-xs font-mono text-slate-200 focus:border-emerald-500"
                 />
@@ -538,7 +611,7 @@ export default function CobrosConfigPage() {
               <Button
                 type="submit"
                 disabled={savingBank}
-                className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-950/40 gap-1.5"
+                className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-950/40 gap-1.5 cursor-pointer"
               >
                 {savingBank ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 <span>Guardar Datos Bancarios</span>
@@ -547,9 +620,11 @@ export default function CobrosConfigPage() {
           </form>
         </CardContent>
       </Card>
+      )}
 
       {/* ─── 2. MERCADO PAGO DEL CLUB (SEÑAS AUTOMÁTICAS 24HS) ─── */}
-      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg">
+      {activeCobroTab === 'MERCADOPAGO' && (
+      <Card className="border-slate-800 bg-slate-900/80 rounded-2xl overflow-hidden shadow-lg animate-in fade-in duration-200">
         <CardHeader className="border-b border-slate-800 pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -725,6 +800,7 @@ export default function CobrosConfigPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   )
 }

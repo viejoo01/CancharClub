@@ -265,12 +265,12 @@ export default function ReportesPage() {
                 <AlertTriangle className="w-4 h-4 text-rose-400" />
               </div>
               <div className="text-2xl font-black text-rose-400">
-                {data.deadHoursCount} franjas
+                {data.totalBookingsPeriod >= 15 ? `${data.deadHoursCount} franjas` : 'Calibrando'}
               </div>
               <p className="text-[11px] text-slate-400">
-                {data.totalBookingsPeriod >= 5
+                {data.totalBookingsPeriod >= 15
                   ? 'Ocupación crítica menor al 25%'
-                  : 'Sin reservas suficientes para evaluar'}
+                  : 'Requiere +15 reservas para calibrar'}
               </p>
             </Card>
 
@@ -280,14 +280,14 @@ export default function ReportesPage() {
                 <DollarSign className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl font-black text-white">
-                {data.projectedRevenueRecoveryArs > 0
+                {data.totalBookingsPeriod >= 15 && data.projectedRevenueRecoveryArs > 0
                   ? `+${formatARS(data.projectedRevenueRecoveryArs)}`
                   : '$ 0'}
               </div>
               <p className="text-[11px] text-emerald-300/80 font-medium">
-                {data.projectedRevenueRecoveryArs > 0
+                {data.totalBookingsPeriod >= 15 && data.projectedRevenueRecoveryArs > 0
                   ? 'Recuperación mensual estimada'
-                  : 'Se calculará al registrar reservas'}
+                  : 'Se proyecta con +15 turnos registrados'}
               </p>
             </Card>
           </div>
@@ -308,7 +308,7 @@ export default function ReportesPage() {
               {/* Leyenda */}
               <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-300 overflow-x-auto pb-1">
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded bg-slate-800 border border-slate-700" />
+                  <span className="w-3 h-3 rounded bg-slate-900/60 border border-slate-800" />
                   0% Sin turnos
                 </span>
                 <span className="flex items-center gap-1">
@@ -363,7 +363,7 @@ export default function ReportesPage() {
                       )
                       const pct = cell ? cell.occupancyPct : 0
                       const count = cell ? cell.totalBookings : 0
-                      const isDead = cell ? cell.isDeadHour : false
+                      const isDead = Boolean(cell && cell.isDeadHour && count > 0 && data.totalBookingsPeriod >= 15)
 
                       return (
                         <div
@@ -372,9 +372,11 @@ export default function ReportesPage() {
                             pct
                           )}`}
                         >
-                          <span className="font-black text-sm">{pct}%</span>
+                          <span className={`font-black text-sm ${count === 0 ? 'text-slate-500 font-medium' : ''}`}>
+                            {count === 0 ? '—' : `${pct}%`}
+                          </span>
                           <span className="text-[10px] opacity-75 font-medium">
-                            {count} {count === 1 ? 'turno' : 'turnos'}
+                            {count === 0 ? 'Sin turnos' : `${count} ${count === 1 ? 'turno' : 'turnos'}`}
                           </span>
                           {isDead && (
                             <span className="text-[9px] font-bold uppercase tracking-wider text-rose-400 mt-0.5">

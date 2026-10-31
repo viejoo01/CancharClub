@@ -769,12 +769,31 @@ export function CalendarGrid({
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault()
         router.push('/dashboard/cobros')
+      } else if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('canchar-toggle-executive-panel'))
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [router, selectedDate, scrollToCurrentTimeMarker])
+
+  // Listener para seleccionar un turno remotamente (ej: desde el Panel Ejecutivo)
+  useEffect(() => {
+    const handleSelectBooking = (e: Event) => {
+      const customEvent = e as CustomEvent<{ booking?: CalendarBooking; bookingId?: string }>
+      if (customEvent.detail?.booking) {
+        setSelectedBooking(customEvent.detail.booking)
+      } else if (customEvent.detail?.bookingId) {
+        const found = activeBookings.find((b) => b.id === customEvent.detail.bookingId)
+        if (found) setSelectedBooking(found)
+      }
+    }
+
+    window.addEventListener('canchar-select-booking', handleSelectBooking)
+    return () => window.removeEventListener('canchar-select-booking', handleSelectBooking)
+  }, [activeBookings])
 
   const [hoveredBookingId, setHoveredBookingId] = useState<string | null>(null)
 

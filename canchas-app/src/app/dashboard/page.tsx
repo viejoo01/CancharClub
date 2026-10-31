@@ -1,9 +1,11 @@
-import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
-import { DashboardDailySummary } from '@/components/dashboard/dashboard-daily-summary'
+import { ExecutiveSplitDashboard } from '@/components/dashboard/executive-split-dashboard'
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist'
+import type { CalendarBooking } from '@/components/dashboard/calendar-grid'
 import type { QuickBookingPriceRule } from '@/components/dashboard/quick-booking-modal'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
+import { getDailyCashReport } from '@/actions/analytics.actions'
+import { getDailyOrders } from '@/actions/cantina.actions'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import { getArgentinaTodayIso } from '@/lib/utils'
 import { cookies } from 'next/headers'
@@ -46,8 +48,8 @@ export default async function DashboardPage(props: {
     created_at?: string | null
   }
 
-  // Parallelize all independent data fetches
-  const [rawCourtsResult, bookings, schedule, priceRules, tenantResult] = await Promise.all([
+  // Parallelize all independent data fetches including cash reports and cantina orders
+  const [rawCourtsResult, bookings, schedule, priceRules, tenantResult, cashReport, dailyOrders] = await Promise.all([
     tenantId
       ? supabase
           .from('courts')
@@ -55,7 +57,7 @@ export default async function DashboardPage(props: {
           .eq('tenant_id', tenantId)
           .order('created_at', { ascending: true })
       : Promise.resolve({ data: [] as DbCourtRow[] }),
-    tenantId ? getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]> : Promise.resolve([] as CalendarBooking[]),
+    tenantId ? (getCalendarBookings(tenantId, today) as Promise<CalendarBooking[]>) : Promise.resolve([] as CalendarBooking[]),
     tenantId ? getClubSchedule(tenantId) : Promise.resolve(undefined),
     tenantId ? (getClubPriceRules(tenantId) as unknown as Promise<QuickBookingPriceRule[]>) : Promise.resolve([] as QuickBookingPriceRule[]),
     tenantId
@@ -65,6 +67,8 @@ export default async function DashboardPage(props: {
           .eq('id', tenantId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    tenantId ? getDailyCashReport(tenantId, today) : Promise.resolve(null),
+    tenantId ? getDailyOrders(tenantId, today) : Promise.resolve([]),
   ])
 
   const rawCourts = rawCourtsResult.data
@@ -87,17 +91,6 @@ export default async function DashboardPage(props: {
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-            Grilla de Turnos
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Visualización y control de reservas en tiempo real para todas las canchas.
-          </p>
-        </div>
-      </div>
-
       <OnboardingChecklist
         tenantSlug={tenantSlug}
         tenantName={tenantName}
@@ -105,24 +98,20 @@ export default async function DashboardPage(props: {
         hasBankConfigured={hasBankConfigured}
       />
 
-      <DashboardDailySummary
-        bookings={bookings as unknown as CalendarBooking[]}
+      <ExecutiveSplitDashboard
+        tenantId={tenantId || ''}
+        tenantSlug={tenantSlug}
+        tenantName={tenantName}
         courts={courts}
+        hasBankConfigured={hasBankConfigured}
+        initialBookings={bookings as unknown as CalendarBooking[]}
+        initialDate={today}
+        initialVenueId={activeVenueId}
+        initialSchedule={schedule}
         priceRules={priceRules}
-        dateIso={today}
+        cashReport={cashReport}
+        dailyOrders={dailyOrders}
       />
-
-      <div className="flex-1 min-h-0">
-        <CalendarGrid
-          tenantId={tenantId || ''}
-          courts={courts}
-          initialBookings={bookings as unknown as CalendarBooking[]}
-          initialDate={today}
-          initialVenueId={activeVenueId}
-          initialSchedule={schedule}
-          priceRules={priceRules}
-        />
-      </div>
     </div>
   )
 }

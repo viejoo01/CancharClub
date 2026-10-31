@@ -934,7 +934,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }
 
   const handleOpenEditUser = (user: ClubUser) => {
-    setEditingUser({ ...user, password: '' })
+    setEditingUser({ ...user, password: user.password || '' })
     setIsEditUserModalOpen(true)
   }
 
@@ -2737,11 +2737,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                   if (user.password) {
                                     handleTogglePassword(user.id)
                                   } else {
-                                    toast.info(`La contraseña de ${user.name} fue elegida por el dueño y está activa (cifrada con bcrypt). Para entrar a su cuenta usá el botón "Probar".`)
+                                    handleOpenEditUser(user)
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave') : 'Contraseña definida por el dueño'}
+                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave') : 'Asignar contraseña'}
                               >
                                 {user.password && revealedPasswords[user.id] ? <EyeOff className="w-3.5 h-3.5 text-indigo-400" /> : <Eye className="w-3.5 h-3.5" />}
                               </button>
@@ -2753,11 +2753,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info(`La contraseña fue definida por el dueño. Como superadmin podés ingresar directo con el botón "Probar".`)
+                                    handleOpenEditUser(user)
+                                    toast.info('No hay contraseña asignada. Podés asignarla en este formulario.')
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={user.password ? "Copiar contraseña asignada" : "Contraseña elegida por el dueño"}
+                                title={user.password ? "Copiar contraseña" : "Asignar contraseña"}
                               >
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
@@ -2939,13 +2940,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                   if (user.password) {
                                     handleTogglePassword(user.id)
                                   } else {
-                                    toast.info(`La contraseña de ${user.name} fue configurada por el propio dueño y está activa y protegida en la base de datos (cifrada con hash bcrypt). Para ingresar a su cuenta usá el botón "Probar".`, {
-                                      duration: 5000,
-                                    })
+                                    handleOpenEditUser(user)
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer ml-0.5"
-                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave asignada') : 'Contraseña definida por el dueño (cifrada con bcrypt)'}
+                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave asignada') : 'Asignar contraseña'}
                               >
                                 {user.password && revealedPasswords[user.id] ? (
                                   <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
@@ -2961,11 +2960,12 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info(`La contraseña fue elegida por el dueño. Como superadmin podés ingresar directo a su panel con el botón "Probar".`)
+                                    handleOpenEditUser(user)
+                                    toast.info('No hay contraseña asignada. Podés asignarla en este formulario.')
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={user.password ? "Copiar contraseña asignada" : "Contraseña elegida por el dueño"}
+                                title={user.password ? "Copiar contraseña" : "Asignar contraseña"}
                               >
                                 <Copy className="w-3.5 h-3.5" />
                               </button>

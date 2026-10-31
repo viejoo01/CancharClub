@@ -11,8 +11,7 @@ import {
   CheckCircle, 
   AlertCircle,
   CloudRain,
-  DollarSign,
-  Monitor
+  DollarSign
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
@@ -558,15 +557,8 @@ export function CalendarGrid({
   }, [activeCourts, selectedSport])
 
   // Densidad de grilla y modo recepción (Adaptable a monitores de 24" y laptops)
+  // Densidad de grilla (Adaptable a monitores de 24" y laptops)
   const [gridDensity, setGridDensity] = useState<'normal' | 'compact'>('normal')
-  const [isReceptionMode, setIsReceptionMode] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    try {
-      return localStorage.getItem('canchar_reception_focus_mode') === 'true'
-    } catch {
-      return false
-    }
-  })
 
   // Cargar preferencia guardada o auto-activar vista compacta si el club tiene 5 o más canchas
   useEffect(() => {
@@ -590,39 +582,11 @@ export function CalendarGrid({
     } catch {}
   }
 
-  const toggleReceptionFocusMode = () => {
-    setIsReceptionMode(prev => {
-      const next = !prev
-      try {
-        localStorage.setItem('canchar_reception_focus_mode', String(next))
-      } catch {}
-      // Enviar eventos sincronizados a sidebar y métricas diarias
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('canchar-toggle-sidebar', { detail: { collapsed: next } }))
-        window.dispatchEvent(new CustomEvent('canchar-toggle-reception-mode', { detail: { enabled: next } }))
-      }
-      if (next) {
-        changeGridDensity('compact')
-        toast.info('Modo Recepción 24" activo: Espacio maximizado para ver todas las canchas y turnos', { duration: 3500 })
-      } else {
-        toast.info('Modo estándar restaurado', { duration: 2500 })
-      }
-      return next
-    })
-  }
-
   // Ancho y dimensiones adaptativas según densidad seleccionada y cantidad de canchas
   // En monitores de 24 pulgadas (1920x1080), 132px permite mostrar hasta 11-13 canchas completas sin scroll horizontal
   const isCompact = gridDensity === 'compact'
   const colWidth = isCompact ? 132 : 172
   const timeColWidth = isCompact ? 68 : 76
-
-  // Scroll horizontal asistido para el panel de recepción
-  const scrollCourtsHorizontally = (direction: 'left' | 'right') => {
-    if (!gridContainerRef.current) return
-    const offset = direction === 'left' ? -colWidth * 3 : colWidth * 3
-    gridContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' })
-  }
 
   // Plantilla exacta de columnas para evitar wrap desfasado en CSS Grid
   const gridTemplateCols = `${timeColWidth}px repeat(${filteredCourts.length}, minmax(${colWidth}px, 1fr))`
@@ -882,250 +846,132 @@ export function CalendarGrid({
 
   return (
     <div className="flex flex-col h-full space-y-3 sm:space-y-4 w-full">
-      {/* Barra de Control y Filtros */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800/80 shadow-xs dark:shadow-md backdrop-blur-md">
-        {/* Selector de Fecha */}
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Barra de Control Unificada y Minimalista */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0">
+        {/* Navegación de Fecha */}
+        <div className="flex items-center gap-1.5">
           <Button 
             variant="outline" 
             size="sm" 
             onClick={handleToday} 
-            className="text-xs h-10 px-3 min-w-[52px] bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold cursor-pointer"
+            className="text-xs h-8 px-2.5 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold cursor-pointer"
           >
             Hoy
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={scrollToNow}
-            className="text-xs h-10 px-2.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 hover:text-amber-800 dark:hover:text-amber-100 flex items-center gap-1.5 cursor-pointer shadow-xs font-semibold"
-            title="Desplazarse en la grilla al horario actual"
-          >
-            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Ahora</span>
-          </Button>
-          <div className="flex items-center bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-0.5 sm:p-1">
+          
+          <div className="flex items-center bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 p-0.5">
             <button
               onClick={handlePrevDay}
-              className="p-2 sm:p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-1 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
               aria-label="Día anterior"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-slate-900 dark:text-white capitalize flex items-center gap-1.5 sm:gap-2">
-              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-none">{formattedDateTitle}</span>
+            <div className="px-2.5 py-0.5 text-xs font-bold text-slate-900 dark:text-white capitalize flex items-center gap-1.5">
+              <CalendarIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{formattedDateTitle}</span>
             </div>
             <button
               onClick={handleNextDay}
-              className="p-2 sm:p-1.5 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="p-1 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
               aria-label="Día siguiente"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-medium"
-          />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={scrollToNow}
+            className="text-xs h-8 px-2 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 gap-1 cursor-pointer"
+            title="Ir a hora actual"
+          >
+            <Clock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Ahora</span>
+          </Button>
         </div>
 
-        {/* Filtros de deporte y acciones */}
-        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-          {/* Filtros de deporte con scroll horizontal suave */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar max-w-full">
+        {/* Filtros por Deporte */}
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setSelectedSport('ALL')}
+            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer shrink-0 ${
+              selectedSport === 'ALL'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            Todas
+          </button>
+          {sports.map((sp) => (
             <button
-              onClick={() => setSelectedSport('ALL')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
-                selectedSport === 'ALL'
+              key={sp}
+              onClick={() => setSelectedSport(sp)}
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer shrink-0 ${
+                selectedSport === sp
                   ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-900'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
               }`}
             >
-              Todas
+              {sp}
             </button>
-            {sports.map((sp) => (
+          ))}
+        </div>
+
+        {/* Acciones Secundarias Limpias */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsScheduleModalOpen(true)}
+            className="text-xs h-8 px-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white gap-1 cursor-pointer"
+            title="Configurar horario de apertura y cierre"
+          >
+            <Clock className="w-3 h-3 text-slate-500" />
+            <span className="hidden md:inline">{schedule.opening_time} - {schedule.closing_time} hs</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsRainModalOpen(true)}
+            className="text-xs h-8 px-2 text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-blue-950/40 gap-1 cursor-pointer font-medium"
+            title="Protocolo Lluvia"
+          >
+            <CloudRain className="w-3 h-3 text-sky-600" />
+            <span className="hidden md:inline">Lluvia</span>
+          </Button>
+
+          {filteredCourts.length > 0 && (
+            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-950 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
               <button
-                key={sp}
-                onClick={() => setSelectedSport(sp)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0 min-h-[34px] ${
-                  selectedSport === sp
+                type="button"
+                onClick={() => changeGridDensity('compact')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                  gridDensity === 'compact'
                     ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-900'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
+                title="Modo Compacto"
               >
-                {sp}
+                Compacto
               </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Botón de Horarios de Apertura y Cierre */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="text-xs bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 hover:text-emerald-900 dark:hover:text-white gap-1.5 h-9 px-2.5 cursor-pointer font-semibold"
-              title="Configurar horario de apertura y cierre del club"
-            >
-              <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span className="hidden sm:inline">Horario:</span> {schedule.opening_time} - {schedule.closing_time} hs
-            </Button>
-
-            {/* Botón de Emergencia Protocolo Lluvia */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsRainModalOpen(true)}
-              className="text-xs bg-sky-50 dark:bg-blue-950/40 border-sky-200 dark:border-blue-500/40 text-sky-800 dark:text-blue-300 hover:bg-sky-100 dark:hover:bg-blue-900/60 hover:text-sky-900 dark:hover:text-white gap-1.5 h-9 px-2.5 font-semibold"
-            >
-              <CloudRain className="w-3.5 h-3.5 text-sky-600 dark:text-blue-400" />
-              <span className="hidden sm:inline">Protocolo</span> Lluvia
-            </Button>
-
-            {/* Modo Enfoque Recepción 24" */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={toggleReceptionFocusMode}
-              className={`text-xs h-9 px-2.5 font-semibold gap-1.5 cursor-pointer transition-all ${
-                isReceptionMode
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm hover:bg-emerald-700'
-                  : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-              title="Modo Enfoque Recepción: Maximiza todo el ancho y alto de pantalla para monitores de 24 pulgadas"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">{isReceptionMode ? 'Modo 24" Activo' : 'Modo 24" Recepción'}</span>
-              <span className="xl:hidden">24&quot;</span>
-            </Button>
-
-            {/* Selector de Densidad de Grilla (Compacto / Cómodo) para recepción */}
-            {filteredCourts.length > 0 && (
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => changeGridDensity('compact')}
-                  className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
-                    gridDensity === 'compact'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60'
-                  }`}
-                  title="Modo Compacto: Columnas ajustadas para ver más canchas en pantalla"
-                >
-                  Compacto
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeGridDensity('normal')}
-                  className={`px-2 py-1 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
-                    gridDensity === 'normal'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60'
-                  }`}
-                  title="Modo Cómodo: Celdas amplias con nombres completos"
-                >
-                  Cómodo
-                </button>
-              </div>
-            )}
-
-            {/* Indicador Realtime */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-700 dark:text-emerald-400 font-bold shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-              <span className="hidden sm:inline">Sincronización en Vivo</span>
-              <span className="sm:hidden">En Vivo</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Atajos de teclado en Recepción (Visible en pantallas medianas y grandes) */}
-        <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 select-none">
-          <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Atajos de Recepción:</span>
-          <button
-            type="button"
-            onClick={() => setIsQuickBookOpen(true)}
-            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
-            title="Crear nuevo turno rápido (Atajo: tecla N)"
-          >
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">N</kbd>
-            <span className="text-slate-700 dark:text-slate-300">Nuevo Turno</span>
-          </button>
-          <span className="text-slate-300 dark:text-slate-700">•</span>
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard/cantina')}
-            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
-            title="Ir a Cantina (Atajo: tecla C)"
-          >
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">C</kbd>
-            <span className="text-slate-700 dark:text-slate-300">Cantina</span>
-          </button>
-          <span className="text-slate-300 dark:text-slate-700">•</span>
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard/cobros')}
-            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
-            title="Ir a Caja y Cobros (Atajo: tecla F)"
-          >
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">F</kbd>
-            <span className="text-slate-700 dark:text-slate-300">Caja</span>
-          </button>
-          <span className="text-slate-300 dark:text-slate-700">•</span>
-          <button
-            type="button"
-            onClick={scrollToCurrentTimeMarker}
-            className="inline-flex items-center gap-1 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-            title="Desplazarse a la hora actual en vivo (Atajo: tecla T)"
-          >
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">T</kbd>
-            <span className="text-rose-600 dark:text-rose-400 font-semibold">Hora Actual</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Indicador de desplazamiento horizontal de canchas con botones asistidos */}
-      <div className="flex items-center justify-between px-2 py-1 text-[11px] text-slate-500 dark:text-slate-400 select-none">
-        <span className="flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg px-2 py-1 border border-slate-200 dark:border-slate-700/60">
-            <ChevronLeft className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-            <span className="text-slate-700 dark:text-slate-300 font-medium">
-              {filteredCourts.length > 5 ? 'Deslizá horizontalmente para ver todas las canchas' : 'Deslizá para ver canchas'}
-            </span>
-            <ChevronRight className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-          </span>
-        </span>
-        <div className="flex items-center gap-2">
-          {filteredCourts.length > 2 && (
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 p-0.5">
               <button
                 type="button"
-                onClick={() => scrollCourtsHorizontally('left')}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-                title="Desplazar a canchas anteriores"
+                onClick={() => changeGridDensity('normal')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                  gridDensity === 'normal'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                }`}
+                title="Modo Cómodo"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="px-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
-                Mover
-              </span>
-              <button
-                type="button"
-                onClick={() => scrollCourtsHorizontally('right')}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-                title="Desplazar a canchas siguientes"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
+                Cómodo
               </button>
             </div>
           )}
-          <span className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-500/30">
-            {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
-          </span>
         </div>
       </div>
 
@@ -1175,7 +1021,7 @@ export function CalendarGrid({
         <div 
           ref={gridContainerRef}
           onWheel={handleGridWheel}
-          className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-180px)] min-h-[480px] rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 shadow-md dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
+          className="flex-1 overflow-x-auto overflow-y-auto h-[calc(100vh-130px)] min-h-[580px] rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 shadow-md dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
           style={{ scrollBehavior: 'smooth' }}
         >
         <div 
@@ -1541,30 +1387,6 @@ export function CalendarGrid({
             ))}
           </div>
         </div>
-      </div>
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 px-2 py-1 text-[11px] text-slate-500 dark:text-slate-400 select-none">
-        <span className="text-slate-500 hidden sm:inline">
-          Tip de recepción: Mantené <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[10px] shadow-2xs">Shift</kbd> + rueda del mouse para desplazarte entre canchas.
-        </span>
-        <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-          {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'} ({gridDensity === 'compact' ? 'Modo Compacto' : 'Modo Cómodo'})
-        </span>
-      </div>
-
-      {/* Botón flotante de acción rápida Command Center 24" */}
-      <div className="fixed bottom-6 right-6 z-40 hidden sm:flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setIsQuickBookOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-xl shadow-emerald-950/40 border border-emerald-400/30 hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer group"
-          title="Crear nueva reserva rápida en cualquier cancha (Atajo: tecla N)"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5] group-hover:rotate-90 transition-transform duration-200" />
-          <span className="text-xs tracking-tight">Reserva Rápida</span>
-          <kbd className="px-1.5 py-0.5 rounded bg-emerald-700/80 text-white text-[9px] font-mono font-bold shadow-2xs">
-            N
-          </kbd>
-        </button>
       </div>
       </>
       )}

@@ -1,11 +1,8 @@
-import { ExecutiveSplitDashboard } from '@/components/dashboard/executive-split-dashboard'
+import { CalendarGrid, type CalendarBooking } from '@/components/dashboard/calendar-grid'
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist'
-import type { CalendarBooking } from '@/components/dashboard/calendar-grid'
 import type { QuickBookingPriceRule } from '@/components/dashboard/quick-booking-modal'
 import { createClient } from '@/lib/supabase/server'
 import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actions/club.actions'
-import { getDailyCashReport } from '@/actions/analytics.actions'
-import { getDailyOrders } from '@/actions/cantina.actions'
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import { getArgentinaTodayIso } from '@/lib/utils'
 import { cookies } from 'next/headers'
@@ -48,8 +45,7 @@ export default async function DashboardPage(props: {
     created_at?: string | null
   }
 
-  // Parallelize all independent data fetches including cash reports and cantina orders
-  const [rawCourtsResult, bookings, schedule, priceRules, tenantResult, cashReport, dailyOrders] = await Promise.all([
+  const [rawCourtsResult, bookings, schedule, priceRules, tenantResult] = await Promise.all([
     tenantId
       ? supabase
           .from('courts')
@@ -67,8 +63,6 @@ export default async function DashboardPage(props: {
           .eq('id', tenantId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
-    tenantId ? getDailyCashReport(tenantId, today) : Promise.resolve(null),
-    tenantId ? getDailyOrders(tenantId, today) : Promise.resolve([]),
   ])
 
   const rawCourts = rawCourtsResult.data
@@ -90,7 +84,7 @@ export default async function DashboardPage(props: {
   const hasBankConfigured = Boolean(tenant?.bank_alias || tenant?.bank_cbu || tenant?.mp_access_token)
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col h-full w-full space-y-2">
       <OnboardingChecklist
         tenantSlug={tenantSlug}
         tenantName={tenantName}
@@ -98,20 +92,17 @@ export default async function DashboardPage(props: {
         hasBankConfigured={hasBankConfigured}
       />
 
-      <ExecutiveSplitDashboard
-        tenantId={tenantId || ''}
-        tenantSlug={tenantSlug}
-        tenantName={tenantName}
-        courts={courts}
-        hasBankConfigured={hasBankConfigured}
-        initialBookings={bookings as unknown as CalendarBooking[]}
-        initialDate={today}
-        initialVenueId={activeVenueId}
-        initialSchedule={schedule}
-        priceRules={priceRules}
-        cashReport={cashReport}
-        dailyOrders={dailyOrders}
-      />
+      <div className="flex-1 min-h-0 w-full">
+        <CalendarGrid
+          tenantId={tenantId || ''}
+          courts={courts}
+          initialBookings={bookings as unknown as CalendarBooking[]}
+          initialDate={today}
+          initialVenueId={activeVenueId}
+          initialSchedule={schedule}
+          priceRules={priceRules}
+        />
+      </div>
     </div>
   )
 }

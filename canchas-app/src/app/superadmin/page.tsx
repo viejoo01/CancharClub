@@ -1503,17 +1503,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleTestTelemetry}
-                  disabled={isTestingTelemetry}
-                  className="h-9 text-xs border-indigo-800/60 bg-indigo-950/40 text-indigo-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
-                  title="Enviar mensaje de prueba a Email / WhatsApp / Webhook"
-                >
-                  <Radio className={`w-3.5 h-3.5 mr-1.5 ${isTestingTelemetry ? 'animate-ping text-indigo-400' : 'text-indigo-400'}`} />
-                  Probar Telemetría
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
                   onClick={handleExportBillingCsv}
                   className="h-9 text-xs border-emerald-800/60 bg-emerald-950/40 text-emerald-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
                   title="Exportar a CSV compatible con Microsoft Excel"
@@ -1524,13 +1513,13 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => void loadData(true)}
-                  disabled={isRefreshing}
-                  className="h-9 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
-                  title="Consultar base de datos para información actualizada"
+                  onClick={handleTestTelemetry}
+                  disabled={isTestingTelemetry}
+                  className="h-9 px-2.5 text-xs border-indigo-800/60 bg-indigo-950/40 text-indigo-300 hover:text-white rounded-xl shrink-0 cursor-pointer"
+                  title="Enviar mensaje de prueba a Email / WhatsApp / Webhook"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
-                  Actualizar
+                  <Radio className={`w-3.5 h-3.5 ${isTestingTelemetry ? 'animate-ping text-indigo-400' : 'text-indigo-400'}`} />
+                  <span className="hidden xl:inline ml-1.5">Telemetría</span>
                 </Button>
                 <div className="relative flex-1 sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -1877,17 +1866,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 text-center">
                         {t.cancel_at_period_end ? (
-                          <div className="inline-flex flex-col items-center p-2 rounded-xl bg-amber-950/40 border border-amber-500/40 text-center">
-                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1" title="Baja por arrepentimiento solicitada por el dueño">
                               <AlertTriangle className="w-3 h-3 text-amber-400" />
-                              Baja Solicitada
+                              <span>Baja: {t.cancellation_effective_date || t.pricing.nextDueDate}</span>
                             </Badge>
-                            <div className="text-[10px] text-amber-300 font-bold mt-1">
-                              Se da de baja: {t.cancellation_effective_date || t.pricing.nextDueDate}
-                            </div>
-                            <div className="text-[9px] text-amber-400/80">
-                              Por pedido del dueño
-                            </div>
                           </div>
                         ) : t.is_trial ? (
                           <div>
@@ -1923,13 +1906,58 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             <Button
                               size="sm"
                               onClick={() => handleUndoCancellation(t.id, t.name)}
-                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
                               title="Anular solicitud de baja y mantener club en el sistema"
                             >
                               <Undo2 className="w-3.5 h-3.5" />
                               <span>Mantener</span>
                             </Button>
                           )}
+
+                          {t.subscription_status === 'PENDIENTE' && (
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg px-2.5 shadow-xs cursor-pointer flex items-center gap-1"
+                                title="Registrar cobro de cuota"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Cobrar</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
+                                className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-lg px-2 flex items-center gap-1"
+                                title="Generar link de pago Mercado Pago"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                <span>Link</span>
+                              </Button>
+                            </>
+                          )}
+
+                          {t.subscription_status === 'PAUSADO' && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                              title="Reanudar reservas públicas del club"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                              <span>Reanudar</span>
+                            </Button>
+                          )}
+
+                          {t.subscription_status === 'AL_DIA' && !t.cancel_at_period_end && (
+                            <span className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1 mr-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Al Día</span>
+                            </span>
+                          )}
+
+                          {/* Acciones secundarias compactas con tooltip */}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1938,93 +1966,47 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               setActivatingTrialTenant(t)
                             }}
                             className={cn(
-                              "h-8 text-xs px-2.5 cursor-pointer flex items-center gap-1",
+                              "h-7 w-7 p-0 rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0",
                               t.is_trial
-                                ? "border-purple-500/60 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
-                                : "border-purple-500/40 bg-purple-950/20 text-purple-300 hover:bg-purple-900/40 hover:text-white"
+                                ? "border-purple-500/60 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60"
+                                : "border-slate-800 text-purple-400 hover:bg-purple-950/30"
                             )}
                             title={t.is_trial ? "Extender o renovar período de prueba (15 días)" : "Activar 15 días de prueba gratis"}
                           >
-                            <Gift className="w-3.5 h-3.5 text-purple-400" />
-                            <span>{t.is_trial ? 'Extender 15d' : '15d Prueba'}</span>
+                            <Gift className="w-3.5 h-3.5" />
                           </Button>
 
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={() => handleOpenEdit(t)}
-                            className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5 cursor-pointer"
-                            title="Editar datos del club y cuota"
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer shrink-0"
+                            title="Editar datos del club y cuota mensual"
                           >
-                            <Pencil className="w-3.5 h-3.5 mr-1 text-indigo-400" />
-                            Editar
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
+
+                          {t.subscription_status !== 'PAUSADO' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
+                              title="Pausar reservas públicas del club por falta de pago"
+                            >
+                              <Pause className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
 
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={() => handleOpenDeleteTenantModal(t)}
-                            className="h-8 text-xs border-rose-900/50 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 px-2.5 rounded-lg cursor-pointer transition-colors"
+                            className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
                             title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
                           >
-                            <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-400" />
-                            Eliminar
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
-
-                          {t.subscription_status === 'PAUSADO' ? (
-                            <Button
-                              size="sm"
-                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-2.5 font-bold cursor-pointer shadow-xs gap-1"
-                              title="Reanudar reservas públicas del club"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                              Reanudar Club
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                              className="h-8 text-xs border-rose-500/30 text-rose-300 hover:bg-rose-950/40 rounded-xl px-2.5 cursor-pointer"
-                              title="Pausar reservas públicas del club por no abonar suscripción a tiempo"
-                            >
-                              <Pause className="w-3 h-3 mr-1 inline" />
-                              Pausar
-                            </Button>
-                          )}
-
-                          {t.subscription_status === 'PENDIENTE' ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
-                                className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white"
-                                title="Generar link de pago"
-                              >
-                                <Send className="w-3.5 h-3.5 mr-1" />
-                                Link
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
-                                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                Registrar Cobro
-                              </Button>
-                            </>
-                          ) : t.subscription_status === 'AL_DIA' ? (
-                            <div className="text-[11px] text-emerald-400/80 font-medium flex items-center gap-1 ml-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Pagado el {t.last_paid}
-                            </div>
-                          ) : (
-                            <div className="text-[11px] text-rose-400 font-semibold flex items-center gap-1 ml-1">
-                              <span>Falta de pago</span>
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -2059,14 +2041,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 >
                   <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
                   Exportar CSV
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setIsModalOpen(true)}
-                  className="h-9 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Nuevo Club
                 </Button>
                 <div className="relative flex-1 sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -2400,25 +2374,15 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       <td className="p-4 text-center">
                         <div className="flex flex-col items-center gap-1">
                           {t.cancel_at_period_end ? (
-                            <div className="p-2.5 rounded-xl bg-amber-950/70 border border-amber-500/50 text-center space-y-1 shadow-md min-w-44 max-w-56">
-                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold px-2 py-0.5 mx-auto flex items-center justify-center gap-1">
+                            <div className="flex flex-col items-center gap-1">
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold px-2 py-0.5 flex items-center gap-1" title="Baja por arrepentimiento solicitada por el dueño">
                                 <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                <span>Baja por Arrepentimiento</span>
+                                <span>Baja: {t.cancellation_effective_date || 'Fin de ciclo'}</span>
                               </Badge>
-                              <div className="text-[11px] font-bold text-white leading-tight">
-                                Se dará de baja el{' '}
-                                <span className="text-amber-300 font-mono underline font-extrabold">
-                                  {t.cancellation_effective_date || 'Fin de ciclo'}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-amber-200/90 font-medium">
-                                Por pedido del dueño
-                              </div>
                               {t.is_trial && (
-                                <span className="text-[9px] text-purple-300 font-mono flex items-center gap-1">
-                                  <Gift className="w-2.5 h-2.5 text-purple-400 inline" />
-                                  <span>En Prueba ({t.trial_days_remaining !== undefined ? `${t.trial_days_remaining}d` : 'Activa'})</span>
-                                </span>
+                                <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-bold">
+                                  Prueba {t.trial_days_remaining !== undefined ? `(${t.trial_days_remaining}d)` : ''}
+                                </Badge>
                               )}
                             </div>
                           ) : (
@@ -2463,34 +2427,14 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           {t.cancel_at_period_end && (
                             <Button
                               size="sm"
-                              variant="outline"
                               onClick={() => handleUndoCancellation(t.id, t.name)}
-                              className="h-7 text-xs border-emerald-500/50 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/50 hover:text-white px-2.5 rounded-lg flex items-center gap-1 cursor-pointer font-semibold shadow-xs"
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
                               title="Anular la solicitud de baja y mantener el club activo"
                             >
-                              <Undo2 className="w-3 h-3 text-emerald-400" />
-                              <span>Mantener Club</span>
+                              <Undo2 className="w-3.5 h-3.5" />
+                              <span>Mantener</span>
                             </Button>
                           )}
-
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setTrialDaysToSet(15)
-                              setActivatingTrialTenant(t)
-                            }}
-                            className={cn(
-                              "h-7 text-xs font-bold px-2.5 rounded-lg cursor-pointer flex items-center gap-1 transition-all",
-                              t.is_trial
-                                ? "border-purple-500/60 bg-purple-950/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
-                                : "border-purple-500/40 bg-purple-950/15 text-purple-300 hover:bg-purple-900/40 hover:text-white"
-                            )}
-                            title={t.is_trial ? "Extender o renovar el período de prueba de 15 días" : "Activar período de prueba de 15 días gratis para este club"}
-                          >
-                            <Gift className="w-3 h-3 text-purple-400" />
-                            <span>{t.is_trial ? 'Extender 15d' : '15 Días Prueba'}</span>
-                          </Button>
 
                           {!t.is_active ? (
                             <Button
@@ -2499,56 +2443,80 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                               className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 rounded-lg shadow-sm shadow-emerald-950/40 cursor-pointer flex items-center gap-1"
                               title="Otorgar poder y acceso total a este club asignando su plan"
                             >
-                              <Sparkles className="w-3 h-3 text-amber-300" />
-                              <span>Activar Acceso</span>
+                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                              <span>Activar</span>
                             </Button>
                           ) : (
                             <Button
                               size="sm"
-                              variant="ghost"
-                              onClick={() => handleToggleDeactivate(t.id, t.name)}
-                              className="h-7 text-[11px] text-slate-400 hover:text-amber-400 px-2 rounded-lg cursor-pointer"
-                              title="Suspender acceso (modo sólo lectura)"
+                              variant="outline"
+                              onClick={() => handleSimulateClub(t, 'TENANT_ADMIN')}
+                              className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg flex items-center gap-1 font-medium"
+                              title="Ingresar directamente al panel de este club con su plan asignado"
                             >
-                              Pausar
+                              <LogIn className="w-3.5 h-3.5" />
+                              <span>Panel</span>
                             </Button>
                           )}
+
+                          {/* Acciones de gestión compactas con tooltip */}
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleSimulateClub(t, 'TENANT_ADMIN')}
-                            className="h-7 text-xs border-indigo-700/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white px-2.5 rounded-lg"
-                            title="Ingresar directamente al panel de este club con su plan asignado"
+                            onClick={() => {
+                              setTrialDaysToSet(15)
+                              setActivatingTrialTenant(t)
+                            }}
+                            className={cn(
+                              "h-7 w-7 p-0 rounded-lg cursor-pointer flex items-center justify-center transition-all shrink-0",
+                              t.is_trial
+                                ? "border-purple-500/60 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60"
+                                : "border-slate-800 text-purple-400 hover:bg-purple-950/30"
+                            )}
+                            title={t.is_trial ? "Extender o renovar el período de prueba de 15 días" : "Activar período de prueba de 15 días gratis para este club"}
                           >
-                            <LogIn className="w-3 h-3 mr-1" />
-                            Panel Club
+                            <Gift className="w-3.5 h-3.5" />
                           </Button>
+
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={() => handleOpenEdit(t)}
-                            className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white px-2.5"
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer shrink-0"
                             title="Editar parámetros del club y plan SaaS"
                           >
-                            <Pencil className="w-3 h-3 mr-1 text-indigo-400" />
-                            Editar
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
+
+                          {t.is_active && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleDeactivate(t.id, t.name)}
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-amber-400 hover:bg-amber-950/30 rounded-lg cursor-pointer shrink-0"
+                              title="Suspender acceso (modo sólo lectura)"
+                            >
+                              <Pause className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={() => handleOpenDeleteTenantModal(t)}
-                            className="h-7 text-xs border-rose-900/50 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 px-2 rounded-lg cursor-pointer transition-colors"
+                            className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
                             title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
                           >
-                            <Trash2 className="w-3 h-3 mr-1 text-rose-400" />
-                            Eliminar
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
+
                           <Link 
                             href={`/club/${t.slug}`} 
                             target="_blank"
-                            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium px-2 py-1 rounded-lg hover:bg-indigo-950/40"
+                            className="h-7 w-7 flex items-center justify-center text-slate-400 hover:text-indigo-400 hover:bg-indigo-950/40 rounded-lg shrink-0 transition-colors"
+                            title="Ver portal público de reservas del club"
                           >
-                            Portal <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3.5 h-3.5" />
                           </Link>
                         </div>
                       </td>

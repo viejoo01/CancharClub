@@ -2716,34 +2716,36 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           <div>
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Contraseña</span>
                             <div className="flex items-center gap-1.5 mt-0.5 font-mono text-[11px] text-slate-300">
-                              <span>
-                                {revealedPasswords[user.id] ? (
-                                  user.password ? (
-                                    <span className="text-emerald-400 font-bold select-all">{user.password}</span>
-                                  ) : (
-                                    <span className="text-[10px] text-amber-400 font-sans inline-flex items-center gap-1" title="Contraseña encriptada en la base de datos">
-                                      <span>Protegida</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenEditUser(user)}
-                                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 ml-0.5 cursor-pointer font-medium"
-                                      >
-                                        Cambiar
-                                      </button>
-                                    </span>
-                                  )
+                              {user.password ? (
+                                revealedPasswords[user.id] ? (
+                                  <span className="text-emerald-400 font-bold select-all">{user.password}</span>
                                 ) : (
-                                  <span className="tracking-widest text-slate-500">••••••••</span>
-                                )}
-                              </span>
+                                  <span className="tracking-widest text-slate-400">••••••••</span>
+                                )
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-slate-300">
+                                  <span className="tracking-widest text-slate-400">••••••••</span>
+                                  <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 text-[9px] px-1 py-0 font-sans font-semibold">
+                                    Activa
+                                  </Badge>
+                                </span>
+                              )}
+
                               <button
                                 type="button"
-                                onClick={() => handleTogglePassword(user.id)}
+                                onClick={() => {
+                                  if (user.password) {
+                                    handleTogglePassword(user.id)
+                                  } else {
+                                    toast.info(`La contraseña de ${user.name} fue elegida por el dueño y está activa (cifrada con bcrypt). Para entrar a su cuenta usá el botón "Probar".`)
+                                  }
+                                }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave o estado'}
+                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave') : 'Contraseña definida por el dueño'}
                               >
-                                {revealedPasswords[user.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                {user.password && revealedPasswords[user.id] ? <EyeOff className="w-3.5 h-3.5 text-indigo-400" /> : <Eye className="w-3.5 h-3.5" />}
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2751,16 +2753,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info('La contraseña está protegida por encriptación bcrypt (no se almacena en texto plano). Podés asignarle una nueva con el botón Cambiar.', {
-                                      action: {
-                                        label: 'Cambiar',
-                                        onClick: () => handleOpenEditUser(user),
-                                      }
-                                    })
+                                    toast.info(`La contraseña fue definida por el dueño. Como superadmin podés ingresar directo con el botón "Probar".`)
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={user.password ? "Copiar contraseña" : "Contraseña protegida"}
+                                title={user.password ? "Copiar contraseña asignada" : "Contraseña elegida por el dueño"}
                               >
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
@@ -2918,39 +2915,45 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           </td>
                           <td className="p-4 text-center">
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
-                              <span>
-                                {revealedPasswords[user.id] ? (
-                                  user.password ? (
-                                    <span className="text-emerald-400 font-bold select-all">{user.password}</span>
-                                  ) : (
-                                    <span className="text-[10px] text-amber-400 font-sans inline-flex items-center gap-1" title="Contraseña protegida por hash criptográfico bcrypt en Supabase">
-                                      <span>Protegida</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenEditUser(user)}
-                                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 ml-0.5 cursor-pointer font-medium"
-                                        title="Asignar una nueva clave a este usuario"
-                                      >
-                                        Cambiar
-                                      </button>
-                                    </span>
-                                  )
+                              {user.password ? (
+                                revealedPasswords[user.id] ? (
+                                  <span className="text-emerald-400 font-bold select-all">{user.password}</span>
                                 ) : (
-                                  <span className="tracking-widest text-slate-500">••••••••</span>
-                                )}
-                              </span>
+                                  <span className="tracking-widest text-slate-400">••••••••</span>
+                                )
+                              ) : (
+                                <span 
+                                  className="inline-flex items-center gap-1 text-[11px] text-slate-300"
+                                  title="Contraseña configurada por el propio dueño (cifrada con hash bcrypt en Supabase)"
+                                >
+                                  <span className="tracking-widest text-slate-400">••••••••</span>
+                                  <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 text-[9px] px-1 py-0 font-sans font-semibold">
+                                    Activa
+                                  </Badge>
+                                </span>
+                              )}
+
                               <button
                                 type="button"
-                                onClick={() => handleTogglePassword(user.id)}
-                                className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={revealedPasswords[user.id] ? 'Ocultar' : (user.password ? 'Ver clave asignada' : 'Ver estado de clave')}
+                                onClick={() => {
+                                  if (user.password) {
+                                    handleTogglePassword(user.id)
+                                  } else {
+                                    toast.info(`La contraseña de ${user.name} fue configurada por el propio dueño y está activa y protegida en la base de datos (cifrada con hash bcrypt). Para ingresar a su cuenta usá el botón "Probar".`, {
+                                      duration: 5000,
+                                    })
+                                  }
+                                }}
+                                className="text-slate-500 hover:text-slate-300 cursor-pointer ml-0.5"
+                                title={user.password ? (revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave asignada') : 'Contraseña definida por el dueño (cifrada con bcrypt)'}
                               >
-                                {revealedPasswords[user.id] ? (
-                                  <EyeOff className="w-3.5 h-3.5" />
+                                {user.password && revealedPasswords[user.id] ? (
+                                  <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
                                 ) : (
                                   <Eye className="w-3.5 h-3.5" />
                                 )}
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2958,18 +2961,22 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info('La contraseña está protegida por encriptación bcrypt (no se almacena en texto plano). Podés asignarle una nueva con el botón Cambiar.', {
-                                      action: {
-                                        label: 'Cambiar',
-                                        onClick: () => handleOpenEditUser(user),
-                                      }
-                                    })
+                                    toast.info(`La contraseña fue elegida por el dueño. Como superadmin podés ingresar directo a su panel con el botón "Probar".`)
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title={user.password ? "Copiar contraseña" : "Contraseña protegida"}
+                                title={user.password ? "Copiar contraseña asignada" : "Contraseña elegida por el dueño"}
                               >
                                 <Copy className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditUser(user)}
+                                className="text-slate-500 hover:text-amber-400 cursor-pointer ml-0.5"
+                                title="Cambiar o resetear contraseña del usuario"
+                              >
+                                <Pencil className="w-3 h-3" />
                               </button>
                             </div>
                           </td>

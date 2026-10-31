@@ -323,12 +323,12 @@ export function Sidebar({
   return (
     <aside 
       className={cn(
-        "flex flex-col bg-white dark:bg-[#090e1a] select-none transition-colors duration-200",
-        isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-200/90 dark:border-slate-800/80"
+        "flex flex-col bg-white dark:bg-[#0B0F19] select-none transition-colors duration-200",
+        isMobile ? "w-full h-full" : "w-64 shrink-0 border-r border-slate-200/80 dark:border-white/[0.08]"
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200/90 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#090e1a]">
+      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200/80 dark:border-white/[0.08] bg-slate-50/60 dark:bg-[#0B0F19]">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="w-9 h-9 shrink-0 rounded-xl bg-linear-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-md shadow-emerald-600/20 dark:shadow-emerald-950/40">
             <Trophy className="w-5 h-5 text-white" />
@@ -447,8 +447,8 @@ export function Sidebar({
               className={cn(
                 'flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150',
                 isActive_item
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/90 shadow-xs dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
               )}
             >
               <div className="flex items-center gap-3">
@@ -500,7 +500,7 @@ export function Sidebar({
       </nav>
 
       {/* Footer Acciones de Usuario (Redes Sociales, Cambiar Contraseña y Cerrar Sesión) */}
-      <div className="p-3 border-t border-slate-200/90 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 space-y-1">
+      <div className="p-3 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50/60 dark:bg-[#0B0F19] space-y-1">
         <button
           type="button"
           onClick={() => {

@@ -213,7 +213,7 @@ export function DashboardLayoutClient({
   ]
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 relative transition-colors duration-200">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 relative transition-colors duration-200">
       {/* ─── 1. SIDEBAR DESKTOP ─── */}
       <div 
         className={cn(
@@ -251,7 +251,7 @@ export function DashboardLayoutClient({
           {/* Panel deslizante lateral */}
           <div
             className={cn(
-              'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-[#090e1a] border-r border-slate-200/90 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
+              'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-[#0B0F19] border-r border-slate-200/90 dark:border-white/[0.08] shadow-2xl transition-transform duration-300 ease-out md:hidden flex flex-col',
               mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
             )}
           >
@@ -306,7 +306,7 @@ export function DashboardLayoutClient({
           />
         )}
 
-        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5 pb-20 md:pb-6 bg-slate-50/70 dark:bg-[#070b14] custom-scrollbar relative transition-colors duration-200">
+        <main className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-5 pb-20 md:pb-6 bg-slate-50/60 dark:bg-[#0B0F19] custom-scrollbar relative transition-colors duration-200">
           {/* Banner visual prominente de 15 Días de Prueba Gratuita */}
           {isTrial && !isStaff && (
             <TrialBanner

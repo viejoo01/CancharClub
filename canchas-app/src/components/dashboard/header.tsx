@@ -104,14 +104,14 @@ export function Header({
   }
 
   return (
-    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-200/90 dark:border-slate-800/80 bg-white/85 dark:bg-[#070b14]/85 backdrop-blur-md shadow-xs relative z-40 transition-colors">
+    <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#0B0F19]/90 backdrop-blur-md shadow-2xs relative z-40 transition-colors">
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         {/* Botón menú hamburguesa para celulares */}
         {onToggleMobileMenu && (
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer"
+            className="md:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.05] dark:hover:bg-white/[0.1] border border-slate-200/80 dark:border-white/[0.08] transition-colors cursor-pointer"
             aria-label="Abrir menú de navegación"
           >
             <Menu className="w-5 h-5" />
@@ -123,7 +123,7 @@ export function Header({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="hidden md:flex p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-900/60 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-800/80 transition-all cursor-pointer items-center justify-center group"
+            className="hidden md:flex p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100/70 hover:bg-slate-200/70 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] border border-slate-200/80 dark:border-white/[0.08] transition-all cursor-pointer items-center justify-center group"
             title={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
             aria-label={isSidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral"}
           >
@@ -135,7 +135,7 @@ export function Header({
           </button>
         )}
 
-        <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 hidden xl:block tracking-tight shrink-0">
+        <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white hidden xl:block tracking-tight shrink-0">
           Gestión Operativa
         </h1>
 
@@ -154,18 +154,18 @@ export function Header({
               href="/dashboard/plan" 
               title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
             >
-              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
+              <Badge variant="outline" className="gap-1.5 py-1 px-2.5 text-[11px] hidden 2xl:inline-flex bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25 hover:bg-emerald-500/20 transition-colors cursor-pointer rounded-full shadow-2xs">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
                 <span>
-                  Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+                  Prueba 15 Días: <strong className="text-slate-900 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
                 </span>
               </Badge>
             </Link>
           ) : (
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
+            <Badge variant="outline" className="gap-1.5 py-1 px-2.5 text-[11px] hidden 2xl:inline-flex bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25 cursor-default rounded-full shadow-2xs" title="Período de prueba del club activo">
               <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>
-                Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
+                Prueba 15 Días: <strong className="text-slate-900 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
               </span>
             </Badge>
           )
@@ -174,14 +174,14 @@ export function Header({
         {mpConnected ? (
           isOwner ? (
             <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
-              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/30 transition-colors cursor-pointer shadow-xs">
-                <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <Badge variant="default" className="gap-1.5 py-1 px-2.5 text-[11px] hidden 2xl:inline-flex bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors cursor-pointer rounded-full shadow-2xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Tarjetas Online</span>
               </Badge>
             </Link>
           ) : (
-            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 cursor-default shadow-xs" title="Mercado Pago activo para cobro online de señas">
-              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <Badge variant="default" className="gap-1.5 py-1 px-2.5 text-[11px] hidden 2xl:inline-flex bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 cursor-default rounded-full shadow-2xs" title="Mercado Pago activo para cobro online de señas">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Tarjetas Online</span>
             </Badge>
           )
@@ -198,7 +198,7 @@ export function Header({
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Buscar turno o cliente..."
-            className="w-full pl-8 pr-12 py-1.5 text-xs rounded-xl bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-all"
+            className="w-full pl-8 pr-12 py-1.5 text-xs rounded-xl bg-slate-100/80 dark:bg-[#111827]/80 border border-slate-200/80 dark:border-white/[0.08] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/60 transition-all shadow-2xs"
           />
           {searchQuery ? (
             <button
@@ -209,7 +209,7 @@ export function Header({
               <X className="w-3.5 h-3.5" />
             </button>
           ) : (
-            <kbd className="hidden lg:inline-flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded pointer-events-none shadow-2xs">
+            <kbd className="hidden lg:inline-flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] font-mono font-semibold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/[0.08] rounded pointer-events-none shadow-2xs">
               Ctrl K
             </kbd>
           )}
@@ -218,38 +218,38 @@ export function Header({
 
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Live Status Badge */}
-        <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 select-none shadow-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse" />
+        <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 select-none shadow-2xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
           <span>ONLINE</span>
         </div>
 
         <Button
           onClick={handleTriggerQuickBook}
           size="sm"
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md shadow-emerald-950/20 gap-1.5 cursor-pointer rounded-xl text-xs h-9 px-3"
+          className="bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold shadow-sm hover:shadow-md hover:shadow-emerald-500/20 gap-1.5 cursor-pointer rounded-xl text-xs h-9 px-3.5 transition-all duration-150 active:scale-95"
           title="Crear nueva reserva manual (Atajo: tecla N)"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Nuevo Turno</span>
-          <kbd className="hidden sm:inline-flex ml-0.5 px-1 py-0.2 rounded bg-emerald-700/60 text-white text-[9px] font-mono">N</kbd>
+          <kbd className="hidden sm:inline-flex ml-0.5 px-1 py-0.2 rounded bg-white/20 text-white text-[9px] font-mono">N</kbd>
         </Button>
 
         <NotificationsDropdown tenantId={tenantId} />
 
         <ThemeToggle />
 
-        <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-0.5 hidden sm:block" />
+        <div className="h-4 w-px bg-slate-200 dark:border-white/[0.08] mx-0.5 hidden sm:block" />
 
         {/* Menú de Usuario / Perfil con Cambiar Contraseña */}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             onClick={() => setUserMenuOpen((prev) => !prev)}
-            className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 transition-colors cursor-pointer text-left"
+            className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.05] border border-transparent hover:border-slate-200/80 dark:hover:border-white/[0.08] transition-colors cursor-pointer text-left"
             aria-expanded={userMenuOpen}
             aria-haspopup="true"
           >
-            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-slate-800 border border-emerald-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-emerald-800 dark:text-slate-200 shadow-xs">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs">
               {userName.charAt(0).toUpperCase()}
             </div>
             <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold hidden md:inline truncate max-w-32">
@@ -260,8 +260,8 @@ export function Header({
 
           {/* Dropdown flotante */}
           {userMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-white/[0.08] shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-slate-100 dark:border-white/[0.06] mb-1">
                 <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{tenantName || 'CancharClub'}</p>
               </div>

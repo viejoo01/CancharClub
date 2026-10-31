@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, CheckCircle2, Menu, Wallet, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone, PanelLeftClose, PanelLeftOpen, Loader2 } from 'lucide-react'
+import { Plus, CheckCircle2, Menu, KeyRound, LogOut, ChevronDown, Share2, Sparkles, Smartphone, PanelLeftClose, PanelLeftOpen, Loader2, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -45,7 +45,42 @@ export function Header({
   const { isOwner } = useUserRole()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Atajo de teclado global Ctrl+K o / para enfocar la barra de búsqueda rápida
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val)
+    window.dispatchEvent(new CustomEvent('canchar-search-bookings', { detail: { query: val } }))
+  }
+
+  const handleClearSearch = () => {
+    setSearchQuery('')
+    window.dispatchEvent(new CustomEvent('canchar-search-bookings', { detail: { query: '' } }))
+  }
+
+  const handleTriggerQuickBook = () => {
+    if (onQuickBookClick) {
+      onQuickBookClick()
+    } else {
+      window.dispatchEvent(new CustomEvent('open-quick-booking-modal'))
+    }
+  }
 
   // Cerrar al hacer click afuera
   useEffect(() => {
@@ -70,7 +105,7 @@ export function Header({
 
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-3 sm:px-6 border-b border-slate-200/90 dark:border-slate-800/80 bg-white/85 dark:bg-[#070b14]/85 backdrop-blur-md shadow-xs relative z-40 transition-colors">
-      <div className="flex items-center gap-2.5 sm:gap-4">
+      <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         {/* Botón menú hamburguesa para celulares */}
         {onToggleMobileMenu && (
           <button
@@ -100,7 +135,7 @@ export function Header({
           </button>
         )}
 
-        <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 hidden lg:block tracking-tight">
+        <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 hidden xl:block tracking-tight shrink-0">
           Gestión Operativa
         </h1>
 
@@ -119,7 +154,7 @@ export function Header({
               href="/dashboard/plan" 
               title={trialDueDate ? `Período de prueba gratuita de 15 días activo ($0 hoy). Vence el ${trialDueDate}` : 'Período de prueba gratuita de 15 días activo ($0 hoy)'}
             >
-              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
+              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/20 transition-colors cursor-pointer shadow-xs">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
                 <span>
                   Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
@@ -127,7 +162,7 @@ export function Header({
               </Badge>
             </Link>
           ) : (
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden md:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
+            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300 cursor-default shadow-xs" title="Período de prueba del club activo">
               <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>
                 Prueba 15 Días: <strong className="text-emerald-950 dark:text-white font-mono">{typeof trialDaysRemaining === 'number' ? `${trialDaysRemaining}d restantes` : 'Activa'}</strong>
@@ -139,51 +174,71 @@ export function Header({
         {mpConnected ? (
           isOwner ? (
             <Link href="/dashboard/cobros" title="Mercado Pago activo para cobro online de señas con tarjeta">
-              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/30 transition-colors cursor-pointer shadow-xs">
+              <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/30 transition-colors cursor-pointer shadow-xs">
                 <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
+                <span>Tarjetas Online</span>
               </Badge>
             </Link>
           ) : (
-            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 cursor-default shadow-xs" title="Mercado Pago activo para cobro online de señas">
+            <Badge variant="default" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden 2xl:inline-flex bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40 cursor-default shadow-xs" title="Mercado Pago activo para cobro online de señas">
               <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span className="hidden md:inline">MP Señas:</span> Tarjetas Online
+              <span>Tarjetas Online</span>
             </Badge>
           )
-        ) : (
-          isOwner ? (
-            <Link href="/dashboard/cobros" title="Señas de turnos configuradas para recibir por transferencia directa o alias">
-              <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-200 bg-slate-100/90 text-slate-700 hover:text-slate-900 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:text-white dark:hover:border-slate-600 transition-colors cursor-pointer shadow-xs">
-                <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 dark:text-sky-400" />
-                <span className="hidden md:inline">Señas:</span> Transferencia / Alias
-              </Badge>
-            </Link>
-          ) : (
-            <Badge variant="outline" className="gap-1.5 py-0.5 sm:py-1 text-[11px] sm:text-xs hidden sm:inline-flex border-slate-200 bg-slate-100/90 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300 cursor-default shadow-xs" title="Señas por transferencia directa">
-              <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 dark:text-sky-400" />
-              <span className="hidden md:inline">Señas:</span> Transferencia / Alias
-            </Badge>
-          )
-        )}
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-3">
-        {onQuickBookClick && (
-          <Button
-            onClick={onQuickBookClick}
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md shadow-emerald-950/20 gap-1.5 cursor-pointer rounded-xl"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Turno</span>
-          </Button>
-        )}
+      {/* Buscador de reservas y clientes estilo Command Center 24" */}
+      <div className="hidden md:flex items-center relative max-w-xs xl:max-w-sm w-full mx-2 lg:mx-4">
+        <div className="relative w-full">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Buscar turno o cliente..."
+            className="w-full pl-8 pr-12 py-1.5 text-xs rounded-xl bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-all"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <kbd className="hidden lg:inline-flex items-center gap-0.5 absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded pointer-events-none shadow-2xs">
+              Ctrl K
+            </kbd>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Live Status Badge */}
+        <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 select-none shadow-xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse" />
+          <span>ONLINE</span>
+        </div>
+
+        <Button
+          onClick={handleTriggerQuickBook}
+          size="sm"
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md shadow-emerald-950/20 gap-1.5 cursor-pointer rounded-xl text-xs h-9 px-3"
+          title="Crear nueva reserva manual (Atajo: tecla N)"
+        >
+          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <span>Nuevo Turno</span>
+          <kbd className="hidden sm:inline-flex ml-0.5 px-1 py-0.2 rounded bg-emerald-700/60 text-white text-[9px] font-mono">N</kbd>
+        </Button>
 
         <NotificationsDropdown tenantId={tenantId} />
 
         <ThemeToggle />
 
-        <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block" />
+        <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-0.5 hidden sm:block" />
 
         {/* Menú de Usuario / Perfil con Cambiar Contraseña */}
         <div className="relative" ref={menuRef}>

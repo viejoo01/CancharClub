@@ -166,12 +166,12 @@ export function DashboardDailySummary({
 
       {/* Resumen Diario: Modo Compacto de Recepción vs Modo Detallado */}
       {isCollapsed ? (
-        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/80 shadow-xs transition-all duration-200">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2 rounded-2xl bg-white dark:bg-[#070b14]/90 border border-slate-200/90 dark:border-slate-800/80 shadow-xs transition-all duration-200">
           <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-xs">
             {/* Turnos */}
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-xs" />
-              <span className="font-bold text-slate-900 dark:text-white">
+              <span className="font-bold text-slate-900 dark:text-white font-mono">
                 {stats.activeCount}
               </span>
               <span className="text-slate-500 dark:text-slate-400">
@@ -182,7 +182,7 @@ export function DashboardDailySummary({
             {/* Ocupación */}
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs" />
-              <span className="font-bold text-slate-900 dark:text-white">
+              <span className="font-bold text-slate-900 dark:text-white font-mono">
                 {stats.occupancyRate}%
               </span>
               <span className="text-slate-500 dark:text-slate-400">
@@ -200,6 +200,14 @@ export function DashboardDailySummary({
                 previsto (Señas: <strong className="text-slate-800 dark:text-slate-200 font-mono">{formatARS(stats.depositsCollected)}</strong> / Caja: <strong className="text-amber-700 dark:text-amber-400 font-mono">{formatARS(stats.pendingToCollect)}</strong>)
               </span>
             </div>
+
+            {/* Alerta de Señas por Validar en Ticker */}
+            {stats.pendingCount > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-300 text-[11px] font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>{stats.pendingCount} por validar</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -223,8 +231,8 @@ export function DashboardDailySummary({
       ) : (
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              Resumen operativo del día
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Lo de hoy • Panel de Telemetría
             </span>
             <button
               type="button"
@@ -232,14 +240,14 @@ export function DashboardDailySummary({
               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] font-semibold transition-colors cursor-pointer border border-slate-200/80 dark:border-slate-700/60"
               title="Minimizar métricas para ganar 140px de espacio vertical en la grilla de turnos"
             >
-              <span>Minimizar para recepción</span>
+              <span>Minimizar ticker</span>
               <ChevronUp className="w-3.5 h-3.5" />
             </button>
           </div>
           {/* Grid de 4 Cards de Resumen "Lo de hoy" */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Turnos de Hoy */}
-        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+        <Card className="bg-white dark:bg-[#070b14]/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:border-violet-500/30 hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -255,7 +263,7 @@ export function DashboardDailySummary({
               </Badge>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
                 {stats.activeCount}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -280,7 +288,7 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 2: Ocupación Estimada */}
-        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+        <Card className="bg-white dark:bg-[#070b14]/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:border-sky-500/30 hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -296,7 +304,7 @@ export function DashboardDailySummary({
               </span>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+              <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
                 {stats.occupancyRate}%
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -318,7 +326,7 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 3: Ingreso Estimado Hoy */}
-        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+        <Card className="bg-white dark:bg-[#070b14]/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:border-emerald-500/30 hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -355,7 +363,7 @@ export function DashboardDailySummary({
         </Card>
 
         {/* Card 4: Acciones & Atajos Rápidos */}
-        <Card className="bg-white dark:bg-slate-900/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
+        <Card className="bg-white dark:bg-[#070b14]/90 border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:shadow-md hover:border-amber-500/30 hover:-translate-y-0.5 transition-all duration-200 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">

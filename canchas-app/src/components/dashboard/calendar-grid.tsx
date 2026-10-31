@@ -20,7 +20,7 @@ import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
 import { formatARS, formatTime, getArgentinaTodayIso, getArgentinaTimeStr, isAbonoBooking } from '@/lib/utils'
-import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
+import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, timeStringToMinutes, type ClubScheduleConfig } from '@/lib/time-slots'
 import { format, addDays, subDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
@@ -241,29 +241,6 @@ export function CalendarGrid({
     }
   }, [timeSlots, scrollToTimeSlot])
 
-  // Auto-desplazamiento suave al horario actual en el primer render si la fecha es hoy
-  useEffect(() => {
-    const todayStr = getArgentinaTodayIso()
-    if (selectedDate === todayStr && timeSlots.length > 0) {
-      const timer = setTimeout(() => {
-        const timeStr = getArgentinaTimeStr()
-        const [hh, mmRaw] = timeStr.split(':')
-        const mm = Number(mmRaw) < 30 ? '00' : '30'
-        const currentSlot = `${hh}:${mm}`
-        const target = timeSlots.find((t) => t >= currentSlot)
-        if (target && gridContainerRef.current) {
-          const rowEl = gridContainerRef.current.querySelector(`[data-time="${target}"]`) as HTMLElement | null
-          if (rowEl) {
-            gridContainerRef.current.scrollTo({
-              top: Math.max(0, rowEl.offsetTop - 50),
-              behavior: 'smooth',
-            })
-          }
-        }
-      }, 350)
-      return () => clearTimeout(timer)
-    }
-  }, [selectedDate, timeSlots])
 
   // Manejador del evento wheel del mouse (siempre fluido y natural)
   const handleGridWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
@@ -671,6 +648,134 @@ export function CalendarGrid({
     setSelectedDate(format(new Date(), 'yyyy-MM-dd'))
   }
 
+  // Filtro de búsqueda de turnos y clientes sincronizado desde Header (Ctrl+K)
+  const [searchFilter, setSearchFilter] = useState('')
+
+  // Reloj en vivo de Argentina y cálculo de posición de la línea láser en la grilla
+  const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getArgentinaTimeStr())
+  const todayIso = useMemo(() => getTodayArgentinaIso(), [])
+  const isToday = selectedDate === todayIso
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTimeStr(getArgentinaTimeStr())
+    }, 20000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Escuchar eventos globales: búsqueda de turnos y apertura de modal rápido
+  useEffect(() => {
+    const handleOpenQuick = () => setIsQuickBookOpen(true)
+    const handleSearch = (e: Event) => {
+      const customEvent = e as CustomEvent<{ query?: string }>
+      setSearchFilter(customEvent.detail?.query?.trim().toLowerCase() || '')
+    }
+
+    window.addEventListener('open-quick-booking-modal', handleOpenQuick)
+    window.addEventListener('canchar-search-bookings', handleSearch)
+    return () => {
+      window.removeEventListener('open-quick-booking-modal', handleOpenQuick)
+      window.removeEventListener('canchar-search-bookings', handleSearch)
+    }
+  }, [])
+
+  // Cálculo de la posición exacta en píxeles de la hora actual en la grilla
+  const currentTimePosition = useMemo(() => {
+    if (!isToday || timeSlots.length === 0) return null
+    const currentMins = timeStringToMinutes(currentTimeStr)
+    const firstSlotMins = timeStringToMinutes(timeSlots[0])
+    const lastSlotMins = timeStringToMinutes(timeSlots[timeSlots.length - 1]) + 30
+
+    if (currentMins < firstSlotMins || currentMins > lastSlotMins) return null
+
+    let slotIndex = -1
+    for (let i = 0; i < timeSlots.length; i++) {
+      const sMins = timeStringToMinutes(timeSlots[i])
+      if (currentMins >= sMins && currentMins < sMins + 30) {
+        slotIndex = i
+        break
+      }
+    }
+
+    if (slotIndex === -1) return null
+
+    const slotMins = timeStringToMinutes(timeSlots[slotIndex])
+    const diffMins = currentMins - slotMins
+    const slotHeight = isCompact ? 46 : 64
+    const topPx = slotIndex * slotHeight + (diffMins / 30) * slotHeight
+
+    return {
+      topPx,
+      timeStr: currentTimeStr,
+    }
+  }, [isToday, timeSlots, currentTimeStr, isCompact])
+
+  // Desplazamiento animado al marcador de hora actual
+  const scrollToCurrentTimeMarker = useCallback(() => {
+    if (!gridContainerRef.current) return
+    if (currentTimePosition) {
+      gridContainerRef.current.scrollTo({
+        top: Math.max(0, currentTimePosition.topPx - 100),
+        behavior: 'smooth',
+      })
+      toast.info(`Desplazado a la hora actual (${currentTimePosition.timeStr} hs)`, { duration: 1800 })
+    } else {
+      toast.info('La hora actual está fuera del rango operativo de la grilla', { duration: 2200 })
+    }
+  }, [currentTimePosition])
+
+  // Auto-scroll inicial a la línea de hora actual al abrir la grilla
+  const autoScrolledRef = useRef(false)
+  useEffect(() => {
+    if (currentTimePosition && !autoScrolledRef.current && gridContainerRef.current) {
+      autoScrolledRef.current = true
+      const timer = setTimeout(() => {
+        gridContainerRef.current?.scrollTo({
+          top: Math.max(0, currentTimePosition.topPx - 100),
+          behavior: 'smooth',
+        })
+      }, 350)
+      return () => clearTimeout(timer)
+    }
+  }, [currentTimePosition])
+
+  // Atajos de teclado para Recepción: N (Nuevo Turno), T (Hora Actual), C (Cantina), F (Cobros)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInput =
+        activeEl?.tagName === 'INPUT' ||
+        activeEl?.tagName === 'TEXTAREA' ||
+        (activeEl as HTMLElement)?.isContentEditable
+      if (isInput) return
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        setIsQuickBookOpen(true)
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        const today = getTodayArgentinaIso()
+        if (selectedDate !== today) {
+          setSelectedDate(today)
+          setTimeout(() => {
+            scrollToCurrentTimeMarker()
+          }, 300)
+        } else {
+          scrollToCurrentTimeMarker()
+        }
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault()
+        router.push('/dashboard/cantina')
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        router.push('/dashboard/cobros')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [router, selectedDate, scrollToCurrentTimeMarker])
+
   const [hoveredBookingId, setHoveredBookingId] = useState<string | null>(null)
 
   // Mapear reservas por courtId cubriendo todos los intervalos de 30 minutos (ej. 13:00 y 13:30 para 1 hora exacta)
@@ -922,25 +1027,45 @@ export function CalendarGrid({
         {/* Atajos de teclado en Recepción (Visible en pantallas medianas y grandes) */}
         <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 select-none">
           <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Atajos de Recepción:</span>
-          <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setIsQuickBookOpen(true)}
+            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            title="Crear nuevo turno rápido (Atajo: tecla N)"
+          >
             <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">N</kbd>
             <span className="text-slate-700 dark:text-slate-300">Nuevo Turno</span>
-          </span>
+          </button>
           <span className="text-slate-300 dark:text-slate-700">•</span>
-          <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/cantina')}
+            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            title="Ir a Cantina (Atajo: tecla C)"
+          >
             <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">C</kbd>
             <span className="text-slate-700 dark:text-slate-300">Cantina</span>
-          </span>
+          </button>
           <span className="text-slate-300 dark:text-slate-700">•</span>
-          <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/cobros')}
+            className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            title="Ir a Caja y Cobros (Atajo: tecla F)"
+          >
             <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">F</kbd>
             <span className="text-slate-700 dark:text-slate-300">Caja</span>
-          </span>
+          </button>
           <span className="text-slate-300 dark:text-slate-700">•</span>
-          <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={scrollToCurrentTimeMarker}
+            className="inline-flex items-center gap-1 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+            title="Desplazarse a la hora actual en vivo (Atajo: tecla T)"
+          >
             <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold shadow-2xs">T</kbd>
-            <span className="text-slate-700 dark:text-slate-300">Hora Actual</span>
-          </span>
+            <span className="text-rose-600 dark:text-rose-400 font-semibold">Hora Actual</span>
+          </button>
         </div>
       </div>
 
@@ -984,6 +1109,28 @@ export function CalendarGrid({
           </span>
         </div>
       </div>
+
+      {/* Banner de búsqueda activa con botón para limpiar */}
+      {searchFilter && (
+        <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-300 shadow-xs animate-in fade-in duration-150">
+          <span className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>
+              Filtrando turnos de: <strong className="font-bold underline">{searchFilter}</strong>
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchFilter('')
+              window.dispatchEvent(new CustomEvent('canchar-search-bookings', { detail: { query: '' } }))
+            }}
+            className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-white px-2 py-0.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+          >
+            Limpiar filtro (×)
+          </button>
+        </div>
+      )}
 
       {/* Matriz de Calendario o Estado Vacío */}
       {filteredCourts.length === 0 ? (
@@ -1044,8 +1191,28 @@ export function CalendarGrid({
             ))}
           </div>
 
-          {/* Filas de Horarios */}
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/60 w-full">
+          {/* Filas de Horarios con Marcador Láser de Hora Actual */}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/60 w-full relative">
+            {/* Línea horizontal en vivo de Hora Actual (Láser rojo con badge sticky) */}
+            {currentTimePosition && (
+              <div 
+                className="absolute left-0 right-0 z-30 pointer-events-none flex items-center transition-all duration-300"
+                style={{ top: `${currentTimePosition.topPx}px` }}
+              >
+                {/* Pill indicador de hora fija sobre la columna sticky de hora */}
+                <div 
+                  className="sticky left-0 z-30 flex items-center justify-center bg-rose-600 text-white font-mono font-black text-[10px] px-1.5 py-0.5 rounded-full shadow-[0_0_12px_rgba(225,29,72,0.9)] border border-rose-400 gap-1 shrink-0 select-none"
+                  style={{ width: `${timeColWidth - 4}px`, marginLeft: '2px' }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                  <span>{currentTimePosition.timeStr}</span>
+                </div>
+
+                {/* Línea horizontal continua color carmín/rosa con brillo láser suave */}
+                <div className="flex-1 h-0.5 bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.9)] ml-1" />
+              </div>
+            )}
+
             {timeSlots.map((time) => (
               <div
                 key={time}
@@ -1112,6 +1279,18 @@ export function CalendarGrid({
                       ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-sm dark:bg-amber-950/70 dark:border-amber-400 dark:text-amber-100 dark:shadow-md'
                       : 'bg-amber-50/90 border-amber-300 hover:border-amber-400 hover:bg-amber-100 text-amber-950 dark:bg-amber-950/40 dark:border-amber-500/40 dark:hover:border-amber-400 dark:hover:bg-amber-950/60 dark:text-amber-100'
 
+                    const isSearchActive = searchFilter.length > 0
+                    const isMatchSearch = isSearchActive && Boolean(
+                      booking.customer_name?.toLowerCase().includes(searchFilter) ||
+                      booking.customer_phone?.toLowerCase().includes(searchFilter) ||
+                      booking.customer_email?.toLowerCase().includes(searchFilter)
+                    )
+                    const searchHighlightClasses = isSearchActive
+                      ? isMatchSearch
+                        ? 'ring-2 ring-emerald-500 dark:ring-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.7)] z-20 scale-[1.01]'
+                        : 'opacity-30'
+                      : ''
+
                     // Caso 1: Turno de 1 solo slot de 30 min
                     if (isStart && isEnd) {
                       return (
@@ -1123,7 +1302,7 @@ export function CalendarGrid({
                           className={`${isCompact ? 'p-1' : 'p-1.5'} border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer group min-w-0`}
                         >
                           <div
-                            className={`h-full w-full rounded-xl ${isCompact ? 'p-1.5' : 'p-2.5'} flex flex-col justify-between transition-all duration-150 border ${colorClasses}`}
+                            className={`h-full w-full rounded-xl ${isCompact ? 'p-1.5' : 'p-2.5'} flex flex-col justify-between transition-all duration-150 border ${colorClasses} ${searchHighlightClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
@@ -1188,7 +1367,7 @@ export function CalendarGrid({
                           className={`${isCompact ? 'px-1 pt-1' : 'px-1.5 pt-1.5'} pb-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                         >
                           <div
-                            className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 p-2.5'} w-full rounded-t-xl rounded-b-none flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-px relative z-10 ${colorClasses}`}
+                            className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 p-2.5'} w-full rounded-t-xl rounded-b-none flex flex-col justify-between transition-all duration-150 border-t border-x border-b-0 -mb-px relative z-10 ${colorClasses} ${searchHighlightClasses}`}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <div className="min-w-0 flex-1">
@@ -1253,7 +1432,7 @@ export function CalendarGrid({
                           className={`${isCompact ? 'px-1' : 'px-1.5'} py-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                         >
                           <div
-                            className={`h-full ${isCompact ? 'min-h-11 px-2 py-0.5' : 'min-h-16 px-2.5 py-1.5'} w-full rounded-none flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-px relative z-10 ${colorClasses}`}
+                            className={`h-full ${isCompact ? 'min-h-11 px-2 py-0.5' : 'min-h-16 px-2.5 py-1.5'} w-full rounded-none flex items-center justify-between transition-all duration-150 border-x border-y-0 -my-px relative z-10 ${colorClasses} ${searchHighlightClasses}`}
                           >
                             <span className="text-[10px] font-medium opacity-80 italic truncate text-slate-700 dark:text-slate-300">
                               {isCompact ? 'En curso' : 'Turno en curso...'}
@@ -1276,7 +1455,7 @@ export function CalendarGrid({
                         className={`${isCompact ? 'px-1 pb-1' : 'px-1.5 pb-1.5'} pt-0 border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 cursor-pointer relative z-10 flex flex-col min-w-0`}
                       >
                         <div
-                          className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 px-2.5 py-2'} w-full rounded-b-xl rounded-t-none flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-px relative z-10 ${colorClasses}`}
+                          className={`h-full ${isCompact ? 'min-h-10.5 px-2 py-1' : 'min-h-15 px-2.5 py-2'} w-full rounded-b-xl rounded-t-none flex flex-col justify-between transition-all duration-150 border-b border-x border-t-0 -mt-px relative z-10 ${colorClasses} ${searchHighlightClasses}`}
                         >
                           <div className={`flex items-center justify-between w-full h-full ${isCompact ? 'text-[10px]' : 'text-[11px]'} mt-auto gap-1`}>
                             <div className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300 truncate">
@@ -1295,7 +1474,7 @@ export function CalendarGrid({
                               >
                                 <DollarSign className="w-2.5 h-2.5 text-white dark:text-emerald-400 shrink-0" />
                                 <span className="truncate">
-                                  {isCompact ? formatARS(booking.balance_due) : `Cobrar Resto (${formatARS(booking.balance_due)})`}
+                                  {isCompact ? formatARS(booking.balance_due) : `Cobrar resto (${formatARS(booking.balance_due)})`}
                                 </span>
                               </button>
                             ) : isAbono ? (
@@ -1321,7 +1500,7 @@ export function CalendarGrid({
                         setQuickBookSlot({ courtId: court.id, time })
                         setIsQuickBookOpen(true)
                       }}
-                      className={`border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-emerald-950/20 transition-colors relative min-w-0 ${isCompact ? 'min-h-11.5 p-0.5 sm:p-1' : 'min-h-16 p-1'}`}
+                      className={`border-r border-slate-100 dark:border-slate-800/60 last:border-r-0 group cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-emerald-950/20 transition-colors relative min-w-0 ${isCompact ? 'min-h-11.5 p-0.5 sm:p-1' : 'min-h-16 p-1'} ${searchFilter ? 'opacity-30' : ''}`}
                     >
                       {/* Área visible en desktop con hover */}
                       <div className="hidden sm:flex h-full w-full rounded-lg border border-dashed border-transparent group-hover:border-emerald-400/60 dark:group-hover:border-emerald-600/40 items-center justify-center transition-all opacity-0 group-hover:opacity-100">
@@ -1351,6 +1530,22 @@ export function CalendarGrid({
         <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
           {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha operativa' : 'canchas operativas'} ({gridDensity === 'compact' ? 'Modo Compacto' : 'Modo Cómodo'})
         </span>
+      </div>
+
+      {/* Botón flotante de acción rápida Command Center 24" */}
+      <div className="fixed bottom-6 right-6 z-40 hidden sm:flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsQuickBookOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-xl shadow-emerald-950/40 border border-emerald-400/30 hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer group"
+          title="Crear nueva reserva rápida en cualquier cancha (Atajo: tecla N)"
+        >
+          <Plus className="w-4 h-4 stroke-[2.5] group-hover:rotate-90 transition-transform duration-200" />
+          <span className="text-xs tracking-tight">Reserva Rápida</span>
+          <kbd className="px-1.5 py-0.5 rounded bg-emerald-700/80 text-white text-[9px] font-mono font-bold shadow-2xs">
+            N
+          </kbd>
+        </button>
       </div>
       </>
       )}

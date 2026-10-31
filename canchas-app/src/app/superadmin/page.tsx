@@ -784,12 +784,16 @@ export default function SuperadminPage() {
       ? 'Control total del predio: canchas, reglas de precios, reportes de ocupación y facturación SaaS.'
       : 'Control operativo: calendario de turnos en vivo, turnos fijos de abonados, cantina/kiosco y caja diaria.'
 
+    const passwordLine = user.password
+      ? `🔑 *Contraseña:* ${user.password}`
+      : `🔑 *Contraseña:* La definida al dar de alta tu cuenta (podés ingresar o restablecerla desde la pantalla de login)`
+
     const message = `🎾 *¡Hola ${user.name}! Te damos la bienvenida a Canchar Club.*
 
 Tu usuario para gestionar *${user.tenantName}* ya está activo:
 🔗 *Portal de Acceso:* https://cancharclub.com.ar/auth/login
 👤 *Email:* ${user.email}
-🔑 *Contraseña:* ${user.password || '(Sin clave guardada - asignar en panel)'}
+${passwordLine}
 🛡️ *Rol asignado:* ${roleTitle}
 
 📌 *Tus funciones habilitadas:*
@@ -930,7 +934,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }
 
   const handleOpenEditUser = (user: ClubUser) => {
-    setEditingUser({ ...user })
+    setEditingUser({ ...user, password: '' })
     setIsEditUserModalOpen(true)
   }
 
@@ -940,8 +944,9 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
     setIsUpdatingUser(true)
     try {
-      if (editingUser.password?.trim()) {
-        const pwdRes = await updateUserPasswordBySuperadmin(editingUser.id, editingUser.password.trim())
+      const newPasswordClean = editingUser.password?.trim()
+      if (newPasswordClean) {
+        const pwdRes = await updateUserPasswordBySuperadmin(editingUser.id, newPasswordClean)
         if (!pwdRes.success) {
           toast.error('Error al actualizar contraseña: ' + (pwdRes.error || ''))
           return
@@ -962,6 +967,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       const updated: ClubUser = {
         ...editingUser,
+        password: newPasswordClean || (clubUsers.find(u => u.id === editingUser.id)?.password || ''),
         tenantName: assignedTenant?.name || editingUser.tenantName,
         tenantSlug: assignedTenant?.slug || editingUser.tenantSlug,
       }
@@ -969,7 +975,9 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       setClubUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
       setIsEditUserModalOpen(false)
       toast.success(`Usuario "${updated.name}" actualizado correctamente`, {
-        description: 'Se guardaron los datos y la contraseña en la base de datos.'
+        description: newPasswordClean
+          ? 'Se guardaron los datos y se asignó la nueva contraseña.'
+          : 'Se guardaron los datos del usuario en la base de datos.'
       })
     } catch (err) {
       console.error(err)
@@ -2707,31 +2715,34 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           </div>
                           <div>
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Contraseña</span>
-                            <div className="flex items-center gap-1 mt-0.5 font-mono text-[11px] text-slate-300">
+                            <div className="flex items-center gap-1.5 mt-0.5 font-mono text-[11px] text-slate-300">
                               <span>
                                 {revealedPasswords[user.id] ? (
                                   user.password ? (
-                                    user.password
+                                    <span className="text-emerald-400 font-bold select-all">{user.password}</span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEditUser(user)}
-                                      className="text-amber-400 hover:text-amber-300 underline underline-offset-2 text-[10px]"
-                                      title="Click para asignar una clave"
-                                    >
-                                      Asignar clave
-                                    </button>
+                                    <span className="text-[10px] text-amber-400 font-sans inline-flex items-center gap-1" title="Contraseña encriptada en la base de datos">
+                                      <span>Protegida</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditUser(user)}
+                                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 ml-0.5 cursor-pointer font-medium"
+                                      >
+                                        Cambiar
+                                      </button>
+                                    </span>
                                   )
                                 ) : (
-                                  '••••••••'
+                                  <span className="tracking-widest text-slate-500">••••••••</span>
                                 )}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleTogglePassword(user.id)}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
+                                title={revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave o estado'}
                               >
-                                {revealedPasswords[user.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                {revealedPasswords[user.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                               </button>
                               <button
                                 type="button"
@@ -2740,12 +2751,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info('No hay contraseña guardada para este usuario. Podés asignarle una con el botón de editar.')
+                                    toast.info('La contraseña está protegida por encriptación bcrypt (no se almacena en texto plano). Podés asignarle una nueva con el botón Cambiar.', {
+                                      action: {
+                                        label: 'Cambiar',
+                                        onClick: () => handleOpenEditUser(user),
+                                      }
+                                    })
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
+                                title={user.password ? "Copiar contraseña" : "Contraseña protegida"}
                               >
-                                <Copy className="w-3 h-3" />
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -2900,35 +2917,38 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             )}
                           </td>
                           <td className="p-4 text-center">
-                            <div className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
                               <span>
                                 {revealedPasswords[user.id] ? (
                                   user.password ? (
-                                    user.password
+                                    <span className="text-emerald-400 font-bold select-all">{user.password}</span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEditUser(user)}
-                                      className="text-amber-400 hover:text-amber-300 underline underline-offset-2 text-[10px]"
-                                      title="Click para asignar una clave a este club"
-                                    >
-                                      Asignar clave
-                                    </button>
+                                    <span className="text-[10px] text-amber-400 font-sans inline-flex items-center gap-1" title="Contraseña protegida por hash criptográfico bcrypt en Supabase">
+                                      <span>Protegida</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditUser(user)}
+                                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 ml-0.5 cursor-pointer font-medium"
+                                        title="Asignar una nueva clave a este usuario"
+                                      >
+                                        Cambiar
+                                      </button>
+                                    </span>
                                   )
                                 ) : (
-                                  '••••••••'
+                                  <span className="tracking-widest text-slate-500">••••••••</span>
                                 )}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleTogglePassword(user.id)}
-                                className="text-slate-500 hover:text-slate-300 ml-1 cursor-pointer"
-                                title={revealedPasswords[user.id] ? 'Ocultar' : 'Ver clave'}
+                                className="text-slate-500 hover:text-slate-300 cursor-pointer"
+                                title={revealedPasswords[user.id] ? 'Ocultar' : (user.password ? 'Ver clave asignada' : 'Ver estado de clave')}
                               >
                                 {revealedPasswords[user.id] ? (
-                                  <EyeOff className="w-3 h-3" />
+                                  <EyeOff className="w-3.5 h-3.5" />
                                 ) : (
-                                  <Eye className="w-3 h-3" />
+                                  <Eye className="w-3.5 h-3.5" />
                                 )}
                               </button>
                               <button
@@ -2938,13 +2958,18 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                     navigator.clipboard.writeText(user.password)
                                     toast.success('Contraseña copiada al portapapeles')
                                   } else {
-                                    toast.info('No hay contraseña guardada para este usuario. Podés asignarle una con el botón de editar.')
+                                    toast.info('La contraseña está protegida por encriptación bcrypt (no se almacena en texto plano). Podés asignarle una nueva con el botón Cambiar.', {
+                                      action: {
+                                        label: 'Cambiar',
+                                        onClick: () => handleOpenEditUser(user),
+                                      }
+                                    })
                                   }
                                 }}
                                 className="text-slate-500 hover:text-slate-300 cursor-pointer"
-                                title="Copiar contraseña"
+                                title={user.password ? "Copiar contraseña" : "Contraseña protegida"}
                               >
-                                <Copy className="w-3 h-3" />
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </td>
@@ -3683,27 +3708,42 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-300">Contraseña</Label>
-                  <Input
-                    required
-                    value={editingUser.password}
-                    onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-300">Estado</Label>
-                  <select
-                    value={editingUser.status}
-                    onChange={(e) => setEditingUser({ ...editingUser, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}
-                    className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-300 font-semibold">Contraseña</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+                      setEditingUser({ ...editingUser, password: `Club${randomSuffix}!` })
+                    }}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
                   >
-                    <option value="ACTIVE">Activo</option>
-                    <option value="INACTIVE">Inactivo</option>
-                  </select>
+                    Generar clave sugerida
+                  </button>
                 </div>
+                <Input
+                  type="text"
+                  placeholder="Dejar vacío para conservar la contraseña actual"
+                  value={editingUser.password}
+                  onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                  className="h-9 rounded-xl border-slate-800 bg-slate-950 text-xs font-mono"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Dejá este campo vacío si sólo deseás cambiar datos de perfil sin alterar la clave actual del usuario.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Estado de Cuenta</Label>
+                <select
+                  value={editingUser.status}
+                  onChange={(e) => setEditingUser({ ...editingUser, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}
+                  className="w-full h-9 rounded-xl border border-slate-800 bg-slate-900 text-xs px-3 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="ACTIVE">Activo</option>
+                  <option value="INACTIVE">Inactivo</option>
+                </select>
               </div>
 
               <DialogFooter className="pt-3 border-t border-slate-800/80 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mt-2">

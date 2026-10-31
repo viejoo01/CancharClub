@@ -553,7 +553,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
         tenant_name: t?.name || null,
         tenant_slug: t?.slug || null,
         created_at: p.created_at || '',
-        password: '••••••••',
+        password: '',
       }
     })
 
@@ -571,7 +571,7 @@ export async function getSuperadminUsers(): Promise<{ success: boolean; data: Su
           tenant_name: (u.user_metadata?.full_name as string) || 'Sin club vinculado',
           tenant_slug: null,
           created_at: u.created_at || '',
-          password: '••••••••',
+          password: '',
         })
       }
     }

@@ -37,7 +37,9 @@ import {
   Radio,
   Zap,
   Pause,
-  Clock
+  Clock,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -103,6 +105,7 @@ export default function SuperadminPage() {
   const [subscriptionFilter, setSubscriptionFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'PAUSADO' | 'PRUEBA' | 'BAJAS'>('ALL')
   const [tenantSearchTerm, setTenantSearchTerm] = useState('')
   const [tenantStatusFilter, setTenantStatusFilter] = useState<'ALL' | 'ACTIVE' | 'TRIAL' | 'PENDING' | 'CANCELLATION'>('ALL')
+  const [showSaaSGuide, setShowSaaSGuide] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newClubName, setNewClubName] = useState('')
   const [newCity, setNewCity] = useState('San Miguel de Tucumán')
@@ -552,6 +555,21 @@ export default function SuperadminPage() {
   const handleSendPaymentLink = (clubName: string, amount: number) => {
     toast.info(`Link de cobro generado para ${clubName}`, {
       description: `Orden de pago de ${formatARS(amount)} copiada al portapapeles para enviar por WhatsApp o email.`
+    })
+  }
+
+  const handleNotifyPendingWhatsApp = () => {
+    const pendingClubs = tenants.filter(t => t.subscription_status === 'PENDIENTE')
+    if (pendingClubs.length === 0) {
+      toast.info('No hay clubes con cuotas pendientes en este momento.')
+      return
+    }
+    const sampleClub = pendingClubs[0]
+    const amountStr = formatARS(sampleClub.highest_slot_price * calculateSaaSMultiplier(sampleClub.active_courts))
+    const msg = `¡Hola! Te escribimos de CancharClub. Les recordamos que la cuota SaaS del mes (${amountStr}) ya se encuentra liquidada para ${sampleClub.name}. Cualquier duda nos avisan por acá. ¡Muchas gracias!`
+    navigator.clipboard.writeText(msg)
+    toast.success(`Mensaje de cobranza para ${pendingClubs.length} club(es) copiado al portapapeles`, {
+      description: 'Listo para enviar por WhatsApp al dueño del club.'
     })
   }
 
@@ -1163,43 +1181,59 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
         </div>
       </div>
 
-      {/* Ribbon HUD: Reglas de Negocio, Fórmula SaaS y Roles */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="p-3.5 rounded-2xl bg-linear-to-br from-indigo-950/40 via-slate-900/60 to-slate-950/80 border border-indigo-500/20 backdrop-blur-md flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
-            <Calculator className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[11px] font-semibold uppercase text-indigo-300 tracking-wider block">Fórmula de Cuota SaaS</span>
-            <span className="text-xs font-mono font-bold text-white truncate block">
+      {/* Ribbon HUD: Parámetros y Reglas del Modelo SaaS (Colapsable para maximizar espacio vertical) */}
+      <div className="rounded-2xl bg-slate-950/80 border border-slate-800/80 overflow-hidden shadow-md">
+        <button
+          type="button"
+          onClick={() => setShowSaaSGuide(!showSaaSGuide)}
+          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-900/60 transition cursor-pointer"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <Calculator className="w-4 h-4" />
+            </div>
+            <span className="font-bold text-xs text-slate-200">
+              Parámetros del Modelo SaaS (Fórmula proporcional, Roles y 15d Trial)
+            </span>
+            <Badge className="bg-indigo-500/10 text-indigo-300 border-indigo-500/20 text-[10px] hidden sm:inline-flex">
               Turno Más Caro × (0.5 × Canchas + 0.5)
-            </span>
+            </Badge>
           </div>
-        </div>
+          <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-semibold">
+            <span>{showSaaSGuide ? 'Ocultar' : 'Ver reglas'}</span>
+            {showSaaSGuide ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
+        </button>
 
-        <div className="p-3.5 rounded-2xl bg-linear-to-br from-emerald-950/30 via-slate-900/60 to-slate-950/80 border border-emerald-500/20 backdrop-blur-md flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-            <Users className="w-4 h-4" />
-          </div>
-          <div className="min-w-0 text-xs">
-            <span className="text-[11px] font-semibold uppercase text-emerald-300 tracking-wider block">Separación de Roles</span>
-            <span className="text-slate-300 truncate block">
-              <strong className="text-emerald-400">Dueños:</strong> Admin & Finanzas • <strong className="text-amber-400">Encargados:</strong> Turnos & Caja
-            </span>
-          </div>
-        </div>
+        {showSaaSGuide && (
+          <div className="p-4 border-t border-slate-800/80 bg-slate-900/40 grid grid-cols-1 md:grid-cols-3 gap-3 animate-in fade-in duration-200">
+            <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/20 text-xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-indigo-300 tracking-wider block">Fórmula de Cuota Proporcional</span>
+              <p className="font-mono font-bold text-white text-sm">Turno Más Caro × (0.5 × Canchas + 0.5)</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Escala automáticamente con la inflación del club según el precio real de su franja horaria más alta.
+              </p>
+            </div>
 
-        <div className="p-3.5 rounded-2xl bg-linear-to-br from-purple-950/40 via-slate-900/60 to-slate-950/80 border border-purple-500/20 backdrop-blur-md flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
-            <Gift className="w-4 h-4" />
+            <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-emerald-300 tracking-wider block">Separación Estricta de Roles</span>
+              <p className="text-white font-medium text-xs">
+                <strong className="text-emerald-400">Dueños:</strong> Admin total & Finanzas • <strong className="text-amber-400">Encargados:</strong> Turnos, Kiosco y Caja
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Los encargados no tienen acceso a precios, suscripción SaaS ni reportes de facturación confidenciales.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-purple-300 tracking-wider block">Garantía Período de Prueba</span>
+              <p className="font-bold text-purple-300 text-xs">15 días gratis bonificados</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Cada club nuevo opera con acceso completo. Al finalizar el día 15, se emite la primera liquidación SaaS.
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 text-xs">
-            <span className="text-[11px] font-semibold uppercase text-purple-300 tracking-wider block">Período de Prueba</span>
-            <span className="text-slate-300 truncate block">
-              <strong className="text-purple-300">15 días gratis bonificados</strong> para cada club nuevo que se registre
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Métricas Globales (KPIs) con micro-glow y tarjetas premium */}
@@ -1421,27 +1455,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
           </button>
         </div>
 
-        {/* Acceso rápido contextual a la derecha del tab bar */}
+        {/* Métricas contextuales a la derecha del tab bar */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
           {activeTab === 'USERS' && (
-            <Button
-              size="sm"
-              onClick={() => setIsCreateUserModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-xl shadow-xs cursor-pointer h-9 px-3"
-            >
-              <UserPlus className="w-3.5 h-3.5 mr-1" />
-              Nuevo Usuario
-            </Button>
+            <div className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-bold">
+              Total Cuentas: {clubUsers.length}
+            </div>
           )}
           {activeTab === 'TENANTS' && (
-            <Button
-              size="sm"
-              onClick={() => setIsModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl shadow-xs cursor-pointer h-9 px-3"
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              Nuevo Club
-            </Button>
+            <div className="text-xs font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-xl font-bold">
+              Total Clubes: {tenants.length}
+            </div>
           )}
           {activeTab === 'BILLING' && (
             <div className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-bold">
@@ -1465,6 +1489,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </p>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
+                {pendingCount > 0 && (
+                  <Button
+                    size="sm"
+                    onClick={handleNotifyPendingWhatsApp}
+                    className="h-9 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shrink-0 cursor-pointer shadow-md shadow-emerald-950/30 gap-1.5"
+                    title="Copiar mensaje de cobranza por WhatsApp para clubes pendientes"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-100" />
+                    <span>Recordar ({pendingCount})</span>
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -2207,12 +2242,13 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         <span className="text-[10px] text-slate-500 uppercase font-bold block">Mercado Pago</span>
                         <div className="mt-1">
                           {t.mp_connected ? (
-                            <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
-                              Conectado
+                            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold inline-flex items-center gap-1">
+                              <CreditCard className="w-3 h-3 text-emerald-400" />
+                              <span>Débito MP</span>
                             </Badge>
                           ) : (
                             <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px]">
-                              Sin Configurar
+                              Cobro Manual
                             </Badge>
                           )}
                         </div>
@@ -2412,12 +2448,13 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       </td>
                       <td className="p-4 text-center">
                         {t.mp_connected ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px]">
-                            Conectado
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold inline-flex items-center gap-1">
+                            <CreditCard className="w-3 h-3 text-emerald-400" />
+                            <span>Débito MP</span>
                           </Badge>
                         ) : (
                           <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px]">
-                            Sin Configurar
+                            Cobro Manual
                           </Badge>
                         )}
                       </td>
@@ -2527,85 +2564,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
       {/* Pestaña: USUARIOS & ACCESOS (DUEÑOS Y CANCHEROS) */}
       {activeTab === 'USERS' && (
         <div className="space-y-6">
-          {/* Banner explicativo de roles */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-950/40 via-slate-900/60 to-slate-950/80 border border-emerald-500/25 backdrop-blur-md flex flex-col justify-between gap-3 shadow-lg shadow-emerald-950/20">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 shrink-0 shadow-xs">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div className="space-y-1 flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-white tracking-tight">Dueño del Club</h4>
-                      <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 border border-emerald-500/30">
-                        Administrador
-                      </Badge>
-                    </div>
-                    <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      {ownerCount} asignados
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed pt-0.5">
-                    Acceso y administración total del club: configuración de canchas, reglas de tarifas, precios de slots, reportes de ocupación y cobros de la cuota SaaS mensual.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-emerald-400" />
-                  <span>Configuración General</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-emerald-400" />
-                  <span>Planes y Cuota SaaS</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-emerald-300/90 border border-emerald-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-emerald-400" />
-                  <span>Reportes y Facturación</span>
-                </span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-linear-to-br from-amber-950/40 via-slate-900/60 to-slate-950/80 border border-amber-500/25 backdrop-blur-md flex flex-col justify-between gap-3 shadow-lg shadow-amber-950/20">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/25 shrink-0 shadow-xs">
-                  <Coffee className="w-5 h-5" />
-                </div>
-                <div className="space-y-1 flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-white tracking-tight">Encargado / Mostrador</h4>
-                      <Badge className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 border border-amber-500/30">
-                        Encargado
-                      </Badge>
-                    </div>
-                    <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                      {staffCount} asignados
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed pt-0.5">
-                    Operativa diaria en cancha: Calendario de turnos en vivo, turnos fijos de abonados, cantina & kiosco, y apertura/cierre de caja diaria. No accede a finanzas SaaS ni precios.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-amber-400" />
-                  <span>Calendario de Turnos</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-amber-400" />
-                  <span>Kiosco / Cantina</span>
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900/80 text-amber-300/90 border border-amber-500/15 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-amber-400" />
-                  <span>Caja Diaria</span>
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Tabla de Usuarios */}
           <Card className="bg-slate-900/60 border-slate-800/80 rounded-2xl backdrop-blur-md overflow-hidden">
             <CardHeader className="border-b border-slate-800/80 p-5">
@@ -2622,7 +2580,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
                 {/* Filtros */}
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="relative min-w-50 flex-1 sm:flex-initial">
+                  <div className="relative min-w-44 flex-1 sm:flex-initial">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <Input 
                       placeholder="Buscar por nombre, email o club..."
@@ -2632,15 +2590,50 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                     />
                   </div>
 
-                  <select
-                    value={userRoleFilter}
-                    onChange={(e) => setUserRoleFilter(e.target.value as 'ALL' | 'TENANT_ADMIN' | 'TENANT_STAFF')}
-                    className="h-9 rounded-xl border border-slate-800 bg-slate-950 text-xs px-3 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  >
-                    <option value="ALL">Todos los roles</option>
-                    <option value="TENANT_ADMIN">Solo Dueños (Admin)</option>
-                    <option value="TENANT_STAFF">Solo Encargados (Operativo)</option>
-                  </select>
+                  {/* Chips interactivos de filtro por Rol */}
+                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setUserRoleFilter('ALL')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5",
+                        userRoleFilter === 'ALL'
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      <span>Todos</span>
+                      <Badge className="text-[10px] px-1 py-0 bg-white/10 text-white border-0">{clubUsers.length}</Badge>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserRoleFilter('TENANT_ADMIN')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5",
+                        userRoleFilter === 'TENANT_ADMIN'
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Dueños</span>
+                      <Badge className="text-[10px] px-1 py-0 bg-emerald-950 text-emerald-300 border-0">{ownerCount}</Badge>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserRoleFilter('TENANT_STAFF')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5",
+                        userRoleFilter === 'TENANT_STAFF'
+                          ? "bg-amber-600 text-white shadow-xs"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      <Coffee className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Encargados</span>
+                      <Badge className="text-[10px] px-1 py-0 bg-amber-950 text-amber-300 border-0">{staffCount}</Badge>
+                    </button>
+                  </div>
 
                   <select
                     value={userClubFilter}
@@ -2652,15 +2645,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
-
-                  <Button
-                    size="sm"
-                    onClick={() => setIsCreateUserModalOpen(true)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs h-9 px-3"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 mr-1" />
-                    Nuevo Usuario
-                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -2864,7 +2848,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       <th className="p-4 pl-6">Usuario / Contacto</th>
                       <th className="p-4">Club Asignado</th>
                       <th className="p-4 text-center">Rol en Plataforma</th>
-                      <th className="p-4">Alcance Operativo</th>
                       <th className="p-4 text-center">Contraseña</th>
                       <th className="p-4 text-center">Estado</th>
                       <th className="p-4 pr-6 text-right">Acciones</th>
@@ -2873,7 +2856,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   <tbody className="divide-y divide-slate-800/60 text-xs">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400">
+                        <td colSpan={6} className="p-8 text-center text-slate-400">
                           <p className="font-semibold text-slate-300">No se encontraron usuarios con esos filtros.</p>
                           <p className="text-xs mt-1">Probá cambiando el término de búsqueda o el club seleccionado.</p>
                         </td>
@@ -2946,17 +2929,6 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                 <Coffee className="w-3 h-3 mr-1" />
                                 Encargado
                               </Badge>
-                            )}
-                          </td>
-                          <td className="p-4 max-w-55">
-                            {user.role === 'TENANT_ADMIN' ? (
-                              <div className="text-[11px] text-slate-300 leading-tight">
-                                <strong className="text-emerald-400">Total:</strong> Canchas, Precios, Reportes, Ocupación y Facturación SaaS.
-                              </div>
-                            ) : (
-                              <div className="text-[11px] text-slate-300 leading-tight">
-                                <strong className="text-amber-400">Operativo:</strong> Calendario de turnos, turnos fijos, cantina/kiosco y caja diaria.
-                              </div>
                             )}
                           </td>
                           <td className="p-4 text-center">

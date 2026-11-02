@@ -72,7 +72,7 @@ export default function SuperadminLayout({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 p-3 sm:p-6 max-w-7xl w-full mx-auto space-y-4 sm:space-y-6">
+      <main className="flex-1 p-3 sm:p-6 max-w-[1700px] w-full mx-auto space-y-4 sm:space-y-6">
         {children}
       </main>
     </div>

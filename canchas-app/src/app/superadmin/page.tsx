@@ -1316,7 +1316,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }, [trialDaysToSet])
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto px-1 sm:px-2">
+    <div className="space-y-6 max-w-[1700px] w-full mx-auto px-1 sm:px-2">
       {/* Header Superior y Barra de Acciones */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 rounded-3xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl shadow-xl shadow-black/20">
         <div className="space-y-1">
@@ -2057,15 +2057,17 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
             <div className="hidden md:block overflow-x-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    <th className="p-4 pl-6">Club / Inquilino</th>
-                    <th className="p-4 text-center">Canchas (N)</th>
-                    <th className="p-4 text-right">Turno Más Caro</th>
-                    <th className="p-4 text-center">Multiplicador (M)</th>
-                    <th className="p-4 text-right">Cuota Mensual Final</th>
-                    <th className="p-4 text-center">Vencimiento</th>
-                    <th className="p-4 text-center">Estado</th>
-                    <th className="p-4 pr-6 text-right">Acciones</th>
+                  <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="py-3.5 pl-6 pr-4 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
+                      Club / Inquilino
+                    </th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[95px]">Canchas (N)</th>
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-[110px]">Turno Más Caro</th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[95px]">Multiplicador (M)</th>
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-[140px]">Cuota Mensual Final</th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[100px]">Vencimiento</th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[125px]">Estado</th>
+                    <th className="py-3.5 pr-6 pl-3 text-right whitespace-nowrap min-w-[240px]">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -2077,37 +2079,37 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         t.cancel_at_period_end && "bg-amber-950/20 border-l-2 border-l-amber-500"
                       )}
                     >
-                      <td className="p-4 pl-6">
+                      <td className="py-3.5 pl-6 pr-4 sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white">{t.name}</span>
+                          <span className="font-semibold text-white whitespace-nowrap">{t.name}</span>
                           {t.cancel_at_period_end && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shrink-0">
                               <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
-                              Baja Solicitada
+                              Baja
                             </span>
                           )}
                           {t.pricing.planName && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
                               {t.pricing.planName}
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400">{t.city}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">{t.city}</div>
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
                         <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-300 font-mono text-xs">
                           {t.active_courts} {t.active_courts === 1 ? 'cancha' : 'canchas'}
                         </Badge>
                       </td>
-                      <td className="p-4 text-right font-medium text-slate-200 font-mono">
+                      <td className="py-3.5 px-3 text-right font-medium text-slate-200 font-mono whitespace-nowrap">
                         {formatARS(t.highest_slot_price)}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
                         <span className="font-semibold text-indigo-400 font-mono bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
                           {t.pricing.multiplier}x
                         </span>
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
                         <div className="font-extrabold text-sm text-emerald-400 font-mono">
                           {formatARS(t.pricing.monthlyFeeArs)}
                         </div>
@@ -2115,10 +2117,10 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           {t.pricing.formulaDescription}
                         </div>
                       </td>
-                      <td className="p-4 text-center text-slate-400 text-xs font-mono">
+                      <td className="py-3.5 px-3 text-center text-slate-400 text-xs font-mono whitespace-nowrap">
                         {t.pricing.nextDueDate}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
                         {t.cancel_at_period_end ? (
                           <div className="flex flex-col items-center gap-0.5">
                             <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center gap-1" title="Baja por arrepentimiento solicitada por el dueño">
@@ -2154,13 +2156,13 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           </Badge>
                         )}
                       </td>
-                      <td className="p-4 pr-6 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="py-3.5 pr-6 pl-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                           {t.cancel_at_period_end && (
                             <Button
                               size="sm"
                               onClick={() => handleUndoCancellation(t.id, t.name)}
-                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1 shrink-0"
                               title="Anular solicitud de baja y mantener club en el sistema"
                             >
                               <Undo2 className="w-3.5 h-3.5" />
@@ -2169,11 +2171,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           )}
 
                           {t.subscription_status === 'PENDIENTE' && (
-                            <>
+                            <div className="flex items-center gap-1 shrink-0">
                               <Button
                                 size="sm"
                                 onClick={() => handleOpenManualPaymentModal(t, t.pricing.monthlyFeeArs)}
-                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg px-2.5 shadow-xs cursor-pointer flex items-center gap-1"
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg px-2.5 shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
                                 title="Registrar cobro de cuota por transferencia o efectivo"
                               >
                                 <DollarSign className="w-3.5 h-3.5" />
@@ -2183,7 +2185,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleOpenPaymentLinkModal(t, t.pricing.monthlyFeeArs)}
-                                className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer"
+                                className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer shrink-0"
                                 title="Generar link de pago Mercado Pago Checkout Pro"
                               >
                                 <Send className="w-3.5 h-3.5" />
@@ -2195,28 +2197,28 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                   variant="outline"
                                   disabled={debitLoadingTenantId === t.id}
                                   onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
-                                  className="h-7 text-xs border-emerald-700/60 bg-emerald-950/30 text-emerald-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer"
+                                  className="h-7 text-xs border-emerald-700/60 bg-emerald-950/30 text-emerald-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer shrink-0"
                                   title="Reintentar débito automático con la tarjeta vinculada"
                                 >
                                   {debitLoadingTenantId === t.id ? (
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                   ) : (
                                     <>
-                                      <Zap className="w-3 h-3 text-amber-300" />
+                                      <Zap className="w-3.5 h-3.5 text-amber-300" />
                                       <span>Débito</span>
                                     </>
                                   )}
                                 </Button>
                               )}
-                            </>
+                            </div>
                           )}
 
                           {t.subscription_status === 'PAUSADO' && (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                               <Button
                                 size="sm"
                                 onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1 shrink-0"
                                 title="Reanudar reservas públicas del club"
                               >
                                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
@@ -2226,7 +2228,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleWaiveSurcharge(t.id, t.name)}
-                                className="h-7 text-xs border-amber-600/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 rounded-lg px-2 cursor-pointer"
+                                className="h-7 text-xs border-amber-600/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 rounded-lg px-2 cursor-pointer shrink-0"
                                 title="Condonar recargos acumulados por mora"
                               >
                                 <span>Condonar</span>
@@ -2235,20 +2237,20 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           )}
 
                           {t.subscription_status === 'AL_DIA' && !t.cancel_at_period_end && (
-                            <div className="flex items-center gap-1.5 mr-1">
+                            <div className="flex items-center gap-1.5 mr-1 shrink-0">
                               {t.mp_connected && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   disabled={debitLoadingTenantId === t.id}
                                   onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
-                                  className="h-7 text-[11px] text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-950/30 rounded-lg px-2 cursor-pointer"
+                                  className="h-7 text-[11px] text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-950/30 rounded-lg px-2 cursor-pointer shrink-0"
                                   title="Forzar cobro de cuota mensual por débito"
                                 >
                                   {debitLoadingTenantId === t.id ? (
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                   ) : (
-                                    <Zap className="w-3 h-3 mr-1 text-amber-300" />
+                                    <Zap className="w-3.5 h-3.5 mr-1 text-amber-300" />
                                   )}
                                   <span>Cobro MP</span>
                                 </Button>
@@ -2260,67 +2262,70 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             </div>
                           )}
 
-                          {/* Ficha Técnica y Diagnóstico 360° */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenDiagnosticModal(t.id)}
-                            className="h-7 w-7 p-0 rounded-lg cursor-pointer border-slate-800 text-sky-400 hover:bg-sky-950/40 hover:text-sky-300 flex items-center justify-center shrink-0"
-                            title="Ficha Técnica y Diagnóstico 360° del club"
-                          >
-                            <Activity className="w-3.5 h-3.5" />
-                          </Button>
+                          {/* Barra de utilidades y gestión */}
+                          <div className="flex items-center gap-1 pl-1.5 border-l border-slate-800/80 shrink-0">
+                            {/* Ficha Técnica y Diagnóstico 360° */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenDiagnosticModal(t.id)}
+                              className="h-7 w-7 p-0 rounded-lg cursor-pointer border-slate-800 text-sky-400 hover:bg-sky-950/40 hover:text-sky-300 flex items-center justify-center shrink-0"
+                              title="Ficha Técnica y Diagnóstico 360° del club"
+                            >
+                              <Activity className="w-3.5 h-3.5" />
+                            </Button>
 
-                          {/* Acciones secundarias compactas con tooltip */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setTrialDaysToSet(15)
-                              setActivatingTrialTenant(t)
-                            }}
-                            className={cn(
-                              "h-7 w-7 p-0 rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0",
-                              t.is_trial
-                                ? "border-purple-500/60 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60"
-                                : "border-slate-800 text-purple-400 hover:bg-purple-950/30"
-                            )}
-                            title={t.is_trial ? "Extender o renovar período de prueba (15 días)" : "Activar 15 días de prueba gratis"}
-                          >
-                            <Gift className="w-3.5 h-3.5" />
-                          </Button>
+                            {/* Acciones secundarias compactas con tooltip */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setTrialDaysToSet(15)
+                                setActivatingTrialTenant(t)
+                              }}
+                              className={cn(
+                                "h-7 w-7 p-0 rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0",
+                                t.is_trial
+                                  ? "border-purple-500/60 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60"
+                                  : "border-slate-800 text-purple-400 hover:bg-purple-950/30"
+                              )}
+                              title={t.is_trial ? "Extender o renovar período de prueba (15 días)" : "Activar 15 días de prueba gratis"}
+                            >
+                              <Gift className="w-3.5 h-3.5" />
+                            </Button>
 
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleOpenEdit(t)}
-                            className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer shrink-0"
-                            title="Editar datos del club y cuota mensual"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-
-                          {t.subscription_status !== 'PAUSADO' && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
-                              title="Pausar reservas públicas del club por falta de pago"
+                              onClick={() => handleOpenEdit(t)}
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer shrink-0"
+                              title="Editar datos del club y cuota mensual"
                             >
-                              <Pause className="w-3.5 h-3.5" />
+                              <Pencil className="w-3.5 h-3.5" />
                             </Button>
-                          )}
 
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleOpenDeleteTenantModal(t)}
-                            className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
-                            title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                            {t.subscription_status !== 'PAUSADO' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
+                                title="Pausar reservas públicas del club por falta de pago"
+                              >
+                                <Pause className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOpenDeleteTenantModal(t)}
+                              className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
+                              title="Eliminar club permanentemente y cancelar cobros en Mercado Pago"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -2651,7 +2656,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    <th className="p-4 pl-6">Club</th>
+                    <th className="p-4 pl-6 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">Club</th>
                     <th className="p-4">Ubicación</th>
                     <th className="p-4 text-center">Plan Contratado</th>
                     <th className="p-4 text-center">Estado Acceso</th>
@@ -2676,7 +2681,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           ? "bg-amber-950/25 hover:bg-amber-950/40 border-l-4 border-l-amber-500" 
                           : "hover:bg-slate-800/20"
                       )}>
-                      <td className="p-4 pl-6 font-semibold text-white">
+                      <td className="p-4 pl-6 font-semibold text-white sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
                         <div className="flex items-center gap-2">
                           <span>{t.name}</span>
                           {t.cancel_at_period_end && (
@@ -3535,7 +3540,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
 
       {/* Modal: Editar Club / Inquilino */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-xl bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        <DialogContent className="w-[95vw] sm:max-w-2xl bg-slate-950 border-slate-800 text-slate-100 rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 custom-scrollbar">
           <DialogHeader className="pr-6">
             <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
               <Pencil className="w-4 h-4 text-indigo-400" />

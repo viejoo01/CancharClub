@@ -39,7 +39,12 @@ import {
   Pause,
   Clock,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Activity,
+  FileText,
+  CheckCircle,
+  HelpCircle,
+  Share2
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -73,6 +78,12 @@ import {
   activateTenantTrialPeriodAction,
   testSuperadminTelemetryAction,
   createTenantFromSuperadmin,
+  triggerManualAutoDebitBySuperadmin,
+  createSuperadminPaymentLink,
+  recordManualPaymentBySuperadmin,
+  waiveTenantDunningSurchargeBySuperadmin,
+  getTenantDiagnosticDetails,
+  type TenantDiagnosticData,
   type SuperadminUserItem, 
   type SuperadminTenantItem 
 } from '@/actions/superadmin.actions'
@@ -152,6 +163,37 @@ export default function SuperadminPage() {
   } | null>(null)
   const [isDeletingTenant, setIsDeletingTenant] = useState(false)
   const [newUserTenantId, setNewUserTenantId] = useState('t1')
+
+  // Módulos de Emergencia y Cobros Superadmin:
+  // 1. Link de Pago Mercado Pago Checkout Pro
+  const [paymentLinkTenant, setPaymentLinkTenant] = useState<SuperadminTenantItem | null>(null)
+  const [paymentLinkAmount, setPaymentLinkAmount] = useState<number>(0)
+  const [paymentLinkNotes, setPaymentLinkNotes] = useState<string>('')
+  const [isGeneratingPaymentLink, setIsGeneratingPaymentLink] = useState(false)
+  const [generatedPaymentLink, setGeneratedPaymentLink] = useState<{
+    initPoint: string
+    preferenceId: string
+    whatsappUrl: string
+    amount: number
+  } | null>(null)
+
+  // 2. Registro de Cobro Manual (Transferencia / Efectivo)
+  const [manualPaymentTenant, setManualPaymentTenant] = useState<SuperadminTenantItem | null>(null)
+  const [manualPaymentAmount, setManualPaymentAmount] = useState<number>(0)
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<'TRANSFER' | 'CASH' | 'CARD' | 'OTHER'>('TRANSFER')
+  const [manualPaymentReceipt, setManualPaymentReceipt] = useState<string>('')
+  const [manualPaymentNotes, setManualPaymentNotes] = useState<string>('')
+  const [manualPaymentWaiveSurcharge, setManualPaymentWaiveSurcharge] = useState(true)
+  const [isRecordingManualPayment, setIsRecordingManualPayment] = useState(false)
+
+  // 3. Débito Automático Forzado
+  const [debitLoadingTenantId, setDebitLoadingTenantId] = useState<string | null>(null)
+
+  // 4. Diagnóstico 360° y Ficha Técnica
+  const [diagnosticTenantId, setDiagnosticTenantId] = useState<string | null>(null)
+  const [diagnosticData, setDiagnosticData] = useState<TenantDiagnosticData | null>(null)
+  const [isLoadingDiagnostic, setIsLoadingDiagnostic] = useState(false)
+  const [isTriggeringDebitInDiagnostic, setIsTriggeringDebitInDiagnostic] = useState(false)
 
   // Listado de usuarios administradores y cancheros por club (se carga desde Supabase)
   const [clubUsers, setClubUsers] = useState<ClubUser[]>([])
@@ -552,10 +594,153 @@ export default function SuperadminPage() {
     }
   }
 
-  const handleSendPaymentLink = (clubName: string, amount: number) => {
-    toast.info(`Link de cobro generado para ${clubName}`, {
-      description: `Orden de pago de ${formatARS(amount)} copiada al portapapeles para enviar por WhatsApp o email.`
-    })
+  const handleTriggerManualAutoDebit = async (tenantId: string, clubName: string) => {
+    if (!confirm(`¿Ejecutar débito automático inmediato para "${clubName}" contra la tarjeta registrada en Mercado Pago?`)) return
+    setDebitLoadingTenantId(tenantId)
+    try {
+      const res = await triggerManualAutoDebitBySuperadmin(tenantId)
+      if (res.success) {
+        toast.success(`¡Débito acreditado exitosamente para "${clubName}"!`, {
+          description: `Mercado Pago aprobó el cobro de ${formatARS(res.amount || 0)} (Pago #${res.paymentId || 'OK'}). El club quedó Al Día.`
+        })
+        setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, subscription_status: 'AL_DIA', last_paid: new Date().toLocaleDateString('es-AR') } : t))
+        if (diagnosticTenantId === tenantId) {
+          void handleOpenDiagnosticModal(tenantId)
+        }
+      } else {
+        toast.error(`Débito rechazado: ${res.message || 'Rechazo bancario'}`, {
+          description: 'Sugerencia: Generar link de pago Checkout Pro o solicitar actualización de tarjeta al club.'
+        })
+      }
+    } catch {
+      toast.error('Error al conectar con la pasarela de Mercado Pago')
+    } finally {
+      setDebitLoadingTenantId(null)
+    }
+  }
+
+  const handleOpenPaymentLinkModal = (t: SuperadminTenantItem, defaultAmount?: number) => {
+    setPaymentLinkTenant(t)
+    const amount = defaultAmount !== undefined ? defaultAmount : (t.highest_slot_price * calculateSaaSMultiplier(t.active_courts))
+    setPaymentLinkAmount(amount)
+    setPaymentLinkNotes(`Cuota mensual SaaS CancharClub - ${t.name}`)
+    setGeneratedPaymentLink(null)
+  }
+
+  const handleCreatePaymentLink = async () => {
+    if (!paymentLinkTenant || paymentLinkAmount <= 0) return
+    setIsGeneratingPaymentLink(true)
+    try {
+      const res = await createSuperadminPaymentLink(paymentLinkTenant.id, paymentLinkAmount, paymentLinkNotes)
+      if (res.success && res.initPoint) {
+        const encodedMsg = encodeURIComponent(res.whatsappMessage || '')
+        const phoneParam = res.clubPhone ? res.clubPhone.replace(/\D/g, '') : ''
+        const whatsappUrl = phoneParam ? `https://wa.me/${phoneParam}?text=${encodedMsg}` : `https://wa.me/?text=${encodedMsg}`
+        setGeneratedPaymentLink({
+          initPoint: res.initPoint,
+          preferenceId: res.preferenceId || '',
+          whatsappUrl,
+          amount: paymentLinkAmount
+        })
+        toast.success('¡Link de pago Checkout Pro generado!', {
+          description: 'Podés copiarlo o enviarlo directamente por WhatsApp al dueño del club.'
+        })
+      } else {
+        toast.error('Error al generar preferencia en Mercado Pago: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error de comunicación con el servidor')
+    } finally {
+      setIsGeneratingPaymentLink(false)
+    }
+  }
+
+  const handleOpenManualPaymentModal = (t: SuperadminTenantItem, defaultAmount?: number) => {
+    setManualPaymentTenant(t)
+    const amount = defaultAmount !== undefined ? defaultAmount : (t.highest_slot_price * calculateSaaSMultiplier(t.active_courts))
+    setManualPaymentAmount(amount)
+    setManualPaymentMethod('TRANSFER')
+    setManualPaymentReceipt('')
+    setManualPaymentNotes('')
+    setManualPaymentWaiveSurcharge(true)
+  }
+
+  const handleConfirmManualPayment = async () => {
+    if (!manualPaymentTenant || manualPaymentAmount <= 0) return
+    setIsRecordingManualPayment(true)
+    try {
+      const res = await recordManualPaymentBySuperadmin({
+        tenantId: manualPaymentTenant.id,
+        amount: manualPaymentAmount,
+        paymentMethod: manualPaymentMethod,
+        receiptNumber: manualPaymentReceipt.trim() || undefined,
+        notes: manualPaymentNotes.trim() || undefined,
+        waiveSurcharge: manualPaymentWaiveSurcharge,
+      })
+      if (res.success) {
+        toast.success(`¡Cobro de ${formatARS(manualPaymentAmount)} registrado con éxito!`, {
+          description: `El club "${manualPaymentTenant.name}" ha sido activado y su cuenta quedó Al Día.`
+        })
+        setTenants(prev => prev.map(t => {
+          if (t.id === manualPaymentTenant.id) {
+            return {
+              ...t,
+              is_active: true,
+              subscription_status: 'AL_DIA',
+              last_paid: new Date().toLocaleDateString('es-AR')
+            }
+          }
+          return t
+        }))
+        setManualPaymentTenant(null)
+        if (diagnosticTenantId === manualPaymentTenant.id) {
+          void handleOpenDiagnosticModal(manualPaymentTenant.id)
+        }
+      } else {
+        toast.error('Error al registrar cobro manual: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error de conexión al registrar cobro manual')
+    } finally {
+      setIsRecordingManualPayment(false)
+    }
+  }
+
+  const handleWaiveSurcharge = async (tenantId: string, clubName: string) => {
+    if (!confirm(`¿Condonar y bonificar el 100% del recargo por mora para "${clubName}"? La cuota volverá al precio base sin recargos.`)) return
+    try {
+      const res = await waiveTenantDunningSurchargeBySuperadmin(tenantId)
+      if (res.success) {
+        toast.success(`Recargos por mora condonados para "${clubName}".`, {
+          description: 'Las facturas pendientes volvieron a su valor base congelado.'
+        })
+        if (diagnosticTenantId === tenantId) {
+          void handleOpenDiagnosticModal(tenantId)
+        }
+      } else {
+        toast.error('Error al condonar mora: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error al conectar con el servidor')
+    }
+  }
+
+  const handleOpenDiagnosticModal = async (tenantId: string) => {
+    setDiagnosticTenantId(tenantId)
+    setIsLoadingDiagnostic(true)
+    setDiagnosticData(null)
+    try {
+      const res = await getTenantDiagnosticDetails(tenantId)
+      if (res.success && res.data) {
+        setDiagnosticData(res.data)
+      } else {
+        toast.error('Error al obtener ficha de diagnóstico: ' + (res.error || ''))
+      }
+    } catch {
+      toast.error('Error de red al consultar diagnóstico del club')
+    } finally {
+      setIsLoadingDiagnostic(false)
+    }
   }
 
   const handleNotifyPendingWhatsApp = () => {
@@ -1743,18 +1928,39 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         >
                           <Trash2 className="w-3 h-3 text-rose-400" />
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenDiagnosticModal(t.id)}
+                          className="h-8 text-xs border-sky-800/60 bg-sky-950/20 text-sky-300 hover:text-white hover:bg-sky-900/40 rounded-xl px-2"
+                          title="Ficha Técnica y Diagnóstico 360°"
+                        >
+                          <Activity className="w-3 h-3 mr-1 text-sky-400" />
+                          Ficha
+                        </Button>
                       </div>
 
                       {t.subscription_status === 'PAUSADO' ? (
-                        <Button
-                          size="sm"
-                          onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                          className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs px-2.5 cursor-pointer"
-                          title="Reanudar reservas públicas del club"
-                        >
-                          <Sparkles className="w-3 h-3 mr-1 text-amber-300" />
-                          Reanudar
-                        </Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs px-2.5 cursor-pointer"
+                            title="Reanudar reservas públicas del club"
+                          >
+                            <Sparkles className="w-3 h-3 mr-1 text-amber-300" />
+                            Reanudar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleWaiveSurcharge(t.id, t.name)}
+                            className="h-8 text-xs border-amber-600/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 rounded-xl px-2 cursor-pointer"
+                            title="Condonar recargos acumulados por mora"
+                          >
+                            Condonar
+                          </Button>
+                        </div>
                       ) : (
                         <Button
                           size="sm"
@@ -1769,29 +1975,69 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       )}
 
                       {t.subscription_status === 'PENDIENTE' ? (
-                        <>
+                        <div className="flex items-center gap-1">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
+                            onClick={() => handleOpenPaymentLinkModal(t, t.pricing.monthlyFeeArs)}
                             className="h-8 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl px-2"
+                            title="Generar link Mercado Pago Checkout Pro"
                           >
                             <Send className="w-3 h-3 mr-1" />
                             Link
                           </Button>
+                          {t.mp_connected && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={debitLoadingTenantId === t.id}
+                              onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
+                              className="h-8 text-xs border-emerald-700/60 bg-emerald-950/30 text-emerald-300 hover:text-white rounded-xl px-2"
+                              title="Reintentar débito automático con la tarjeta vinculada"
+                            >
+                              {debitLoadingTenantId === t.id ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <>
+                                  <Zap className="w-3 h-3 mr-1 text-amber-300" />
+                                  Débito
+                                </>
+                              )}
+                            </Button>
+                          )}
                           <Button
                             size="sm"
-                            onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
+                            onClick={() => handleOpenManualPaymentModal(t, t.pricing.monthlyFeeArs)}
                             className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow-xs px-2.5"
+                            title="Registrar cobro manual por transferencia o efectivo"
                           >
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            <DollarSign className="w-3 h-3 mr-1" />
                             Cobrar
                           </Button>
-                        </>
+                        </div>
                       ) : t.subscription_status === 'AL_DIA' ? (
-                        <div className="flex-1 text-[11px] text-emerald-400/80 font-medium flex items-center justify-end gap-1 px-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Pagado {t.last_paid}</span>
+                        <div className="flex items-center justify-end gap-1.5 px-1">
+                          {t.mp_connected && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={debitLoadingTenantId === t.id}
+                              onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
+                              className="h-7 text-[11px] text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-950/30 rounded-lg px-2"
+                              title="Forzar cobro de cuota por débito ahora"
+                            >
+                              {debitLoadingTenantId === t.id ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3 mr-1 text-amber-300" />
+                              )}
+                              Cobro MP
+                            </Button>
+                          )}
+                          <div className="text-[11px] text-emerald-400/80 font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Al Día</span>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex-1 text-[11px] text-rose-400 font-semibold flex flex-col items-end justify-center px-1">
@@ -1926,44 +2172,104 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             <>
                               <Button
                                 size="sm"
-                                onClick={() => handleRegisterPayment(t.id, t.name, t.pricing.monthlyFeeArs)}
+                                onClick={() => handleOpenManualPaymentModal(t, t.pricing.monthlyFeeArs)}
                                 className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg px-2.5 shadow-xs cursor-pointer flex items-center gap-1"
-                                title="Registrar cobro de cuota"
+                                title="Registrar cobro de cuota por transferencia o efectivo"
                               >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <DollarSign className="w-3.5 h-3.5" />
                                 <span>Cobrar</span>
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleSendPaymentLink(t.name, t.pricing.monthlyFeeArs)}
-                                className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-lg px-2 flex items-center gap-1"
-                                title="Generar link de pago Mercado Pago"
+                                onClick={() => handleOpenPaymentLinkModal(t, t.pricing.monthlyFeeArs)}
+                                className="h-7 text-xs border-slate-700 hover:border-indigo-500 text-slate-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer"
+                                title="Generar link de pago Mercado Pago Checkout Pro"
                               >
                                 <Send className="w-3.5 h-3.5" />
                                 <span>Link</span>
                               </Button>
+                              {t.mp_connected && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={debitLoadingTenantId === t.id}
+                                  onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
+                                  className="h-7 text-xs border-emerald-700/60 bg-emerald-950/30 text-emerald-300 hover:text-white rounded-lg px-2 flex items-center gap-1 cursor-pointer"
+                                  title="Reintentar débito automático con la tarjeta vinculada"
+                                >
+                                  {debitLoadingTenantId === t.id ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Zap className="w-3 h-3 text-amber-300" />
+                                      <span>Débito</span>
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </>
                           )}
 
                           {t.subscription_status === 'PAUSADO' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
-                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
-                              title="Reanudar reservas públicas del club"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                              <span>Reanudar</span>
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                onClick={() => handleTogglePause(t.id, t.name, t.subscription_status)}
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 font-bold cursor-pointer shadow-xs gap-1"
+                                title="Reanudar reservas públicas del club"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                <span>Reanudar</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleWaiveSurcharge(t.id, t.name)}
+                                className="h-7 text-xs border-amber-600/40 bg-amber-950/20 text-amber-300 hover:bg-amber-900/40 rounded-lg px-2 cursor-pointer"
+                                title="Condonar recargos acumulados por mora"
+                              >
+                                <span>Condonar</span>
+                              </Button>
+                            </div>
                           )}
 
                           {t.subscription_status === 'AL_DIA' && !t.cancel_at_period_end && (
-                            <span className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1 mr-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Al Día</span>
-                            </span>
+                            <div className="flex items-center gap-1.5 mr-1">
+                              {t.mp_connected && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={debitLoadingTenantId === t.id}
+                                  onClick={() => handleTriggerManualAutoDebit(t.id, t.name)}
+                                  className="h-7 text-[11px] text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-950/30 rounded-lg px-2 cursor-pointer"
+                                  title="Forzar cobro de cuota mensual por débito"
+                                >
+                                  {debitLoadingTenantId === t.id ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Zap className="w-3 h-3 mr-1 text-amber-300" />
+                                  )}
+                                  <span>Cobro MP</span>
+                                </Button>
+                              )}
+                              <span className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Al Día</span>
+                              </span>
+                            </div>
                           )}
+
+                          {/* Ficha Técnica y Diagnóstico 360° */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenDiagnosticModal(t.id)}
+                            className="h-7 w-7 p-0 rounded-lg cursor-pointer border-slate-800 text-sky-400 hover:bg-sky-950/40 hover:text-sky-300 flex items-center justify-center shrink-0"
+                            title="Ficha Técnica y Diagnóstico 360° del club"
+                          >
+                            <Activity className="w-3.5 h-3.5" />
+                          </Button>
 
                           {/* Acciones secundarias compactas con tooltip */}
                           <Button
@@ -2297,6 +2603,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => handleOpenDiagnosticModal(t.id)}
+                        className="h-8 px-2.5 text-xs border-sky-800/60 bg-sky-950/20 text-sky-300 hover:text-white hover:bg-sky-900/40 rounded-xl cursor-pointer"
+                        title="Ficha Técnica y Diagnóstico 360°"
+                      >
+                        <Activity className="w-3 h-3 text-sky-400" />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleOpenDeleteTenantModal(t)}
                         className="h-8 px-2.5 text-xs border-rose-900/40 hover:border-rose-500 bg-rose-950/20 hover:bg-rose-950/50 text-rose-400 hover:text-rose-200 rounded-xl cursor-pointer"
                         title="Borrar club permanentemente y cancelar cobros en Mercado Pago"
@@ -2494,6 +2810,36 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             title="Editar parámetros del club y plan SaaS"
                           >
                             <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenDiagnosticModal(t.id)}
+                            className="h-7 w-7 p-0 rounded-lg cursor-pointer border-slate-800 text-sky-400 hover:bg-sky-950/40 hover:text-sky-300 flex items-center justify-center shrink-0"
+                            title="Ficha Técnica y Diagnóstico 360°"
+                          >
+                            <Activity className="w-3.5 h-3.5" />
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleOpenPaymentLinkModal(t, t.highest_slot_price * calculateSaaSMultiplier(t.active_courts))}
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-amber-400 hover:bg-amber-950/30 rounded-lg cursor-pointer shrink-0"
+                            title="Generar link Mercado Pago Checkout Pro"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleOpenManualPaymentModal(t, t.highest_slot_price * calculateSaaSMultiplier(t.active_courts))}
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/30 rounded-lg cursor-pointer shrink-0"
+                            title="Registrar cobro manual (Transferencia / Efectivo)"
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
                           </Button>
 
                           {t.is_active && (
@@ -4361,6 +4707,591 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                   Sí, eliminar
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 1: Generar Link de Pago Checkout Pro */}
+      <Dialog open={!!paymentLinkTenant} onOpenChange={(o) => { if (!o) { setPaymentLinkTenant(null); setGeneratedPaymentLink(null); } }}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-4">
+              <DialogTitle className="flex items-center gap-2 text-indigo-400 text-base">
+                <Send className="w-5 h-5 text-indigo-400" />
+                Generar Link de Pago (Checkout Pro)
+              </DialogTitle>
+              <Badge className="bg-sky-500/20 text-sky-300 border-sky-500/40 text-[10px]">
+                Mercado Pago MLA
+              </Badge>
+            </div>
+            <DialogDescription className="text-slate-400 text-xs">
+              Crea una orden de pago segura en Mercado Pago para enviarle al dueño del club por WhatsApp.
+            </DialogDescription>
+          </DialogHeader>
+
+          {paymentLinkTenant && (
+            <div className="space-y-4 py-2">
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs flex items-center justify-between">
+                <div>
+                  <div className="text-slate-400 text-[11px]">Club / Inquilino</div>
+                  <div className="font-bold text-white text-sm">{paymentLinkTenant.name}</div>
+                  <div className="text-slate-500 font-mono text-[11px]">/club/{paymentLinkTenant.slug}</div>
+                </div>
+                <Badge className={cn("text-[10px]", paymentLinkTenant.subscription_status === 'AL_DIA' ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40")}>
+                  {paymentLinkTenant.subscription_status}
+                </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Monto a Cobrar ($ ARS)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-500 text-sm font-semibold">$</span>
+                  <Input
+                    type="number"
+                    value={paymentLinkAmount || ''}
+                    onChange={(e) => setPaymentLinkAmount(Math.max(0, Number(e.target.value)))}
+                    className="pl-8 bg-slate-950 border-slate-800 text-white font-mono text-sm"
+                    placeholder="Monto de la cuota"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Cuota base mensual sugerida: <strong className="text-slate-300">{formatARS(paymentLinkTenant.highest_slot_price * calculateSaaSMultiplier(paymentLinkTenant.active_courts))}</strong>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Concepto / Notas de la Factura</Label>
+                <Input
+                  value={paymentLinkNotes}
+                  onChange={(e) => setPaymentLinkNotes(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white text-xs"
+                  placeholder="Ej: Cuota mensual SaaS CancharClub"
+                />
+              </div>
+
+              {!generatedPaymentLink ? (
+                <Button
+                  onClick={handleCreatePaymentLink}
+                  disabled={isGeneratingPaymentLink || paymentLinkAmount <= 0}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer py-2.5 flex items-center justify-center gap-2"
+                >
+                  {isGeneratingPaymentLink ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Generando preferencia en Mercado Pago...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>Generar Link Oficial Checkout Pro</span>
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-700/50 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>¡Link generado exitosamente por {formatARS(generatedPaymentLink.amount)}!</span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 break-all select-all">
+                    {generatedPaymentLink.initPoint}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedPaymentLink.initPoint)
+                        toast.success('Link copiado al portapapeles')
+                      }}
+                      className="border-slate-700 text-slate-200 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5 mr-1 text-slate-400" />
+                      Copiar Link
+                    </Button>
+                    <Button
+                      asChild
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      <a href={generatedPaymentLink.whatsappUrl} target="_blank" rel="noopener noreferrer">
+                        <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                        Enviar por WhatsApp
+                      </a>
+                    </Button>
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
+                    <span className="font-semibold text-slate-300">Mensaje predeterminado listo:</span>
+                    <p className="italic mt-0.5">&ldquo;Hola! Te compartimos el link de pago oficial de Mercado Pago para liquidar la cuota de {paymentLinkTenant.name}...&rdquo;</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setPaymentLinkTenant(null); setGeneratedPaymentLink(null); }}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 2: Registrar Cobro Manual */}
+      <Dialog open={!!manualPaymentTenant} onOpenChange={(o) => { if (!o) setManualPaymentTenant(null) }}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-4">
+              <DialogTitle className="flex items-center gap-2 text-emerald-400 text-base">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+                Registrar Cobro Manual (Caja / Banco)
+              </DialogTitle>
+              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px]">
+                Liquidación Inmediata
+              </Badge>
+            </div>
+            <DialogDescription className="text-slate-400 text-xs">
+              Asienta un pago recibido por transferencia o efectivo, liquida las facturas pendientes a PAGADO y activa el club de inmediato.
+            </DialogDescription>
+          </DialogHeader>
+
+          {manualPaymentTenant && (
+            <div className="space-y-4 py-2">
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs flex items-center justify-between">
+                <div>
+                  <div className="text-slate-400 text-[11px]">Club / Inquilino</div>
+                  <div className="font-bold text-white text-sm">{manualPaymentTenant.name}</div>
+                  <div className="text-slate-500 font-mono text-[11px]">/club/{manualPaymentTenant.slug}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-slate-400 text-[11px]">Estado actual</div>
+                  <Badge className={cn("text-[10px]", manualPaymentTenant.subscription_status === 'AL_DIA' ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-rose-500/20 text-rose-300 border-rose-500/40")}>
+                    {manualPaymentTenant.subscription_status}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Monto Acreditado ($ ARS)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-500 text-sm font-semibold">$</span>
+                  <Input
+                    type="number"
+                    value={manualPaymentAmount || ''}
+                    onChange={(e) => setManualPaymentAmount(Math.max(0, Number(e.target.value)))}
+                    className="pl-8 bg-slate-950 border-slate-800 text-white font-mono text-sm"
+                    placeholder="Monto abonado"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Medio de Pago Utilizado</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'TRANSFER' as const, label: 'Transferencia Bancaria', icon: Building2 },
+                    { id: 'CASH' as const, label: 'Efectivo en Mano', icon: DollarSign },
+                    { id: 'CARD' as const, label: 'Tarjeta / Débito', icon: CreditCard },
+                    { id: 'OTHER' as const, label: 'Otro Medio', icon: Receipt },
+                  ].map((method) => {
+                    const Icon = method.icon
+                    const isSelected = manualPaymentMethod === method.id
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setManualPaymentMethod(method.id)}
+                        className={cn(
+                          "flex items-center gap-2 p-2.5 rounded-xl border text-left text-xs transition-colors cursor-pointer",
+                          isSelected
+                            ? "border-emerald-500/80 bg-emerald-950/40 text-emerald-200 font-semibold"
+                            : "border-slate-800 bg-slate-950/60 text-slate-400 hover:text-white hover:bg-slate-800/50"
+                        )}
+                      >
+                        <Icon className={cn("w-4 h-4 shrink-0", isSelected ? "text-emerald-400" : "text-slate-500")} />
+                        <span>{method.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Nro. de Comprobante / Referencia (Opcional)</Label>
+                <Input
+                  value={manualPaymentReceipt}
+                  onChange={(e) => setManualPaymentReceipt(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-xs"
+                  placeholder="Ej: TRANSF-892401 o Recibo #0012"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-300">Observaciones Internas</Label>
+                <Input
+                  value={manualPaymentNotes}
+                  onChange={(e) => setManualPaymentNotes(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white text-xs"
+                  placeholder="Ej: Abonó en efectivo en oficina central"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="waiveSurchargeCheck"
+                  checked={manualPaymentWaiveSurcharge}
+                  onChange={(e) => setManualPaymentWaiveSurcharge(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-950 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <label htmlFor="waiveSurchargeCheck" className="text-xs text-slate-300 cursor-pointer select-none">
+                  Condonar y bonificar recargos acumulados por mora (3% diario)
+                </label>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+                <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Efecto inmediato en la plataforma:
+                </div>
+                <p>• La factura del mes pasará a estado <strong>PAID</strong> con medio {manualPaymentMethod}.</p>
+                <p>• El club pasará inmediatamente a <strong>AL DÍA</strong> y sus reservas públicas quedarán 100% activas.</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setManualPaymentTenant(null)}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmManualPayment}
+              disabled={isRecordingManualPayment || manualPaymentAmount <= 0}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              {isRecordingManualPayment ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Acreditando cobro...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  <span>Registrar Cobro y Activar Club</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 3: Ficha Técnica y Diagnóstico 360° */}
+      <Dialog open={!!diagnosticTenantId} onOpenChange={(o) => { if (!o) { setDiagnosticTenantId(null); setDiagnosticData(null); } }}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-4">
+              <DialogTitle className="flex items-center gap-2 text-sky-400 text-base">
+                <Activity className="w-5 h-5 text-sky-400" />
+                Ficha Técnica y Diagnóstico 360°
+              </DialogTitle>
+              {diagnosticData && (
+                <div className="flex items-center gap-1.5">
+                  <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30 text-[10px]">
+                    {diagnosticData.tenant.plan_id || 'Plan Estándar'}
+                  </Badge>
+                  <Badge className={cn("text-[10px]", diagnosticData.tenant.subscription_status === 'AL_DIA' ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300")}>
+                    {diagnosticData.tenant.subscription_status}
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <DialogDescription className="text-slate-400 text-xs">
+              Auditoría en tiempo real de pasarela de pago, estado de tarjeta bancaria, historial de facturas e intervenciones operativas.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingDiagnostic ? (
+            <div className="py-12 flex flex-col items-center justify-center gap-3">
+              <RefreshCw className="w-7 h-7 text-sky-400 animate-spin" />
+              <p className="text-xs text-slate-400">Consultando estado en base de datos y pasarela...</p>
+            </div>
+          ) : diagnosticData ? (
+            <div className="space-y-4 py-2 text-xs">
+              {/* Resumen Principal */}
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <div className="text-[11px] text-slate-500">Club / Nombre</div>
+                  <div className="font-bold text-white text-sm">{diagnosticData.tenant.name}</div>
+                  <div className="text-slate-400 font-mono text-[11px]">/{diagnosticData.tenant.slug}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500">Ubicación y Canchas</div>
+                  <div className="text-slate-300">{diagnosticData.tenant.city || 'Sin ciudad'}</div>
+                  <div className="font-medium text-slate-300">{diagnosticData.tenant.active_courts} canchas activas</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500">Cuota y Turno Base</div>
+                  <div className="font-bold text-emerald-400 font-mono">{formatARS(diagnosticData.tenant.highest_slot_price * calculateSaaSMultiplier(diagnosticData.tenant.active_courts))} / mes</div>
+                  <div className="text-slate-400 text-[11px]">Turno más caro: {formatARS(diagnosticData.tenant.highest_slot_price)}</div>
+                </div>
+              </div>
+
+              {/* Auditoría Tarjeta y Mercado Pago */}
+              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-200 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-emerald-400" />
+                    <span>Tarjeta de Crédito y Débito Automático</span>
+                  </div>
+                  {diagnosticData.card && diagnosticData.card.hasCard ? (
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px]">
+                      {diagnosticData.card.cardStatus || 'VALIDADA'}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px]">
+                      Sin Tarjeta Vinculada
+                    </Badge>
+                  )}
+                </div>
+
+                {diagnosticData.card && diagnosticData.card.hasCard ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-slate-900 border border-slate-800">
+                    <div>
+                      <div className="text-[11px] text-slate-500">Tarjeta</div>
+                      <div className="font-bold text-white uppercase">{diagnosticData.card.brand || 'Tarjeta'} •••• {diagnosticData.card.last4 || '0000'}</div>
+                      <div className="text-[10px] text-slate-400">Titular: {diagnosticData.card.holder || 'Dueño del Club'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-500">ID Preapproval / Suscripción MP</div>
+                      <div className="font-mono text-[11px] text-slate-300 truncate" title={diagnosticData.card.mpPreapprovalId || 'N/A'}>
+                        {diagnosticData.card.mpPreapprovalId || 'N/A'}
+                      </div>
+                      <div className="text-[10px] text-emerald-400 font-medium">Contrato bancario activo</div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Button
+                        size="sm"
+                        disabled={isTriggeringDebitInDiagnostic}
+                        onClick={async () => {
+                          setIsTriggeringDebitInDiagnostic(true)
+                          try {
+                            await handleTriggerManualAutoDebit(diagnosticData.tenant.id, diagnosticData.tenant.name)
+                          } finally {
+                            setIsTriggeringDebitInDiagnostic(false)
+                          }
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl gap-1.5 cursor-pointer"
+                      >
+                        {isTriggeringDebitInDiagnostic ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        )}
+                        <span>Reintentar Débito Ahora</span>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-800/40 text-amber-300 text-xs flex items-center justify-between">
+                    <div>
+                      Este club no cuenta con tarjeta guardada para débito automático.
+                      <div className="text-[11px] text-amber-400/80">Podés enviarle un link de Checkout Pro para que abone manualmente.</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const t = tenants.find(x => x.id === diagnosticData.tenant.id)
+                        if (t) handleOpenPaymentLinkModal(t)
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl ml-2 shrink-0 cursor-pointer"
+                    >
+                      <Send className="w-3 h-3 mr-1" />
+                      Generar Link
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Auditoría Dunning / Período de Prueba */}
+              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                <div className="font-bold text-slate-200 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-purple-400" />
+                  <span>Escalera de Mora (Dunning) y Período de Prueba</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                    <div className="text-[11px] text-slate-500">Prueba Gratuita</div>
+                    <div className="font-bold text-slate-200">
+                      {diagnosticData.trial.isTrial ? `Activa (${diagnosticData.trial.trialDaysRemaining} días restantes)` : 'Finalizada / Sin prueba'}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Vence: {diagnosticData.trial.trialEndsAt ? new Date(diagnosticData.trial.trialEndsAt).toLocaleDateString('es-AR') : 'N/A'}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                    <div className="text-[11px] text-slate-500">Estado de Facturación</div>
+                    <div className={cn("font-bold font-mono text-sm", diagnosticData.tenant.subscription_status === 'AL_DIA' ? "text-emerald-400" : diagnosticData.tenant.subscription_status === 'PAUSADO' ? "text-rose-400" : "text-amber-400")}>
+                      {diagnosticData.tenant.subscription_status}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Cuota base: {formatARS(diagnosticData.tenant.monthlyFeeArs)}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] text-slate-500">Monto para Reactivar / Pagar</div>
+                      <div className="font-bold font-mono text-amber-400">
+                        {formatARS(calculateReactivationFee(diagnosticData.tenant.monthlyFeeArs, new Date().toISOString()).totalAmount)}
+                      </div>
+                    </div>
+                    {diagnosticData.tenant.subscription_status === 'PAUSADO' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleWaiveSurcharge(diagnosticData.tenant.id, diagnosticData.tenant.name)}
+                        className="h-6 text-[10px] border-amber-600/40 text-amber-300 hover:bg-amber-950/40 mt-1 cursor-pointer"
+                      >
+                        Condonar Mora (Volver a Base)
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Historial de Facturas SaaS */}
+              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-200 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-indigo-400" />
+                    <span>Historial de Facturas SaaS ({diagnosticData.invoices.length})</span>
+                  </div>
+                  <Badge className="bg-slate-800 text-slate-300 text-[10px]">
+                    Últimas emitidas
+                  </Badge>
+                </div>
+
+                {diagnosticData.invoices.length === 0 ? (
+                  <div className="p-4 text-center text-slate-500 text-xs">
+                    No hay facturas registradas aún para este club.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400">
+                          <th className="py-2 px-2">Período</th>
+                          <th className="py-2 px-2">Total</th>
+                          <th className="py-2 px-2 text-center">Estado</th>
+                          <th className="py-2 px-2">Vencimiento</th>
+                          <th className="py-2 px-2">Fecha Pago</th>
+                          <th className="py-2 px-2">Notas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {diagnosticData.invoices.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-slate-900/40">
+                            <td className="py-2 px-2 font-mono text-[11px] text-slate-300">{String(inv.month).padStart(2, '0')}/{inv.year}</td>
+                            <td className="py-2 px-2 font-mono font-bold text-white">{formatARS(inv.amount)}</td>
+                            <td className="py-2 px-2 text-center">
+                              <Badge className={cn("text-[9px]", inv.status === 'PAID' ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300")}>
+                                {inv.status === 'PAID' ? 'PAGADO' : 'IMPAGO'}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-2 text-slate-400 text-[11px]">
+                              {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-AR') : '—'}
+                            </td>
+                            <td className="py-2 px-2 text-slate-400 text-[11px]">
+                              {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString('es-AR') : '—'}
+                            </td>
+                            <td className="py-2 px-2 text-slate-400 text-[11px] truncate max-w-[150px]" title={inv.notes || ''}>
+                              {inv.notes || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Acción de Emergencia */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const t = tenants.find(x => x.id === diagnosticData.tenant.id)
+                      if (t) handleSimulateClub(t, 'TENANT_ADMIN')
+                    }}
+                    className="border-indigo-700/60 bg-indigo-950/30 text-indigo-300 hover:text-white hover:bg-indigo-900/50 text-xs rounded-xl cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5 mr-1" />
+                    Ingresar como Dueño
+                  </Button>
+                  <Button
+                    size="sm"
+                    asChild
+                    variant="outline"
+                    className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+                  >
+                    <Link href={`/club/${diagnosticData.tenant.slug}`} target="_blank">
+                      <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                      Ver Portal Público
+                    </Link>
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const t = tenants.find(x => x.id === diagnosticData.tenant.id)
+                      if (t) handleOpenPaymentLinkModal(t)
+                    }}
+                    className="border-slate-700 text-slate-200 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1 text-indigo-400" />
+                    Link Checkout Pro
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const t = tenants.find(x => x.id === diagnosticData.tenant.id)
+                      if (t) handleOpenManualPaymentModal(t)
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 mr-1" />
+                    Registrar Cobro Manual
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No se pudo cargar la información de diagnóstico.
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setDiagnosticTenantId(null); setDiagnosticData(null); }}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs rounded-xl cursor-pointer"
+            >
+              Cerrar Diagnóstico
             </Button>
           </DialogFooter>
         </DialogContent>

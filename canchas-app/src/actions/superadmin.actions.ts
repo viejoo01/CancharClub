@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { type SaaSPlanId, getPlanByCourtsCount } from '@/config/saas-plans'
 import { assertSuperadmin, validatePasswordStrength } from '@/lib/auth-security'
-import { MercadoPagoConfig, PreApproval } from 'mercadopago'
+import { MercadoPagoConfig, PreApproval, Preference } from 'mercadopago'
 
 export interface SuperadminTenantItem {
   id: string
@@ -1309,4 +1309,550 @@ export async function testSuperadminTelemetryAction(): Promise<{
     priority: 'HIGH',
   })
 }
+
+/**
+ * Ejecuta el reintento sincrónico de cobro automático con la tarjeta guardada del club en Mercado Pago.
+ */
+export async function triggerManualAutoDebitBySuperadmin(tenantId: string): Promise<{
+  success: boolean
+  status: 'PAID' | 'FAILED' | 'SKIPPED'
+  message: string
+  paymentId?: string
+  amount?: number
+}> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, status: 'SKIPPED', message: auth.error || 'No autorizado' }
+  }
+
+  const { executeTenantAutoDebit } = await import('@/actions/saas-billing.actions')
+  const result = await executeTenantAutoDebit({
+    tenantId,
+    force: true,
+  })
+
+  revalidatePath('/superadmin')
+  return {
+    success: result.success && result.status === 'PAID',
+    status: result.status,
+    message: result.message || (result.status === 'PAID' ? 'Cobro aprobado por Mercado Pago' : (result.error || 'Cobro rechazado o fallido')),
+    paymentId: result.paymentId,
+    amount: result.amount,
+  }
+}
+
+/**
+ * Genera un link oficial de pago en Mercado Pago Checkout Pro para saldar la cuota de un club
+ * y genera el mensaje de WhatsApp pre-armado para enviar al dueño en 1 clic.
+ */
+export async function createSuperadminPaymentLink(
+  tenantId: string,
+  customAmount?: number,
+  customNotes?: string
+): Promise<{
+  success: boolean
+  initPoint?: string
+  preferenceId?: string
+  amount: number
+  clubName: string
+  clubPhone?: string | null
+  whatsappMessage?: string
+  error?: string
+}> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, amount: 0, clubName: '', error: auth.error || 'No autorizado' }
+  }
+
+  const supabase = await createServiceClient()
+  const { data: tenant, error } = await supabase
+    .from('tenants')
+    .select('id, name, slug, phone_whatsapp, email, plan_id, base_slots_plan, courts(id, is_active), price_rules(price_cents)')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  if (error || !tenant) {
+    return { success: false, amount: 0, clubName: '', error: 'Club no encontrado' }
+  }
+
+  // Resolver monto oficial si no se especificó monto custom
+  let finalAmount = customAmount && customAmount > 0 ? customAmount : 0
+  if (!finalAmount) {
+    const rawCourts = Array.isArray(tenant.courts) ? tenant.courts : []
+    const activeCourts = rawCourts.filter((c) => c.is_active !== false).length || 2
+    const rawRules = Array.isArray(tenant.price_rules) ? tenant.price_rules : []
+    let maxPriceArs = 30000
+    if (rawRules.length > 0) {
+      const maxCents = Math.max(...rawRules.map((r) => Number(r.price_cents) || 0))
+      if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
+    }
+    const { calculateSaaSMultiplier } = await import('@/lib/saas-pricing')
+    const multiplier = calculateSaaSMultiplier(activeCourts)
+    finalAmount = Math.max(15, Math.round(maxPriceArs * multiplier))
+  }
+
+  const mpToken = process.env.MP_ACCESS_TOKEN
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cancharclub.com.ar'
+
+  let initPoint = ''
+  let preferenceId = ''
+
+  if (!mpToken || mpToken.startsWith('TEST-0000000000000000')) {
+    preferenceId = `pref_manual_${tenantId}_${Date.now()}`
+    initPoint = `${appUrl}/billing/suspended?pay_simulated=true&tenant_id=${tenantId}&amount=${finalAmount}`
+  } else {
+    try {
+      const mpConfig = new MercadoPagoConfig({ accessToken: mpToken })
+      const preferenceClient = new Preference(mpConfig)
+
+      const preference = await preferenceClient.create({
+        body: {
+          items: [
+            {
+              id: `saas_${tenantId}_${Date.now()}`,
+              title: `Abono Mensual CancharClub - ${tenant.name}`,
+              description: customNotes || `Cuota de servicio plataforma CancharClub ($${finalAmount.toLocaleString('es-AR')})`,
+              quantity: 1,
+              unit_price: finalAmount,
+              currency_id: 'ARS',
+            }
+          ],
+          external_reference: `superadmin_saas_${tenantId}_${Date.now()}`,
+          back_urls: {
+            success: `${appUrl}/superadmin?payment_success=true&tenant_id=${tenantId}`,
+            pending: `${appUrl}/superadmin?payment_pending=true&tenant_id=${tenantId}`,
+            failure: `${appUrl}/superadmin?payment_failure=true&tenant_id=${tenantId}`,
+          },
+          auto_return: 'approved',
+          statement_descriptor: 'CANCHARCLUB SAAS',
+        }
+      })
+
+      preferenceId = preference.id || ''
+      initPoint = preference.init_point || preference.sandbox_init_point || ''
+    } catch (prefErr: unknown) {
+      console.error('[createSuperadminPaymentLink] Mercado Pago error:', prefErr)
+      return { success: false, amount: finalAmount, clubName: tenant.name, error: 'Error conectando con Mercado Pago para generar link de pago' }
+    }
+  }
+
+  const formattedAmount = `$${finalAmount.toLocaleString('es-AR')}`
+  const whatsappMessage = `🎾 *¡Hola ${tenant.name}! Te escribimos de CancharClub.*
+
+Te dejamos el link oficial de pago para saldar la cuota mensual del sistema (${formattedAmount}):
+
+🔗 *Link de Pago Seguro (Mercado Pago):*
+${initPoint}
+
+Podés abonar con cualquier tarjeta (débito/crédito) o dinero en cuenta de Mercado Pago. Una vez acreditado, el sistema actualiza automáticamente tu cuenta al día.
+
+¡Muchas gracias!`
+
+  return {
+    success: true,
+    initPoint,
+    preferenceId,
+    amount: finalAmount,
+    clubName: tenant.name,
+    clubPhone: tenant.phone_whatsapp,
+    whatsappMessage,
+  }
+}
+
+/**
+ * Registra un cobro manual efectuado por Transferencia Bancaria, Efectivo o Cheque,
+ * liquidando la cuota en tenant_invoices y activando el club inmediatamente.
+ */
+export async function recordManualPaymentBySuperadmin(params: {
+  tenantId: string
+  amount: number
+  paymentMethod: 'TRANSFER' | 'CASH' | 'CARD' | 'OTHER'
+  receiptNumber?: string
+  notes?: string
+  waiveSurcharge?: boolean
+}): Promise<{ success: boolean; error?: string }> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
+  }
+
+  const { tenantId, amount, paymentMethod, receiptNumber, notes, waiveSurcharge } = params
+  const supabase = await createServiceClient()
+
+  const methodLabels: Record<string, string> = {
+    TRANSFER: 'Transferencia Bancaria',
+    CASH: 'Efectivo en mano',
+    CARD: 'Tarjeta (Posnet / Cobro manual)',
+    OTHER: 'Otro medio de pago',
+  }
+
+  const methodLabel = methodLabels[paymentMethod] || 'Transferencia Bancaria'
+  const receiptText = receiptNumber ? ` (Comp. #${receiptNumber.trim()})` : ''
+  const fullNotes = `Cobro manual Superadmin [${methodLabel}${receiptText}]: ${notes?.trim() || 'Acreditación manual'}`
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  // 1. Asentar o actualizar la factura en tenant_invoices
+  const { data: existingInv } = await supabase
+    .from('tenant_invoices')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('month', currentMonth)
+    .eq('year', currentYear)
+    .maybeSingle()
+
+  if (existingInv) {
+    await supabase
+      .from('tenant_invoices')
+      .update({
+        status: 'PAID',
+        paid_at: now.toISOString(),
+        amount,
+        notes: fullNotes,
+        updated_at: now.toISOString(),
+      })
+      .eq('id', existingInv.id)
+  } else {
+    await supabase
+      .from('tenant_invoices')
+      .insert({
+        tenant_id: tenantId,
+        month: currentMonth,
+        year: currentYear,
+        amount,
+        status: 'PAID',
+        paid_at: now.toISOString(),
+        due_date: new Date(now.getTime() + 30 * 86400000).toISOString().split('T')[0],
+        notes: fullNotes,
+        slots_multiplier: 1.5,
+      })
+  }
+
+  // 2. Asentar en saas_subscriptions
+  const todayStr = now.toISOString().split('T')[0]
+  const [currY, currM] = todayStr.split('-').map(Number)
+  const periodStart = `${currY}-${String(currM).padStart(2, '0')}-01`
+  const nextMonthEnd = new Date(currY, currM, 0).toISOString().split('T')[0]
+
+  await supabase
+    .from('saas_subscriptions')
+    .upsert({
+      tenant_id: tenantId,
+      plan: 'STANDARD',
+      status: 'active',
+      billing_period_start: periodStart,
+      billing_period_end: nextMonthEnd,
+      paid_at: now.toISOString(),
+      payment_notes: fullNotes,
+    }, { onConflict: 'tenant_id,billing_period_start' })
+
+  // 3. Poner el club AL_DIA en tenants
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, name, slug, description')
+    .eq('id', tenantId)
+    .single()
+
+  let meta: Record<string, unknown> = {}
+  if (tenant?.description) {
+    try {
+      meta = JSON.parse(tenant.description)
+    } catch {}
+  }
+
+  meta.auto_debit_attempts = []
+  if (waiveSurcharge) {
+    meta.surcharge_waived_at = now.toISOString()
+  }
+
+  await supabase
+    .from('tenants')
+    .update({
+      subscription_status: 'ACTIVE',
+      is_active: true,
+      description: JSON.stringify(meta),
+    })
+    .eq('id', tenantId)
+
+  // 4. Telemetría inmediata al Superadmin
+  const { sendSuperadminAlert } = await import('@/lib/superadmin-notifications')
+  sendSuperadminAlert({
+    event: 'SUBSCRIPTION_PAYMENT_RECORDED',
+    title: 'Cobro Manual Acreditado por Superadmin',
+    clubName: tenant?.name || 'Club',
+    clubSlug: tenant?.slug,
+    details: {
+      'Monto': `$${amount.toLocaleString('es-AR')}`,
+      'Medio': methodLabel,
+      'Comprobante': receiptNumber || 'No informado',
+      'Notas': notes || 'Acreditación manual directa',
+    },
+    priority: 'NORMAL',
+  }).catch(() => {})
+
+  revalidatePath('/superadmin')
+  return { success: true }
+}
+
+/**
+ * Perdona o congela el recargo del 3% diario de mora a un club,
+ * restableciendo la factura pendiente a su precio base sin penalización.
+ */
+export async function waiveTenantDunningSurchargeBySuperadmin(tenantId: string): Promise<{
+  success: boolean
+  baseAmount?: number
+  error?: string
+}> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
+  }
+
+  const supabase = await createServiceClient()
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, name, description, courts(id, is_active), price_rules(price_cents)')
+    .eq('id', tenantId)
+    .single()
+
+  if (!tenant) return { success: false, error: 'Club no encontrado' }
+
+  const rawCourts = Array.isArray(tenant.courts) ? tenant.courts : []
+  const activeCourts = rawCourts.filter((c) => c.is_active !== false).length || 2
+  const rawRules = Array.isArray(tenant.price_rules) ? tenant.price_rules : []
+  let maxPriceArs = 30000
+  if (rawRules.length > 0) {
+    const maxCents = Math.max(...rawRules.map((r) => Number(r.price_cents) || 0))
+    if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
+  }
+  const { calculateSaaSMultiplier } = await import('@/lib/saas-pricing')
+  const multiplier = calculateSaaSMultiplier(activeCourts)
+  const baseAmount = Math.max(15, Math.round(maxPriceArs * multiplier))
+
+  await supabase
+    .from('tenant_invoices')
+    .update({
+      amount: baseAmount,
+      notes: 'Recargo de mora bonificado por Superadmin. Precio base congelado.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('tenant_id', tenantId)
+    .eq('status', 'UNPAID')
+
+  let meta: Record<string, unknown> = {}
+  if (tenant.description) {
+    try {
+      meta = JSON.parse(tenant.description)
+    } catch {}
+  }
+  meta.surcharge_waived_at = new Date().toISOString()
+  meta.surcharge_waived_amount = baseAmount
+
+  await supabase
+    .from('tenants')
+    .update({
+      description: JSON.stringify(meta),
+      subscription_status: 'PAYMENT_PENDING',
+    })
+    .eq('id', tenantId)
+
+  revalidatePath('/superadmin')
+  return { success: true, baseAmount }
+}
+
+export interface TenantDiagnosticData {
+  tenant: {
+    id: string
+    name: string
+    slug: string
+    city: string
+    email: string
+    phone: string
+    is_active: boolean
+    subscription_status: string
+    created_at: string
+    plan_id: string
+    active_courts: number
+    highest_slot_price: number
+    multiplier: number
+    monthlyFeeArs: number
+  }
+  card: {
+    hasCard: boolean
+    brand?: string
+    last4?: string
+    holder?: string
+    mpPreapprovalId?: string
+    cardStatus: 'VALIDATED' | 'PENDING' | 'REJECTED' | 'NONE'
+    linkedAt?: string
+  }
+  trial: {
+    isTrial: boolean
+    trialDaysRemaining: number
+    trialEndsAt?: string | null
+    trialForfeited: boolean
+  }
+  cancellation: {
+    cancelAtPeriodEnd: boolean
+    cancellationEffectiveDate?: string | null
+    cancellationReason?: string | null
+    cancellationRequestedAt?: string | null
+  }
+  invoices: Array<{
+    id: string
+    month: number
+    year: number
+    amount: number
+    status: 'PAID' | 'UNPAID' | 'DRAFT' | 'VOID'
+    dueDate: string
+    paidAt?: string | null
+    notes?: string | null
+    mpPreferenceId?: string | null
+  }>
+  autoDebitAttempts: Array<{
+    attemptNumber: number
+    date: string
+    status: string
+    reason?: string
+    code?: string
+  }>
+}
+
+/**
+ * Obtiene la ficha de diagnóstico completa 360° de un club para resolver problemas e incidentes.
+ */
+export async function getTenantDiagnosticDetails(tenantId: string): Promise<{
+  success: boolean
+  data?: TenantDiagnosticData
+  error?: string
+}> {
+  const auth = await assertSuperadmin()
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || 'No autorizado' }
+  }
+
+  const supabase = await createServiceClient()
+
+  const { data: tenant, error: tErr } = await supabase
+    .from('tenants')
+    .select(`
+      id, name, slug, city, email, phone_whatsapp, is_active, subscription_status,
+      created_at, plan_id, base_slots_plan, description, mp_preapproval_id,
+      courts(id, is_active),
+      price_rules(price_cents)
+    `)
+    .eq('id', tenantId)
+    .single()
+
+  if (tErr || !tenant) {
+    return { success: false, error: 'Club no encontrado' }
+  }
+
+  const rawCourts = Array.isArray(tenant.courts) ? tenant.courts : []
+  const activeCourts = rawCourts.filter(c => c.is_active !== false).length || 2
+  const rawRules = Array.isArray(tenant.price_rules) ? tenant.price_rules : []
+  let maxPriceArs = 30000
+  if (rawRules.length > 0) {
+    const maxCents = Math.max(...rawRules.map(r => Number(r.price_cents) || 0))
+    if (maxCents > 0) maxPriceArs = Math.round(maxCents / 100)
+  }
+  const { calculateSaaSMultiplier } = await import('@/lib/saas-pricing')
+  const multiplier = calculateSaaSMultiplier(activeCourts)
+  const monthlyFeeArs = Math.round(maxPriceArs * multiplier)
+
+  let meta: Record<string, unknown> = {}
+  if (tenant.description) {
+    try {
+      meta = JSON.parse(tenant.description)
+    } catch {}
+  }
+
+  const hasCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+  const cardData = {
+    hasCard,
+    brand: (meta.card_brand as string) || (tenant.mp_preapproval_id ? 'Mercado Pago' : undefined),
+    last4: (meta.card_last4 as string) || undefined,
+    holder: (meta.card_holder as string) || undefined,
+    mpPreapprovalId: tenant.mp_preapproval_id || undefined,
+    cardStatus: (meta.card_status as 'VALIDATED' | 'PENDING' | 'REJECTED' | 'NONE') || (hasCard ? 'VALIDATED' : 'NONE'),
+    linkedAt: (meta.card_linked_at as string) || undefined,
+  }
+
+  const now = Date.now()
+  let trialEndsAt: string | null = (meta.trial_ends_at as string) || null
+  const trialForfeited = Boolean(meta.trial_forfeited)
+  if (!trialEndsAt && tenant.created_at) {
+    trialEndsAt = new Date(new Date(tenant.created_at).getTime() + 15 * 86400000).toISOString()
+  }
+  const trialDate = trialEndsAt ? new Date(trialEndsAt).getTime() : null
+  const isTrial = trialForfeited ? false : Boolean(trialDate && trialDate > now)
+  const trialDaysRemaining = isTrial && trialDate ? Math.max(0, Math.ceil((trialDate - now) / 86400000)) : 0
+
+  const { data: invoices } = await supabase
+    .from('tenant_invoices')
+    .select('id, month, year, amount, status, due_date, paid_at, notes, mp_preference_id')
+    .eq('tenant_id', tenantId)
+    .order('year', { ascending: false })
+    .order('month', { ascending: false })
+
+  const mappedInvoices = (invoices || []).map(inv => ({
+    id: inv.id,
+    month: inv.month,
+    year: inv.year,
+    amount: Number(inv.amount) || 0,
+    status: inv.status as 'PAID' | 'UNPAID' | 'DRAFT' | 'VOID',
+    dueDate: inv.due_date,
+    paidAt: inv.paid_at,
+    notes: inv.notes,
+    mpPreferenceId: inv.mp_preference_id,
+  }))
+
+  const rawAttempts = Array.isArray(meta.auto_debit_attempts) ? meta.auto_debit_attempts : []
+
+  return {
+    success: true,
+    data: {
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        city: tenant.city,
+        email: tenant.email,
+        phone: tenant.phone_whatsapp || '',
+        is_active: tenant.is_active,
+        subscription_status: tenant.subscription_status,
+        created_at: tenant.created_at,
+        plan_id: (tenant.plan_id as string) || 'MEDIANO_2',
+        active_courts: activeCourts,
+        highest_slot_price: maxPriceArs,
+        multiplier,
+        monthlyFeeArs,
+      },
+      card: cardData,
+      trial: {
+        isTrial,
+        trialDaysRemaining,
+        trialEndsAt,
+        trialForfeited,
+      },
+      cancellation: {
+        cancelAtPeriodEnd: Boolean(meta.cancel_at_period_end),
+        cancellationEffectiveDate: (meta.cancellation_effective_date as string) || null,
+        cancellationReason: (meta.cancellation_reason as string) || null,
+        cancellationRequestedAt: (meta.cancellation_requested_at as string) || null,
+      },
+      invoices: mappedInvoices,
+      autoDebitAttempts: rawAttempts as Array<{
+        attemptNumber: number
+        date: string
+        status: string
+        reason?: string
+        code?: string
+      }>,
+    }
+  }
+}
+
 

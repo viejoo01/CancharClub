@@ -1418,12 +1418,17 @@ export async function createSuperadminPaymentLink(
             }
           ],
           external_reference: `superadmin_saas_${tenantId}_${Date.now()}`,
+          payment_methods: {
+            installments: 1,
+            default_installments: 1,
+          },
           back_urls: {
             success: `${appUrl}/superadmin?payment_success=true&tenant_id=${tenantId}`,
             pending: `${appUrl}/superadmin?payment_pending=true&tenant_id=${tenantId}`,
             failure: `${appUrl}/superadmin?payment_failure=true&tenant_id=${tenantId}`,
           },
           auto_return: 'approved',
+          notification_url: `${appUrl}/api/webhooks/billing/mercadopago`,
           statement_descriptor: 'CANCHARCLUB SAAS',
         }
       })
@@ -1444,7 +1449,7 @@ Te dejamos el link oficial de pago para saldar la cuota mensual del sistema (${f
 🔗 *Link de Pago Seguro (Mercado Pago):*
 ${initPoint}
 
-Podés abonar con cualquier tarjeta (débito/crédito) o dinero en cuenta de Mercado Pago. Una vez acreditado, el sistema actualiza automáticamente tu cuenta al día.
+Podés abonar en 1 pago con cualquier tarjeta (débito/crédito) o dinero en cuenta de Mercado Pago. Una vez acreditado, el sistema actualiza automáticamente tu cuenta al día.
 
 ¡Muchas gracias!`
 

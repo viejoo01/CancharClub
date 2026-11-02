@@ -1496,6 +1496,10 @@ export async function createTournamentRegistrationPaymentPreference(teamId: stri
           },
         ],
         external_reference: `tournament_team_${team.id}`,
+        payment_methods: {
+          installments: 1,
+          default_installments: 1,
+        },
         back_urls: {
           success: `${appUrl}/torneo/${tourId}?payment=approved&team_id=${team.id}`,
           failure: `${appUrl}/torneo/${tourId}?payment=failed&team_id=${team.id}`,

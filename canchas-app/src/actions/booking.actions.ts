@@ -617,6 +617,10 @@ export async function initiateOnlineCheckout(
                 : undefined,
             },
             external_reference: bookingId,
+            payment_methods: {
+              installments: 1,
+              default_installments: 1,
+            },
             back_urls: {
               success: `${appUrl}/reserva/${bookingId}/confirmado`,
               failure: `${appUrl}/reserva/${bookingId}/error`,

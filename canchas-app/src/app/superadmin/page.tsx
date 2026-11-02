@@ -4770,6 +4770,11 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 />
               </div>
 
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400">
+                <CreditCard className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>Cobro configurado en <strong className="text-slate-200">1 sola cuota</strong> (sin cuotas de financiación).</span>
+              </div>
+
               {!generatedPaymentLink ? (
                 <Button
                   onClick={handleCreatePaymentLink}
@@ -4790,9 +4795,14 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                 </Button>
               ) : (
                 <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-700/50 space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
-                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>¡Link generado exitosamente por {formatARS(generatedPaymentLink.amount)}!</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                      <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>¡Link generado por {formatARS(generatedPaymentLink.amount)}!</span>
+                    </div>
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-[10px] shrink-0">
+                      1 pago único
+                    </Badge>
                   </div>
 
                   <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 break-all select-all">

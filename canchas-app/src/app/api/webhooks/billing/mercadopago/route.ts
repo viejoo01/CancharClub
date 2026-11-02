@@ -466,6 +466,16 @@ export async function handleBillingWebhook(request: NextRequest, preReadRawBody?
           isReactivation = true
         }
       }
+    } else if (extRef.startsWith('superadmin_saas_')) {
+      const match = extRef.match(/^superadmin_saas_([0-9a-fA-F-]+)(?:_(\d+))?$/)
+      if (match) {
+        tenantId = match[1]
+      } else {
+        const parts = extRef.split('_')
+        if (parts.length >= 3) {
+          tenantId = parts[2]
+        }
+      }
     } else if (extRef.startsWith('saas_preapproval_')) {
       tenantId = extRef.replace('saas_preapproval_', '')
     } else if (extRef.startsWith('saas_tenant_')) {

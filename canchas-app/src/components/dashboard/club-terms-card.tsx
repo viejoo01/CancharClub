@@ -114,7 +114,7 @@ export function ClubTermsCard({
 
   return (
     <Card id="terminos-y-condiciones" className="border-slate-800 bg-slate-900/90 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
-      <CardHeader className="p-6 border-b border-slate-800/80 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/40">
+      <CardHeader className="p-6 border-b border-slate-800/80 bg-linear-to-r from-slate-950 via-slate-900 to-indigo-950/40">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
@@ -196,7 +196,7 @@ export function ClubTermsCard({
         )}
 
         {/* CONTENEDOR DE TEXTO LEGAL COMPLETO Y FORMATEADO */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 sm:p-6 max-h-[520px] overflow-y-auto space-y-6 text-xs text-slate-300 leading-relaxed font-sans shadow-inner selection:bg-emerald-500/30 selection:text-white">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 sm:p-6 max-h-130 overflow-y-auto space-y-6 text-xs text-slate-300 leading-relaxed font-sans shadow-inner selection:bg-emerald-500/30 selection:text-white">
           
           <div className="border-b border-slate-800 pb-4 text-center">
             <h3 className="text-base sm:text-lg font-black text-white tracking-wider uppercase font-mono">
@@ -537,7 +537,7 @@ export function ClubTermsCard({
 
         {/* ACCIÓN DE ACEPTACIÓN O CONFIRMACIÓN */}
         {!isAccepted ? (
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/40 border border-slate-800 space-y-4 shadow-xl">
+          <div className="p-4 sm:p-5 rounded-2xl bg-linear-to-r from-slate-950 via-slate-900 to-indigo-950/40 border border-slate-800 space-y-4 shadow-xl">
             <label className="flex items-start gap-3 cursor-pointer group">
               <input
                 type="checkbox"

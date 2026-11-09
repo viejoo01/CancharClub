@@ -188,7 +188,7 @@ function ConfirmationContent({ bookingId }: { bookingId: string }) {
 
       {/* Voucher Digital Card */}
       <Card className="w-full mt-5 border-slate-800 bg-slate-900/90 text-left shadow-2xl relative overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-emerald-500 to-teal-400" />
+        <div className="h-2 bg-linear-to-r from-emerald-500 to-teal-400" />
         
         <CardContent className="p-5 space-y-4">
           <div className="flex items-center justify-between">

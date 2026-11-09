@@ -475,7 +475,7 @@ export default function LucesPage() {
                 key={court.court_id} 
                 className={`transition-all duration-300 border rounded-2xl overflow-hidden ${
                   court.is_on 
-                    ? 'bg-gradient-to-b from-amber-950/25 via-slate-900/95 to-slate-900 border-amber-500/50 ring-1 ring-amber-500/30 shadow-xl shadow-amber-950/40' 
+                    ? 'bg-linear-to-b from-amber-950/25 via-slate-900/95 to-slate-900 border-amber-500/50 ring-1 ring-amber-500/30 shadow-xl shadow-amber-950/40' 
                     : 'bg-slate-900/40 border-slate-800/80 hover:border-slate-700'
                 }`}
               >

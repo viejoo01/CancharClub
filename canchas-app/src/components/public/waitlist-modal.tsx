@@ -115,7 +115,7 @@ export function WaitlistModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[420px] bg-slate-900 border-slate-800 text-slate-100 p-5">
+      <DialogContent className="sm:max-w-105 bg-slate-900 border-slate-800 text-slate-100 p-5">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center">

@@ -823,7 +823,7 @@ export default function PreciosPage() {
         setIsModalOpen(open)
         if (!open) setEditingRuleId(null)
       }}>
-        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+        <DialogContent className="sm:max-w-112.5 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>{editingRuleId ? 'Editar Regla de Tarifa' : 'Nueva Regla de Tarifa'}</DialogTitle>
             <DialogDescription>

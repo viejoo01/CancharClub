@@ -1316,7 +1316,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
   }, [trialDaysToSet])
 
   return (
-    <div className="space-y-6 max-w-[1700px] w-full mx-auto px-1 sm:px-2">
+    <div className="space-y-6 max-w-425 w-full mx-auto px-1 sm:px-2">
       {/* Header Superior y Barra de Acciones */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 rounded-3xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl shadow-xl shadow-black/20">
         <div className="space-y-1">
@@ -2058,16 +2058,16 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    <th className="py-3.5 pl-6 pr-4 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
+                    <th className="py-3.5 pl-6 pr-4 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-50">
                       Club / Inquilino
                     </th>
                     <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[95px]">Canchas (N)</th>
-                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-[110px]">Turno Más Caro</th>
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-27.5">Turno Más Caro</th>
                     <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[95px]">Multiplicador (M)</th>
-                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-[140px]">Cuota Mensual Final</th>
-                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[100px]">Vencimiento</th>
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap min-w-35">Cuota Mensual Final</th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-25">Vencimiento</th>
                     <th className="py-3.5 px-3 text-center whitespace-nowrap min-w-[125px]">Estado</th>
-                    <th className="py-3.5 pr-6 pl-3 text-right whitespace-nowrap min-w-[240px]">Acciones</th>
+                    <th className="py-3.5 pr-6 pl-3 text-right whitespace-nowrap min-w-60">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -2079,7 +2079,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                         t.cancel_at_period_end && "bg-amber-950/20 border-l-2 border-l-amber-500"
                       )}
                     >
-                      <td className="py-3.5 pl-6 pr-4 sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
+                      <td className="py-3.5 pl-6 pr-4 sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-50">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-white whitespace-nowrap">{t.name}</span>
                           {t.cancel_at_period_end && (
@@ -2656,7 +2656,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    <th className="p-4 pl-6 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">Club</th>
+                    <th className="p-4 pl-6 sticky left-0 z-20 bg-slate-950/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-50">Club</th>
                     <th className="p-4">Ubicación</th>
                     <th className="p-4 text-center">Plan Contratado</th>
                     <th className="p-4 text-center">Estado Acceso</th>
@@ -2681,7 +2681,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                           ? "bg-amber-950/25 hover:bg-amber-950/40 border-l-4 border-l-amber-500" 
                           : "hover:bg-slate-800/20"
                       )}>
-                      <td className="p-4 pl-6 font-semibold text-white sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-[200px]">
+                      <td className="p-4 pl-6 font-semibold text-white sticky left-0 z-10 bg-slate-900/95 backdrop-blur-md border-r border-slate-800/80 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.6)] min-w-50">
                         <div className="flex items-center gap-2">
                           <span>{t.name}</span>
                           {t.cancel_at_period_end && (
@@ -5228,7 +5228,7 @@ Por cualquier duda sobre la plataforma, podés escribirnos por este medio. ¡A r
                             <td className="py-2 px-2 text-slate-400 text-[11px]">
                               {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString('es-AR') : '—'}
                             </td>
-                            <td className="py-2 px-2 text-slate-400 text-[11px] truncate max-w-[150px]" title={inv.notes || ''}>
+                            <td className="py-2 px-2 text-slate-400 text-[11px] truncate max-w-37.5" title={inv.notes || ''}>
                               {inv.notes || '—'}
                             </td>
                           </tr>

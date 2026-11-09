@@ -65,7 +65,7 @@ export const SAAS_PLANS: Record<SaaSPlanId, SaaSPlanDefinition> = {
     priceExampleArs: '$25.000 – $40.000',
     features: [
       'Grilla en vivo y reservas automáticas 24/7.',
-      'Cobro de señas automáticas por Mercado Pago (Cero clavadas).',
+      'Cobro de señas automáticas por Mercado Pago.',
       'Panel de control de caja y turnos en mostrador.',
       'Soporte técnico y configuración inicial incluida.',
     ],

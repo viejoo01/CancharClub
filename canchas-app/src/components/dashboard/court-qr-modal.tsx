@@ -542,7 +542,7 @@ export function CourtQrModal(props: CourtQrModalProps) {
         {/* Vista previa idéntica a la que se imprimirá */}
         <div 
           id="qr-table-poster" 
-          className="my-3 p-4 rounded-2xl bg-white text-slate-900 shadow-2xl border-2 border-slate-950 flex flex-col items-center max-w-[340px] mx-auto"
+          className="my-3 p-4 rounded-2xl bg-white text-slate-900 shadow-2xl border-2 border-slate-950 flex flex-col items-center max-w-85 mx-auto"
         >
           <div className="px-3 py-0.5 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] tracking-widest uppercase mb-1">
             {displayClubName} • CANTINA

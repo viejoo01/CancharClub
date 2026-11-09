@@ -184,7 +184,7 @@ export function ExecutiveCockpitPanel({
 
   return (
     <aside 
-      className="w-full xl:w-[380px] 2xl:w-[410px] shrink-0 flex flex-col gap-4 bg-white dark:bg-[#070b14]/95 border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-4 shadow-xl dark:shadow-2xl backdrop-blur-xl transition-all duration-300 overflow-y-auto max-h-[calc(100vh-140px)] custom-scrollbar"
+      className="w-full xl:w-95 2xl:w-102.5 shrink-0 flex flex-col gap-4 bg-white dark:bg-[#070b14]/95 border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-4 shadow-xl dark:shadow-2xl backdrop-blur-xl transition-all duration-300 overflow-y-auto max-h-[calc(100vh-140px)] custom-scrollbar"
       aria-label="Panel Ejecutivo & Financiero"
     >
       {/* Header del Panel */}
@@ -294,7 +294,7 @@ export function ExecutiveCockpitPanel({
             <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80">Todos los turnos del día están confirmados o saldados.</span>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
+          <div className="space-y-2 max-h-55 overflow-y-auto custom-scrollbar pr-1">
             {pendingValidationBookings.map((b) => {
               const isApproving = approvingBookingId === b.id
 
@@ -379,7 +379,7 @@ export function ExecutiveCockpitPanel({
         {upcomingBookings.length === 0 ? (
           <p className="text-xs text-slate-400 text-center py-2">No hay turnos registrados para hoy.</p>
         ) : (
-          <div className="space-y-1.5 max-h-[200px] overflow-y-auto custom-scrollbar pr-1">
+          <div className="space-y-1.5 max-h-50 overflow-y-auto custom-scrollbar pr-1">
             {upcomingBookings.map((b) => {
               const isFullyPaid = b.balance_due <= 0
 

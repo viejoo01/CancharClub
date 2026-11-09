@@ -255,7 +255,7 @@ export function QuickBookingModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90dvh] overflow-y-auto">
+      <DialogContent className="sm:max-w-125 max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Carga Rápida de Turno</DialogTitle>
           <DialogDescription>

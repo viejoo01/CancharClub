@@ -580,7 +580,7 @@ export default function ClubPlanPage() {
 
       {/* Banner Prominente de Club en Pausa por Falta de Pago */}
       {isPaused && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-950/80 via-red-950/70 to-rose-950/80 border-2 border-rose-600/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-rose-950/40 backdrop-blur-md">
+        <div className="p-4 sm:p-5 rounded-3xl bg-linear-to-r from-rose-950/80 via-red-950/70 to-rose-950/80 border-2 border-rose-600/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-rose-950/40 backdrop-blur-md">
           <div className="flex items-start sm:items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 mt-0.5 sm:mt-0">
               <ShieldAlert className="w-6 h-6 animate-pulse" />
@@ -729,7 +729,7 @@ export default function ClubPlanPage() {
 
       {/* Tarjeta Principal de Cuota Mensual */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2 bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-indigo-950/40 border-slate-800 rounded-3xl p-6 relative overflow-hidden backdrop-blur-md">
+        <Card className="md:col-span-2 bg-linear-to-br from-slate-900/90 via-slate-900/60 to-indigo-950/40 border-slate-800 rounded-3xl p-6 relative overflow-hidden backdrop-blur-md">
           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -1091,7 +1091,7 @@ export default function ClubPlanPage() {
       </div>
 
       {/* Mejora 3A: Débito Automático Recurrente (Mercado Pago Subscriptions) */}
-      <Card className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+      <Card className="bg-linear-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-1.5 max-w-xl">
             <div className="flex items-center gap-2">

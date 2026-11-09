@@ -189,7 +189,7 @@ export function ClubReactivationModal({
                 >
                   -
                 </Button>
-                <div className="px-3.5 py-1 rounded-lg bg-slate-900 border border-slate-700 font-mono font-bold text-sm text-amber-400 min-w-[70px] text-center">
+                <div className="px-3.5 py-1 rounded-lg bg-slate-900 border border-slate-700 font-mono font-bold text-sm text-amber-400 min-w-17.5 text-center">
                   {daysOverdue} {daysOverdue === 1 ? 'día' : 'días'}
                 </div>
                 <Button
@@ -254,7 +254,7 @@ export function ClubReactivationModal({
           </div>
 
           {/* Tarjeta de Resumen Detallado de Cuota + Recargo */}
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 border border-slate-800 space-y-3 shadow-inner">
+          <div className="p-4 rounded-2xl bg-linear-to-br from-slate-950 via-slate-950 to-slate-900 border border-slate-800 space-y-3 shadow-inner">
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80">
               <span className="text-slate-400">1. Cuota mensual de suscripción base:</span>
               <span className="font-mono font-semibold text-slate-200">
@@ -332,7 +332,7 @@ export function ClubReactivationModal({
                 <Button
                   onClick={handlePayMercadoPago}
                   disabled={isProcessing}
-                  className="w-full bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold h-12 rounded-xl text-xs sm:text-sm shadow-xl shadow-blue-950/50 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full bg-linear-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold h-12 rounded-xl text-xs sm:text-sm shadow-xl shadow-blue-950/50 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isProcessing ? (
                     <>

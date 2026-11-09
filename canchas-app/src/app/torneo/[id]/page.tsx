@@ -378,7 +378,7 @@ export default function PublicTournamentPage({
       </header>
 
       {/* Hero Header del Torneo */}
-      <div className="bg-gradient-to-b from-slate-900 via-slate-900/60 to-slate-950 border-b border-slate-800/80 px-4 py-8">
+      <div className="bg-linear-to-b from-slate-900 via-slate-900/60 to-slate-950 border-b border-slate-800/80 px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">

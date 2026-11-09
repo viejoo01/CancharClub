@@ -19,7 +19,6 @@ import {
   Smartphone,
   X,
   ArrowUpRight,
-  Sparkles,
   Users,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
@@ -426,13 +425,6 @@ export default function HomePage() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(16,185,129,0.12),transparent)] dark:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(16,185,129,0.18),transparent)] pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 flex flex-col items-center text-center">
-          
-          {/* Badge superior dinámico */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-semibold mb-4 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Turnos en vivo con seña automática por Mercado Pago</span>
-          </div>
-
           {/* Título Principal */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-white max-w-4xl leading-[1.12]">
             Tu cancha lista en segundos.{' '}

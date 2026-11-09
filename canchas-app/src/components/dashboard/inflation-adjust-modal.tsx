@@ -98,7 +98,7 @@ export function InflationAdjustModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+      <DialogContent className="sm:max-w-135 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
         <DialogHeader>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-1">
             <TrendingUp className="w-4 h-4" />

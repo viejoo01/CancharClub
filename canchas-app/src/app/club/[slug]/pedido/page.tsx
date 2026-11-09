@@ -416,7 +416,7 @@ export default function CourtOrderPage({
 
       {/* Hero Banner Pedidos en Mesa */}
       <div className="max-w-md mx-auto px-4 pt-4">
-        <div className="p-4 rounded-2xl bg-gradient-to-tr from-emerald-950/60 to-slate-900 border border-emerald-500/20 shadow-lg">
+        <div className="p-4 rounded-2xl bg-linear-to-tr from-emerald-950/60 to-slate-900 border border-emerald-500/20 shadow-lg">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
               <Coffee className="w-5 h-5" />

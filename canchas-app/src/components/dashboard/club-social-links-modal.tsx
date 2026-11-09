@@ -137,9 +137,9 @@ export function ClubSocialLinksModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl max-h-[92vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100 p-0 shadow-2xl">
-        <DialogHeader className="p-6 pb-4 border-b border-slate-800/80 bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950">
+        <DialogHeader className="p-6 pb-4 border-b border-slate-800/80 bg-linear-to-b from-slate-900 via-slate-950 to-slate-950">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-600 via-rose-500 to-indigo-500 p-0.5 shadow-lg shadow-pink-950/40 shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-linear-to-tr from-pink-600 via-rose-500 to-indigo-500 p-0.5 shadow-lg shadow-pink-950/40 shrink-0">
               <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
                 <Share2 className="w-5 h-5 text-pink-400" />
               </div>
@@ -169,7 +169,7 @@ export function ClubSocialLinksModal({
             <div className="space-y-2 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800/80 focus-within:border-pink-500/50 transition-colors">
               <div className="flex items-center justify-between">
                 <Label htmlFor="instagram" className="text-xs font-bold text-white flex items-center gap-2 cursor-pointer">
-                  <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center shadow-xs">
+                  <div className="w-6 h-6 rounded-lg bg-linear-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center shadow-xs">
                     <InstagramIcon className="w-3.5 h-3.5 text-white" />
                   </div>
                   <span>Instagram</span>
@@ -265,7 +265,7 @@ export function ClubSocialLinksModal({
             </div>
 
             {/* Vista previa en tiempo real */}
-            <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950 border border-slate-800 space-y-2.5">
+            <div className="p-4 rounded-2xl bg-linear-to-b from-slate-900/90 to-slate-950 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-pink-400" />

@@ -672,7 +672,7 @@ _Comprobante automático emitido por CancharClub._`
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[620px] max-h-[92dvh] overflow-y-auto">
+      <DialogContent className="sm:max-w-155 max-h-[92dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between pr-4">
             <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100">{courtDisplayName}</DialogTitle>

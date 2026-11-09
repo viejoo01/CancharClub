@@ -747,7 +747,7 @@ export default function CanchasPage() {
 
       {/* Modal Editar Cancha */}
       <Dialog open={!!editingCourt} onOpenChange={(open) => !open && setEditingCourt(null)}>
-        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+        <DialogContent className="sm:max-w-112.5 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>Editar Cancha</DialogTitle>
             <DialogDescription>
@@ -885,7 +885,7 @@ export default function CanchasPage() {
 
       {/* Modal Nueva Cancha */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[450px] max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
+        <DialogContent className="sm:max-w-112.5 max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>Nueva Cancha</DialogTitle>
             <DialogDescription>

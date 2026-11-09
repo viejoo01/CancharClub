@@ -18,7 +18,7 @@ jobs:
       - name: 🌐 1. Ping a CancharClub Web (/api/health)
         id: ping_app
         run: |
-          APP_URL="${{ vars.APP_URL || 'https://www.cancharclub.com.ar' }}"
+          APP_URL="https://www.cancharclub.com.ar"
           echo "Haciendo ping a: ${APP_URL}/api/health"
           
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/health" || true)
@@ -38,7 +38,7 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          APP_URL="${{ vars.APP_URL || 'https://www.cancharclub.com.ar' }}"
+          APP_URL="https://www.cancharclub.com.ar"
           
           if [ -n "$CRON_SECRET" ]; then
             RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${APP_URL}/api/cron/keep-alive" \
@@ -62,8 +62,8 @@ jobs:
       - name: 🐘 3. Consulta Directa a Supabase PostgREST (SELECT 1 equivalente)
         id: direct_supabase
         run: |
-          SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://nmihhlzbpjonmjsmmred.supabase.co' }}"
-          SUPABASE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5taWhobHpicGpvbm1qc21tcmVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTU4MTYsImV4cCI6MjEwNDYzMTgxNn0.ycfvBwERdoORtvT-QWfjey0SVjjBcWCukXse3nTXlL4' }}"
+          SUPABASE_URL="https://nmihhlzbpjonmjsmmred.supabase.co"
+          SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5taWhobHpicGpvbm1qc21tcmVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTU4MTYsImV4cCI6MjEwNDYzMTgxNn0.ycfvBwERdoORtvT-QWfjey0SVjjBcWCukXse3nTXlL4"
           
           echo "Consultando tabla tenants en Supabase PostgREST..."
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" -X GET "${SUPABASE_URL}/rest/v1/tenants?select=id&limit=1" \

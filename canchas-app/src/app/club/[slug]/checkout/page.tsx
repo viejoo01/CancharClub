@@ -477,7 +477,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
 
       {/* Banner de Prioridad Exclusiva de Lista de Espera */}
       {(effectiveClaimId || claimId) && (
-        <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-teal-950/60 border border-emerald-500/50 flex items-center justify-between text-emerald-200 text-xs shadow-md">
+        <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-linear-to-r from-emerald-950/80 to-teal-950/60 border border-emerald-500/50 flex items-center justify-between text-emerald-200 text-xs shadow-md">
           <div className="flex items-center gap-2 font-semibold">
             <Zap className="w-4 h-4 text-emerald-400 shrink-0 fill-emerald-400" />
             <span className="text-[11px] sm:text-xs">Prioridad exclusiva de Lista de Espera</span>
@@ -489,7 +489,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       )}
 
       {/* Timer de Bloqueo Temporal (Redis Lock) */}
-      <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-gradient-to-r from-amber-950/50 to-amber-900/30 border border-amber-500/30 flex items-center justify-between text-amber-200 text-xs shadow-sm">
+      <div className="mx-4 mt-3.5 p-3 rounded-2xl bg-linear-to-r from-amber-950/50 to-amber-900/30 border border-amber-500/30 flex items-center justify-between text-amber-200 text-xs shadow-sm">
         <div className="flex items-center gap-2 font-medium">
           <Clock className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
           <span className="text-[11px] sm:text-xs">Turno reservado temporalmente para vos:</span>
@@ -502,7 +502,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
       {/* Resumen del Turno Seleccionado en Tarjeta */}
       <div className="px-4 pt-3.5">
         <Card className="border-slate-800 bg-slate-900/90 rounded-2xl shadow-md overflow-hidden">
-          <div className="h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
+          <div className="h-1 bg-linear-to-r from-emerald-500 to-teal-400" />
           <CardContent className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -861,7 +861,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
             </span>
           </div>
 
-          <div className="flex-1 max-w-[270px]">
+          <div className="flex-1 max-w-67.5">
             {isPublicPaused ? (
               <Button
                 asChild
@@ -884,7 +884,7 @@ function CheckoutContent({ params }: { params: Promise<{ slug: string }> }) {
                 type="submit"
                 form="checkout-form"
                 disabled={loading || isSlotInPast}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full h-12 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>

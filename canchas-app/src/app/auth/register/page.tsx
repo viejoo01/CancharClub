@@ -126,7 +126,7 @@ function RegisterContent() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 py-8">
       <div className="w-full max-w-lg space-y-5">
         <div className="text-center space-y-2">
-          <div className="inline-flex w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 items-center justify-center shadow-xl shadow-emerald-950/50 mb-1">
+          <div className="inline-flex w-14 h-14 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-400 items-center justify-center shadow-xl shadow-emerald-950/50 mb-1">
             <Trophy className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">

@@ -451,7 +451,7 @@ export default function CajaPage() {
                   <div className="min-w-0">
                     <div className="font-semibold text-sm text-slate-100 truncate">{e.customer_name}</div>
                     <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="truncate max-w-[100px] sm:max-w-none">{e.court_name}</span>
+                      <span className="truncate max-w-25 sm:max-w-none">{e.court_name}</span>
                       <span>•</span>
                       <span>{formatTime(e.paid_at)} hs</span>
                       {e.payment_type === 'BALANCE' && (

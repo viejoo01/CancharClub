@@ -1047,7 +1047,7 @@ export function CalendarGrid({
         <div 
           ref={gridContainerRef}
           onWheel={handleGridWheel}
-          className="flex-1 overflow-x-auto overflow-y-auto h-[calc(100vh-130px)] min-h-[580px] rounded-2xl border border-slate-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0B0F19] shadow-sm dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
+          className="flex-1 overflow-x-auto overflow-y-auto h-[calc(100vh-130px)] min-h-145 rounded-2xl border border-slate-200/80 dark:border-white/[0.08] bg-white dark:bg-[#0B0F19] shadow-sm dark:shadow-2xl custom-scrollbar overscroll-y-auto relative select-none sm:select-auto w-full"
           style={{ scrollBehavior: 'smooth' }}
         >
         <div 

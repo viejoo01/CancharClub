@@ -72,9 +72,9 @@ export default function PublicTournamentPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center">
-      <div className="w-full max-w-4xl flex-1 flex flex-col pb-16 border-x border-slate-900 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+      <div className="w-full max-w-4xl flex-1 flex flex-col pb-16 border-x border-slate-900 bg-linear-to-b from-slate-950 via-slate-900 to-slate-950">
         {/* Banner Superior */}
-        <div className="relative p-6 bg-gradient-to-r from-amber-950/80 via-slate-900 to-emerald-950/80 border-b border-slate-800">
+        <div className="relative p-6 bg-linear-to-r from-amber-950/80 via-slate-900 to-emerald-950/80 border-b border-slate-800">
           <div className="flex items-center justify-between mb-4">
             <Link
               href={`/club/${slug}`}
@@ -249,7 +249,7 @@ export default function PublicTournamentPage() {
 
                 {/* Final */}
                 <div className="space-y-3">
-                  <div className="py-2 px-3 bg-gradient-to-r from-amber-950/70 to-yellow-950/70 border border-amber-500/40 rounded-xl text-center text-xs font-black uppercase tracking-wider text-amber-300 shadow-md shadow-amber-950/30">
+                  <div className="py-2 px-3 bg-linear-to-r from-amber-950/70 to-yellow-950/70 border border-amber-500/40 rounded-xl text-center text-xs font-black uppercase tracking-wider text-amber-300 shadow-md shadow-amber-950/30">
                     Gran Final
                   </div>
 
@@ -261,7 +261,7 @@ export default function PublicTournamentPage() {
                     const isWinnerB = finalMatch.winner_team_id === finalMatch.team_b_id
 
                     return (
-                      <Card className="border-amber-500/40 bg-gradient-to-b from-slate-900 to-amber-950/20 shadow-xl shadow-amber-950/30">
+                      <Card className="border-amber-500/40 bg-linear-to-b from-slate-900 to-amber-950/20 shadow-xl shadow-amber-950/30">
                         <CardContent className="p-4 space-y-3">
                           <div className="flex items-center justify-between text-[11px] text-amber-300/80 border-b border-amber-500/20 pb-2">
                             <span className="font-bold">Por la Corona</span>

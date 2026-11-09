@@ -757,9 +757,9 @@ export default function ClubPublicPage({
         </header>
 
         {/* Hero Card del Club con Detalles Visuales y Datos Reales */}
-        <div className="relative p-5 bg-gradient-to-b from-slate-900 via-slate-900/90 to-slate-950 border-b border-slate-800">
+        <div className="relative p-5 bg-linear-to-b from-slate-900 via-slate-900/90 to-slate-950 border-b border-slate-800">
           <div className="flex items-start gap-3.5">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-950/50 shrink-0">
+            <div className="w-14 h-14 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-950/50 shrink-0">
               <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
                 <Trophy className="w-7 h-7 text-emerald-400" />
               </div>
@@ -918,7 +918,7 @@ export default function ClubPublicPage({
 
           {/* Banner de Información Destacada / Promoción del Club para los Jugadores */}
           {club.highlightText && (
-            <div className="mt-4 relative overflow-hidden rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/95 to-emerald-950/40 p-3.5 shadow-lg shadow-amber-950/20">
+            <div className="mt-4 relative overflow-hidden rounded-2xl border border-amber-500/40 bg-linear-to-r from-amber-950/40 via-slate-900/95 to-emerald-950/40 p-3.5 shadow-lg shadow-amber-950/20">
               <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0 mt-0.5">
@@ -973,7 +973,7 @@ export default function ClubPublicPage({
                   }}
                   className={`py-3 px-2 rounded-2xl text-xs font-bold transition-all flex flex-col items-center gap-1 border active:scale-95 cursor-pointer ${
                     isSelected
-                      ? 'bg-gradient-to-b from-emerald-500/20 to-emerald-500/10 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-950/40'
+                      ? 'bg-linear-to-b from-emerald-500/20 to-emerald-500/10 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-950/40'
                       : 'bg-slate-900/70 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -1010,9 +1010,9 @@ export default function ClubPublicPage({
                 <button
                   key={day.isoDate}
                   onClick={() => setSelectedDate(day.isoDate)}
-                  className={`flex flex-col items-center justify-center min-w-[62px] h-[74px] rounded-2xl border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                  className={`flex flex-col items-center justify-center min-w-15.5 h-18.5 rounded-2xl border transition-all active:scale-95 shrink-0 cursor-pointer ${
                     isSelected
-                      ? 'bg-gradient-to-b from-emerald-500 to-teal-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/50'
+                      ? 'bg-linear-to-b from-emerald-500 to-teal-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/50'
                       : 'bg-slate-900/80 border-slate-800/90 text-slate-300 hover:border-slate-700'
                   }`}
                 >
@@ -1034,7 +1034,7 @@ export default function ClubPublicPage({
             })}
 
             {/* Input nativo de fecha para elegir cualquier día */}
-            <div className="relative min-w-[50px] h-[74px] shrink-0">
+            <div className="relative min-w-12.5 h-18.5 shrink-0">
               <input
                 type="date"
                 value={selectedDate}
@@ -1217,7 +1217,7 @@ export default function ClubPublicPage({
 
           {/* Banner de Prioridad Exclusiva de Lista de Espera si hay reclamo activo */}
           {activeClaim && (
-            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-950 via-teal-950 to-emerald-900 border-2 border-emerald-500/70 shadow-xl shadow-emerald-950/40 text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="mb-4 p-4 rounded-2xl bg-linear-to-r from-emerald-950 via-teal-950 to-emerald-900 border-2 border-emerald-500/70 shadow-xl shadow-emerald-950/40 text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
                   <Zap className="w-5 h-5 text-emerald-300 animate-pulse" />
@@ -1271,7 +1271,7 @@ export default function ClubPublicPage({
               </Button>
             </div>
           ) : club.courts.length === 0 ? (
-            <div className="bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
+            <div className="bg-linear-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-xl mb-6">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
                 <Clock className="w-6 h-6" />
               </div>
@@ -1441,7 +1441,7 @@ export default function ClubPublicPage({
                                     <Link href={checkoutUrl}>
                                       <Button
                                         size="sm"
-                                        className="h-8 px-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95"
+                                        className="h-8 px-2.5 rounded-lg bg-linear-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-950/40 gap-1 active:scale-95"
                                       >
                                         <Zap className="w-3 h-3 fill-slate-950" />
                                         <span>Reclamar</span>
@@ -1555,7 +1555,7 @@ export default function ClubPublicPage({
                               <Link href={checkoutUrl}>
                                 <Button
                                   size="sm"
-                                  className="h-10 px-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
+                                  className="h-10 px-3.5 rounded-xl bg-linear-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/50 gap-1.5 active:scale-95 transition-transform"
                                 >
                                   <Zap className="w-3.5 h-3.5 fill-slate-950" />
                                   <span>Reclamar</span>

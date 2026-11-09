@@ -120,7 +120,7 @@ export function PausedClubScreen({
       </div>
 
       {/* CUADRO PRINCIPAL */}
-      <div className="relative overflow-hidden rounded-3xl border-2 border-amber-500/40 bg-gradient-to-b from-slate-900/95 via-slate-900 to-slate-950 p-5 sm:p-8 md:p-10 shadow-2xl shadow-black/80 backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-3xl border-2 border-amber-500/40 bg-linear-to-b from-slate-900/95 via-slate-900 to-slate-950 p-5 sm:p-8 md:p-10 shadow-2xl shadow-black/80 backdrop-blur-xl">
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -211,7 +211,7 @@ export function PausedClubScreen({
               type="button"
               onClick={handlePayReactivation}
               disabled={isProcessingPayment}
-              className="w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg text-white bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.99] transition-all shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg text-white bg-linear-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.99] transition-all shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isProcessingPayment ? (
                 <>

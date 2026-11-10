@@ -584,3 +584,23 @@ export interface MercadoPagoPayment {
     }
   }
 }
+
+/** Resultado estructurado del cobro atómico de mostrador (RPC settle_booking_balance) */
+export interface SettleBookingBalanceResult {
+  success: boolean
+  payment_id?: string
+  booking_id?: string
+  amount_charged_cents?: number
+  amount_charged_ars?: number
+  payment_method?: string
+  payment_method_label?: string
+  total_paid_cents?: number
+  total_paid_ars?: number
+  balance_due_cents?: number
+  balance_due_ars?: number
+  status?: string
+  is_fully_paid?: boolean
+  registered_at?: string
+  error?: string
+}
+

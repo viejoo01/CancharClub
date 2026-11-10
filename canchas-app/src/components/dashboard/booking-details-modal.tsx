@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { 
-  registerCashPayment, 
+  settleBookingBalance,
   cancelBooking, 
   markBookingNoShow, 
   getPlayerReputation,
@@ -110,7 +110,7 @@ export function BookingDetailsModal({
   const [localNotes, setLocalNotes] = useState<string | null>(null)
 
   const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO'>('CASH')
+  const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD'>('CASH')
   const [loadingPay, setLoadingPay] = useState(false)
   const [loadingCancel, setLoadingCancel] = useState(false)
   const [loadingNoShow, setLoadingNoShow] = useState(false)
@@ -226,7 +226,7 @@ export function BookingDetailsModal({
     isSubmittingPayRef.current = true
     setLoadingPay(true)
     try {
-      const res = await registerCashPayment({
+      const res = await settleBookingBalance({
         booking_id: booking.id,
         amount_ars: amount,
         payment_method: payMethod,
@@ -258,7 +258,7 @@ export function BookingDetailsModal({
     }
   }
 
-  const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO', customAmount?: number) => {
+  const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD', customAmount?: number) => {
     if (isSubmittingPayRef.current || loadingPay) return
     if (!booking) return
     const amount = customAmount ?? currentBalance
@@ -270,7 +270,7 @@ export function BookingDetailsModal({
     isSubmittingPayRef.current = true
     setLoadingPay(true)
     try {
-      const res = await registerCashPayment({
+      const res = await settleBookingBalance({
         booking_id: booking.id,
         amount_ars: amount,
         payment_method: method,
@@ -280,10 +280,16 @@ export function BookingDetailsModal({
       if (!res.success) {
         toast.error(res.error || 'Error al registrar cobro')
       } else {
-        const methodLabel = method === 'TRANSFER' ? 'Transferencia' : method === 'MERCADOPAGO' ? 'Mercado Pago' : 'Efectivo'
-        toast.success(`¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado!`, {
-          description: 'El turno quedó completamente saldado.',
-        })
+        const methodLabel = method === 'TRANSFER' ? 'Transferencia'
+          : method === 'MERCADOPAGO' ? 'Mercado Pago'
+          : method === 'DEBIT_CARD' ? 'Tarjeta Débito'
+          : method === 'CREDIT_CARD' ? 'Tarjeta Crédito'
+          : 'Efectivo'
+        const isFullyPaid = res.data?.is_fully_paid ?? true
+        const feedbackMsg = isFullyPaid 
+          ? `¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado! El turno quedó completamente saldado.`
+          : `¡Cobro parcial de ${formatARS(amount)} (${methodLabel}) registrado! Restante: ${formatARS(res.data?.balance_due_ars || 0)}.`
+        toast.success(feedbackMsg)
         setLocalStatus('confirmed_cash')
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -1054,12 +1060,14 @@ _Comprobante automático emitido por CancharClub._`
                       <select
                         id="payMethod"
                         value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO')}
+                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD')}
                         className="flex h-9 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 mt-1"
                       >
                         <option value="CASH">Efectivo en Caja</option>
                         <option value="TRANSFER">Transferencia / Alias</option>
                         <option value="MERCADOPAGO">Mercado Pago / QR</option>
+                        <option value="DEBIT_CARD">Tarjeta Débito (POS)</option>
+                        <option value="CREDIT_CARD">Tarjeta Crédito (POS)</option>
                       </select>
                     </div>
                   </div>

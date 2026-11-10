@@ -25,6 +25,7 @@ import type {
   CreateBookingPayload,
   CheckoutResponse,
   TenantSubscriptionStatus,
+  SettleBookingBalanceResult,
 } from '@/types/database'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import {
@@ -1103,15 +1104,21 @@ export async function createManualBooking(
   }
 }
 
-// ─── ACTION: Registrar pago en caja (efectivo / transferencia) ───────────────
+// ─── ACTION: Liquidar saldo pendiente o registrar cobro en mostrador ─────────
 
-export async function registerCashPayment(params: {
+export interface SettleBookingBalanceParams {
   booking_id: string
-  amount_ars: number
-  payment_method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'QR_MP' | 'OTHER'
+  amount_ars?: number
+  payment_method?: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'QR_MP' | 'WALLET' | 'OTHER'
   reference_number?: string
   notes?: string
-}): Promise<{ success: boolean; error?: string }> {
+}
+
+export async function settleBookingBalance(params: SettleBookingBalanceParams): Promise<{
+  success: boolean
+  error?: string
+  data?: SettleBookingBalanceResult
+}> {
   try {
     const supabase = await createServiceClient()
     const { data: booking, error: bErr } = await supabase
@@ -1142,7 +1149,6 @@ export async function registerCashPayment(params: {
     }
 
     // 1. REGLA DE INTEGRIDAD FINANCIERA: Saldo Pendiente (Seña Requerida vs Cobrada)
-    //    Consultar pagos reales acreditados en booking_payments
     const { data: paymentRows, error: payRowsErr } = await supabase
       .from('booking_payments')
       .select('amount_cents, payment_method')
@@ -1150,7 +1156,7 @@ export async function registerCashPayment(params: {
       .eq('tenant_id', booking.tenant_id)
 
     if (payRowsErr) {
-      console.error('[registerCashPayment] Error al consultar booking_payments:', payRowsErr.message)
+      console.error('[settleBookingBalance] Error al consultar booking_payments:', payRowsErr.message)
       return { success: false, error: 'Error al verificar los pagos acreditados de la reserva' }
     }
 
@@ -1162,8 +1168,6 @@ export async function registerCashPayment(params: {
     const rawStatus = (booking.status || '').toLowerCase()
     const isPendingDeposit = rawStatus === 'pending_deposit' || rawStatus === 'pending_lock' || rawStatus === 'pending'
 
-    // Si status === 'pending_deposit', los pagos acreditados son exactamente los asentados en booking_payments
-    // Si no hay registros de pago, los pagos acreditados son $0, por lo que el cliente debe el total de la cancha.
     const currentAccreditedCents = isPendingDeposit
       ? totalAccreditedFromPayments
       : (totalAccreditedFromPayments > 0 ? totalAccreditedFromPayments : (Number(booking.deposit_cents) || 0))
@@ -1178,16 +1182,12 @@ export async function registerCashPayment(params: {
       }
     }
 
-    const amountCents = Math.round(params.amount_ars * 100)
-    if (amountCents <= 0) {
-      return {
-        success: false,
-        error: 'El monto ingresado a cobrar debe ser mayor a cero.',
-      }
-    }
+    const requestedAmountCents = params.amount_ars && params.amount_ars > 0
+      ? Math.round(params.amount_ars * 100)
+      : pendingBalanceCents
 
     // Topar el monto a cobrar al saldo restante pendiente
-    const effectiveAmountCents = Math.min(amountCents, pendingBalanceCents)
+    const effectiveAmountCents = Math.min(requestedAmountCents, pendingBalanceCents)
 
     // Protección anti-doble clic / concurrencia: si en los últimos 45 segundos ya se registró un cobro idéntico
     const now = new Date()
@@ -1201,32 +1201,47 @@ export async function registerCashPayment(params: {
     })
 
     if (isRecentDuplicate) {
-      console.warn('[registerCashPayment] Cobro duplicado bloqueado por ventana de seguridad de 45s para booking:', params.booking_id)
+      console.warn('[settleBookingBalance] Cobro duplicado bloqueado por ventana de seguridad de 45s para booking:', params.booking_id)
       return { success: true }
     }
 
     const validStaffId = authCheck.user?.id && isValidUuid(authCheck.user.id) ? authCheck.user.id : null
-    // 2. EJECUTAR RPC ATÓMICA EN POSTGRESQL (Transaccionalidad Atómica en Cobro de Mostrador)
-    const { data: rpcData, error: rpcError } = await supabase.rpc('register_cash_payment_atomic', {
+    const methodStr = (params.payment_method || 'CASH').toLowerCase()
+
+    // 2. EJECUTAR RPC ATÓMICA EN POSTGRESQL (settle_booking_balance con fallback a register_cash_payment_atomic)
+    let rpcData: unknown = null
+    let rpcError: { code?: string; message?: string } | null = null
+
+    const primaryAttempt = await supabase.rpc('settle_booking_balance', {
       p_booking_id: params.booking_id,
       p_tenant_id: booking.tenant_id,
       p_amount_cents: effectiveAmountCents,
+      p_payment_method: methodStr,
       p_staff_id: validStaffId,
       p_notes: params.notes || null,
     })
 
-    if (rpcError) {
-      console.error('[registerCashPayment] Error en register_cash_payment_atomic:', rpcError.message)
-      const isFunctionMissing =
-        rpcError.code === 'PGRST202' ||
-        rpcError.message?.toLowerCase().includes('function') ||
-        rpcError.message?.toLowerCase().includes('does not exist')
+    rpcData = primaryAttempt.data
+    rpcError = primaryAttempt.error
 
+    if (rpcError && (rpcError.code === 'PGRST202' || rpcError.message?.toLowerCase().includes('function') || rpcError.message?.toLowerCase().includes('does not exist'))) {
+      console.warn('[settleBookingBalance] settle_booking_balance no disponible, ejecutando fallback register_cash_payment_atomic')
+      const fallbackAttempt = await supabase.rpc('register_cash_payment_atomic', {
+        p_booking_id: params.booking_id,
+        p_tenant_id: booking.tenant_id,
+        p_amount_cents: effectiveAmountCents,
+        p_staff_id: validStaffId,
+        p_notes: params.notes || null,
+      })
+      rpcData = fallbackAttempt.data
+      rpcError = fallbackAttempt.error
+    }
+
+    if (rpcError) {
+      console.error('[settleBookingBalance] Error en RPC:', rpcError.message)
       return {
         success: false,
-        error: isFunctionMissing
-          ? 'Error de infraestructura crítica: la función atómica de cobro (register_cash_payment_atomic) no está instalada en la base de datos. Se requiere aplicar la migración 20261029_atomic_cash_payment_and_gist.sql en Supabase.'
-          : (rpcError.message || 'Error al ejecutar cobro atómico en el servidor'),
+        error: rpcError.message || 'Error al ejecutar cobro en el servidor',
       }
     }
 
@@ -1237,11 +1252,14 @@ export async function registerCashPayment(params: {
       }
     }
 
-    // 4. REGISTRAR NOTIFICACIÓN Y REVALIDAR RUTAS
+    // 3. REGISTRAR NOTIFICACIÓN Y REVALIDAR RUTAS
     const timeStr = getArgentinaTimeStr(now)
-    const methodStr = String(params.payment_method).toUpperCase()
-    const methodSpanish = methodStr.includes('TRANSFER') ? 'Transferencia'
-      : (methodStr.includes('MERCADO') || methodStr.includes('MP')) ? 'Mercado Pago'
+    const upperMethod = String(params.payment_method || 'CASH').toUpperCase()
+    const methodSpanish = upperMethod.includes('TRANSFER') ? 'Transferencia'
+      : (upperMethod.includes('MERCADO') || upperMethod.includes('MP')) ? 'Mercado Pago'
+      : upperMethod.includes('DEBIT') ? 'Tarjeta Débito'
+      : upperMethod.includes('CREDIT') ? 'Tarjeta Crédito'
+      : upperMethod.includes('WALLET') ? 'Saldo Billetera'
       : 'Efectivo'
     const customerDisplayName = booking.customer_name?.trim() || 'Cliente'
 
@@ -1264,13 +1282,34 @@ export async function registerCashPayment(params: {
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/dashboard/reservas')
     revalidatePath('/dashboard/notificaciones')
-    return { success: true }
+
+    return {
+      success: true,
+      data: rpcData as SettleBookingBalanceResult,
+    }
   } catch (error) {
-    console.error('[registerCashPayment] Error:', error)
+    console.error('[settleBookingBalance] Exception:', error)
     return { success: false, error: 'Error interno del servidor al registrar pago' }
   }
 }
+
+// ─── ACTION: Registrar pago en caja (Retrocompatibilidad total) ───────────────
+export async function registerCashPayment(params: {
+  booking_id: string
+  amount_ars: number
+  payment_method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'QR_MP' | 'OTHER'
+  reference_number?: string
+  notes?: string
+}): Promise<{ success: boolean; error?: string }> {
+  const result = await settleBookingBalance(params)
+  return {
+    success: result.success,
+    error: result.error,
+  }
+}
+
 
 // ─── ACTION: Cancelar reserva ─────────────────────────────────────────────────
 

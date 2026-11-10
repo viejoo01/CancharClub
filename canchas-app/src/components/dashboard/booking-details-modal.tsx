@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -49,8 +49,36 @@ import {
   Laptop,
   Globe,
   Phone,
-  User
+  User,
+  Banknote,
+  CreditCard,
+  Coins,
 } from 'lucide-react'
+
+// Sugerencias inteligentes de billetes en efectivo comunes en Argentina para agilizar el vuelto
+function getSmartCashSuggestions(balance: number): number[] {
+  if (balance <= 0) return []
+  const suggestions = new Set<number>()
+
+  // Próximo múltiplo de 10.000
+  const next10k = Math.ceil(balance / 10000) * 10000
+  if (next10k > balance) suggestions.add(next10k)
+
+  // Denominaciones comunes y billetes en circulación en Argentina
+  const commonMilestones = [20000, 30000, 40000, 50000, 100000]
+  for (const milestone of commonMilestones) {
+    if (milestone > balance && suggestions.size < 4) {
+      suggestions.add(milestone)
+    }
+  }
+
+  // Si aún son pocas, añadir un salto de 20.000
+  if (suggestions.size < 3) {
+    suggestions.add(next10k + 20000)
+  }
+
+  return Array.from(suggestions).sort((a, b) => a - b).slice(0, 4)
+}
 import { ThermalReceiptModal } from '@/components/shared/thermal-receipt'
 import type { BookingStatus } from '@/types/database'
 import { siteConfig } from '@/config/site'
@@ -111,6 +139,8 @@ export function BookingDetailsModal({
 
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD'>('CASH')
+  const [receivedCash, setReceivedCash] = useState<number | null>(null)
+  const [customCashInput, setCustomCashInput] = useState('')
   const [loadingPay, setLoadingPay] = useState(false)
   const [loadingCancel, setLoadingCancel] = useState(false)
   const [loadingNoShow, setLoadingNoShow] = useState(false)
@@ -160,36 +190,35 @@ export function BookingDetailsModal({
     setLocalNotes(null)
     setShowPayForm(false)
     setPayAmount('')
+    setReceivedCash(null)
+    setCustomCashInput('')
   }
+  const currentStatus = localStatus || booking?.status || 'confirmed'
+  const currentNotes = localNotes ?? booking?.internal_notes ?? ''
 
-  if (!booking) return null
+  const currentPaid = (localVerifiedDeposit && (booking?.total_paid || 0) < (booking?.deposit_amount_ars || 0))
+    ? (booking?.deposit_amount_ars || 0)
+    : (booking?.total_paid || 0)
 
-  const currentStatus = localStatus || booking.status || 'confirmed'
-  const currentNotes = localNotes ?? booking.internal_notes ?? ''
+  const currentBalance = (localVerifiedDeposit && (booking?.total_paid || 0) < (booking?.deposit_amount_ars || 0))
+    ? Math.max(0, (booking?.total_amount_ars || 0) - (booking?.deposit_amount_ars || 0))
+    : (booking?.balance_due || 0)
 
-  const currentPaid = (localVerifiedDeposit && (booking.total_paid || 0) < (booking.deposit_amount_ars || 0))
-    ? booking.deposit_amount_ars
-    : (booking.total_paid || 0)
-
-  const currentBalance = (localVerifiedDeposit && (booking.total_paid || 0) < (booking.deposit_amount_ars || 0))
-    ? Math.max(0, (booking.total_amount_ars || 0) - (booking.deposit_amount_ars || 0))
-    : (booking.balance_due || 0)
-
-  const hasDepositAmount = (booking.deposit_amount_ars || 0) > 0
+  const hasDepositAmount = (booking?.deposit_amount_ars || 0) > 0
   const hasPaidAny = currentPaid > 0
   const isAbono = isAbonoBooking({
-    recurring_slot_id: (booking as { recurring_slot_id?: string | null }).recurring_slot_id,
-    origin: booking.origin,
-    payment_method: (booking as { payment_method?: string }).payment_method,
+    recurring_slot_id: (booking as { recurring_slot_id?: string | null })?.recurring_slot_id,
+    origin: booking?.origin,
+    payment_method: (booking as { payment_method?: string })?.payment_method,
     internal_notes: currentNotes,
   })
-  const isFullyPaid = isAbono || (currentBalance === 0 && (booking.total_amount_ars || 0) > 0)
+  const isFullyPaid = isAbono || (currentBalance === 0 && (booking?.total_amount_ars || 0) > 0)
 
   const isStaffDeskPaid = Boolean(
     currentNotes.includes('Cobro $') ||
     currentNotes.includes('en mostrador') ||
     currentNotes.includes('Seña inicial') ||
-    booking.origin === 'STAFF_MANUAL'
+    booking?.origin === 'STAFF_MANUAL'
   )
 
   const isTransfer = Boolean(
@@ -216,7 +245,7 @@ export function BookingDetailsModal({
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isSubmittingPayRef.current || loadingPay) return
+    if (!booking || isSubmittingPayRef.current || loadingPay) return
     const amount = Number(payAmount) || currentBalance
     if (amount <= 0) {
       toast.error('Ingresá un monto válido a cobrar')
@@ -258,7 +287,13 @@ export function BookingDetailsModal({
     }
   }
 
-  const handleQuickPay = async (method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD', customAmount?: number) => {
+  const cashSuggestions = useMemo(() => getSmartCashSuggestions(currentBalance), [currentBalance])
+
+  const handleQuickPay = useCallback(async (
+    method: 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD',
+    customAmount?: number,
+    cashTendered?: number | null
+  ) => {
     if (isSubmittingPayRef.current || loadingPay) return
     if (!booking) return
     const amount = customAmount ?? currentBalance
@@ -270,11 +305,16 @@ export function BookingDetailsModal({
     isSubmittingPayRef.current = true
     setLoadingPay(true)
     try {
+      let notes = (hasPaidAny || hasDepositAmount) ? 'Saldo restante cobrado' : 'Cobro total en mostrador'
+      if (method === 'CASH' && cashTendered && cashTendered > amount) {
+        notes += ` (Abonó con ${formatARS(cashTendered)}, vuelto entregado: ${formatARS(cashTendered - amount)})`
+      }
+
       const res = await settleBookingBalance({
         booking_id: booking.id,
         amount_ars: amount,
         payment_method: method,
-        notes: (hasPaidAny || hasDepositAmount) ? 'Saldo restante cobrado' : 'Cobro total en mostrador',
+        notes,
       })
 
       if (!res.success) {
@@ -286,8 +326,11 @@ export function BookingDetailsModal({
           : method === 'CREDIT_CARD' ? 'Tarjeta Crédito'
           : 'Efectivo'
         const isFullyPaid = res.data?.is_fully_paid ?? true
+        const changeInfo = (method === 'CASH' && cashTendered && cashTendered > amount)
+          ? ` • Vuelto entregado: ${formatARS(cashTendered - amount)}`
+          : ''
         const feedbackMsg = isFullyPaid 
-          ? `¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado! El turno quedó completamente saldado.`
+          ? `¡Cobro de ${formatARS(amount)} (${methodLabel}) registrado!${changeInfo}`
           : `¡Cobro parcial de ${formatARS(amount)} (${methodLabel}) registrado! Restante: ${formatARS(res.data?.balance_due_ars || 0)}.`
         toast.success(feedbackMsg)
         setLocalStatus('confirmed_cash')
@@ -300,6 +343,8 @@ export function BookingDetailsModal({
         } catch {}
         setShowPayForm(false)
         setPayAmount('')
+        setReceivedCash(null)
+        setCustomCashInput('')
         onSuccess?.()
         onClose()
       }
@@ -309,7 +354,41 @@ export function BookingDetailsModal({
       isSubmittingPayRef.current = false
       setLoadingPay(false)
     }
-  }
+  }, [booking, currentBalance, hasPaidAny, hasDepositAmount, loadingPay, onSuccess, onClose])
+
+  // Atajos de teclado para cobrar en mostrador en menos de 2 clics (o 1 sola tecla: Enter / E / T / M)
+  useEffect(() => {
+    if (!isOpen || currentBalance <= 0 || isAbono || showPayForm) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const tagName = activeEl?.tagName
+      const isInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT'
+
+      if (isInput) {
+        // Si el foco está en el input de billete rápido y presiona Enter, cobra en efectivo
+        if (e.key === 'Enter' && (activeEl as HTMLInputElement)?.dataset?.quickCashInput === 'true') {
+          e.preventDefault()
+          handleQuickPay('CASH', currentBalance, receivedCash)
+        }
+        return
+      }
+
+      if (e.key === 'Enter' || e.key === 'e' || e.key === 'E') {
+        e.preventDefault()
+        handleQuickPay('CASH', currentBalance, receivedCash)
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        handleQuickPay('TRANSFER', currentBalance)
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault()
+        handleQuickPay('MERCADOPAGO', currentBalance)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, currentBalance, isAbono, showPayForm, receivedCash, handleQuickPay])
 
   const handleSendWhatsAppVoucher = async () => {
     if (!booking) return
@@ -352,6 +431,7 @@ export function BookingDetailsModal({
   }
 
   const handleConfirmDeposit = async () => {
+    if (!booking) return
     setLoadingConfirm(true)
     try {
       const res = await confirmBookingDeposit(booking.id)
@@ -397,8 +477,8 @@ export function BookingDetailsModal({
   }
 
   const handleCancelBooking = async () => {
+    if (!booking) return
     if (!confirm('¿Estás seguro de que querés cancelar esta reserva?')) return
-
     setLoadingCancel(true)
     try {
       const res = await cancelBooking({
@@ -449,8 +529,8 @@ export function BookingDetailsModal({
   }
 
   const handleMarkNoShow = async () => {
+    if (!booking) return
     if (!confirm('¿Confirmás marcar este turno como Inasistencia (No Asistió)? Impactará en la reputación del cliente.')) return
-
     setLoadingNoShow(true)
     try {
       const res = await markBookingNoShow(booking.id)
@@ -496,6 +576,8 @@ export function BookingDetailsModal({
       setLoadingInvoice(false)
     }
   }
+
+  if (!booking) return null
 
   const courtDisplayName =
     (Array.isArray(booking.courts) ? booking.courts[0]?.name : booking.courts?.name) || 'Cancha'
@@ -692,6 +774,288 @@ _Comprobante automático emitido por CancharClub._`
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-sm">
+          {/* MÓDULO HERO: COBRO ULTRARRÁPIDO EN MOSTRADOR (< 2 CLICS / 1 TECLA) */}
+          {!isAbono && currentBalance > 0 && (
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-950 border-2 border-emerald-500/50 shadow-xl shadow-emerald-950/40 p-4 space-y-3.5 animate-in fade-in-50 zoom-in-95 duration-150">
+              {/* Encabezado del Hero Card */}
+              <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 shadow-inner">
+                    <Banknote className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
+                        Cobro Rápido en Mostrador
+                      </span>
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0 shrink-0">
+                        &lt; 2 clics
+                      </Badge>
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                      {booking.customer_name} • {courtDisplayName}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0 ml-auto sm:ml-0">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    Saldo Restante
+                  </div>
+                  <div className="text-2xl font-black text-emerald-400 font-mono tracking-tight leading-none mt-0.5">
+                    {formatARS(currentBalance)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Cobro Rápido en 1 Clic con Atajos de Teclado */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {/* 1. Efectivo (Botón Primario - Autofocus nativo) */}
+                <Button
+                  type="button"
+                  autoFocus={isOpen}
+                  disabled={loadingPay || currentBalance <= 0}
+                  onClick={() => handleQuickPay('CASH', currentBalance, receivedCash)}
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black h-12 px-3 text-xs shadow-lg shadow-emerald-950/60 rounded-xl cursor-pointer transition-all active:scale-[0.98] border border-emerald-400/30 flex items-center justify-between group"
+                  title="Cobrar en efectivo (Presioná Enter o E)"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    {loadingPay ? (
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    ) : (
+                      <Banknote className="w-4 h-4 text-emerald-100 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {receivedCash && receivedCash > currentBalance
+                        ? `Cobrar Efectivo`
+                        : `Efectivo (${formatARS(currentBalance)})`}
+                    </span>
+                  </div>
+                  <kbd className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-400/40 text-[10px] font-mono font-bold text-emerald-100 group-hover:bg-emerald-950/80 shrink-0">
+                    ↵ Enter / E
+                  </kbd>
+                </Button>
+
+                {/* 2. Transferencia */}
+                <Button
+                  type="button"
+                  disabled={loadingPay || currentBalance <= 0}
+                  onClick={() => handleQuickPay('TRANSFER', currentBalance)}
+                  className="bg-cyan-700/80 hover:bg-cyan-600 text-white font-bold h-12 px-3 text-xs shadow-md shadow-cyan-950/50 rounded-xl cursor-pointer transition-all active:scale-[0.98] border border-cyan-500/30 flex items-center justify-between group"
+                  title="Cobrar por transferencia o Alias (Presioná T)"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    {loadingPay ? (
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-cyan-200 shrink-0" />
+                    )}
+                    <span className="truncate">Transferencia</span>
+                  </div>
+                  <kbd className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-400/40 text-[10px] font-mono font-bold text-cyan-100 group-hover:bg-cyan-950/80 shrink-0">
+                    T
+                  </kbd>
+                </Button>
+
+                {/* 3. Mercado Pago / POS */}
+                <Button
+                  type="button"
+                  disabled={loadingPay || currentBalance <= 0}
+                  onClick={() => handleQuickPay('MERCADOPAGO', currentBalance)}
+                  className="bg-purple-700/80 hover:bg-purple-600 text-white font-bold h-12 px-3 text-xs shadow-md shadow-purple-950/50 rounded-xl cursor-pointer transition-all active:scale-[0.98] border border-purple-500/30 flex items-center justify-between group"
+                  title="Cobrar con Mercado Pago QR o Tarjeta POS (Presioná M)"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    {loadingPay ? (
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    ) : (
+                      <CreditCard className="w-4 h-4 text-purple-200 shrink-0" />
+                    )}
+                    <span className="truncate">Mercado Pago / POS</span>
+                  </div>
+                  <kbd className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-400/40 text-[10px] font-mono font-bold text-purple-100 group-hover:bg-purple-950/80 shrink-0">
+                    M
+                  </kbd>
+                </Button>
+              </div>
+
+              {/* Calculadora de Vuelto Rápido (Billetes de Mostrador) */}
+              <div className="pt-2 border-t border-emerald-500/20 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-300">
+                    <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Calculadora de vuelto (Paga con):</span>
+                  </div>
+                  {receivedCash && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReceivedCash(null)
+                        setCustomCashInput('')
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+                    >
+                      Restablecer exacto
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Chip: Exacto */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceivedCash(null)
+                      setCustomCashInput('')
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                      receivedCash === null
+                        ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/40 ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:border-slate-600 hover:text-slate-300'
+                    }`}
+                  >
+                    Exacto ({formatARS(currentBalance)})
+                  </button>
+
+                  {/* Chips dinámicos según saldo */}
+                  {cashSuggestions.map((bill) => {
+                    const isSelected = receivedCash === bill
+                    return (
+                      <button
+                        key={bill}
+                        type="button"
+                        onClick={() => {
+                          setReceivedCash(bill)
+                          setCustomCashInput('')
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-amber-500/25 text-amber-300 border-amber-400/50 ring-1 ring-amber-400/50'
+                            : 'bg-slate-900/80 text-slate-300 border-slate-700 hover:border-slate-500 hover:text-white'
+                        }`}
+                      >
+                        {formatARS(bill)}
+                      </button>
+                    )
+                  })}
+
+                  {/* Input libre para billetes atípicos */}
+                  <div className="inline-flex items-center">
+                    <Input
+                      data-quick-cash-input="true"
+                      type="number"
+                      placeholder="Otro billete..."
+                      value={customCashInput}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setCustomCashInput(val)
+                        const n = Number(val)
+                        setReceivedCash(n > 0 ? n : null)
+                      }}
+                      className="h-7 w-24 text-[11px] bg-slate-900/90 border-slate-700 text-slate-200 px-2 py-0.5 rounded-lg placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-emerald-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Banner de Vuelto Dinámico */}
+                {receivedCash !== null && receivedCash > currentBalance && (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 animate-in fade-in-50 duration-150">
+                    <div className="flex items-center gap-1.5 text-xs font-bold">
+                      <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Vuelto a entregar al jugador:</span>
+                    </div>
+                    <div className="text-lg font-black font-mono text-amber-300">
+                      {formatARS(receivedCash - currentBalance)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Pie del Hero: Atajo y opción de pago personalizado */}
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                <div className="text-slate-400 flex items-center gap-1.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Presioná <strong className="text-slate-200">Enter</strong> o <strong className="text-slate-200">E</strong> para cobrar en 1 clic</span>
+                </div>
+
+                {!showPayForm ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPayForm(true)
+                      setPayAmount(currentBalance.toString())
+                    }}
+                    className="text-slate-400 hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
+                  >
+                    ¿Monto parcial o dividir pago?
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowPayForm(false)}
+                    className="text-slate-400 hover:text-slate-200 underline underline-offset-2 transition-colors cursor-pointer"
+                  >
+                    Cerrar formulario personalizado
+                  </button>
+                )}
+              </div>
+
+              {/* Formulario desplegable para casos de monto parcial / personalizado */}
+              {showPayForm && (
+                <form onSubmit={handleRegisterPayment} className="pt-3 border-t border-slate-800 space-y-2.5 animate-in fade-in-50 duration-150">
+                  <div className="text-[11px] font-semibold text-slate-300">Cobro con monto o medio personalizado:</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="payAmount" className="text-[11px] text-slate-300">Monto ($)</Label>
+                      <Input
+                        id="payAmount"
+                        type="number"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        className="h-9 mt-1 text-xs bg-slate-900 border-slate-700"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="payMethod" className="text-[11px] text-slate-300">Medio</Label>
+                      <select
+                        id="payMethod"
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD')}
+                        className="flex h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 mt-1"
+                      >
+                        <option value="CASH">Efectivo en Caja</option>
+                        <option value="TRANSFER">Transferencia / Alias</option>
+                        <option value="MERCADOPAGO">Mercado Pago / QR</option>
+                        <option value="DEBIT_CARD">Tarjeta Débito (POS)</option>
+                        <option value="CREDIT_CARD">Tarjeta Crédito (POS)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowPayForm(false)}
+                      className="h-8 text-xs text-slate-400 hover:text-white"
+                    >
+                      Ocultar
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={loadingPay}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-8 text-xs cursor-pointer"
+                    >
+                      {loadingPay ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirmar Cobro Parcial'}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
           {/* Cliente Info & Reputación */}
           <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200/90 dark:border-slate-800 space-y-3">
             {/* Header del Cliente con Avatar y Teléfono */}
@@ -981,119 +1345,7 @@ _Comprobante automático emitido por CancharClub._`
             </div>
           )}
 
-          {/* Acción 2: Cobro rápido del saldo restante del turno (exclusivo para turnos normales con saldo) */}
-          {!isAbono && currentBalance > 0 && (
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-emerald-500/40 shadow-xs dark:shadow-lg space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center border border-emerald-500/30">
-                    <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">
-                      {hasPaidAny || hasDepositAmount ? 'Terminar de Cobrar Resto' : 'Cobrar Turno en Mostrador'}
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Resta abonar al club: <strong className="text-amber-600 dark:text-amber-400 font-bold">{formatARS(currentBalance)}</strong>
-                    </div>
-                  </div>
-                </div>
-                <Badge className="bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 font-bold px-2 py-0.5 text-xs font-mono">
-                  {formatARS(currentBalance)}
-                </Badge>
-              </div>
 
-              {/* Botones de Cobro Rápido en 1 Clic */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  disabled={loadingPay || currentBalance <= 0}
-                  onClick={() => handleQuickPay('CASH')}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95"
-                >
-                  {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
-                  <span>Cobrar Efectivo ({formatARS(currentBalance)})</span>
-                </Button>
-
-                <Button
-                  type="button"
-                  disabled={loadingPay || currentBalance <= 0}
-                  onClick={() => handleQuickPay('TRANSFER')}
-                  className="bg-cyan-700 hover:bg-cyan-600 text-white font-bold gap-1.5 h-11 text-xs shadow-md shadow-cyan-950/40 cursor-pointer transition-all active:scale-95"
-                >
-                  {loadingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>Cobrar Transferencia ({formatARS(currentBalance)})</span>
-                </Button>
-              </div>
-
-              {/* Opción de personalizar monto / método */}
-              {!showPayForm ? (
-                <div className="text-center pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPayForm(true)
-                      setPayAmount(currentBalance.toString())
-                    }}
-                    className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2 transition-colors cursor-pointer"
-                  >
-                    ¿Monto parcial o Mercado Pago / QR? Clic acá
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleRegisterPayment} className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
-                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Cobro con monto o medio personalizado:</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label htmlFor="payAmount" className="text-[11px] text-slate-700 dark:text-slate-300">Monto ($)</Label>
-                      <Input
-                        id="payAmount"
-                        type="number"
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
-                        className="h-9 mt-1 text-xs"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="payMethod" className="text-[11px] text-slate-700 dark:text-slate-300">Medio</Label>
-                      <select
-                        id="payMethod"
-                        value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'DEBIT_CARD' | 'CREDIT_CARD')}
-                        className="flex h-9 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 mt-1"
-                      >
-                        <option value="CASH">Efectivo en Caja</option>
-                        <option value="TRANSFER">Transferencia / Alias</option>
-                        <option value="MERCADOPAGO">Mercado Pago / QR</option>
-                        <option value="DEBIT_CARD">Tarjeta Débito (POS)</option>
-                        <option value="CREDIT_CARD">Tarjeta Crédito (POS)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end pt-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setShowPayForm(false)}
-                      className="h-8 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    >
-                      Ocultar
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={loadingPay}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold h-8 text-xs"
-                    >
-                      {loadingPay ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirmar Cobro'}
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
 
           {/* Nota Interna con traducción y limpieza a español */}
           {currentNotes && cleanNoteForDisplay(currentNotes) && (

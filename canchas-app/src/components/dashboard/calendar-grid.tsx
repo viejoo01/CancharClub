@@ -158,13 +158,13 @@ function getTodayArgentinaIso(): string {
  * Persiste una copia local ligera en localStorage para que el personal de recepción
  * pueda consultar turnos, canchas y teléfonos de contacto en modo offline ante cortes de red.
  */
-function saveOfflineScheduleSnapshot(
+export function saveOfflineScheduleSnapshot(
   dateIso: string,
   tenantId: string | null | undefined,
   courtsList: CourtItem[],
   bookingsList: CalendarBooking[]
 ) {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return
   try {
     const todayIso = getTodayArgentinaIso()
     if (dateIso === todayIso || !localStorage.getItem('canchar_today_schedule_snapshot')) {
@@ -875,6 +875,7 @@ export function CalendarGrid({
             } else if (freshList.length < prev.length) {
               toast.info('Se ha cancelado o liberado un turno en la grilla.')
             }
+            saveOfflineScheduleSnapshot(selectedDate, tenantId, activeCourts, freshList)
             return freshList
           }
           return prev
@@ -959,7 +960,7 @@ export function CalendarGrid({
       supabase.removeChannel(channel)
       bc?.close()
     }
-  }, [tenantId, selectedDate, onRefresh])
+  }, [tenantId, selectedDate, onRefresh, activeCourts])
 
   // Filtro de canchas ordenadas de la más antigua creada a la más nueva creada (de izquierda a derecha)
   const filteredCourts = useMemo(() => {

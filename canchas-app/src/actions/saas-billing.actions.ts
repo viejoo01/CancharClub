@@ -27,7 +27,7 @@ import {
 } from '@/lib/card-validation'
 
 import { getPlanByCourtsCount, SAAS_PLANS, getHigherPlan, type SaaSPlanDefinition, type SaaSPlanId } from '@/config/saas-plans'
-import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-security'
+import { assertSuperadmin, assertTenantAdmin, assertTenantMember, resolveEffectiveTenantId, getCurrentUserProfile } from '@/lib/auth-security'
 import { sendSuperadminAlert } from '@/lib/superadmin-notifications'
 
 export interface ClubBillingOverviewItem {
@@ -3772,6 +3772,7 @@ export async function executeTenantAutoDebit(params: {
           headers: {
             Authorization: `Bearer ${mpToken}`,
             'Content-Type': 'application/json',
+            'X-Idempotency-Key': `invoice_${targetInvoice.id}_attempt_${attemptNum}_${Date.now()}`,
           },
           cache: 'no-store',
         }
@@ -4109,6 +4110,74 @@ export async function ensureTenantCurrentInvoiceAndAutoDebit(tenantId: string): 
     amount: Number(activeInvoice.amount) || 0,
   }
 }
+
+/**
+ * Server Action: Permite al Administrador del Club o SuperAdmin reintentar manualmente
+ * el débito automático de una factura impaga utilizando la tarjeta bancaria vinculada en Mercado Pago.
+ */
+export async function triggerTenantAutoDebitRetryAction(params?: {
+  tenantId?: string
+  invoiceId?: string
+}): Promise<{
+  success: boolean
+  status: 'PAID' | 'FAILED' | 'SKIPPED'
+  message: string
+  paymentId?: string
+  error?: string
+}> {
+  const profile = await getCurrentUserProfile()
+  if (!profile) {
+    return {
+      success: false,
+      status: 'SKIPPED',
+      message: 'Debés iniciar sesión para reintentar el cobro automático.',
+      error: 'UNAUTHORIZED'
+    }
+  }
+
+  const effectiveTenantId = profile.role === 'SUPERADMIN' && params?.tenantId
+    ? params.tenantId
+    : profile.tenantId
+
+  if (!effectiveTenantId) {
+    return {
+      success: false,
+      status: 'SKIPPED',
+      message: 'Identificador de club no disponible.',
+      error: 'TENANT_NOT_FOUND'
+    }
+  }
+
+  if (profile.role !== 'SUPERADMIN' && profile.role !== 'TENANT_ADMIN' && profile.role !== 'TENANT_STAFF') {
+    return {
+      success: false,
+      status: 'SKIPPED',
+      message: 'No tenés permisos administrativos para gestionar la facturación del club.',
+      error: 'FORBIDDEN'
+    }
+  }
+
+  const result = await executeTenantAutoDebit({
+    tenantId: effectiveTenantId,
+    invoiceId: params?.invoiceId,
+    force: true, // Forzar reintento manual ignorando la bandera diaria si el usuario lo solicita explícitamente
+  })
+
+  try {
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/billing')
+    revalidatePath('/dashboard/plan')
+  } catch {}
+
+  return {
+    success: result.success,
+    status: result.status,
+    message: result.message || (result.success ? 'Débito automático procesado exitosamente.' : 'El débito automático no pudo completarse.'),
+    paymentId: result.paymentId,
+    error: result.error,
+  }
+}
+
 
 
 

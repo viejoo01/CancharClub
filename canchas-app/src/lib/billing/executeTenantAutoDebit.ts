@@ -151,6 +151,7 @@ export async function executeTenantAutoDebit(
             headers: {
               Authorization: `Bearer ${mpAccessToken}`,
               'Content-Type': 'application/json',
+              'X-Idempotency-Key': `invoice_${invoiceId}_attempt_1_${Date.now()}`,
             },
             cache: 'no-store',
           }

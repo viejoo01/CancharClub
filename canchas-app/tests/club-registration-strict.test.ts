@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   registerClubSchema,
   generateBaseSlug,
-  registerClubStrictAction,
   type RegisterClubInput,
-} from '@/actions/club-registration.actions'
+} from '@/lib/schemas/club-registration.schema'
+import { registerClubStrictAction } from '@/actions/club-registration.actions'
 
 describe('Strict Club Registration Server Action & Schema Suite', () => {
 

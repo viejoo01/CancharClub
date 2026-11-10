@@ -3102,14 +3102,5 @@ export async function getClubAnalytics(tenantId: string | null | undefined): Pro
   }
 }
 
-// Re-export Server Action de registro con validación tipada estricta
-export {
-  registerClubStrictAction,
-  registerClubSchema,
-  type RegisterClubInput,
-  type RegisterClubActionResult,
-  type RegisteredClubData,
-} from '@/actions/club-registration.actions'
-
 
 

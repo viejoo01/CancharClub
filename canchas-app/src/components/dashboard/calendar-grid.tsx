@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -119,7 +119,7 @@ export interface CalendarBooking {
   booking_payments?: Array<{ amount_ars: number; payment_method: string; created_at: string }>
 }
 
-interface CourtItem {
+export interface CourtItem {
   id: string
   name: string
   sport: string
@@ -363,6 +363,21 @@ export function CalendarGrid({
   }, [overrideVenue, courts])
 
   const [loadedBookings, setLoadedBookings] = useState<CalendarBooking[]>(initialBookings || [])
+  const isInitialMount = useRef(true)
+  const prevDateRef = useRef<string>(initialDate)
+
+  // Pre-cargar la caché local con los datos provistos por el Server Component (0ms de latencia)
+  const initialCachePrimed = useRef(false)
+  if (!initialCachePrimed.current && tenantId && initialDate) {
+    const initialKey = `${tenantId}_${initialDate}`
+    if (!clientBookingsCache.has(initialKey)) {
+      clientBookingsCache.set(initialKey, {
+        bookings: initialBookings || [],
+        timestamp: Date.now(),
+      })
+    }
+    initialCachePrimed.current = true
+  }
 
   // Sincronizar si cambia initialBookings desde el servidor
   useEffect(() => {
@@ -416,11 +431,24 @@ export function CalendarGrid({
     }
   }, [tenantId, activeCourts])
 
-  // Cargar turnos al cambiar de fecha
+  // Cargar turnos al cambiar de fecha omitiendo el primer montaje redundante
   useEffect(() => {
     if (!selectedDate || !tenantId) return
+
+    // Si es el montaje inicial y la fecha coincide con la precargada del Server Component, no refetchear
+    if (isInitialMount.current && selectedDate === initialDate) {
+      isInitialMount.current = false
+      saveOfflineScheduleSnapshot(selectedDate, tenantId, activeCourts, initialBookings || [])
+      return
+    }
+    isInitialMount.current = false
+
+    if (prevDateRef.current !== selectedDate) {
+      prevDateRef.current = selectedDate
+    }
+
     fetchBookingsForDate(selectedDate)
-  }, [selectedDate, tenantId, fetchBookingsForDate])
+  }, [selectedDate, initialDate, initialBookings, tenantId, activeCourts, fetchBookingsForDate])
 
   const activeBookings = useMemo(() => {
     const base: CalendarBooking[] = loadedBookings || []
@@ -619,18 +647,33 @@ export function CalendarGrid({
     return Array.from(set)
   }, [activeCourts])
 
+  const [, startTransition] = useTransition()
+
+  const handleDateChange = useCallback((newDateIso: string) => {
+    startTransition(() => {
+      setSelectedDate(newDateIso)
+      if (typeof window !== 'undefined') {
+        try {
+          const url = new URL(window.location.href)
+          url.searchParams.set('date', newDateIso)
+          window.history.replaceState({}, '', url.toString())
+        } catch {}
+      }
+    })
+  }, [])
+
   const handlePrevDay = () => {
     const prev = subDays(parseISO(selectedDate), 1)
-    setSelectedDate(format(prev, 'yyyy-MM-dd'))
+    handleDateChange(format(prev, 'yyyy-MM-dd'))
   }
 
   const handleNextDay = () => {
     const next = addDays(parseISO(selectedDate), 1)
-    setSelectedDate(format(next, 'yyyy-MM-dd'))
+    handleDateChange(format(next, 'yyyy-MM-dd'))
   }
 
   const handleToday = () => {
-    setSelectedDate(format(new Date(), 'yyyy-MM-dd'))
+    handleDateChange(format(new Date(), 'yyyy-MM-dd'))
   }
 
   // Filtro de búsqueda de turnos y clientes sincronizado desde Header (Ctrl+K)

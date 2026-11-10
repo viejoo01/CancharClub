@@ -20,7 +20,11 @@ import {
   BookOpen,
   Search,
   Eye,
-  EyeOff
+  EyeOff,
+  User,
+  Clock,
+  FileText,
+  Tag
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -441,59 +445,161 @@ export default function CajaPage() {
             </Button>
           </div>
         ) : (
-          <div className="divide-y divide-slate-800/60">
-            {filteredEntries.map(e => (
-              <div key={e.id} className="flex items-center justify-between p-4 hover:bg-slate-800/30 transition-colors">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                    {methodIcon(e.payment_method)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm text-slate-100 truncate">{e.customer_name}</div>
-                    <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="truncate max-w-25 sm:max-w-none">{e.court_name}</span>
-                      <span>•</span>
-                      <span>{formatTime(e.paid_at)} hs</span>
-                      {e.payment_type === 'BALANCE' && (
-                        <>
-                          <span>•</span>
-                          <span className={e.court_name.includes('Abono') ? "text-purple-400 font-semibold" : e.court_name.includes('Cuenta Corriente') ? "text-cyan-400 font-semibold" : "text-amber-400/80"}>
-                            {e.court_name.includes('Abono') ? 'Abono mensual' : e.court_name.includes('Cuenta Corriente') ? 'Cobro Cta Cte' : 'Saldo restante'}
+          <div>
+            {/* ─── VISTA MÓVIL: Tarjetas fluidas adaptadas para celular ─── */}
+            <div className="block sm:hidden divide-y divide-slate-800/80">
+              {filteredEntries.map(e => {
+                const cleanNote = e.notes ? cleanNoteForDisplay(e.notes) : null
+                const isAbono = e.court_name.includes('Abono')
+                const isCtaCte = e.court_name.includes('Cuenta Corriente')
+
+                return (
+                  <div
+                    key={e.id}
+                    className="p-3.5 space-y-2.5 bg-slate-900/40 hover:bg-slate-800/30 active:bg-slate-800/50 transition-colors"
+                  >
+                    {/* Fila 1: Medio de Pago + Hora + Monto */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700/80 flex items-center justify-center shrink-0 shadow-2xs">
+                          {methodIcon(e.payment_method)}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <Badge variant={methodBadgeVariant(e.payment_method)} className="text-[10px] w-fit font-medium">
+                            {methodLabel(e.payment_method)}
+                          </Badge>
+                          <span className="flex items-center gap-1 text-[10px] font-mono text-slate-400 mt-0.5">
+                            <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                            {formatTime(e.paid_at)} hs
                           </span>
-                        </>
+                        </div>
+                      </div>
+
+                      {/* Monto Acreditado */}
+                      <div className="text-right shrink-0">
+                        <div className="flex items-center gap-1 justify-end">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="text-base font-black text-emerald-400 font-mono tracking-tight">
+                            +{formatARS(e.amount_ars)}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-medium">
+                          {e.origin === 'ONLINE_PORTAL' ? 'Pago Online' : 'Mostrador'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Fila 2: Cliente + Cancha / Concepto */}
+                    <div className="pt-1 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-bold text-sm text-slate-100 truncate">
+                          {e.customer_name}
+                        </span>
+                      </div>
+
+                      <span className="text-[11px] font-medium text-slate-300 bg-slate-800/80 border border-slate-700/60 px-2 py-0.5 rounded-md truncate max-w-[130px] shrink-0">
+                        {e.court_name}
+                      </span>
+                    </div>
+
+                    {/* Fila 3: Tipo de Cobro / Badges */}
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                      {e.payment_type === 'BALANCE' && (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                          isAbono 
+                            ? "bg-purple-500/10 text-purple-300 border-purple-500/20"
+                            : isCtaCte 
+                            ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/20"
+                            : "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                        }`}>
+                          <Tag className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                          {isAbono ? 'Abono Mensual' : isCtaCte ? 'Cobro Cta Cte' : 'Saldo Restante'}
+                        </span>
                       )}
+
                       {e.payment_type === 'DEPOSIT' && (
-                        <>
-                          <span>•</span>
-                          <span className="text-emerald-400/80">Seña turno</span>
-                        </>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                          <Tag className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                          Seña de Turno
+                        </span>
                       )}
+
                       {e.payment_type === 'CANTINA' && (
-                        <>
-                          <span>•</span>
-                          <span className="text-purple-400 font-semibold">Cantina / Kiosco</span>
-                        </>
-                      )}
-                      {e.notes && cleanNoteForDisplay(e.notes) && (
-                        <>
-                          <span>•</span>
-                          <span className="italic text-slate-400 hidden sm:inline">{cleanNoteForDisplay(e.notes)}</span>
-                        </>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                          <Tag className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                          Cantina / Kiosco
+                        </span>
                       )}
                     </div>
+
+                    {/* Fila 4: Notas / Observaciones si existen */}
+                    {cleanNote && (
+                      <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-300 italic flex items-start gap-1.5">
+                        <FileText className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                        <span className="break-words">{cleanNote}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* ─── VISTA ESCRITORIO / TABLET: Fila horizontal estructurada ─── */}
+            <div className="hidden sm:block divide-y divide-slate-800/60">
+              {filteredEntries.map(e => (
+                <div key={e.id} className="flex items-center justify-between p-4 hover:bg-slate-800/30 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                      {methodIcon(e.payment_method)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm text-slate-100 truncate">{e.customer_name}</div>
+                      <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="truncate max-w-28 sm:max-w-none">{e.court_name}</span>
+                        <span>•</span>
+                        <span>{formatTime(e.paid_at)} hs</span>
+                        {e.payment_type === 'BALANCE' && (
+                          <>
+                            <span>•</span>
+                            <span className={e.court_name.includes('Abono') ? "text-purple-400 font-semibold" : e.court_name.includes('Cuenta Corriente') ? "text-cyan-400 font-semibold" : "text-amber-400/80"}>
+                              {e.court_name.includes('Abono') ? 'Abono mensual' : e.court_name.includes('Cuenta Corriente') ? 'Cobro Cta Cte' : 'Saldo restante'}
+                            </span>
+                          </>
+                        )}
+                        {e.payment_type === 'DEPOSIT' && (
+                          <>
+                            <span>•</span>
+                            <span className="text-emerald-400/80">Seña turno</span>
+                          </>
+                        )}
+                        {e.payment_type === 'CANTINA' && (
+                          <>
+                            <span>•</span>
+                            <span className="text-purple-400 font-semibold">Cantina / Kiosco</span>
+                          </>
+                        )}
+                        {e.notes && cleanNoteForDisplay(e.notes) && (
+                          <>
+                            <span>•</span>
+                            <span className="italic text-slate-400 hidden sm:inline">{cleanNoteForDisplay(e.notes)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-4">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-base font-bold text-emerald-400">+{formatARS(e.amount_ars)}</span>
+                    </div>
+                    <Badge variant={methodBadgeVariant(e.payment_method)} className="text-[10px] mt-1">
+                      {methodLabel(e.payment_method)}
+                    </Badge>
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-4">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-base font-bold text-emerald-400">+{formatARS(e.amount_ars)}</span>
-                  </div>
-                  <Badge variant={methodBadgeVariant(e.payment_method)} className="text-[10px] mt-1">
-                    {methodLabel(e.payment_method)}
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </Card>

@@ -27,7 +27,8 @@ import {
   ExternalLink,
   Copy,
   Check,
-  Layers
+  Layers,
+  Share2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1414,13 +1415,27 @@ export default function ClubPublicPage({
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-bold text-xs text-slate-100 truncate flex items-center gap-1.5">
-                                    <span>{slot.courtName}</span>
-                                    {slot.isClaimMatch && (
-                                      <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
-                                        Tu Turno
-                                      </Badge>
-                                    )}
+                                  <div className="font-bold text-xs text-slate-100 truncate flex items-center justify-between gap-1">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="truncate">{slot.courtName}</span>
+                                      {slot.isClaimMatch && (
+                                        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
+                                          Tu Turno
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <a
+                                      href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                                        `¡Miren esta cancha en ${club.name}! 🎾\n*${slot.courtName}*\nTurno: ${slot.time} hs (${selectedDate})\nTarifa: ${formatARS(slot.totalPrice)}\n\nReservá tu turno acá:\nhttps://cancharclub.com.ar/club/${club.slug}/cancha/${slot.courtId}`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Compartir cancha por WhatsApp"
+                                      className="text-slate-400 hover:text-emerald-400 p-1 rounded-md hover:bg-slate-800 transition-colors shrink-0"
+                                    >
+                                      <Share2 className="w-3 h-3" />
+                                    </a>
                                   </div>
                                   {slot.features && slot.features.length > 0 && (
                                     <div className="flex items-center gap-1 mt-0.5 truncate">
@@ -1523,13 +1538,27 @@ export default function ClubPublicPage({
 
                             {/* Información de la Cancha y Precios */}
                             <div className="min-w-0">
-                              <div className="font-bold text-sm text-slate-100 truncate flex items-center gap-1.5">
-                                <span>{slot.courtName}</span>
-                                {slot.isClaimMatch && (
-                                  <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
-                                    Tu Turno
-                                  </Badge>
-                                )}
+                              <div className="font-bold text-sm text-slate-100 truncate flex items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <span className="truncate">{slot.courtName}</span>
+                                  {slot.isClaimMatch && (
+                                    <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] px-1 py-0">
+                                      Tu Turno
+                                    </Badge>
+                                  )}
+                                </div>
+                                <a
+                                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                                    `¡Miren esta cancha en ${club.name}! 🎾\n*${slot.courtName}*\nTurno: ${slot.time} hs (${selectedDate})\nTarifa: ${formatARS(slot.totalPrice)}\n\nReservá tu turno acá:\nhttps://cancharclub.com.ar/club/${club.slug}/cancha/${slot.courtId}`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Compartir cancha por WhatsApp"
+                                  className="text-slate-400 hover:text-emerald-400 p-1 rounded-md hover:bg-slate-800 transition-colors shrink-0"
+                                >
+                                  <Share2 className="w-3.5 h-3.5" />
+                                </a>
                               </div>
                               
                               {/* Features chips con formato legible */}

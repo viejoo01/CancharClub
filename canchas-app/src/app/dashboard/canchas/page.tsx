@@ -34,6 +34,7 @@ import { ClubScheduleModal } from '@/components/dashboard/club-schedule-modal'
 import { ClubHighlightModal } from '@/components/dashboard/club-highlight-modal'
 import { ClubSocialLinksModal } from '@/components/dashboard/club-social-links-modal'
 import { ClubServicesLocationModal } from '@/components/dashboard/club-services-location-modal'
+import { EmptyCourtsState, type CourtPreset } from '@/components/dashboard/empty-courts-state'
 import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots'
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
@@ -475,6 +476,67 @@ export default function CanchasPage() {
     }
   }
 
+  const handleQuickPreset = async (preset: CourtPreset) => {
+    if (isLimitReached) {
+      toast.warning(COURT_LIMIT_EXCEEDED_MESSAGE, {
+        description: `Tu plan actual (${plan.name}) tiene un tope de ${maxCourts} ${maxCourts === 1 ? 'cancha' : 'canchas'}. Actualizá el plan para agregar más.`,
+        action: {
+          label: 'Ver Planes',
+          onClick: () => router.push('/dashboard/plan'),
+        },
+      })
+      return
+    }
+
+    if (!tenantId) {
+      toast.error('Error: no se pudo determinar el club activo')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await createCourt({
+        tenant_id: tenantId,
+        name: preset.name,
+        sport: preset.sport,
+        slot_duration: preset.slot_duration,
+        surface: preset.surface,
+        has_lighting: preset.has_lighting,
+        is_indoor: preset.is_indoor,
+        is_active: true,
+      })
+
+      if (!res.success || !res.court) {
+        toast.error(res.error || 'Error al crear la cancha')
+        return
+      }
+
+      const dbCourt = res.court
+      const createdCourt: Court = {
+        id: dbCourt.id,
+        name: dbCourt.name,
+        sport: dbCourt.sport,
+        slot_duration: dbCourt.slot_duration_minutes === 60 ? 'MIN_60' : dbCourt.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90',
+        surface: dbCourt.surface || preset.surface,
+        has_lighting: dbCourt.has_lights ?? dbCourt.has_lighting ?? true,
+        is_indoor: Boolean(dbCourt.is_indoor),
+        is_active: dbCourt.is_active !== false,
+      }
+
+      setCourts(prev => [...prev, createdCourt])
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
+      }
+      toast.success(`¡Cancha "${preset.name}" creada con éxito!`, {
+        description: 'La grilla de reservas y el portal público ya están habilitados.',
+      })
+    } catch {
+      toast.error('Error de conexión al crear la cancha')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -639,111 +701,132 @@ export default function CanchasPage() {
         </div>
       )}
 
-      {/* Grilla de Canchas en primer plano */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filteredCourts.map((court) => {
-          const sportBadge = getSportBadgeStyle(court.sport)
-          return (
-          <Card key={court.id} className="relative overflow-hidden border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <Badge variant="outline" className={`mb-2 gap-1 font-semibold ${sportBadge.bg} ${sportBadge.text} ${sportBadge.border}`}>
-                    <span>{sportBadge.icon}</span>
-                    <span>{formatSport(court.sport)}</span>
-                  </Badge>
-                  <CardTitle className="text-base">{court.name}</CardTitle>
+      {/* Grilla de Canchas o Estado Vacío */}
+      {courtsLoading ? (
+        <div className="flex flex-col items-center justify-center p-16 rounded-3xl border border-slate-800 bg-slate-900/50 space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+          <p className="text-xs text-slate-400 font-medium">Cargando canchas del complejo...</p>
+        </div>
+      ) : courts.length === 0 ? (
+        <EmptyCourtsState
+          onAddCourt={() => setIsModalOpen(true)}
+          onQuickPreset={handleQuickPreset}
+          clubSlug={clubSlug}
+          isCreating={loading}
+        />
+      ) : filteredCourts.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl border border-slate-800 bg-slate-900/50 space-y-3">
+          <div className="text-sm font-bold text-slate-300">No hay canchas registradas para el deporte seleccionado</div>
+          <Button size="sm" variant="outline" onClick={() => setSportFilter('ALL')} className="text-xs cursor-pointer">
+            Mostrar todas las canchas ({courts.length})
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filteredCourts.map((court) => {
+            const sportBadge = getSportBadgeStyle(court.sport)
+            return (
+            <Card key={court.id} className="relative overflow-hidden border-slate-800 bg-slate-900/60 hover:border-slate-700 transition-colors">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <Badge variant="outline" className={`mb-2 gap-1 font-semibold ${sportBadge.bg} ${sportBadge.text} ${sportBadge.border}`}>
+                      <span>{sportBadge.icon}</span>
+                      <span>{formatSport(court.sport)}</span>
+                    </Badge>
+                    <CardTitle className="text-base">{court.name}</CardTitle>
+                  </div>
+                  <button
+                    onClick={() => handleToggleActive(court.id, court.is_active)}
+                    className="focus:outline-none"
+                    title={court.is_active ? 'Desactivar cancha' : 'Activar cancha'}
+                  >
+                    {court.is_active ? (
+                      <Badge variant="default" className="gap-1 cursor-pointer">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        Activa
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="gap-1 cursor-pointer">
+                        <XCircle className="w-3 h-3 text-slate-400" />
+                        Inactiva
+                      </Badge>
+                    )}
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleToggleActive(court.id, court.is_active)}
-                  className="focus:outline-none"
-                  title={court.is_active ? 'Desactivar cancha' : 'Activar cancha'}
-                >
-                  {court.is_active ? (
-                    <Badge variant="default" className="gap-1 cursor-pointer">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      Activa
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="gap-1 cursor-pointer">
-                      <XCircle className="w-3 h-3 text-slate-400" />
-                      Inactiva
-                    </Badge>
-                  )}
-                </button>
-              </div>
 
-              {/* Selector de Duración Flexible (Mejora 2B) */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                  <span className="flex items-center gap-1 font-medium">
-                    <Clock className="w-3 h-3 text-emerald-400" /> Duración de Turnos:
+                {/* Selector de Duración Flexible (Mejora 2B) */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                    <span className="flex items-center gap-1 font-medium">
+                      <Clock className="w-3 h-3 text-emerald-400" /> Duración de Turnos:
+                    </span>
+                  </div>
+                  <select
+                    value={court.slot_duration}
+                    onChange={(e) => handleDurationChange(court.id, e.target.value as SlotDuration)}
+                    className="w-full h-8 rounded-lg bg-slate-950 border border-slate-700 px-2.5 text-xs text-emerald-400 font-semibold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="MIN_60">60 minutos (Estándar Fútbol)</option>
+                    <option value="MIN_90">90 minutos (Recomendado Pádel)</option>
+                    <option value="MIN_120">120 minutos (2 horas)</option>
+                  </select>
+                </div>
+              </CardHeader>
+
+              <CardContent className="space-y-2 text-xs text-slate-300 border-t border-slate-800/80 pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-slate-500" /> Superficie:
+                  </span>
+                  <span className="font-medium text-slate-200">
+                    {formatSurface(court.surface)}
                   </span>
                 </div>
-                <select
-                  value={court.slot_duration}
-                  onChange={(e) => handleDurationChange(court.id, e.target.value as SlotDuration)}
-                  className="w-full h-8 rounded-lg bg-slate-950 border border-slate-700 px-2.5 text-xs text-emerald-400 font-semibold focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="MIN_60">60 minutos (Estándar Fútbol)</option>
-                  <option value="MIN_90">90 minutos (Recomendado Pádel)</option>
-                  <option value="MIN_120">120 minutos (2 horas)</option>
-                </select>
-              </div>
-            </CardHeader>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Iluminación:
+                  </span>
+                  <span className="font-medium text-slate-200">LED Profesional</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-teal-400" /> Cobertura:
+                  </span>
+                  <span className="font-medium text-slate-200">
+                    {court.is_indoor ? 'Techada' : 'Al descubierto'}
+                  </span>
+                </div>
 
-            <CardContent className="space-y-2 text-xs text-slate-300 border-t border-slate-800/80 pt-3">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-slate-500" /> Superficie:
-                </span>
-                <span className="font-medium text-slate-200">
-                  {formatSurface(court.surface)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" /> Iluminación:
-                </span>
-                <span className="font-medium text-slate-200">LED Profesional</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-teal-400" /> Cobertura:
-                </span>
-                <span className="font-medium text-slate-200">
-                  {court.is_indoor ? 'Techada' : 'Al descubierto'}
-                </span>
-              </div>
+                {/* Botones de acción: Editar y Eliminar */}
+                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDeleteCourt(court.id, court.name)}
+                    className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
+                    title="Eliminar cancha"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar</span>
+                  </Button>
 
-              {/* Botones de acción: Editar y Eliminar */}
-              <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleDeleteCourt(court.id, court.name)}
-                  className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
-                  title="Eliminar cancha"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Eliminar</span>
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleOpenEditModal(court)}
-                  className="h-7 text-xs border-sky-500/40 text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 gap-1.5 font-medium"
-                  title="Editar cancha"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Editar</span>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )})}
-      </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleOpenEditModal(court)}
+                    className="h-7 text-xs border-sky-500/40 text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 gap-1.5 font-medium"
+                    title="Editar cancha"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Editar</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )})}
+        </div>
+      )}
 
       {/* Modal Editar Cancha */}
       <Dialog open={!!editingCourt} onOpenChange={(open) => !open && setEditingCourt(null)}>

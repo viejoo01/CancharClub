@@ -22,6 +22,7 @@ import { QuickBookingModal, computeSlotPrice, type QuickBookingPriceRule } from 
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
+import { EmptyCourtsState } from './empty-courts-state'
 import { formatARS, formatTime, getArgentinaTodayIso, getArgentinaTimeStr, isAbonoBooking } from '@/lib/utils'
 import { generateTimeSlots, DEFAULT_CLUB_SCHEDULE, timeStringToMinutes, type ClubScheduleConfig } from '@/lib/time-slots'
 import { format, addDays, subDays, parseISO } from 'date-fns'
@@ -1438,22 +1439,28 @@ export function CalendarGrid({
       )}
 
       {/* Matriz de Calendario o Estado Vacío */}
-      {filteredCourts.length === 0 ? (
+      {courts.length === 0 ? (
+        <EmptyCourtsState onAddCourt={() => router.push('/dashboard/canchas')} />
+      ) : filteredCourts.length === 0 ? (
         <div className="flex-1 rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-950/80 p-12 flex flex-col items-center justify-center text-center space-y-4 shadow-sm">
           <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
             <Clock className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">No hay canchas registradas en este club</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">No hay canchas para el filtro seleccionado</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
-              Para visualizar y gestionar la grilla de turnos, primero agregá las canchas (Fútbol, Pádel, etc.) en el menú Canchas.
+              No se encontraron canchas activas que coincidan con los filtros aplicados.
             </p>
           </div>
           <Button
-            onClick={() => router.push('/dashboard/canchas')}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl px-4 cursor-pointer"
+            onClick={() => {
+              setSelectedSport('ALL')
+              setSearchFilter('')
+            }}
+            variant="outline"
+            className="text-xs font-bold rounded-xl px-4 cursor-pointer"
           >
-            Ir a Gestión de Canchas
+            Restablecer Filtros
           </Button>
         </div>
       ) : (

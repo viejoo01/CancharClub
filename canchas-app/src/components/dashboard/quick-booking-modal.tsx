@@ -37,7 +37,7 @@ export interface QuickBookingPriceRule {
   deposit_pct?: number
 }
 
-function computeSlotPrice(
+export function computeSlotPrice(
   courtId: string,
   date: string,
   time: string,

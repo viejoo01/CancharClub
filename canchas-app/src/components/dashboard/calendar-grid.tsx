@@ -11,10 +11,14 @@ import {
   CheckCircle, 
   AlertCircle,
   CloudRain,
-  DollarSign
+  DollarSign,
+  Sparkles,
+  Layers,
+  Zap,
+  ShieldCheck
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { QuickBookingModal, type QuickBookingPriceRule } from './quick-booking-modal'
+import { QuickBookingModal, computeSlotPrice, type QuickBookingPriceRule } from './quick-booking-modal'
 import { BookingDetailsModal } from './booking-details-modal'
 import { RainProtocolModal } from './rain-protocol-modal'
 import { ClubScheduleModal } from './club-schedule-modal'
@@ -125,6 +129,10 @@ export interface CourtItem {
   sport: string
   slot_duration: 'MIN_60' | 'MIN_90' | 'MIN_120'
   is_active: boolean
+  surface?: string | null
+  is_indoor?: boolean | null
+  has_lights?: boolean | null
+  has_lighting?: boolean | null
   created_at?: string | null
 }
 
@@ -191,6 +199,369 @@ function saveOfflineScheduleSnapshot(
   } catch {
     // Silently ignore localStorage quota limits
   }
+}
+
+/**
+ * Formatea y parametriza el tipo de superficie o césped de la cancha.
+ */
+function getSurfaceDetails(surface?: string | null, sport?: string): {
+  label: string
+  shortLabel: string
+  tagColor: string
+  iconType: 'grass' | 'sparkles' | 'layers'
+} {
+  const norm = (surface || '').toUpperCase().trim()
+  const spLower = (sport || '').toLowerCase()
+
+  if (norm === 'CESPED_SINTETICO' || norm.includes('SINTETICO') || norm.includes('CESPED')) {
+    return {
+      label: 'Césped Sintético Pro',
+      shortLabel: 'Césped Sint.',
+      tagColor: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+      iconType: 'grass',
+    }
+  }
+  if (norm === 'PASTO_NATURAL' || norm.includes('NATURAL')) {
+    return {
+      label: 'Césped Natural',
+      shortLabel: 'Césped Nat.',
+      tagColor: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+      iconType: 'grass',
+    }
+  }
+  if (norm === 'CRISTAL' || norm.includes('PANORAMICA') || norm.includes('BLINDEX')) {
+    return {
+      label: 'Cristal Panorámica',
+      shortLabel: 'Cristal Pro',
+      tagColor: 'text-cyan-700 dark:text-cyan-300 bg-cyan-500/10 border-cyan-500/25',
+      iconType: 'sparkles',
+    }
+  }
+  if (norm === 'POLVO_LADRILLO' || norm.includes('LADRILLO') || norm.includes('ARCILLA')) {
+    return {
+      label: 'Polvo de Ladrillo',
+      shortLabel: 'Polvo Ladrillo',
+      tagColor: 'text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/25',
+      iconType: 'layers',
+    }
+  }
+  if (norm === 'CEMENTO' || norm.includes('QUICK') || norm.includes('RAPIDA')) {
+    return {
+      label: 'Cemento / Rápida',
+      shortLabel: 'Cemento',
+      tagColor: 'text-slate-700 dark:text-slate-300 bg-slate-500/10 border-slate-500/25',
+      iconType: 'layers',
+    }
+  }
+  if (norm === 'PARQUET' || norm.includes('MADERA')) {
+    return {
+      label: 'Parquet Flotante',
+      shortLabel: 'Parquet',
+      tagColor: 'text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/25',
+      iconType: 'layers',
+    }
+  }
+  if (norm === 'ALFOMBRA') {
+    return {
+      label: 'Alfombra Pro',
+      shortLabel: 'Alfombra',
+      tagColor: 'text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 border-indigo-500/25',
+      iconType: 'sparkles',
+    }
+  }
+
+  // Deducción inteligente según deporte
+  if (spLower.includes('padel') || spLower.includes('pádel')) {
+    return {
+      label: 'Cristal Panorámica',
+      shortLabel: 'Cristal Pro',
+      tagColor: 'text-cyan-700 dark:text-cyan-300 bg-cyan-500/10 border-cyan-500/25',
+      iconType: 'sparkles',
+    }
+  }
+  if (spLower.includes('futbol') || spLower.includes('fútbol')) {
+    return {
+      label: 'Césped Sintético Pro',
+      shortLabel: 'Césped Sint.',
+      tagColor: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+      iconType: 'grass',
+    }
+  }
+  if (spLower.includes('tenis') || spLower.includes('tennis')) {
+    return {
+      label: 'Polvo de Ladrillo',
+      shortLabel: 'Polvo Ladrillo',
+      tagColor: 'text-amber-700 dark:text-amber-300 border-amber-500/25',
+      iconType: 'layers',
+    }
+  }
+
+  return {
+    label: 'Césped Sintético',
+    shortLabel: 'Sintético',
+    tagColor: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+    iconType: 'grass',
+  }
+}
+
+/**
+ * Determina el estado en vivo de la cancha:
+ * - EN JUEGO: reserva activa en la hora y minuto actual
+ * - LIBRE AHORA: sin turno actual y con próximo turno posterior
+ * - LIBRE HOY: disponible para el resto de la jornada
+ * - AGENDADA: cantidad de turnos programados si se visualiza otra fecha
+ * - MANTENIMIENTO: cancha inactiva
+ */
+function getCourtLiveStatus(
+  court: CourtItem,
+  isToday: boolean,
+  currentTimeStr: string,
+  courtBookings: CalendarBooking[]
+): {
+  status: 'IN_GAME' | 'AVAILABLE_NOW' | 'AVAILABLE_DAY' | 'SCHEDULED' | 'MAINTENANCE'
+  badgeLabel: string
+  subLabel?: string
+  color: 'rose' | 'emerald' | 'sky' | 'slate'
+} {
+  if (!court.is_active) {
+    return {
+      status: 'MAINTENANCE',
+      badgeLabel: 'Mantenimiento',
+      subLabel: 'Inactiva',
+      color: 'slate',
+    }
+  }
+
+  if (isToday) {
+    const currentMins = timeStringToMinutes(currentTimeStr)
+    const validBookings = courtBookings.filter(
+      (b) => String(b.status) !== 'CANCELLED' && b.starts_at && b.ends_at
+    )
+
+    // ¿Hay algún turno activo en este momento?
+    const inGameBooking = validBookings.find((b) => {
+      const sMins = timeStringToMinutes(formatTimeArgentina(b.starts_at))
+      const eMins = timeStringToMinutes(formatTimeArgentina(b.ends_at))
+      return currentMins >= sMins && currentMins < eMins
+    })
+
+    if (inGameBooking) {
+      const endStr = formatTimeArgentina(inGameBooking.ends_at)
+      return {
+        status: 'IN_GAME',
+        badgeLabel: 'En juego',
+        subLabel: `Hasta ${endStr} hs`,
+        color: 'rose',
+      }
+    }
+
+    // Próximo turno programado para hoy
+    const futureBookings = validBookings
+      .map((b) => ({ booking: b, sMins: timeStringToMinutes(formatTimeArgentina(b.starts_at)) }))
+      .filter((item) => item.sMins > currentMins)
+      .sort((a, b) => a.sMins - b.sMins)
+
+    if (futureBookings.length > 0) {
+      const nextB = futureBookings[0].booking
+      const nextTime = formatTimeArgentina(nextB.starts_at)
+      return {
+        status: 'AVAILABLE_NOW',
+        badgeLabel: 'Libre ahora',
+        subLabel: `Próx: ${nextTime} hs`,
+        color: 'emerald',
+      }
+    }
+
+    return {
+      status: 'AVAILABLE_DAY',
+      badgeLabel: 'Libre hoy',
+      subLabel: 'Todo el día',
+      color: 'emerald',
+    }
+  }
+
+  // Otra fecha seleccionada en el calendario
+  const scheduledCount = courtBookings.filter((b) => String(b.status) !== 'CANCELLED').length
+  if (scheduledCount > 0) {
+    return {
+      status: 'SCHEDULED',
+      badgeLabel: `${scheduledCount} ${scheduledCount === 1 ? 'turno' : 'turnos'}`,
+      subLabel: 'Reservados',
+      color: 'sky',
+    }
+  }
+
+  return {
+    status: 'AVAILABLE_DAY',
+    badgeLabel: 'Disponible',
+    subLabel: '100% libre',
+    color: 'emerald',
+  }
+}
+
+/**
+ * Card de Cancha de Alta Gama en el Header de la Grilla
+ * Presenta estado en vivo, precio calculado, tipo de césped y amenidades.
+ */
+function CourtHeaderCard({
+  court,
+  isCompact,
+  isToday,
+  currentTimeStr,
+  courtBookings,
+  selectedDate,
+  priceRules,
+}: {
+  court: CourtItem
+  isCompact: boolean
+  isToday: boolean
+  currentTimeStr: string
+  courtBookings: CalendarBooking[]
+  selectedDate: string
+  priceRules: QuickBookingPriceRule[]
+}) {
+  const spLower = (court.sport || '').toLowerCase()
+  const isPadel = spLower.includes('padel') || spLower.includes('pádel')
+  const isFutbol = spLower.includes('futbol') || spLower.includes('fútbol')
+  const isTenis = spLower.includes('tenis') || spLower.includes('tennis')
+
+  const sportBadgeStyle = isPadel
+    ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/25'
+    : isFutbol
+    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+    : isTenis
+    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25'
+    : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/25'
+
+  const surfaceInfo = getSurfaceDetails(court.surface, court.sport)
+  const liveStatus = getCourtLiveStatus(court, isToday, currentTimeStr, courtBookings)
+
+  // Cálculo de tarifa oficial del turno
+  const courtPrice = computeSlotPrice(court.id, selectedDate, currentTimeStr || '19:00', priceRules)
+  const formattedPrice = '$ ' + Number(courtPrice).toLocaleString('es-AR')
+  const compactPrice = courtPrice >= 1000 ? `$${Math.round(courtPrice / 1000)}k` : `$${courtPrice}`
+
+  const courtDisplayName = /^\d+$/.test(court.name.trim()) ? `Cancha ${court.name.trim()}` : court.name
+
+  return (
+    <div
+      className={`group relative border-r border-slate-200/80 dark:border-white/[0.08] last:border-r-0 bg-white/95 dark:bg-[#0E1526]/95 hover:bg-slate-50/90 dark:hover:bg-[#121A30]/95 flex flex-col justify-between transition-all duration-200 min-w-0 select-none ${
+        isCompact ? 'p-2 min-h-[98px]' : 'p-2.5 sm:p-3 min-h-[118px]'
+      }`}
+    >
+      {/* 1. Header Superior: Nombre de Cancha + Badge de Deporte + Amenidades */}
+      <div className="flex items-center justify-between gap-1 w-full min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`${isCompact ? 'text-xs' : 'text-sm'} font-black text-slate-900 dark:text-white tracking-tight truncate`}
+            title={courtDisplayName}
+          >
+            {courtDisplayName}
+          </span>
+          {Boolean(court.is_indoor) && (
+            <span title="Cancha techada / indoor">
+              <ShieldCheck className="w-3 h-3 text-sky-500 shrink-0" />
+            </span>
+          )}
+          {Boolean(court.has_lights || court.has_lighting) && (
+            <span title="Iluminación LED">
+              <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+            </span>
+          )}
+        </div>
+
+        <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] sm:text-[10px] font-semibold tracking-wide shrink-0 ${sportBadgeStyle}`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0" />
+          <span className="truncate max-w-[65px]">{formatSportName(court.sport)}</span>
+        </div>
+      </div>
+
+      {/* 2. Estado en Vivo (Live Status) con indicador activo */}
+      <div className="my-1.5 w-full flex items-center">
+        {liveStatus.status === 'IN_GAME' && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/25 text-rose-600 dark:text-rose-400 text-[10px] font-bold tracking-wide shadow-2xs min-w-0 max-w-full">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
+            </span>
+            <span className="truncate">{liveStatus.badgeLabel}</span>
+            {liveStatus.subLabel && !isCompact && (
+              <span className="text-[9px] font-medium text-rose-500/80 dark:text-rose-300/80 truncate">
+                • {liveStatus.subLabel}
+              </span>
+            )}
+          </div>
+        )}
+
+        {liveStatus.status === 'AVAILABLE_NOW' && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold tracking-wide shadow-2xs min-w-0 max-w-full">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="truncate">{liveStatus.badgeLabel}</span>
+            {liveStatus.subLabel && !isCompact && (
+              <span className="text-[9px] font-medium text-emerald-600/80 dark:text-emerald-300/80 truncate">
+                • {liveStatus.subLabel}
+              </span>
+            )}
+          </div>
+        )}
+
+        {liveStatus.status === 'AVAILABLE_DAY' && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold tracking-wide min-w-0 max-w-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+            <span className="truncate">{liveStatus.badgeLabel}</span>
+            {liveStatus.subLabel && !isCompact && (
+              <span className="text-[9px] font-normal text-emerald-600/70 dark:text-emerald-400/70 truncate">
+                • {liveStatus.subLabel}
+              </span>
+            )}
+          </div>
+        )}
+
+        {liveStatus.status === 'SCHEDULED' && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-semibold tracking-wide min-w-0 max-w-full">
+            <Clock className="w-2.5 h-2.5 shrink-0" />
+            <span className="truncate">{liveStatus.badgeLabel}</span>
+          </div>
+        )}
+
+        {liveStatus.status === 'MAINTENANCE' && (
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-500/10 border border-slate-500/25 text-slate-600 dark:text-slate-400 text-[10px] font-semibold tracking-wide min-w-0 max-w-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+            <span className="truncate">{liveStatus.badgeLabel}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Footer Inferior: Tipo de Césped / Superficie y Precio */}
+      <div className="flex items-center justify-between gap-1 w-full pt-1 border-t border-slate-100 dark:border-white/[0.04]">
+        {/* Superficie / Tipo de Césped */}
+        <div 
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] sm:text-[10px] font-medium tracking-tight truncate max-w-[55%] ${surfaceInfo.tagColor}`}
+          title={`Superficie: ${surfaceInfo.label}`}
+        >
+          {surfaceInfo.iconType === 'sparkles' ? (
+            <Sparkles className="w-2.5 h-2.5 shrink-0 opacity-80" />
+          ) : (
+            <Layers className="w-2.5 h-2.5 shrink-0 opacity-80" />
+          )}
+          <span className="truncate">{isCompact ? surfaceInfo.shortLabel : surfaceInfo.label}</span>
+        </div>
+
+        {/* Tarifa / Precio de Turno */}
+        <div 
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-mono font-bold text-[10px] sm:text-[11px] tracking-tight shrink-0 shadow-2xs"
+          title={`Tarifa actual de turno: ${formattedPrice}`}
+        >
+          <DollarSign className="w-2.5 h-2.5 -mr-0.5 opacity-70 shrink-0" />
+          <span>{isCompact ? compactPrice.replace('$', '') : formattedPrice.replace('$ ', '')}</span>
+          <span className="text-[8px] font-normal opacity-60">/t</span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 interface CalendarGridProps {
@@ -634,8 +1005,8 @@ export function CalendarGrid({
   // Ancho y dimensiones adaptativas según densidad seleccionada y cantidad de canchas
   // En monitores de 24 pulgadas (1920x1080), 132px permite mostrar hasta 11-13 canchas completas sin scroll horizontal
   const isCompact = gridDensity === 'compact'
-  const colWidth = isCompact ? 132 : 172
-  const timeColWidth = isCompact ? 68 : 76
+  const colWidth = isCompact ? 144 : 188
+  const timeColWidth = isCompact ? 68 : 78
 
   // Plantilla exacta de columnas para evitar wrap desfasado en CSS Grid
   const gridTemplateCols = `${timeColWidth}px repeat(${filteredCourts.length}, minmax(${colWidth}px, 1fr))`
@@ -1103,39 +1474,32 @@ export function CalendarGrid({
             style={{ gridTemplateColumns: gridTemplateCols }}
           >
             <div 
-              className={`${isCompact ? 'p-2' : 'p-3'} text-center text-xs font-bold text-slate-600 dark:text-slate-400 border-r border-slate-200/80 dark:border-white/[0.08] flex items-center justify-center sticky left-0 top-0 z-30 bg-slate-100/90 dark:bg-[#0E1526]/90 backdrop-blur-md shadow-[4px_0_12px_rgba(0,0,0,0.03)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.5)]`}
+              className={`${isCompact ? 'p-2' : 'p-3'} text-center border-r border-slate-200/80 dark:border-white/[0.08] flex flex-col items-center justify-between sticky left-0 top-0 z-30 bg-slate-100/95 dark:bg-[#0E1526]/95 backdrop-blur-md shadow-[4px_0_12px_rgba(0,0,0,0.03)] dark:shadow-[4px_0_12px_rgba(0,0,0,0.5)] select-none`}
               style={{ width: `${timeColWidth}px` }}
             >
-              <Clock className="w-3.5 h-3.5 mr-1 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              Hora
+              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>Hora</span>
+              </div>
+              <div className="w-full text-center">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-medium text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-white/[0.05]">
+                  {filteredCourts.length} {filteredCourts.length === 1 ? 'cancha' : 'canchas'}
+                </span>
+              </div>
             </div>
             {filteredCourts.map((court) => {
-              const spLower = (court.sport || '').toLowerCase()
-              const isPadel = spLower.includes('padel') || spLower.includes('pádel')
-              const isFutbol = spLower.includes('futbol') || spLower.includes('fútbol')
-              const isTenis = spLower.includes('tenis') || spLower.includes('tennis')
-
-              const sportBadgeStyle = isPadel
-                ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/25'
-                : isFutbol
-                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
-                : isTenis
-                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25'
-                : 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/25'
-
+              const courtBookings = activeBookings.filter((b) => b.court_id === court.id)
               return (
-                <div
+                <CourtHeaderCard
                   key={court.id}
-                  className={`${isCompact ? 'p-2' : 'p-2.5'} text-center border-r border-slate-200/80 dark:border-white/[0.08] last:border-r-0 bg-white/90 dark:bg-[#0E1526]/90 flex flex-col items-center justify-center min-w-0 transition-colors`}
-                >
-                  <div className={`${isCompact ? 'text-xs' : 'text-sm'} font-bold text-slate-900 dark:text-white tracking-tight truncate max-w-full px-1`} title={court.name}>
-                    {/^\d+$/.test(court.name.trim()) ? `Cancha ${court.name.trim()}` : court.name}
-                  </div>
-                  <div className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold tracking-wide ${sportBadgeStyle}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0" />
-                    <span className="truncate">{formatSportName(court.sport)}</span>
-                  </div>
-                </div>
+                  court={court}
+                  isCompact={isCompact}
+                  isToday={isToday}
+                  currentTimeStr={currentTimeStr}
+                  courtBookings={courtBookings}
+                  selectedDate={selectedDate}
+                  priceRules={priceRules || []}
+                />
               )
             })}
           </div>

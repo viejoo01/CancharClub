@@ -29,6 +29,9 @@ interface DbCourtSelectRow {
   name: string
   sport: string
   slot_duration_minutes: number | null
+  surface?: string | null
+  is_indoor?: boolean | null
+  has_lights?: boolean | null
   is_active: boolean
   created_at: string | null
 }
@@ -87,7 +90,7 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
   const [courtsRes, bookingsData, scheduleData, priceRulesData, tenantRes] = await Promise.all([
     supabase
       .from('courts')
-      .select('id, name, sport, slot_duration_minutes, is_active, created_at')
+      .select('id, name, sport, slot_duration_minutes, surface, is_indoor, has_lights, is_active, created_at')
       .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: true }),
     getCalendarBookings(effectiveTenantId, initialDate),
@@ -106,6 +109,9 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
     name: c.name,
     sport: c.sport,
     slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90'),
+    surface: c.surface ?? null,
+    is_indoor: c.is_indoor ?? null,
+    has_lights: c.has_lights ?? null,
     is_active: c.is_active,
     created_at: c.created_at,
   }))

@@ -66,10 +66,28 @@ export function AppAutoUpdater() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
+    // 4. Escuchador de sincronización offline bidireccional (IndexedDB + Background Sync)
+    let cleanupOfflineSync: (() => void) | undefined
+    try {
+      import('@/lib/offline-sync').then(({ setupOfflineSyncListeners }) => {
+        cleanupOfflineSync = setupOfflineSyncListeners()
+      }).catch(() => {})
+    } catch {}
+
+    const handleSyncCompleted = (e: Event) => {
+      const customEvent = e as CustomEvent<{ processed: number }>
+      if (customEvent.detail?.processed) {
+        router.refresh()
+      }
+    }
+    window.addEventListener('canchar-offline-synced', handleSyncCompleted)
+
     return () => {
       window.removeEventListener('error', handleChunkError)
       window.removeEventListener('unhandledrejection', handleChunkError)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('canchar-offline-synced', handleSyncCompleted)
+      cleanupOfflineSync?.()
     }
   }, [router])
 

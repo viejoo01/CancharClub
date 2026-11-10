@@ -637,18 +637,46 @@ export default function CajaPage() {
                   Total de Efectivo en Mano (ARS) *
                 </Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">$</span>
+                  <span className="absolute left-3 top-3 text-slate-400 text-sm font-bold">$</span>
                   <Input
                     id="declared"
                     type="number"
+                    inputMode="decimal"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     min="0"
                     step="any"
                     placeholder="0"
                     value={declaredCash}
                     onChange={(e) => setDeclaredCash(e.target.value)}
-                    className="bg-slate-950 border-emerald-500/40 text-emerald-300 pl-8 text-base font-bold h-11"
+                    className="bg-slate-950 border-emerald-500/40 text-emerald-300 pl-8 text-lg font-bold h-12"
                     autoFocus
                   />
+                </div>
+                {/* Botones de suma rápida para billetes comunes en mostrador */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  {[1000, 2000, 5000, 10000, 20000].map((denomination) => (
+                    <button
+                      key={denomination}
+                      type="button"
+                      onClick={() => {
+                        const current = Number(declaredCash) || 0
+                        setDeclaredCash(String(current + denomination))
+                      }}
+                      className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-semibold text-slate-300 hover:text-emerald-400 hover:border-emerald-500/40 active:scale-95 transition-all"
+                    >
+                      +${denomination.toLocaleString('es-AR')}
+                    </button>
+                  ))}
+                  {declaredCash && (
+                    <button
+                      type="button"
+                      onClick={() => setDeclaredCash('')}
+                      className="px-2 py-1 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-semibold text-rose-400 hover:bg-rose-950/30 active:scale-95 transition-all ml-auto"
+                    >
+                      Limpiar
+                    </button>
+                  )}
                 </div>
                 <p className="text-[11px] text-slate-500">
                   Ingresá la suma de billetes y monedas que tenés físicamente en el cajón.

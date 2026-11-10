@@ -1,6 +1,7 @@
-// CancharClub PWA Service Worker - High-Performance Cache & Offline Contingency (v8)
+// CancharClub PWA Service Worker - High-Performance Cache, Offline Contingency, Court Images & Background Sync (v9)
 
-const CACHE_NAME = 'canchar-pwa-v8'
+const CACHE_NAME = 'canchar-pwa-v9'
+const IMAGES_CACHE = 'canchar-images-v1'
 const OFFLINE_URL = '/offline.html'
 
 const PRECACHE_ASSETS = [
@@ -32,7 +33,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys
+          .filter((key) => key !== CACHE_NAME && key !== IMAGES_CACHE)
+          .map((key) => caches.delete(key))
       )
     }).then(() => self.clients.claim())
   )
@@ -58,7 +61,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
-          // Si el servidor respondió con un error del tipo 500 o 503, podríamos servir offline si es necesario
           return networkResponse
         })
         .catch(async () => {
@@ -74,18 +76,42 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // B. Recursos estáticos inmutables (_next/static, fuentes, imágenes locales)
+  // B. Fotos de canchas, avatares y multimedia (Supabase Storage, _next/image, imágenes locales)
+  // Estrategia Stale-While-Revalidate con soporte offline y respuestas opacas cross-origin
+  const isImageRequest = 
+    event.request.destination === 'image' ||
+    url.pathname.includes('/storage/v1/object/public/') ||
+    url.pathname.startsWith('/_next/image') ||
+    url.pathname.match(/\.(png|jpg|jpeg|webp|svg|ico|avif)$/i)
+
+  if (isImageRequest) {
+    event.respondWith(
+      caches.open(IMAGES_CACHE).then(async (cache) => {
+        const cachedResponse = await cache.match(event.request)
+
+        const fetchPromise = fetch(event.request)
+          .then((networkResponse) => {
+            if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
+              cache.put(event.request, networkResponse.clone()).catch(() => {})
+            }
+            return networkResponse
+          })
+          .catch(() => cachedResponse)
+
+        return cachedResponse || fetchPromise
+      })
+    )
+    return
+  }
+
+  // C. Recursos estáticos inmutables (_next/static, fuentes woff2)
   if (
     url.pathname.startsWith('/_next/static/') ||
-    url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.svg') ||
-    url.pathname.endsWith('.ico') ||
     url.pathname.endsWith('.woff2')
   ) {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         if (cachedResponse) {
-          // Servir desde caché y opcionalmente revalidar en segundo plano
           return cachedResponse
         }
         return fetch(event.request).then((networkResponse) => {
@@ -97,7 +123,6 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse
         }).catch(() => {
-          // Fallback silencioso si no se pudo descargar el asset
           return new Response(null, { status: 404 })
         })
       })
@@ -105,7 +130,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // C. Resto de peticiones: Red directa
+  // D. Resto de peticiones: Red directa
   event.respondWith(
     fetch(event.request).catch(async () => {
       const cached = await caches.match(event.request)
@@ -114,7 +139,20 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
-// 4. Notificaciones Push nativas en el móvil
+// 4. Background Sync: Sincronización en segundo plano de mutaciones offline (Cobros, altas)
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'canchar-offline-sync') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsList) => {
+        clientsList.forEach((client) => {
+          client.postMessage({ type: 'TRIGGER_OFFLINE_SYNC' })
+        })
+      })
+    )
+  }
+})
+
+// 5. Notificaciones Push nativas en el móvil
 self.addEventListener('push', (event) => {
   let data = { 
     title: 'CancharClub', 
@@ -137,7 +175,11 @@ self.addEventListener('push', (event) => {
     vibrate: [100, 50, 100],
     data: {
       url: data.url || '/dashboard'
-    }
+    },
+    actions: [
+      { action: 'open', title: 'Ver Turno' },
+      { action: 'dismiss', title: 'Descartar' }
+    ]
   }
 
   event.waitUntil(
@@ -145,9 +187,14 @@ self.addEventListener('push', (event) => {
   )
 })
 
-// 5. Clic en la notificación: abrir o enfocar la app
+// 6. Clic en la notificación: abrir o enfocar la app
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+
+  if (event.action === 'dismiss') {
+    return
+  }
+
   const targetPath = event.notification.data?.url || '/dashboard'
   const fullTargetUrl = new URL(targetPath, self.location.origin).href
 

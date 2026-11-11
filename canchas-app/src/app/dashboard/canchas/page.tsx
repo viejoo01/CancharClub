@@ -244,16 +244,11 @@ export default function CanchasPage() {
     }
   }
 
-  const loadCourtsData = useCallback(async (isInitial = false) => {
+  const loadCourtsData = useCallback(async () => {
     if (!tenantId) return
     try {
-      const [courtsList, sched, hInfo, sLinks, sLoc] = await Promise.all([
-        getClubCourts(tenantId).catch(() => []),
-        getClubSchedule(tenantId).catch(() => null),
-        getClubHighlightInfo(tenantId).catch(() => null),
-        getClubSocialLinks(tenantId).catch(() => null),
-        getClubServicesAndLocation(tenantId).catch(() => null),
-      ])
+      // 1. Cargar canchas con prioridad alta (crítico para renderizar la grilla de inmediato)
+      const courtsList = await getClubCourts(tenantId).catch(() => [])
 
       if (courtsList) {
         const mapped: Court[] = courtsList.map(c => ({
@@ -271,34 +266,62 @@ export default function CanchasPage() {
         cachedCourtsMap.set(tenantId, mapped)
       }
 
-      if (sched) {
-        setSchedule(sched)
-        cachedScheduleMap.set(tenantId, sched)
-      }
-      if (hInfo) {
-        setHighlightInfo(hInfo)
-        cachedHighlightMap.set(tenantId, hInfo)
-      }
-      if (sLinks) {
-        setSocialLinks(sLinks)
-        cachedSocialLinksMap.set(tenantId, sLinks)
-      }
-      if (sLoc) {
-        setServicesLocation(sLoc)
-        cachedServicesLocationMap.set(tenantId, sLoc)
-      }
-    } catch {}
+      // Quitar spinner en cuanto las canchas estén listas
+      setCourtsLoading(false)
 
-    if (isInitial) setCourtsLoading(false)
+      // 2. Metadatos secundarios en segundo plano sin bloquear el estado visual
+      void Promise.all([
+        getClubSchedule(tenantId).catch(() => null),
+        getClubHighlightInfo(tenantId).catch(() => null),
+        getClubSocialLinks(tenantId).catch(() => null),
+        getClubServicesAndLocation(tenantId).catch(() => null),
+      ]).then(([sched, hInfo, sLinks, sLoc]) => {
+        if (sched) {
+          setSchedule(sched)
+          cachedScheduleMap.set(tenantId, sched)
+        }
+        if (hInfo) {
+          setHighlightInfo(hInfo)
+          cachedHighlightMap.set(tenantId, hInfo)
+        }
+        if (sLinks) {
+          setSocialLinks(sLinks)
+          cachedSocialLinksMap.set(tenantId, sLinks)
+        }
+        if (sLoc) {
+          setServicesLocation(sLoc)
+          cachedServicesLocationMap.set(tenantId, sLoc)
+        }
+      })
+    } catch {
+      // Fallback silencioso
+    } finally {
+      setCourtsLoading(false)
+    }
   }, [tenantId])
 
-  // Cargar canchas reales y mantener consultas continuas a la base de datos
+  const [prevTenantId, setPrevTenantId] = useState(tenantId)
+  if (tenantId !== prevTenantId) {
+    setPrevTenantId(tenantId)
+    if (tenantId && cachedCourtsMap.has(tenantId)) {
+      setCourts(cachedCourtsMap.get(tenantId) || [])
+      setCourtsLoading(false)
+    } else if (tenantId && !cachedCourtsMap.has(tenantId)) {
+      setCourtsLoading(true)
+    }
+    if (tenantId && cachedScheduleMap.has(tenantId)) setSchedule(cachedScheduleMap.get(tenantId)!)
+    if (tenantId && cachedHighlightMap.has(tenantId)) setHighlightInfo(cachedHighlightMap.get(tenantId)!)
+    if (tenantId && cachedSocialLinksMap.has(tenantId)) setSocialLinks(cachedSocialLinksMap.get(tenantId)!)
+    if (tenantId && cachedServicesLocationMap.has(tenantId)) setServicesLocation(cachedServicesLocationMap.get(tenantId)!)
+  }
+
+  // Cargar canchas reales con soporte SWR (render 0ms si hay caché)
   useEffect(() => {
     if (!tenantId) return
 
     const fetchCourts = async () => {
       try {
-        await loadCourtsData(false)
+        await loadCourtsData()
       } catch {}
     }
     void fetchCourts()
@@ -952,18 +975,7 @@ export default function CanchasPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Loading state while fetching courts */}
-      {courtsLoading && (
-        <div className="flex items-center justify-center py-12 text-slate-400">
-          <Loader2 className="w-6 h-6 animate-spin mr-2" />
-          <span>Cargando canchas...</span>
-        </div>
-      )}
-      {!courtsLoading && courts.length === 0 && (
-        <div className="text-center py-12 text-slate-400">
-          <p className="text-sm">No hay canchas registradas. Agregá la primera cancha con el botón &quot;Nueva Cancha&quot;.</p>
-        </div>
-      )}
+
 
 
       {/* Modal Nueva Cancha */}

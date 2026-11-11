@@ -39,6 +39,7 @@ interface TenantLayoutSnapshot {
 }
 
 const tenantLayoutCache = new Map<string, { snapshot: TenantLayoutSnapshot; expiresAt: number }>()
+const autoDebitThrottleMap = new Map<string, number>()
 
 function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
   const cached = tenantLayoutCache.get(userId)
@@ -51,8 +52,18 @@ function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
 function setCachedTenantLayout(userId: string, snapshot: TenantLayoutSnapshot) {
   tenantLayoutCache.set(userId, {
     snapshot,
-    expiresAt: Date.now() + 30000,
+    expiresAt: Date.now() + 60000,
   })
+}
+
+function shouldThrottleAutoDebit(tenantId: string): boolean {
+  const last = autoDebitThrottleMap.get(tenantId) || 0
+  const now = Date.now()
+  if (now - last < 300000) {
+    return true
+  }
+  autoDebitThrottleMap.set(tenantId, now)
+  return false
 }
 
 export default async function DashboardLayout({
@@ -207,7 +218,32 @@ export default async function DashboardLayout({
     userRole = 'SUPERADMIN'
     userName = cookieStore.get('demo_user_name')?.value || 'Superadmin Plataforma'
     const requestedTenantId = cookieStore.get('canchar_tenant_id')?.value || cookieStore.get('demo_tenant_id')?.value
-    if (requestedTenantId) {
+    const saCacheKey = requestedTenantId ? `sa_${requestedTenantId}` : 'sa_default'
+    const snap = getCachedTenantLayout(saCacheKey)
+
+    if (snap) {
+      userRole = snap.userRole
+      userName = snap.userName
+      tenantId = snap.tenantId
+      tenantName = snap.tenantName
+      tenantSlug = snap.tenantSlug
+      mpConnected = snap.mpConnected
+      tenantCreatedAt = snap.tenantCreatedAt
+      isActive = snap.isActive
+      subscriptionStatus = snap.subscriptionStatus
+      planId = snap.planId
+      initialCourtsCount = snap.initialCourtsCount
+      initialSports = snap.initialSports
+      highestPriceArs = snap.highestPriceArs
+      hasPriceConfigured = snap.hasPriceConfigured
+      hasCard = snap.hasCard
+      trialEndsAt = snap.trialEndsAt
+      trialForfeited = snap.trialForfeited
+      cancellationEffectiveDate = snap.cancellationEffectiveDate
+      unpaidInvoiceDueDate = snap.unpaidInvoiceDueDate || null
+      unpaidInvoiceId = snap.unpaidInvoiceId || null
+      unpaidInvoiceAmount = snap.unpaidInvoiceAmount || null
+    } else if (requestedTenantId) {
       const [tenantRes, courtsRes, subRes, priceRulesRes, unpaidInvRes] = await Promise.all([
         serviceClient
           .from('tenants')
@@ -291,8 +327,8 @@ export default async function DashboardLayout({
         hasCard = true
       }
 
-      // Si el club tiene tarjeta y factura impaga, procesar cobro automático sin requerir acción manual del dueño
-      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-')) {
+      // Si el club tiene tarjeta y factura impaga, procesar cobro automático con throttle de 5 min para evitar lentitud
+      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
         try {
           const autoRes = await executeTenantAutoDebit({
             tenantId,
@@ -309,6 +345,30 @@ export default async function DashboardLayout({
           console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
         }
       }
+
+      setCachedTenantLayout(saCacheKey, {
+        userRole,
+        userName,
+        tenantId,
+        tenantName,
+        tenantSlug,
+        mpConnected,
+        tenantCreatedAt,
+        isActive,
+        subscriptionStatus,
+        planId: planId || 'MEDIANO_2',
+        initialCourtsCount,
+        initialSports,
+        highestPriceArs,
+        hasPriceConfigured,
+        hasCard,
+        trialEndsAt,
+        trialForfeited,
+        cancellationEffectiveDate,
+        unpaidInvoiceDueDate,
+        unpaidInvoiceId,
+        unpaidInvoiceAmount,
+      })
     }
 
     const simulatedRole = cookieStore.get('demo_user_role')?.value
@@ -451,8 +511,8 @@ export default async function DashboardLayout({
         if (cookieHas && cookieLast4) hasCard = true
       }
 
-      // Si el club tiene tarjeta y factura impaga, procesar cobro automático sin requerir acción manual del dueño
-      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-')) {
+      // Si el club tiene tarjeta y factura impaga, procesar cobro automático con throttle de 5 min para evitar lentitud
+      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
         try {
           const autoRes = await executeTenantAutoDebit({
             tenantId,
@@ -468,7 +528,7 @@ export default async function DashboardLayout({
         } catch (autoErr) {
           console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
         }
-      } else if (!unpaidInvoiceId && trialEndsAt && new Date() >= new Date(trialEndsAt) && tenantId && !tenantId.startsWith('demo-')) {
+      } else if (!unpaidInvoiceId && trialEndsAt && new Date() >= new Date(trialEndsAt) && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
         try {
           const ensureRes = await ensureTenantCurrentInvoiceAndAutoDebit(tenantId)
           if (ensureRes.paid) {

@@ -92,6 +92,15 @@ export default function CajaPage() {
   })
   const [loading, setLoading] = useState(() => !cachedDailyCash.has(cacheKey))
 
+  const [prevKey, setPrevKey] = useState(cacheKey)
+  if (cacheKey !== prevKey) {
+    setPrevKey(cacheKey)
+    if (cachedDailyCash.has(cacheKey)) {
+      setReport(cachedDailyCash.get(cacheKey)!)
+      setLoading(false)
+    }
+  }
+
   // Filtros de movimientos
   const [searchQuery, setSearchQuery] = useState('')
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'CASH' | 'TRANSFER' | 'MERCADOPAGO' | 'CUENTA_CORRIENTE'>('ALL')

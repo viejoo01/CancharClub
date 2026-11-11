@@ -51,10 +51,40 @@ function normalizeSurfaceEnum(surface?: string | null): 'CESPED_SINTETICO' | 'PA
 
 // ─── CANCHAS ──────────────────────────────────────────────────────────────────
 
-export async function getClubCourts(tenantId?: string | null) {
+export interface ClubCourtItem {
+  id: string
+  name: string
+  sport: SportType
+  slot_duration_minutes: number | null
+  surface: CourtSurface
+  has_lights: boolean | null
+  has_lighting: boolean
+  is_indoor: boolean | null
+  is_active: boolean | null
+  display_order: number | null
+  created_at: string | null
+  slot_duration: SlotDuration
+}
+
+const clubCourtsCache = new Map<string, { data: ClubCourtItem[]; expiresAt: number }>()
+
+export async function invalidateClubCourtsCache(tenantId?: string | null) {
+  if (tenantId) {
+    clubCourtsCache.delete(tenantId)
+  } else {
+    clubCourtsCache.clear()
+  }
+}
+
+export async function getClubCourts(tenantId?: string | null): Promise<ClubCourtItem[]> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []
+
+    const cached = clubCourtsCache.get(effectiveTenantId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
+    }
 
     const supabase = await createServiceClient()
     const { data, error } = await supabase
@@ -67,13 +97,20 @@ export async function getClubCourts(tenantId?: string | null) {
       console.warn('[getClubCourts] Error fetching courts:', error.message)
       return []
     }
-    return (data ?? []).map(c => ({
+    const result: ClubCourtItem[] = (data ?? []).map(c => ({
       ...c,
       created_at: c.created_at ?? null,
       slot_duration: (c.slot_duration_minutes === 60 ? 'MIN_60' : c.slot_duration_minutes === 120 ? 'MIN_120' : 'MIN_90') as SlotDuration,
       surface: (c.surface || 'CESPED_SINTETICO') as CourtSurface,
       has_lighting: Boolean(c.has_lights),
     }))
+
+    clubCourtsCache.set(effectiveTenantId, {
+      data: result,
+      expiresAt: Date.now() + 60000,
+    })
+
+    return result
   } catch (err) {
     console.warn('[getClubCourts] Fallback por excepción:', err)
     return []
@@ -211,6 +248,7 @@ export async function createCourt(payload: {
     console.warn('[createCourt] Error sembrando tarifa inicial para cancha:', priceErr)
   }
 
+  invalidateClubCourtsCache(effectiveTenantId)
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/plan')
@@ -344,6 +382,9 @@ export async function updateCourt(courtId: string, payload: Partial<{
     }
   } catch {}
 
+  if (court.tenant_id) {
+    invalidateClubCourtsCache(court.tenant_id)
+  }
   revalidatePath('/dashboard/canchas')
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/plan')
@@ -504,6 +545,7 @@ export async function deleteCourt(
       })
     } catch {}
 
+    invalidateClubCourtsCache(tenantId)
     revalidatePath('/dashboard/canchas')
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/precios')
@@ -1442,6 +1484,41 @@ export async function applyBulkInflationPriceAdjustment(
 // ─── HORARIOS DE APERTURA Y CIERRE DEL CLUB ─────────────────────────────────
 
 const scheduleMemoryCache = new Map<string, { config: ClubScheduleConfig; expiresAt: number }>()
+const tenantMetaCache = new Map<string, { meta: Record<string, unknown>; expiresAt: number }>()
+
+export async function invalidateTenantMetaCache(tenantId?: string | null) {
+  if (tenantId) {
+    tenantMetaCache.delete(tenantId)
+    scheduleMemoryCache.delete(tenantId)
+  } else {
+    tenantMetaCache.clear()
+    scheduleMemoryCache.clear()
+  }
+}
+
+async function getCachedTenantMeta(effectiveTenantId: string): Promise<Record<string, unknown>> {
+  const cached = tenantMetaCache.get(effectiveTenantId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.meta
+  }
+  try {
+    const supabase = await createServiceClient()
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('description')
+      .eq('id', effectiveTenantId)
+      .maybeSingle()
+    if (error || !tenant || !tenant.description) {
+      tenantMetaCache.set(effectiveTenantId, { meta: {}, expiresAt: Date.now() + 60000 })
+      return {}
+    }
+    const meta = JSON.parse(tenant.description)
+    tenantMetaCache.set(effectiveTenantId, { meta, expiresAt: Date.now() + 60000 })
+    return meta
+  } catch {
+    return {}
+  }
+}
 
 export async function getClubSchedule(tenantId?: string | null): Promise<ClubScheduleConfig> {
   const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
@@ -1453,30 +1530,13 @@ export async function getClubSchedule(tenantId?: string | null): Promise<ClubSch
   }
 
   try {
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('description')
-      .eq('id', effectiveTenantId)
-      .maybeSingle()
-
-    if (error || !tenant || !tenant.description) {
-      scheduleMemoryCache.set(effectiveTenantId, { config: DEFAULT_CLUB_SCHEDULE, expiresAt: Date.now() + 60000 })
-      return DEFAULT_CLUB_SCHEDULE
+    const parsed = await getCachedTenantMeta(effectiveTenantId)
+    const res: ClubScheduleConfig = {
+      opening_time: typeof parsed.opening_time === 'string' ? parsed.opening_time : DEFAULT_CLUB_SCHEDULE.opening_time,
+      closing_time: typeof parsed.closing_time === 'string' ? parsed.closing_time : DEFAULT_CLUB_SCHEDULE.closing_time,
     }
-
-    try {
-      const parsed = JSON.parse(tenant.description)
-      const res: ClubScheduleConfig = {
-        opening_time: parsed.opening_time || DEFAULT_CLUB_SCHEDULE.opening_time,
-        closing_time: parsed.closing_time || DEFAULT_CLUB_SCHEDULE.closing_time,
-      }
-      scheduleMemoryCache.set(effectiveTenantId, { config: res, expiresAt: Date.now() + 60000 })
-      return res
-    } catch {
-      scheduleMemoryCache.set(effectiveTenantId, { config: DEFAULT_CLUB_SCHEDULE, expiresAt: Date.now() + 60000 })
-      return DEFAULT_CLUB_SCHEDULE
-    }
+    scheduleMemoryCache.set(effectiveTenantId, { config: res, expiresAt: Date.now() + 60000 })
+    return res
   } catch (err) {
     console.error('[getClubSchedule] Exception:', err)
     return DEFAULT_CLUB_SCHEDULE
@@ -1578,26 +1638,11 @@ export async function getClubHighlightInfo(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return defaultInfo
 
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('description')
-      .eq('id', effectiveTenantId)
-      .maybeSingle()
-
-    if (error || !tenant || !tenant.description) {
-      return defaultInfo
-    }
-
-    try {
-      const parsed = JSON.parse(tenant.description)
-      return {
-        highlightText: typeof parsed.highlight_text === 'string' ? parsed.highlight_text : '',
-        highlightBadge: typeof parsed.highlight_badge === 'string' ? parsed.highlight_badge : '🔥 Promoción Especial',
-        isHighlightActive: Boolean(parsed.highlight_active && parsed.highlight_text),
-      }
-    } catch {
-      return defaultInfo
+    const parsed = await getCachedTenantMeta(effectiveTenantId)
+    return {
+      highlightText: typeof parsed.highlight_text === 'string' ? parsed.highlight_text : '',
+      highlightBadge: typeof parsed.highlight_badge === 'string' ? parsed.highlight_badge : '🔥 Promoción Especial',
+      isHighlightActive: Boolean(parsed.highlight_active && parsed.highlight_text),
     }
   } catch (err) {
     console.error('[getClubHighlightInfo] Exception:', err)
@@ -1666,6 +1711,8 @@ export async function updateClubHighlightInfo(
       return { success: false, error: updateErr.message }
     }
 
+    invalidateTenantMetaCache(effectiveTenantId)
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/canchas')
     if (tenant.slug) {
@@ -1702,32 +1749,11 @@ export async function getClubSocialLinks(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return defaultLinks
 
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('description, instagram_handle')
-      .eq('id', effectiveTenantId)
-      .maybeSingle()
-
-    if (error || !tenant) {
-      return defaultLinks
-    }
-
-    let meta: Record<string, unknown> = {}
-    if (tenant.description) {
-      try {
-        meta = JSON.parse(tenant.description)
-      } catch {
-        meta = {}
-      }
-    }
-
+    const meta = await getCachedTenantMeta(effectiveTenantId)
     const socialLinks = (meta.social_links as Record<string, string> | undefined) || {}
 
     return {
-      instagram: typeof socialLinks.instagram === 'string' && socialLinks.instagram.trim()
-        ? socialLinks.instagram.trim()
-        : (tenant.instagram_handle || ''),
+      instagram: typeof socialLinks.instagram === 'string' ? socialLinks.instagram.trim() : '',
       facebook: typeof socialLinks.facebook === 'string' ? socialLinks.facebook.trim() : '',
       tiktok: typeof socialLinks.tiktok === 'string' ? socialLinks.tiktok.trim() : '',
     }
@@ -1810,6 +1836,8 @@ export async function updateClubSocialLinks(
       return { success: false, error: updateErr.message }
     }
 
+    invalidateTenantMetaCache(effectiveTenantId)
+
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/canchas')
     if (tenant.slug) {
@@ -1841,25 +1869,13 @@ export async function getClubSidebarPreferences(
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return null
 
-    const supabase = await createServiceClient()
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('description')
-      .eq('id', effectiveTenantId)
-      .maybeSingle()
-
-    if (error || !tenant?.description) return null
-
-    try {
-      const meta = JSON.parse(tenant.description)
-      if (meta && meta.sidebar_nav) {
-        return {
-          order: Array.isArray(meta.sidebar_nav.order) ? meta.sidebar_nav.order : [],
-          hidden: Array.isArray(meta.sidebar_nav.hidden) ? meta.sidebar_nav.hidden : [],
-        }
+    const meta = await getCachedTenantMeta(effectiveTenantId)
+    if (meta && meta.sidebar_nav) {
+      const sn = meta.sidebar_nav as Record<string, unknown>
+      return {
+        order: Array.isArray(sn.order) ? (sn.order as string[]) : [],
+        hidden: Array.isArray(sn.hidden) ? (sn.hidden as string[]) : [],
       }
-    } catch {
-      return null
     }
     return null
   } catch (err) {
@@ -1923,6 +1939,8 @@ export async function updateClubSidebarPreferences(
       console.error('[updateClubSidebarPreferences] Error updating tenants:', updateErr.message)
       return { success: false, error: updateErr.message }
     }
+
+    invalidateTenantMetaCache(effectiveTenantId)
 
     revalidatePath('/dashboard')
 
@@ -2172,12 +2190,27 @@ export interface TenantClubInfo {
   phone?: string
 }
 
+const tenantClubInfoCache = new Map<string, { data: TenantClubInfo; expiresAt: number }>()
+
+export async function invalidateTenantClubInfoCache(tenantId?: string | null) {
+  if (tenantId) {
+    tenantClubInfoCache.delete(tenantId)
+  } else {
+    tenantClubInfoCache.clear()
+  }
+}
+
 export async function getTenantClubInfo(tenantId?: string | null): Promise<TenantClubInfo | null> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     const targetId = effectiveTenantId || tenantId
     if (!targetId) {
       return null
+    }
+
+    const cached = tenantClubInfoCache.get(targetId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data
     }
 
     const supabase = await createServiceClient()
@@ -2204,7 +2237,7 @@ export async function getTenantClubInfo(tenantId?: string | null): Promise<Tenan
       await supabase.from('tenants').update({ slug }).eq('id', tenant.id)
     }
 
-    return {
+    const result: TenantClubInfo = {
       id: tenant.id,
       name: tenant.name || 'Mi Club',
       slug,
@@ -2212,6 +2245,13 @@ export async function getTenantClubInfo(tenantId?: string | null): Promise<Tenan
       bankCbu: tenant.bank_cbu || undefined,
       phone: tenant.phone_whatsapp || undefined,
     }
+
+    tenantClubInfoCache.set(targetId, {
+      data: result,
+      expiresAt: Date.now() + 60000,
+    })
+
+    return result
   } catch (err) {
     console.error('[getTenantClubInfo] Exception:', err)
     return null

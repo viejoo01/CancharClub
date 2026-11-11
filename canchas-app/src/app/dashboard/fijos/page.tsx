@@ -71,6 +71,19 @@ export default function TurnosFijosPage() {
   const [dbCourts, setDbCourts] = useState<{ id: string; name: string; sport: string }[]>(() => initialCourts)
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL')
 
+  const [prevTenantId, setPrevTenantId] = useState(tenantId)
+  if (tenantId !== prevTenantId) {
+    setPrevTenantId(tenantId)
+    if (tenantId && cachedSlotsMap.has(tenantId)) {
+      setSlots(cachedSlotsMap.get(tenantId)!)
+      setLoading(false)
+    }
+    if (tenantId && cachedDbCourtsMap.has(tenantId)) {
+      const cList = cachedDbCourtsMap.get(tenantId)!
+      setDbCourts(cList)
+    }
+  }
+
   // Form states (Alta)
   const [courtId, setCourtId] = useState(() => initialCourts[0]?.id || '')
   const [dayOfWeek, setDayOfWeek] = useState(1) // Lunes

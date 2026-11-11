@@ -78,8 +78,32 @@ function formatTime(iso: string): string {
   }
 }
 
-// Cache en memoria a nivel módulo para apertura instantánea (0ms)
+// Cache en memoria a nivel módulo y persistencia en sessionStorage para apertura instantánea (0ms SWR)
 const cachedDailyCash = new Map<string, DailyCashReport>()
+
+function getSnapshotDailyCash(key: string): DailyCashReport | null {
+  if (cachedDailyCash.has(key)) return cachedDailyCash.get(key)!
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem(`canchar_cash_${key}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as DailyCashReport
+        cachedDailyCash.set(key, parsed)
+        return parsed
+      }
+    } catch {}
+  }
+  return null
+}
+
+function persistSnapshotDailyCash(key: string, data: DailyCashReport) {
+  cachedDailyCash.set(key, data)
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.setItem(`canchar_cash_${key}`, JSON.stringify(data))
+    } catch {}
+  }
+}
 
 export default function CajaPage() {
   const tenantId = useTenantId()
@@ -88,15 +112,16 @@ export default function CajaPage() {
   const [selectedDate, setSelectedDate] = useState(today)
   const cacheKey = `${tenantId || ''}_${selectedDate}`
   const [report, setReport] = useState<DailyCashReport | null>(() => {
-    return cachedDailyCash.get(cacheKey) || null
+    return getSnapshotDailyCash(cacheKey)
   })
-  const [loading, setLoading] = useState(() => !cachedDailyCash.has(cacheKey))
+  const [loading, setLoading] = useState(() => !getSnapshotDailyCash(cacheKey))
 
   const [prevKey, setPrevKey] = useState(cacheKey)
   if (cacheKey !== prevKey) {
     setPrevKey(cacheKey)
-    if (cachedDailyCash.has(cacheKey)) {
-      setReport(cachedDailyCash.get(cacheKey)!)
+    const cached = getSnapshotDailyCash(cacheKey)
+    if (cached) {
+      setReport(cached)
       setLoading(false)
     }
   }
@@ -124,11 +149,11 @@ export default function CajaPage() {
     if (!tenantId) return
     let isMounted = true
     const currentKey = `${tenantId}_${selectedDate}`
-    const hasCached = cachedDailyCash.has(currentKey)
+    const hasCached = Boolean(getSnapshotDailyCash(currentKey))
 
     getDailyCashReport(tenantId, selectedDate).then((data) => {
       if (isMounted && data) {
-        cachedDailyCash.set(currentKey, data)
+        persistSnapshotDailyCash(currentKey, data)
         setReport(data)
         setLoading(false)
       }
@@ -151,10 +176,10 @@ export default function CajaPage() {
     const currentKey = `${tenantId}_${selectedDate}`
 
     const silentSync = () => {
-      if (document.hidden) return
+      if (typeof document !== 'undefined' && document.hidden) return
       getDailyCashReport(tenantId, selectedDate).then((data) => {
         if (isMounted && data) {
-          cachedDailyCash.set(currentKey, data)
+          persistSnapshotDailyCash(currentKey, data)
           setReport(data)
         }
       }).catch(() => {})
@@ -241,7 +266,7 @@ export default function CajaPage() {
                 const nextDate = e.target.value
                 setSelectedDate(nextDate)
                 const nextKey = `${tenantId || ''}_${nextDate}`
-                const cached = cachedDailyCash.get(nextKey)
+                const cached = getSnapshotDailyCash(nextKey)
                 if (cached) {
                   setReport(cached)
                   setLoading(false)
@@ -250,7 +275,7 @@ export default function CajaPage() {
                   setLoading(true)
                 }
               }}
-              className="bg-transparent text-xs text-slate-200 focus:outline-none"
+              className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer"
             />
           </div>
         </div>
@@ -299,12 +324,20 @@ export default function CajaPage() {
               <span>Total Recaudado</span>
               <TrendingUp className="w-4 h-4" />
             </div>
-            <CardTitle className="text-2xl font-black text-white mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalGeneral ?? 0)}
-            </CardTitle>
+            {loading && !report ? (
+              <div className="h-8 w-32 bg-emerald-500/20 rounded animate-pulse mt-1" />
+            ) : (
+              <CardTitle className="text-2xl font-black text-white mt-1">
+                {formatARS(report?.totalGeneral ?? 0)}
+              </CardTitle>
+            )}
           </CardHeader>
           <CardContent className="text-[11px] text-emerald-300/80">
-            {loading ? 'Cargando...' : entries.length + ' transacciones registradas'}
+            {loading && !report ? (
+              <div className="h-3 w-28 bg-emerald-500/15 rounded animate-pulse" />
+            ) : (
+              `${entries.length} transacciones registradas`
+            )}
           </CardContent>
         </Card>
         <Card className="border-slate-800 bg-slate-900/60">
@@ -327,9 +360,13 @@ export default function CajaPage() {
               </div>
               <Banknote className="w-4 h-4 text-emerald-400" />
             </div>
-            <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1 tracking-tight">
-              {loading ? 'Cargando...' : hideCashBalance ? '••••••' : formatARS(report?.totalCash ?? 0)}
-            </CardTitle>
+            {loading && !report ? (
+              <div className="h-8 w-28 bg-slate-800/80 rounded animate-pulse mt-1" />
+            ) : (
+              <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1 tracking-tight">
+                {hideCashBalance ? '••••••' : formatARS(report?.totalCash ?? 0)}
+              </CardTitle>
+            )}
           </CardHeader>
           <CardContent className="text-[11px] text-slate-400 flex items-center justify-between">
             <span>Dinero físico en cajón de mostrador</span>
@@ -344,9 +381,13 @@ export default function CajaPage() {
               <span>Transferencias</span>
               <ArrowRightLeft className="w-4 h-4 text-sky-400" />
             </div>
-            <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalTransfer ?? 0)}
-            </CardTitle>
+            {loading && !report ? (
+              <div className="h-8 w-28 bg-slate-800/80 rounded animate-pulse mt-1" />
+            ) : (
+              <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
+                {formatARS(report?.totalTransfer ?? 0)}
+              </CardTitle>
+            )}
           </CardHeader>
           <CardContent className="text-[11px] text-slate-400">Acreditado en cuenta bancaria del club</CardContent>
         </Card>
@@ -356,9 +397,13 @@ export default function CajaPage() {
               <span>Mercado Pago / Online</span>
               <CreditCard className="w-4 h-4 text-cyan-400" />
             </div>
-            <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
-              {loading ? 'Cargando...' : formatARS(report?.totalMP ?? 0)}
-            </CardTitle>
+            {loading && !report ? (
+              <div className="h-8 w-28 bg-slate-800/80 rounded animate-pulse mt-1" />
+            ) : (
+              <CardTitle className="text-2xl font-extrabold text-slate-100 mt-1">
+                {formatARS(report?.totalMP ?? 0)}
+              </CardTitle>
+            )}
           </CardHeader>
           <CardContent className="text-[11px] text-slate-400">Cobros acreditados vía pasarela digital</CardContent>
         </Card>
@@ -427,10 +472,23 @@ export default function CajaPage() {
             ))}
           </div>
         </CardHeader>
-        {loading ? (
-          <div className="flex items-center justify-center gap-3 py-16 text-slate-400">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Cargando movimientos...</span>
+        {loading && !report ? (
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-14 w-full rounded-xl bg-slate-850/50 border border-slate-800/60 animate-pulse flex items-center justify-between px-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-slate-800/80" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-32 bg-slate-800/80 rounded" />
+                    <div className="h-2.5 w-20 bg-slate-800/50 rounded" />
+                  </div>
+                </div>
+                <div className="h-5 w-24 bg-slate-800/70 rounded" />
+              </div>
+            ))}
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-500">

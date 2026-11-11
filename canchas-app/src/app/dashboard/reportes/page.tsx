@@ -38,14 +38,31 @@ const DAYS_HEADER = [
   'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
 ]
 
-// Cache en memoria a nivel módulo para navegación instantánea (0ms)
+// Cache en memoria a nivel módulo y persistencia en sessionStorage para navegación instantánea (0ms)
 const cachedOccupancyData = new Map<string, OccupancyReportData>()
 const cachedTenantMeta = new Map<string, { name: string; slug: string }>()
 
+function getInitialOccupancyReport(tenantId: string | null): OccupancyReportData | null {
+  if (!tenantId) return null
+  if (cachedOccupancyData.has(tenantId)) return cachedOccupancyData.get(tenantId)!
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem(`canchar_occupancy_${tenantId}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as OccupancyReportData
+        cachedOccupancyData.set(tenantId, parsed)
+        return parsed
+      }
+    } catch {}
+  }
+  return null
+}
+
 export default function ReportesPage() {
   const tenantId = useTenantId()
-  const [data, setData] = useState<OccupancyReportData | null>(() => (tenantId ? cachedOccupancyData.get(tenantId) || null : null))
-  const [loading, setLoading] = useState(() => !tenantId || !cachedOccupancyData.has(tenantId))
+  const initialOccupancy = getInitialOccupancyReport(tenantId)
+  const [data, setData] = useState<OccupancyReportData | null>(initialOccupancy)
+  const [loading, setLoading] = useState(() => !initialOccupancy)
   const [clubName, setClubName] = useState(() => (tenantId ? cachedTenantMeta.get(tenantId)?.name || 'Mi Club' : 'Mi Club'))
   const [clubSlug, setClubSlug] = useState(() => (tenantId ? cachedTenantMeta.get(tenantId)?.slug || '' : ''))
 
@@ -69,6 +86,11 @@ export default function ReportesPage() {
     try {
       const res = await getOccupancyReport(tenantId)
       cachedOccupancyData.set(tenantId, res)
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`canchar_occupancy_${tenantId}`, JSON.stringify(res))
+        } catch {}
+      }
       setData(res)
     } catch {
       if (isInitial && !hasCached) toast.error('Error al cargar reporte de ocupación')

@@ -41,6 +41,7 @@ import { assertTenantMember, resolveEffectiveTenantId } from '@/lib/auth-securit
 import { isPlayerBlocked } from './players.actions'
 import { recordClubNotification } from './notifications.actions'
 import { invalidateCalendarBookingsCache } from './club.actions'
+import { invalidateDailyCashReportCache } from './analytics.actions'
 import { resolveOfficialSlotPrice } from '@/lib/booking-pricing.server'
 import { getOrRefreshTenantMpToken, refreshTenantMpToken } from './mp-marketplace.actions'
 import { checkRateLimit, getClientIpFromHeaders } from '@/lib/rate-limiter'
@@ -844,6 +845,7 @@ export async function confirmTransferPaymentAction(
       }
     }
 
+    void invalidateDailyCashReportCache(booking.tenant_id)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')
     return { success: true }
@@ -1031,8 +1033,9 @@ export async function createManualBooking(
       }
     }
 
-    // Invalidar inmediatamente la caché del calendario para esta fecha
+    // Invalidar inmediatamente la caché del calendario y la caja para esta fecha
     void invalidateCalendarBookingsCache(effectiveTenantId, dayStr)
+    void invalidateDailyCashReportCache(effectiveTenantId, dayStr)
     revalidatePath('/dashboard/caja')
 
     // Sincronizar en memoria para reflejo instantáneo (0ms) en el portal de jugadores con aislamiento de club
@@ -1279,6 +1282,7 @@ export async function settleBookingBalance(params: SettleBookingBalanceParams): 
     })
 
     void invalidateCalendarBookingsCache(booking.tenant_id)
+    void invalidateDailyCashReportCache(booking.tenant_id)
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/caja')

@@ -6,8 +6,25 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
-import { cleanNoteForDisplay, isAbonoBooking } from '@/lib/utils'
+import { cleanNoteForDisplay, isAbonoBooking, getArgentinaTodayIso } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
+
+// ─── Memoria Caché de Servidor para Caja Diaria (0ms TTFB) ───────────────────
+const dailyCashReportCache = new Map<string, { report: DailyCashReport; expiresAt: number }>()
+
+export async function invalidateDailyCashReportCache(tenantId?: string | null, date?: string | null) {
+  if (tenantId && date) {
+    dailyCashReportCache.delete(`${tenantId}_${date}`)
+  } else if (tenantId) {
+    for (const key of dailyCashReportCache.keys()) {
+      if (key.startsWith(`${tenantId}_`)) {
+        dailyCashReportCache.delete(key)
+      }
+    }
+  } else {
+    dailyCashReportCache.clear()
+  }
+}
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +110,13 @@ export async function getDailyCashReport(
     return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, totalDeposits: 0, entries: [] }
   }
 
+  // Caché ultra-rápido en servidor (0ms de latencia en consultas repetidas)
+  const cacheKey = `${effectiveTenantId}_${date}`
+  const cached = dailyCashReportCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.report
+  }
+
   const authCheck = await assertTenantMember(effectiveTenantId)
   if (!authCheck.authorized) {
     return { date, totalGeneral: 0, totalCash: 0, totalTransfer: 0, totalMP: 0, totalOther: 0, totalDeposits: 0, entries: [] }
@@ -104,56 +128,26 @@ export async function getDailyCashReport(
   const dayStart = new Date(`${date}T00:00:00-03:00`).toISOString()
   const dayEnd   = new Date(`${date}T23:59:59.999-03:00`).toISOString()
 
-  // 1. Consultar reservas del día (turnos jugados en la fecha, o señas/cobros registrados dentro de la fecha)
-  let bookingRows: Array<{
-    id: string
-    tenant_id?: string
-    customer_name?: string | null
-    deposit_cents?: number | string | null
-    price_total_cents?: number | string | null
-    payment_method?: string | null
-    paid_at?: string | null
-    created_at?: string | null
-    updated_at?: string | null
-    staff_notes?: string | null
-    booked_at?: string | null
-    status?: string | null
-    recurring_slot_id?: string | null
-    courts?: { name?: string | null } | { name?: string | null }[] | null
-  }> = []
+  // ─── CONSULTAS PARALELAS A SUPABASE (1 solo viaje de red en lugar de 4 secuenciales) ───
+  const [bookedRes, timeRes, paymentsRes, ordersRes, auditPaymentsRes] = await Promise.all([
+    // 1. Reservas cuya franja de juego overlap con el día
+    supabase
+      .from('bookings')
+      .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
+      .eq('tenant_id', effectiveTenantId)
+      .filter('booked_at', 'ov', `[${dayStart},${dayEnd}]`)
+      .neq('status', 'cancelled'),
 
-  try {
-    const [bookedRes, timeRes] = await Promise.all([
-      // Reservas cuya franja de juego overlap con el día
-      supabase
-        .from('bookings')
-        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
-        .eq('tenant_id', effectiveTenantId)
-        .filter('booked_at', 'ov', `[${dayStart},${dayEnd}]`)
-        .neq('status', 'cancelled'),
-      // Reservas creadas o cobradas/actualizadas dentro de la fecha
-      supabase
-        .from('bookings')
-        .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
-        .eq('tenant_id', effectiveTenantId)
-        .or(`and(created_at.gte.${dayStart},created_at.lte.${dayEnd}),and(paid_at.gte.${dayStart},paid_at.lte.${dayEnd}),and(updated_at.gte.${dayStart},updated_at.lte.${dayEnd})`)
-        .neq('status', 'cancelled')
-    ])
+    // 2. Reservas creadas o cobradas/actualizadas dentro de la fecha
+    supabase
+      .from('bookings')
+      .select('id, tenant_id, customer_name, deposit_cents, price_total_cents, payment_method, paid_at, created_at, updated_at, staff_notes, booked_at, status, recurring_slot_id, courts(name)')
+      .eq('tenant_id', effectiveTenantId)
+      .or(`and(created_at.gte.${dayStart},created_at.lte.${dayEnd}),and(paid_at.gte.${dayStart},paid_at.lte.${dayEnd}),and(updated_at.gte.${dayStart},updated_at.lte.${dayEnd})`)
+      .neq('status', 'cancelled'),
 
-    const bookingsMap = new Map<string, typeof bookingRows[number]>()
-    for (const b of (bookedRes.data ?? [])) bookingsMap.set(b.id, b)
-    for (const b of (timeRes.data ?? [])) bookingsMap.set(b.id, b)
-    bookingRows = Array.from(bookingsMap.values())
-  } catch (err) {
-    console.warn('[getDailyCashReport] Error querying bookings:', err)
-  }
-
-  const entries: DailyCashEntry[] = []
-
-  // 1. Consultar cobros relacionales en booking_payments (máxima precisión contable)
-  const recordedBookingIds = new Set<string>()
-  try {
-    const { data: dbPayments, error: payErr } = await supabase
+    // 3. Consultar cobros relacionales en booking_payments (máxima precisión contable)
+    supabase
       .from('booking_payments')
       .select(`
         id,
@@ -173,80 +167,117 @@ export async function getDailyCashReport(
       .eq('tenant_id', effectiveTenantId)
       .gte('registered_at', dayStart)
       .lte('registered_at', dayEnd)
-      .order('registered_at', { ascending: true })
+      .order('registered_at', { ascending: true }),
 
-    if (!payErr && dbPayments && dbPayments.length > 0) {
-      for (const bp of dbPayments) {
-        if (bp.booking_id) recordedBookingIds.add(bp.booking_id)
-        const amt = Number(bp.amount_ars) || Math.round((Number(bp.amount_cents) || 0) / 100)
-        if (amt <= 0) continue
+    // 4. Consultar pedidos y ventas de Cantina del día
+    supabase
+      .from('court_orders')
+      .select('id, court_name, customer_name, total_ars, payment_method, payment_status, status, created_at, notes, items')
+      .eq('tenant_id', effectiveTenantId)
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd)
+      .not('status', 'eq', 'CANCELLED'),
 
-        const bObj = Array.isArray(bp.bookings) ? bp.bookings[0] : bp.bookings
-        const cObj = bObj && typeof bObj === 'object' && 'courts' in bObj
-          ? (Array.isArray((bObj as unknown as { courts: { name?: string }[] }).courts)
-              ? (bObj as unknown as { courts: { name?: string }[] }).courts[0]
-              : (bObj as unknown as { courts: { name?: string } }).courts)
-          : null
-        let courtName = cObj?.name || 'Cancha'
-        let customerName = (bObj as unknown as { customer_name?: string })?.customer_name || 'Cliente'
+    // 5. Consultar cobros de Cuentas Corrientes registrados en el día (audit_log)
+    supabase
+      .from('audit_log')
+      .select('id, new_data, created_at')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('action', 'PAYMENT_RECEIVED')
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd),
+  ])
 
-        if (bp.notes?.toLowerCase().includes('cuenta corriente')) {
-          courtName = 'Cuenta Corriente (Cobro)'
-          const nameMatch = bp.notes.match(/Cuenta Corriente:\s*([^-\n]+)/i)
-          if (nameMatch) {
-            customerName = nameMatch[1].trim()
-          }
-        } else if (
-          bp.notes?.toLowerCase().includes('abono mensual') ||
-          bp.notes?.toLowerCase().includes('abono fijo') ||
-          bp.notes?.toLowerCase().includes('cobro abono')
-        ) {
-          courtName = 'Abono Fijo (Mensual)'
-          const nameMatch = bp.notes.match(/Abono (?:Fijo|Mensual):\s*([^-\n(]+)/i)
-          if (nameMatch) {
-            customerName = nameMatch[1].trim()
-          }
+  const entries: DailyCashEntry[] = []
+
+  // 1. Procesar booking_payments relacionales
+  const recordedBookingIds = new Set<string>()
+  const dbPayments = paymentsRes.data
+  if (!paymentsRes.error && dbPayments && dbPayments.length > 0) {
+    for (const bp of dbPayments) {
+      if (bp.booking_id) recordedBookingIds.add(bp.booking_id)
+      const amt = Number(bp.amount_ars) || Math.round((Number(bp.amount_cents) || 0) / 100)
+      if (amt <= 0) continue
+
+      const bObj = Array.isArray(bp.bookings) ? bp.bookings[0] : bp.bookings
+      const cObj = bObj && typeof bObj === 'object' && 'courts' in bObj
+        ? (Array.isArray((bObj as unknown as { courts: { name?: string }[] }).courts)
+            ? (bObj as unknown as { courts: { name?: string }[] }).courts[0]
+            : (bObj as unknown as { courts: { name?: string } }).courts)
+        : null
+      let courtName = cObj?.name || 'Cancha'
+      let customerName = (bObj as unknown as { customer_name?: string })?.customer_name || 'Cliente'
+
+      if (bp.notes?.toLowerCase().includes('cuenta corriente')) {
+        courtName = 'Cuenta Corriente (Cobro)'
+        const nameMatch = bp.notes.match(/Cuenta Corriente:\s*([^-\n]+)/i)
+        if (nameMatch) {
+          customerName = nameMatch[1].trim()
         }
-
-        let method = 'CASH'
-        const rawM = String(bp.payment_method || '').toUpperCase()
-        if (rawM.includes('TRANSFER')) method = 'TRANSFER'
-        else if (rawM.includes('MERCADO') || rawM.includes('MP') || rawM.includes('QR')) method = 'MERCADOPAGO'
-        else if (rawM.includes('CORRIENTE') || rawM.includes('FIADO')) method = 'CUENTA_CORRIENTE'
-        else if (rawM.includes('CARD') || rawM.includes('TARJETA')) method = 'OTHER'
-
-        const rawType = String(bp.payment_type || '').toUpperCase()
-        const pNotes = String(bp.notes || '').toLowerCase()
-        const isDeposit = rawType === 'DEPOSIT' || pNotes.includes('seña')
-        const pType = isDeposit ? 'DEPOSIT' : 'BALANCE'
-
-        entries.push({
-          id: `bp-${bp.id}`,
-          customer_name: customerName,
-          court_name: courtName,
-          amount_ars: amt,
-          payment_type: pType,
-          payment_method: method,
-          paid_at: bp.registered_at,
-          notes: bp.notes || 'Cobro registrado',
-          origin: bp.payment_method,
-        })
+      } else if (
+        bp.notes?.toLowerCase().includes('abono mensual') ||
+        bp.notes?.toLowerCase().includes('abono fijo') ||
+        bp.notes?.toLowerCase().includes('cobro abono')
+      ) {
+        courtName = 'Abono Fijo (Mensual)'
+        const nameMatch = bp.notes.match(/Abono (?:Fijo|Mensual):\s*([^-\n(]+)/i)
+        if (nameMatch) {
+          customerName = nameMatch[1].trim()
+        }
       }
+
+      let method = 'CASH'
+      const rawM = String(bp.payment_method || '').toUpperCase()
+      if (rawM.includes('TRANSFER')) method = 'TRANSFER'
+      else if (rawM.includes('MERCADO') || rawM.includes('MP') || rawM.includes('QR')) method = 'MERCADOPAGO'
+      else if (rawM.includes('CORRIENTE') || rawM.includes('FIADO')) method = 'CUENTA_CORRIENTE'
+      else if (rawM.includes('CARD') || rawM.includes('TARJETA')) method = 'OTHER'
+
+      const rawType = String(bp.payment_type || '').toUpperCase()
+      const pNotes = String(bp.notes || '').toLowerCase()
+      const isDeposit = rawType === 'DEPOSIT' || pNotes.includes('seña')
+      const pType = isDeposit ? 'DEPOSIT' : 'BALANCE'
+
+      entries.push({
+        id: `bp-${bp.id}`,
+        customer_name: customerName,
+        court_name: courtName,
+        amount_ars: amt,
+        payment_type: pType,
+        payment_method: method,
+        paid_at: bp.registered_at,
+        notes: bp.notes || 'Cobro registrado',
+        origin: bp.payment_method,
+      })
     }
-  } catch (payCatch) {
-    console.warn('[getDailyCashReport] Notice querying booking_payments:', payCatch)
   }
 
-  // 2. Procesar reservas que aún no tienen cobros asentados formalmente en booking_payments (compatibilidad retroactiva garantizada)
-  for (const row of bookingRows ?? []) {
-    // Si esta reserva ya tiene cobros asentados formalmente en booking_payments, evitar duplicación
-    if (recordedBookingIds.has(row.id)) continue
+  // 2. Procesar reservas unificadas
+  let bookingRows: Array<{
+    id: string
+    tenant_id?: string
+    customer_name?: string | null
+    deposit_cents?: number | string | null
+    price_total_cents?: number | string | null
+    payment_method?: string | null
+    paid_at?: string | null
+    created_at?: string | null
+    updated_at?: string | null
+    staff_notes?: string | null
+    booked_at?: string | null
+    status?: string | null
+    recurring_slot_id?: string | null
+    courts?: { name?: string | null } | { name?: string | null }[] | null
+  }> = []
 
-    // CRITICAL: Los turnos asignados a abonados fijos son reservas de cancha cubiertas por la suscripción mensual.
-    // NUNCA deben sumar como cobros individuales de seña/saldo en la caja diaria (evita ingresos falsos e irreales).
-    if (isAbonoBooking(row)) {
-      continue
-    }
+  const bookingsMap = new Map<string, typeof bookingRows[number]>()
+  for (const b of (bookedRes.data ?? [])) bookingsMap.set(b.id, b)
+  for (const b of (timeRes.data ?? [])) bookingsMap.set(b.id, b)
+  bookingRows = Array.from(bookingsMap.values())
+
+  for (const row of bookingRows) {
+    if (recordedBookingIds.has(row.id)) continue
+    if (isAbonoBooking(row)) continue
 
     const courtObj = Array.isArray(row.courts) ? row.courts[0] : row.courts
     const courtName = (courtObj as { name?: string } | null)?.name ?? 'Cancha'
@@ -254,12 +285,11 @@ export async function getDailyCashReport(
     const totalPriceArs = Math.round((Number(row.price_total_cents) || 0) / 100)
     const notes = row.staff_notes || ''
 
-    // 1.1 Extraer cobros explícitos en mostrador (ej. "Cobro $10.000 (Transferencia)...")
+    // Extraer cobros explícitos en mostrador
     const hasSaldoRestante = Boolean(notes.toLowerCase().includes('saldo restante'))
     const hasOnlineBooking = Boolean(notes.toLowerCase().includes('reserva online') || notes.toLowerCase().includes('seña verificada'))
     const allCobroMatches = [...notes.matchAll(/Cobro\s+\$?([\d\.,]+)\s*\(([^)]+)\)(?:[^\[\n]*\[([^\]]+)\])?/gi)]
 
-    // Deduplicar cobros idénticos accidentales (ej. doble clic o colisión de red en el mismo minuto)
     const cobroMatches: typeof allCobroMatches = []
     for (const match of allCobroMatches) {
       const cleanAmt = match[1].replace(/\./g, '').replace(/,/g, '.')
@@ -274,7 +304,7 @@ export async function getDailyCashReport(
         if (amt !== existAmt || rawMeth !== existMeth) return false
         if (isoTime && existIso) {
           const diffMs = Math.abs(new Date(isoTime).getTime() - new Date(existIso).getTime())
-          return diffMs < 120000 // Menos de 2 min de diferencia con mismo monto y método = doble registro accidental
+          return diffMs < 120000
         }
         return true
       })
@@ -333,7 +363,7 @@ export async function getDailyCashReport(
       }
     }
 
-    // 1.2 Seña previa inicial
+    // Seña previa inicial
     const initialDeposit = Math.max(0, totalDepositArs - cobrosTotal)
     if (initialDeposit > 0) {
       const señaIsoMatch = notes.match(/Seña verificada[^\[]*\[([^\]]+)\]/i)
@@ -390,7 +420,7 @@ export async function getDailyCashReport(
     }
   }
 
-  // 2. Consultar pedidos y ventas de Cantina del día
+  // 3. Procesar pedidos y ventas de Cantina del día
   try {
     let cantinaOrders: Array<{
       id: string
@@ -405,16 +435,8 @@ export async function getDailyCashReport(
       items?: unknown
     }> = []
 
-    const { data: dbOrders, error: ordersErr } = await supabase
-      .from('court_orders')
-      .select('id, court_name, customer_name, total_ars, payment_method, payment_status, status, created_at, notes, items')
-      .eq('tenant_id', effectiveTenantId)
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd)
-      .not('status', 'eq', 'CANCELLED')
-
-    if (!ordersErr && dbOrders) {
-      cantinaOrders = dbOrders
+    if (!ordersRes.error && ordersRes.data) {
+      cantinaOrders = ordersRes.data
     } else {
       // Fallback inmutable a audit_log si court_orders no está disponible
       const { data: auditData } = await supabase
@@ -441,13 +463,11 @@ export async function getDailyCashReport(
       const orderTotal = Number(order.total_ars) || 0
       if (orderTotal <= 0) continue
 
-      // Resolver método de pago de la orden
       let method = 'CASH'
       const rawMethod = String(order.payment_method || '').toUpperCase()
       const rawNotes = String(order.notes || '').toUpperCase()
       const rawCourt = String(order.court_name || '').toUpperCase()
 
-      // Determinar si es efectivamente fiado / cuenta corriente (exclusivo si fue solicitado como fiado)
       const isCredit = rawMethod.includes('CORRIENTE') ||
                        rawMethod.includes('FIADO') ||
                        rawNotes.includes('FIADO') ||
@@ -486,16 +506,9 @@ export async function getDailyCashReport(
     console.warn('[getDailyCashReport] Cantina orders query notice:', cantinaErr)
   }
 
-  // 3. Consultar cobros de Cuentas Corrientes registrados en el día
+  // 4. Procesar cobros de Cuentas Corrientes registrados en el día
   try {
-    const { data: auditPayments } = await supabase
-      .from('audit_log')
-      .select('id, new_data, created_at')
-      .eq('tenant_id', effectiveTenantId)
-      .eq('action', 'PAYMENT_RECEIVED')
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd)
-
+    const auditPayments = auditPaymentsRes.data
     for (const ap of auditPayments ?? []) {
       const pData = ap.new_data as {
         type?: string
@@ -510,7 +523,6 @@ export async function getDailyCashReport(
       if (amt <= 0) continue
 
       const isAbono = pData?.type === 'RECURRING_SLOT_PAYMENT' || pData?.type === 'ABONO_FIJO_PAYMENT'
-      // Evitar duplicación si el cobro ya fue procesado mediante booking_payments
       const isAlreadyInEntries = entries.some(e => {
         const isTargetAbono = isAbono && e.court_name.includes('Abono')
         const isTargetCtaCte = !isAbono && e.court_name.includes('Cuenta Corriente')
@@ -519,7 +531,6 @@ export async function getDailyCashReport(
         const cNameLower = (pData?.customer_name || '').toLowerCase().trim()
         const eNameLower = (e.customer_name || '').toLowerCase().trim()
 
-        // 1. Coincidencia estricta: Mismo cliente exacto Y mismo monto (tolerancia < $1)
         if (cNameLower && eNameLower && cNameLower === eNameLower && Math.abs(e.amount_ars - amt) < 1) {
           const timeDiff = Math.abs(new Date(e.paid_at || 0).getTime() - new Date(pData?.created_at || ap.created_at).getTime())
           if (timeDiff < 600000) return true
@@ -563,7 +574,14 @@ export async function getDailyCashReport(
     .reduce((s, e) => s + e.amount_ars, 0)
   const totalGeneral  = totalCash + totalTransfer + totalMP + totalOther
 
-  return { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, totalCredit, totalDeposits, entries }
+  const report: DailyCashReport = { date, totalGeneral, totalCash, totalTransfer, totalMP, totalOther, totalCredit, totalDeposits, entries }
+
+  // Persistir en memoria de servidor (25 segs si es hoy, 5 minutos si es fecha pasada)
+  const todayIso = getArgentinaTodayIso()
+  const ttlMs = date === todayIso ? 25000 : 300000
+  dailyCashReportCache.set(cacheKey, { report, expiresAt: Date.now() + ttlMs })
+
+  return report
 }
 
 export interface BlindAuditRecord {
@@ -630,6 +648,9 @@ export async function saveBlindAuditAction(
     if (!auth.authorized) {
       return { success: false, error: auth.error || 'No autorizado' }
     }
+
+    // Invalidar caché previo para asegurar cálculo fresco
+    await invalidateDailyCashReportCache(effectiveTenantId, payload.date)
 
     // 1. Invocar internamente getDailyCashReport en el backend de forma fidedigna e inmutable
     const report = await getDailyCashReport(effectiveTenantId, payload.date)

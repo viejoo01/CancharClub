@@ -10,6 +10,7 @@ import { parseArgentinaDate, getArgentinaTodayIso, getArgentinaIsoTimestamp } fr
 import { addVenueBooking } from '@/config/venues-data'
 import type { RecurringSlot } from '@/types/database'
 import { assertTenantMember } from '@/lib/auth-security'
+import { invalidateDailyCashReportCache } from './analytics.actions'
 
 const recurringSlotsCache = new Map<string, { data: RecurringSlot[]; expiresAt: number }>()
 
@@ -1019,6 +1020,7 @@ export async function registerRecurringSlotPaymentAction(
     }
 
     await invalidateRecurringSlotsCache(tenantId)
+    await invalidateDailyCashReportCache(tenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard/caja')

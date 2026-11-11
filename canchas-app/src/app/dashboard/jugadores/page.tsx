@@ -52,15 +52,44 @@ const defaultStats = {
   totalRevenueTracked: 0,
 }
 
+function getInitialPlayers(tenantId: string | null): PlayerSummary[] {
+  if (!tenantId) return []
+  if (cachedPlayersMap.has(tenantId)) return cachedPlayersMap.get(tenantId)!
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem(`canchar_players_${tenantId}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as PlayerSummary[]
+        cachedPlayersMap.set(tenantId, parsed)
+        return parsed
+      }
+    } catch {}
+  }
+  return []
+}
+
+function getInitialStats(tenantId: string | null) {
+  if (!tenantId) return defaultStats
+  if (cachedStatsMap.has(tenantId)) return cachedStatsMap.get(tenantId)!
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem(`canchar_players_stats_${tenantId}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as typeof defaultStats
+        cachedStatsMap.set(tenantId, parsed)
+        return parsed
+      }
+    } catch {}
+  }
+  return defaultStats
+}
+
 export default function JugadoresPage() {
   const tenantId = useTenantId()
-  const [players, setPlayers] = useState<PlayerSummary[]>(() => 
-    tenantId ? (cachedPlayersMap.get(tenantId) || []) : []
-  )
-  const [stats, setStats] = useState(() => 
-    tenantId && cachedStatsMap.has(tenantId) ? cachedStatsMap.get(tenantId)! : defaultStats
-  )
-  const [loading, setLoading] = useState(() => !tenantId || !cachedPlayersMap.has(tenantId))
+  const initialPlayers = getInitialPlayers(tenantId)
+  const [players, setPlayers] = useState<PlayerSummary[]>(initialPlayers)
+  const [stats, setStats] = useState(() => getInitialStats(tenantId))
+  const [loading, setLoading] = useState(() => initialPlayers.length === 0)
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState<'ALL' | 'EXEMPLARY' | 'RELIABLE' | 'HIGH_RISK' | 'BLOCKED'>('ALL')
 
@@ -81,6 +110,12 @@ export default function JugadoresPage() {
       if (res.success) {
         cachedPlayersMap.set(tenantId, res.players)
         cachedStatsMap.set(tenantId, res.stats)
+        if (typeof window !== 'undefined' && !searchQuery) {
+          try {
+            sessionStorage.setItem(`canchar_players_${tenantId}`, JSON.stringify(res.players))
+            sessionStorage.setItem(`canchar_players_stats_${tenantId}`, JSON.stringify(res.stats))
+          } catch {}
+        }
         setPlayers(res.players)
         setStats(res.stats)
       } else if (isInitial && !hasCache) {
@@ -96,9 +131,11 @@ export default function JugadoresPage() {
   useEffect(() => {
     if (!tenantId) return
 
+    const isInitialLoad = players.length === 0
+    const delay = searchQuery.trim().length > 0 ? 300 : 0
     const timer = setTimeout(() => {
-      void loadData(true)
-    }, 300)
+      void loadData(isInitialLoad)
+    }, delay)
 
     // Sondeo de respaldo cada 60 segundos (jugadores no cambian en tiempo real)
     const interval = setInterval(() => {
@@ -111,12 +148,12 @@ export default function JugadoresPage() {
     document.addEventListener('visibilitychange', handleSync)
 
     return () => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       clearInterval(interval)
       window.removeEventListener('focus', handleSync)
       document.removeEventListener('visibilitychange', handleSync)
     }
-  }, [tenantId, loadData])
+  }, [tenantId, loadData, searchQuery, players.length])
 
   const openHistory = async (player: PlayerSummary) => {
     setSelectedPlayer(player)

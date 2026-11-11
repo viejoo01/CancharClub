@@ -8,6 +8,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { resolveEffectiveTenantId, assertTenantMember } from '@/lib/auth-security'
 import { sanitizeText } from '@/lib/sanitize'
+import { invalidateDailyCashReportCache } from './analytics.actions'
 
 export interface AccountMovement {
   id: string
@@ -384,6 +385,7 @@ export async function payCustomerAccount(params: {
     }
 
     await persistCustomerAccounts(effectiveTenantId, accounts)
+    await invalidateDailyCashReportCache(effectiveTenantId)
     revalidatePath('/dashboard/cantina')
     revalidatePath('/dashboard/caja')
 

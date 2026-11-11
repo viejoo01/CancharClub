@@ -253,6 +253,202 @@ export async function createTournament(payload: {
   }
 }
 
+/** Actualizar datos de un torneo existente */
+export async function updateTournament(payload: {
+  tournament_id: string
+  tenant_id: string
+  name: string
+  sport: string
+  format: 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'
+  status?: 'REGISTRATION' | 'IN_PROGRESS' | 'COMPLETED'
+  start_date: string
+  end_date: string
+  newCategories?: { name: string; max_teams: number; entry_fee_ars?: number }[]
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertTenantMember(payload.tenant_id)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+
+    const updateFields: Record<string, unknown> = {
+      name: sanitizeText(payload.name.trim()),
+      sport: payload.sport,
+      format: payload.format,
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+    }
+
+    if (payload.status) {
+      updateFields.status = payload.status
+    }
+
+    const { error: tError } = await supabase
+      .from('tournaments')
+      .update(updateFields)
+      .eq('id', payload.tournament_id)
+      .eq('tenant_id', payload.tenant_id)
+
+    if (tError) {
+      return { success: false, error: tError.message || 'Error al actualizar el torneo' }
+    }
+
+    if (payload.newCategories && payload.newCategories.length > 0) {
+      const catRows = payload.newCategories
+        .filter((c) => c.name.trim().length > 0)
+        .map((c) => ({
+          tournament_id: payload.tournament_id,
+          name: sanitizeText(c.name.trim()),
+          max_teams: Number(c.max_teams) > 0 ? Number(c.max_teams) : 8,
+          entry_fee_ars: Math.max(0, Number(c.entry_fee_ars) || 0),
+        }))
+
+      if (catRows.length > 0) {
+        await supabase.from('tournament_categories').insert(catRows)
+      }
+    }
+
+    await invalidateTournamentCache(payload.tenant_id, payload.tournament_id)
+    revalidatePath('/dashboard/torneos')
+    revalidatePath(`/torneo/${payload.tournament_id}`)
+    return { success: true }
+  } catch (err) {
+    console.error('[updateTournament] Error:', err)
+    return { success: false, error: 'Error interno del servidor al actualizar torneo' }
+  }
+}
+
+/** Eliminar un torneo y todas sus dependencias */
+export async function deleteTournament(
+  tournamentId: string,
+  tenantId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+
+    // 1. Obtener categorías asociadas para asegurar limpieza limpia sin violaciones de FK
+    const { data: categories } = await supabase
+      .from('tournament_categories')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+
+    const catIds = (categories || []).map((c) => c.id)
+
+    if (catIds.length > 0) {
+      await Promise.all([
+        supabase.from('tournament_waitlists').delete().in('category_id', catIds),
+        supabase.from('tournament_matches').delete().in('category_id', catIds),
+        supabase.from('tournament_teams').delete().in('category_id', catIds),
+      ])
+      await supabase.from('tournament_categories').delete().eq('tournament_id', tournamentId)
+    }
+
+    // 2. Eliminar el torneo
+    const { error: delError } = await supabase
+      .from('tournaments')
+      .delete()
+      .eq('id', tournamentId)
+      .eq('tenant_id', tenantId)
+
+    if (delError) {
+      return { success: false, error: delError.message || 'Error al eliminar el torneo' }
+    }
+
+    await invalidateTournamentCache(tenantId, tournamentId)
+    revalidatePath('/dashboard/torneos')
+    revalidatePath(`/torneo/${tournamentId}`)
+    return { success: true }
+  } catch (err) {
+    console.error('[deleteTournament] Error:', err)
+    return { success: false, error: 'Error interno del servidor al eliminar torneo' }
+  }
+}
+
+/** Agregar una categoría a un torneo existente */
+export async function addCategoryToTournament(payload: {
+  tournament_id: string
+  tenant_id: string
+  name: string
+  max_teams: number
+  entry_fee_ars?: number
+}): Promise<{ success: boolean; category_id?: string; error?: string }> {
+  try {
+    const auth = await assertTenantMember(payload.tenant_id)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('tournament_categories')
+      .insert({
+        tournament_id: payload.tournament_id,
+        name: sanitizeText(payload.name.trim()),
+        max_teams: Math.max(2, Number(payload.max_teams) || 8),
+        entry_fee_ars: Math.max(0, Number(payload.entry_fee_ars) || 0),
+      })
+      .select('id')
+      .single()
+
+    if (error || !data) {
+      return { success: false, error: error?.message || 'Error al agregar categoría' }
+    }
+
+    await invalidateTournamentCache(payload.tenant_id, payload.tournament_id)
+    revalidatePath('/dashboard/torneos')
+    revalidatePath(`/torneo/${payload.tournament_id}`)
+    return { success: true, category_id: data.id }
+  } catch (err) {
+    console.error('[addCategoryToTournament] Error:', err)
+    return { success: false, error: 'Error al agregar categoría' }
+  }
+}
+
+/** Eliminar una categoría de un torneo */
+export async function deleteTournamentCategory(
+  categoryId: string,
+  tenantId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const auth = await assertTenantMember(tenantId)
+    if (!auth.authorized) {
+      return { success: false, error: auth.error || 'Sin permisos sobre este club' }
+    }
+
+    const supabase = await createServiceClient()
+
+    // Limpieza de dependencias de la categoría
+    await Promise.all([
+      supabase.from('tournament_waitlists').delete().eq('category_id', categoryId),
+      supabase.from('tournament_matches').delete().eq('category_id', categoryId),
+      supabase.from('tournament_teams').delete().eq('category_id', categoryId),
+    ])
+
+    const { error } = await supabase
+      .from('tournament_categories')
+      .delete()
+      .eq('id', categoryId)
+
+    if (error) {
+      return { success: false, error: error.message || 'Error al eliminar categoría' }
+    }
+
+    await invalidateTournamentCache(tenantId)
+    revalidatePath('/dashboard/torneos')
+    return { success: true }
+  } catch (err) {
+    console.error('[deleteTournamentCategory] Error:', err)
+    return { success: false, error: 'Error al eliminar categoría' }
+  }
+}
+
 /** Crear Torneo Americano Exprés de Fin de Semana (Preset Rápido para Clubes de Pádel) */
 export async function createAmericanoTournamentPreset(payload: {
   tenant_id: string

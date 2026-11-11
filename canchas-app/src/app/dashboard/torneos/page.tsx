@@ -19,6 +19,8 @@ import {
   Copy,
   Clock,
   UserCheck,
+  Pencil,
+  AlertTriangle,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,6 +39,10 @@ import {
   getTournaments, 
   getTournamentById, 
   createTournament, 
+  updateTournament,
+  deleteTournament,
+  addCategoryToTournament,
+  deleteTournamentCategory,
   addTeamToCategory, 
   generatePlayoffBracket, 
   generateGroupStageAndPlayoffs,
@@ -195,6 +201,30 @@ export default function TorneosDashboardPage() {
   const [isRankingOpen, setIsRankingOpen] = useState(false)
   const [rankingList, setRankingList] = useState<ClubPlayerRanking[]>([])
   const [rankingLoading, setRankingLoading] = useState(false)
+
+  // Modal y datos de Edición de Torneo
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editTourId, setEditTourId] = useState('')
+  const [editTourName, setEditTourName] = useState('')
+  const [editTourSport, setEditTourSport] = useState('PADEL')
+  const [editTourFormat, setEditTourFormat] = useState<'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS'>('GROUPS_AND_PLAYOFFS')
+  const [editTourStatus, setEditTourStatus] = useState<'REGISTRATION' | 'IN_PROGRESS' | 'COMPLETED'>('REGISTRATION')
+  const [editTourStart, setEditTourStart] = useState('')
+  const [editTourEnd, setEditTourEnd] = useState('')
+  const [editTourNewCats, setEditTourNewCats] = useState('')
+  const [editTourMaxTeams, setEditTourMaxTeams] = useState<number>(8)
+  const [editTourEntryFee, setEditTourEntryFee] = useState<number | ''>('')
+
+  // Modal y confirmación de Eliminación de Torneo
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+  const [tourToDelete, setTourToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [isDeletingTournament, setIsDeletingTournament] = useState(false)
+
+  // Modal rápido de Agregar Categoría
+  const [isAddCatOpen, setIsAddCatOpen] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatMaxTeams, setNewCatMaxTeams] = useState<number>(8)
+  const [newCatFee, setNewCatFee] = useState<number | ''>('')
 
   // Form inscribir equipo
   const [teamName, setTeamName] = useState('')
@@ -394,6 +424,173 @@ export default function TorneosDashboardPage() {
       toast.error('Error al cargar el ranking del club')
     } finally {
       setRankingLoading(false)
+    }
+  }
+
+  const handleOpenEditTournament = (tour?: Tournament | TournamentWithDetails) => {
+    const target = tour || selectedTournament
+    if (!target) return
+    setEditTourId(target.id)
+    setEditTourName(target.name)
+    setEditTourSport(target.sport)
+    setEditTourFormat(target.format as 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS')
+    setEditTourStatus((target.status as 'REGISTRATION' | 'IN_PROGRESS' | 'COMPLETED') || 'REGISTRATION')
+    setEditTourStart(target.start_date ? target.start_date.split('T')[0] : getArgentinaTodayIso())
+    setEditTourEnd(target.end_date ? target.end_date.split('T')[0] : getArgentinaTodayIso())
+    setEditTourNewCats('')
+    setEditTourMaxTeams(8)
+    setEditTourEntryFee('')
+    setIsEditOpen(true)
+  }
+
+  const handleUpdateTournament = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!tenantId || !editTourId || !editTourName.trim()) return
+
+    setActionLoading(true)
+    try {
+      const parsedFee = typeof editTourEntryFee === 'number' && editTourEntryFee >= 0 ? editTourEntryFee : Number(editTourEntryFee) || 0
+      const newCatsList = editTourNewCats
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .map((name) => ({
+          name,
+          max_teams: Number(editTourMaxTeams) > 0 ? Number(editTourMaxTeams) : 8,
+          entry_fee_ars: parsedFee,
+        }))
+
+      const res = await updateTournament({
+        tournament_id: editTourId,
+        tenant_id: tenantId,
+        name: editTourName,
+        sport: editTourSport,
+        format: editTourFormat,
+        status: editTourStatus,
+        start_date: editTourStart,
+        end_date: editTourEnd,
+        newCategories: newCatsList.length > 0 ? newCatsList : undefined,
+      })
+
+      if (res.success) {
+        toast.success('Torneo actualizado exitosamente')
+        setIsEditOpen(false)
+        setTournaments((prev) =>
+          prev.map((t) =>
+            t.id === editTourId
+              ? {
+                  ...t,
+                  name: editTourName,
+                  sport: editTourSport,
+                  format: editTourFormat,
+                  status: editTourStatus,
+                  start_date: editTourStart,
+                  end_date: editTourEnd,
+                }
+              : t
+          )
+        )
+        await loadTournamentDetails(editTourId)
+        await loadTournaments(false)
+      } else {
+        toast.error(res.error || 'No se pudo actualizar el torneo')
+      }
+    } catch {
+      toast.error('Error de red al actualizar torneo')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleOpenDeleteConfirm = (target?: { id: string; name: string }) => {
+    const tour = target || (selectedTournament ? { id: selectedTournament.id, name: selectedTournament.name } : null)
+    if (!tour) return
+    setTourToDelete(tour)
+    setIsDeleteConfirmOpen(true)
+  }
+
+  const handleConfirmDeleteTournament = async () => {
+    if (!tenantId || !tourToDelete) return
+
+    setIsDeletingTournament(true)
+    try {
+      const { id: deletedId, name: deletedName } = tourToDelete
+      const res = await deleteTournament(deletedId, tenantId)
+
+      if (res.success) {
+        toast.success(`Torneo "${deletedName}" eliminado correctamente`)
+        setIsDeleteConfirmOpen(false)
+        setTourToDelete(null)
+
+        const remaining = tournaments.filter((t) => t.id !== deletedId)
+        setTournaments(remaining)
+
+        if (selectedTournament?.id === deletedId) {
+          if (remaining.length > 0) {
+            await loadTournamentDetails(remaining[0].id)
+          } else {
+            setSelectedTournament(null)
+          }
+        }
+        await loadTournaments(false)
+      } else {
+        toast.error(res.error || 'No se pudo eliminar el torneo')
+      }
+    } catch {
+      toast.error('Error de red al eliminar el torneo')
+    } finally {
+      setIsDeletingTournament(false)
+    }
+  }
+
+  const handleQuickAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!tenantId || !selectedTournament || !newCatName.trim()) return
+
+    setActionLoading(true)
+    try {
+      const fee = typeof newCatFee === 'number' && newCatFee >= 0 ? newCatFee : Number(newCatFee) || 0
+      const res = await addCategoryToTournament({
+        tournament_id: selectedTournament.id,
+        tenant_id: tenantId,
+        name: newCatName.trim(),
+        max_teams: Number(newCatMaxTeams) > 0 ? Number(newCatMaxTeams) : 8,
+        entry_fee_ars: fee,
+      })
+
+      if (res.success) {
+        toast.success(`Categoría "${newCatName.trim()}" agregada`)
+        setIsAddCatOpen(false)
+        setNewCatName('')
+        setNewCatFee('')
+        await loadTournamentDetails(selectedTournament.id)
+      } else {
+        toast.error(res.error || 'Error al agregar categoría')
+      }
+    } catch {
+      toast.error('Error de red al agregar categoría')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
+    if (!tenantId || !selectedTournament) return
+    if (!confirm(`¿Eliminar la categoría "${categoryName}" y todos sus equipos/partidos?`)) return
+
+    setActionLoading(true)
+    try {
+      const res = await deleteTournamentCategory(categoryId, tenantId)
+      if (res.success) {
+        toast.success(`Categoría "${categoryName}" eliminada`)
+        await loadTournamentDetails(selectedTournament.id)
+      } else {
+        toast.error(res.error || 'Error al eliminar categoría')
+      }
+    } catch {
+      toast.error('Error de red al eliminar categoría')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -718,6 +915,29 @@ export default function TorneosDashboardPage() {
                   <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
                   <span>Ver en Vivo</span>
                 </a>
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenEditTournament(selectedTournament)}
+                  className="border-slate-700 bg-slate-900/80 text-slate-200 hover:text-white hover:border-amber-500/50 text-xs gap-1.5"
+                  title="Editar datos, formato y categorías de este torneo"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Editar</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenDeleteConfirm({ id: selectedTournament.id, name: selectedTournament.name })}
+                  disabled={isDeletingTournament}
+                  className="border-rose-900/40 bg-rose-950/20 text-rose-300 hover:text-rose-100 hover:bg-rose-900/40 text-xs gap-1.5"
+                  title="Eliminar este torneo y sus partidos"
+                >
+                  {isDeletingTournament ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                  <span>Eliminar</span>
+                </Button>
               </>
             )}
             <Button
@@ -760,30 +980,61 @@ export default function TorneosDashboardPage() {
                 const isFoot = isFootballSport(t.sport)
                 const isSelected = selectedTournament?.id === t.id
                 return (
-                  <button
+                  <div
                     key={t.id}
-                    onClick={() => loadTournamentDetails(t.id)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 border whitespace-nowrap cursor-pointer ${
+                    className={`rounded-xl text-xs font-bold transition-all flex items-center border whitespace-nowrap ${
                       isSelected
                         ? 'bg-amber-500/15 border-amber-500/60 text-amber-300 shadow-md shadow-amber-950/40'
                         : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {isFoot ? <Shield className="w-3.5 h-3.5 text-emerald-400" /> : <Trophy className="w-3.5 h-3.5 text-amber-400" />}
-                    <span>{t.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-slate-300">
-                      {t.sport.replace('_', ' ')}
-                    </span>
-                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
-                      t.status === 'IN_PROGRESS'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : t.status === 'COMPLETED'
-                        ? 'bg-slate-800 text-slate-400'
-                        : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                    }`}>
-                      {t.status === 'IN_PROGRESS' ? 'En Juego' : t.status === 'COMPLETED' ? 'Finalizado' : 'Inscripción Abierta'}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => loadTournamentDetails(t.id)}
+                      className="px-4 py-2.5 flex items-center gap-2.5 cursor-pointer"
+                    >
+                      {isFoot ? <Shield className="w-3.5 h-3.5 text-emerald-400" /> : <Trophy className="w-3.5 h-3.5 text-amber-400" />}
+                      <span>{t.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-slate-300">
+                        {t.sport.replace('_', ' ')}
+                      </span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                        t.status === 'IN_PROGRESS'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : t.status === 'COMPLETED'
+                          ? 'bg-slate-800 text-slate-400'
+                          : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                      }`}>
+                        {t.status === 'IN_PROGRESS' ? 'En Juego' : t.status === 'COMPLETED' ? 'Finalizado' : 'Inscripción Abierta'}
+                      </span>
+                    </button>
+                    {isSelected && (
+                      <div className="flex items-center pr-2 gap-1 border-l border-amber-500/30 pl-1.5 my-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenEditTournament(t)
+                          }}
+                          className="p-1 rounded hover:bg-amber-500/20 text-amber-300 hover:text-amber-100 transition-colors cursor-pointer"
+                          title="Editar este torneo"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenDeleteConfirm({ id: t.id, name: t.name })
+                          }}
+                          className="p-1 rounded hover:bg-rose-500/20 text-rose-400 hover:text-rose-200 transition-colors cursor-pointer"
+                          title="Eliminar este torneo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
@@ -798,23 +1049,46 @@ export default function TorneosDashboardPage() {
                       Categoría:
                     </span>
                     {selectedTournament.categories.length === 0 ? (
-                      <span className="text-xs text-amber-400 italic">
-                        Sin categorías creadas
-                      </span>
-                    ) : (
-                      selectedTournament.categories.map((cat) => (
-                        <button
-                          key={cat.id}
-                          onClick={() => setSelectedCategoryId(cat.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap cursor-pointer ${
-                            selectedCategoryId === cat.id
-                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
-                              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
-                          }`}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-amber-400 italic">
+                          Sin categorías creadas
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIsAddCatOpen(true)}
+                          className="h-7 text-xs px-2.5 bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20 font-bold gap-1 cursor-pointer"
                         >
-                          {cat.name} ({cat.teams.length}/{cat.max_teams} {getParticipantLabel(selectedTournament.sport, true)})
-                        </button>
-                      ))
+                          <Plus className="w-3 h-3" />
+                          <span>Agregar Categoría</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {selectedTournament.categories.map((cat) => (
+                          <button
+                            key={cat.id}
+                            onClick={() => setSelectedCategoryId(cat.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap cursor-pointer ${
+                              selectedCategoryId === cat.id
+                                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {cat.name} ({cat.teams.length}/{cat.max_teams} {getParticipantLabel(selectedTournament.sport, true)})
+                          </button>
+                        ))}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setIsAddCatOpen(true)}
+                          className="h-7 text-xs px-2 text-slate-400 hover:text-amber-300 hover:bg-slate-800 gap-1 shrink-0 cursor-pointer"
+                          title="Agregar otra categoría a este torneo"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Nueva Categoría</span>
+                        </Button>
+                      </div>
                     )}
                   </div>
 
@@ -2151,6 +2425,322 @@ export default function TorneosDashboardPage() {
                 Cerrar
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Editar Torneo */}
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-white">
+                <Pencil className="w-5 h-5 text-amber-400" />
+                Editar Torneo
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Modificá el nombre, deporte, formato, estado, fechas y agregá categorías al torneo.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleUpdateTournament} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Nombre del Torneo</Label>
+                <Input
+                  value={editTourName}
+                  onChange={(e) => setEditTourName(e.target.value)}
+                  required
+                  placeholder="Ej. Torneo Apertura 2026"
+                  className="bg-slate-900 border-slate-800 text-sm font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">Deporte</Label>
+                  <select
+                    value={editTourSport}
+                    onChange={(e) => setEditTourSport(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  >
+                    {availableSports.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">Estado del Torneo</Label>
+                  <select
+                    value={editTourStatus}
+                    onChange={(e) => setEditTourStatus(e.target.value as 'REGISTRATION' | 'IN_PROGRESS' | 'COMPLETED')}
+                    className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="REGISTRATION">Inscripción Abierta</option>
+                    <option value="IN_PROGRESS">En Juego</option>
+                    <option value="COMPLETED">Finalizado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Formato del Torneo</Label>
+                <select
+                  value={editTourFormat}
+                  onChange={(e) => setEditTourFormat(e.target.value as 'PLAYOFFS' | 'GROUPS_AND_PLAYOFFS')}
+                  className="w-full h-9 rounded-md border border-slate-800 bg-slate-900 px-3 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="GROUPS_AND_PLAYOFFS">Fase de Grupos + Playoffs</option>
+                  <option value="PLAYOFFS">Solo Eliminación Directa</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">Fecha Inicio</Label>
+                  <Input
+                    type="date"
+                    value={editTourStart}
+                    onChange={(e) => setEditTourStart(e.target.value)}
+                    required
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">Fecha Fin</Label>
+                  <Input
+                    type="date"
+                    value={editTourEnd}
+                    onChange={(e) => setEditTourEnd(e.target.value)}
+                    required
+                    className="bg-slate-900 border-slate-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Categorías actuales si corresponden al torneo editado */}
+              {selectedTournament?.id === editTourId && selectedTournament.categories.length > 0 && (
+                <div className="space-y-2 p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                  <Label className="text-xs font-bold text-slate-300 block">
+                    Categorías Existentes ({selectedTournament.categories.length})
+                  </Label>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {selectedTournament.categories.map((cat) => (
+                      <div
+                        key={cat.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800/80 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{cat.name}</span>
+                          <span className="text-[10px] text-slate-400">
+                            (Máx {cat.max_teams} • {cat.teams.length} inscriptos)
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                          disabled={actionLoading}
+                          className="h-6 w-6 p-0 text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 cursor-pointer"
+                          title="Eliminar categoría"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Agregar nuevas categorías opcionales */}
+              <div className="space-y-2 p-3 bg-slate-900/40 rounded-xl border border-slate-800/70">
+                <Label className="text-xs font-bold text-amber-300 block">
+                  + Agregar Nuevas Categorías (Opcional)
+                </Label>
+                <Input
+                  placeholder="Ej. 4ta Caballeros, 6ta Damas, Suma 11"
+                  value={editTourNewCats}
+                  onChange={(e) => setEditTourNewCats(e.target.value)}
+                  className="bg-slate-900 border-slate-800 text-xs"
+                />
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-slate-400">Cupo por Categoría</Label>
+                    <Input
+                      type="number"
+                      min={2}
+                      max={128}
+                      value={editTourMaxTeams}
+                      onChange={(e) => setEditTourMaxTeams(Number(e.target.value) || 8)}
+                      className="bg-slate-900 border-slate-800 text-xs h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-slate-400">Precio Inscripción ($)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={500}
+                      placeholder="0"
+                      value={editTourEntryFee}
+                      onChange={(e) => setEditTourEntryFee(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="bg-slate-900 border-slate-800 text-xs h-8 text-emerald-400 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditOpen(false)}
+                  className="border-slate-800 text-slate-300 text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs"
+                >
+                  {actionLoading ? 'Guardando...' : 'Guardar Cambios'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Confirmar Eliminación de Torneo */}
+        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+          <DialogContent className="sm:max-w-md w-[95vw] sm:w-full bg-slate-950 border-rose-900/40 text-slate-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-rose-400">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+                Eliminar Torneo
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Esta acción es destructiva y permanente.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-3 space-y-3">
+              <div className="p-3 rounded-xl bg-rose-950/20 border border-rose-900/30 text-rose-200 text-xs space-y-1.5">
+                <p className="font-bold text-rose-300">
+                  ¿Estás seguro de que querés eliminar el torneo &quot;{tourToDelete?.name}&quot;?
+                </p>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Se borrarán de forma inmediata todas sus categorías, equipos y parejas inscriptas, fases de grupos, cuadros de playoffs y partidos registrados.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                disabled={isDeletingTournament}
+                className="border-slate-800 text-slate-300 text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDeleteTournament}
+                disabled={isDeletingTournament}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs gap-1.5 shadow-lg shadow-rose-950/40 cursor-pointer"
+              >
+                {isDeletingTournament ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sí, Eliminar Torneo</span>
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Agregar Categoría Rápida */}
+        <Dialog open={isAddCatOpen} onOpenChange={setIsAddCatOpen}>
+          <DialogContent className="sm:max-w-md w-[95vw] sm:w-full bg-slate-950 border-slate-800 text-slate-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-white">
+                <Plus className="w-5 h-5 text-amber-400" />
+                Agregar Categoría
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Torneo: <span className="font-bold text-amber-400">{selectedTournament?.name}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleQuickAddCategory} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-300">Nombre de la Categoría</Label>
+                <Input
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="Ej. 4ta Caballeros, Libre, Damas B"
+                  required
+                  className="bg-slate-900 border-slate-800 text-sm font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">
+                    Cupo de {getParticipantLabelCapitalized(selectedTournament?.sport, true)}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={2}
+                    max={128}
+                    value={newCatMaxTeams}
+                    onChange={(e) => setNewCatMaxTeams(Number(e.target.value) || 8)}
+                    required
+                    className="bg-slate-900 border-slate-800 text-xs font-mono font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-300">Precio Inscripción (ARS)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={500}
+                    placeholder="0 = Gratis"
+                    value={newCatFee}
+                    onChange={(e) => setNewCatFee(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="bg-slate-900 border-slate-800 text-xs font-mono font-bold text-emerald-400"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddCatOpen(false)}
+                  className="border-slate-800 text-slate-300 text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                >
+                  {actionLoading ? 'Agregando...' : 'Agregar Categoría'}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>

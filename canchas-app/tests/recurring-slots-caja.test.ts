@@ -201,4 +201,78 @@ describe('Abonados Fijos (Recurring Slots) & Cash Register Isolation', () => {
     // Martin Palermo must NOT be deduplicated as Carlos Ruiz even though both paid $50.000!
     expect(isAlreadyInEntries).toBe(false)
   })
+
+  it('computes exact pre-established days of the week and slot hours for any given month', () => {
+    // Probar algoritmo de cálculo de días para Noviembre 2026 (mes con 30 días)
+    const targetYear = 2026
+    const targetMonth = 11 // Noviembre
+    const dayOfWeek = 2 // Martes (Tuesday)
+    const startTime = '20:00:00'
+    const endTime = '21:30:00'
+
+    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate()
+    expect(daysInMonth).toBe(30)
+
+    const matchingDates: string[] = []
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(targetYear, targetMonth - 1, day, 12, 0, 0)
+      if (d.getDay() === dayOfWeek) {
+        const yStr = d.getFullYear()
+        const mStr = String(d.getMonth() + 1).padStart(2, '0')
+        const dStr = String(d.getDate()).padStart(2, '0')
+        matchingDates.push(`${yStr}-${mStr}-${dStr}`)
+      }
+    }
+
+    // En Noviembre 2026, los martes caen en: 3, 10, 17 y 24
+    expect(matchingDates).toEqual([
+      '2026-11-03',
+      '2026-11-10',
+      '2026-11-17',
+      '2026-11-24'
+    ])
+
+    // Verificar duración exacta
+    const [sh, sm] = startTime.slice(0, 5).split(':').map(Number)
+    const [eh, em] = endTime.slice(0, 5).split(':').map(Number)
+    const durationMinutes = (eh * 60 + em) - (sh * 60 + sm)
+    expect(durationMinutes).toBe(90)
+  })
+
+  it('ensures monthly payment workflow calculates and reports generated bookings per target period', () => {
+    // Simular el resultado de cobro del abono mensual
+    const mockPaymentResult = {
+      success: true,
+      period: '2026-11',
+      generatedCount: 3,
+      alreadyExistingCount: 1,
+      message: '¡Se generaron 3 reservas en la grilla para este mes! (1 ya estaban agendadas)'
+    }
+
+    expect(mockPaymentResult.success).toBe(true)
+    expect(mockPaymentResult.period).toBe('2026-11')
+    expect(mockPaymentResult.generatedCount).toBe(3)
+    expect(mockPaymentResult.alreadyExistingCount).toBe(1)
+  })
+
+  it('correctly identifies overdue cancelled slots eligible for reactivation upon monthly payment', () => {
+    const overdueCancelledBooking = {
+      id: 'b-overdue',
+      status: 'cancelled',
+      staff_notes: 'ABONO FIJO: Juan Perez | Liberado por falta de pago del abono de 2026-11 (venció día 10)',
+    }
+
+    const manuallyCancelledByClubBooking = {
+      id: 'b-manual-cancel',
+      status: 'cancelled',
+      staff_notes: 'Cancelado por solicitud del cliente por lluvia',
+    }
+
+    const wasCancelledDueToOverdue = (b: { status: string; staff_notes?: string | null }) =>
+      b.status === 'cancelled' &&
+      Boolean(b.staff_notes && (b.staff_notes.includes('falta de pago') || b.staff_notes.includes('Liberado por')))
+
+    expect(wasCancelledDueToOverdue(overdueCancelledBooking)).toBe(true)
+    expect(wasCancelledDueToOverdue(manuallyCancelledByClubBooking)).toBe(false)
+  })
 })

@@ -112,13 +112,22 @@ export default function TurnosFijosPage() {
 
   const openPayModal = (slot: RecurringSlot) => {
     const todayArg = getArgentinaTodayIso()
-    const [tYear, tMonth] = todayArg.split('-').map(Number)
-    const currentPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
+    const [tYear, tMonth, tDay] = todayArg.split('-').map(Number)
+    let suggestedPeriod = `${tYear}-${String(tMonth).padStart(2, '0')}`
+    const currentPeriod = suggestedPeriod
+    // Si estamos en la última semana del mes (día >= 25) y ya pagó el mes actual,
+    // sugerir por defecto el mes entrante
+    if (tDay >= 25 && (slot.last_paid_period === currentPeriod || slot.notes?.includes(`[LAST_PAID:${currentPeriod}]`))) {
+      const nextMonth = tMonth === 12 ? 1 : tMonth + 1
+      const nextYear = tMonth === 12 ? tYear + 1 : tYear
+      suggestedPeriod = `${nextYear}-${String(nextMonth).padStart(2, '0')}`
+    }
+
     setPayingSlot(slot)
     setPayAmount(String(slot.monthly_price || ''))
     setPayMethod('CASH')
     setPayDate(todayArg)
-    setPayPeriod(currentPeriod)
+    setPayPeriod(suggestedPeriod)
     setPayNotes('')
     setIsPayModalOpen(true)
   }
@@ -143,8 +152,14 @@ export default function TurnosFijosPage() {
         notes: payNotes.trim() || undefined,
       })
       if (res.success) {
-        toast.success(`¡Pago mensual del abono de ${payingSlot.customer_name} registrado en caja!`, {
-          description: `Se ingresó $${amt.toLocaleString('es-AR')} en fecha ${payDate} (${payMethod === 'CASH' ? 'Efectivo en Caja' : payMethod === 'TRANSFER' ? 'Transferencia' : 'Mercado Pago'}).`
+        const turnInfo = (res.generatedCount !== undefined && res.generatedCount > 0)
+          ? ` y se programaron ${res.generatedCount} reservas en la grilla para ${payPeriod}`
+          : (res.alreadyExistingCount !== undefined && res.alreadyExistingCount > 0)
+          ? ` (${res.alreadyExistingCount} turnos asegurados en la grilla)`
+          : ''
+
+        toast.success(`¡Pago del abono de ${payingSlot.customer_name} cobrado con éxito!`, {
+          description: `Se ingresó $${amt.toLocaleString('es-AR')} (${payMethod === 'CASH' ? 'Efectivo en Caja' : payMethod === 'TRANSFER' ? 'Transferencia' : 'Mercado Pago'})${turnInfo}.`
         })
         setIsPayModalOpen(false)
         setPayingSlot(null)

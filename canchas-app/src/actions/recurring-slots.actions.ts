@@ -560,10 +560,10 @@ export async function generateMonthlyBookingsForSlot(
       const endsAtIso = new Date(slotStartDate.getTime() + durationMinutes * 60000).toISOString()
       const bookingRange = `[${startsAtIso},${endsAtIso})`
 
-      // 1. Si este abono ya generó un turno en esta fecha (incluso si fue cancelado puntualmente por el club), no revivirlo
+      // 1. Verificar si este abono ya tiene un turno en esta fecha
       const { data: alreadyGeneratedSlot } = await supabase
         .from('bookings')
-        .select('id, status')
+        .select('id, status, staff_notes')
         .eq('tenant_id', slot.tenant_id)
         .eq('court_id', slot.court_id)
         .eq('recurring_slot_id', slot.id)
@@ -572,6 +572,74 @@ export async function generateMonthlyBookingsForSlot(
         .maybeSingle()
 
       if (alreadyGeneratedSlot) {
+        if (alreadyGeneratedSlot.status === 'confirmed') {
+          alreadyExistingCount++
+          continue
+        }
+
+        // Si fue cancelado por falta de pago del abono y ahora se cobró la mensualidad,
+        // reactivarlo si el horario no fue ocupado por otra reserva activa
+        const wasCancelledDueToOverdue =
+          alreadyGeneratedSlot.status === 'cancelled' &&
+          alreadyGeneratedSlot.staff_notes &&
+          (alreadyGeneratedSlot.staff_notes.includes('falta de pago') ||
+            alreadyGeneratedSlot.staff_notes.includes('Liberado por'))
+
+        if (wasCancelledDueToOverdue) {
+          const { data: conflictBooking } = await supabase
+            .from('bookings')
+            .select('id')
+            .eq('tenant_id', slot.tenant_id)
+            .eq('court_id', slot.court_id)
+            .filter('booked_at', 'ov', bookingRange)
+            .neq('status', 'cancelled')
+            .neq('id', alreadyGeneratedSlot.id)
+            .limit(1)
+            .maybeSingle()
+
+          if (!conflictBooking) {
+            const reactivatedNotes = `ABONO FIJO: ${slot.customer_name} (Mensualidad día ${slot.payment_due_day} - Confirmado tras cobro)`
+            await supabase
+              .from('bookings')
+              .update({
+                status: 'confirmed',
+                staff_notes: reactivatedNotes,
+                price_total_cents: priceTotalCents,
+                deposit_cents: 0,
+                staff_deposit_amount_cents: 0,
+                payment_method: 'abono_fijo',
+                paid_at: null,
+              })
+              .eq('id', alreadyGeneratedSlot.id)
+
+            addVenueBooking({
+              id: alreadyGeneratedSlot.id,
+              tenant_id: slot.tenant_id,
+              court_id: slot.court_id,
+              customer_name: slot.customer_name,
+              customer_phone: slot.customer_phone,
+              customer_email: slot.customer_email || undefined,
+              starts_at: startsAtIso,
+              ends_at: endsAtIso,
+              status: 'CONFIRMED',
+              origin: 'STAFF_MANUAL',
+              total_amount_ars: pricePerTurn,
+              deposit_amount_ars: 0,
+              total_paid: 0,
+              balance_due: 0,
+              internal_notes: reactivatedNotes,
+              courts: {
+                name: slot.court?.name || 'Cancha',
+                sport: (slot.court as { sport?: string } | null)?.sport || 'FUTBOL5',
+                slot_duration: durationMinutes === 60 ? 'MIN_60' : durationMinutes === 120 ? 'MIN_120' : 'MIN_90',
+              },
+            })
+
+            generatedCount++
+            continue
+          }
+        }
+
         alreadyExistingCount++
         continue
       }
@@ -649,6 +717,7 @@ export async function generateMonthlyBookingsForSlot(
       // Sincronizar en memoria para visualización inmediata en la grilla y portal público
       addVenueBooking({
         id: bookingId,
+        tenant_id: slot.tenant_id,
         court_id: slot.court_id,
         customer_name: slot.customer_name,
         customer_phone: slot.customer_phone,
@@ -721,7 +790,14 @@ export async function registerRecurringSlotPaymentAction(
   },
   slotIdParam?: string,
   periodParam?: string
-): Promise<{ success: boolean; error?: string; period?: string }> {
+): Promise<{ 
+  success: boolean; 
+  error?: string; 
+  period?: string; 
+  generatedCount?: number; 
+  alreadyExistingCount?: number; 
+  message?: string 
+}> {
   try {
     let tenantId: string
     let slotId: string
@@ -914,12 +990,37 @@ export async function registerRecurringSlotPaymentAction(
       return { success: false, error: updateErr.message }
     }
 
+    // 4. Generación autónoma de los turnos del mes al cobrar el abono mensual
+    // Se proyectan y generan inmediatamente en la grilla todas las fechas correspondientes
+    // al período cobrado para los días y horarios preestablecidos.
+    const [pYear, pMonth] = targetPeriod.split('-').map(Number)
+    let generatedCount = 0
+    let alreadyExistingCount = 0
+    let genMessage = ''
+    try {
+      const genResult = await generateMonthlyBookingsForSlot(slotId, pYear, pMonth, { skipAuth: true })
+      if (genResult.success) {
+        generatedCount = genResult.generatedCount
+        alreadyExistingCount = genResult.alreadyExistingCount || 0
+        genMessage = genResult.message || ''
+      }
+    } catch (genErr) {
+      console.warn('[registerRecurringSlotPaymentAction] Advertencia generando reservas mensuales tras cobro:', genErr)
+    }
+
     await invalidateRecurringSlotsCache(tenantId)
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/fijos')
     revalidatePath('/dashboard/caja')
+    revalidatePath('/dashboard/canchas')
 
-    return { success: true, period: targetPeriod }
+    return { 
+      success: true, 
+      period: targetPeriod,
+      generatedCount,
+      alreadyExistingCount,
+      message: genMessage || `Abono de ${targetPeriod} cobrado con éxito.`
+    }
   } catch (err) {
     console.error('[registerRecurringSlotPaymentAction] Error:', err)
     return { success: false, error: 'Error al registrar pago de turno fijo' }

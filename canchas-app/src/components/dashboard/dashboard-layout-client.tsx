@@ -21,6 +21,7 @@ import { PlanExpirationAlert } from './plan-expiration-alert'
 import { AutoDebitAlertModal } from './auto-debit-alert-modal'
 import { ChangePasswordModal } from './change-password-modal'
 import { ClubSocialLinksModal } from './club-social-links-modal'
+import { NavigationProgressBar } from '@/components/shared/navigation-progress-bar'
 import { cn } from '@/lib/utils'
 import type { SaaSPlanId } from '@/config/saas-plans'
 import type { TenantSubscriptionStatus } from '@/types/database'
@@ -214,6 +215,7 @@ export function DashboardLayoutClient({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 relative transition-colors duration-200">
+      <NavigationProgressBar />
       {/* ─── 1. SIDEBAR DESKTOP ─── */}
       <div 
         className={cn(
@@ -398,6 +400,7 @@ export function DashboardLayoutClient({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   className={cn(
                     'flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all duration-150 min-w-14',
                     isActiveRoute

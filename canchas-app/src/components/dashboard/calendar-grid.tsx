@@ -734,8 +734,8 @@ export function CalendarGrid({
     }
     const cached = clientBookingsCache.get(cacheKey)
 
-    // Si ya existe en caché reciente (20s) y no es forzado, mostrar al instante (0ms de latencia visual)
-    if (!force && cached && Date.now() - cached.timestamp < 20_000) {
+    // SWR Instantáneo: Si existe en caché local (cualquier antigüedad), mostrar de inmediato (0ms de latencia visual)
+    if (!force && cached) {
       setLoadedBookings(cached.bookings)
     }
 

@@ -96,6 +96,7 @@ const cantinaProductsClientCache = new Map<string, CantinaProduct[]>()
 const cantinaSuppliersClientCache = new Map<string, CantinaSupplier[]>()
 const cantinaCategoriesClientCache = new Map<string, CantinaCategory[]>()
 const cantinaAccountsClientCache = new Map<string, CustomerAccount[]>()
+const cantinaOrdersClientCache = new Map<string, CourtOrder[]>()
 
 // Singleton reutilizable para el contexto de audio (previene memory leaks y bloqueos del navegador)
 let sharedAudioCtx: AudioContext | null = null
@@ -156,7 +157,7 @@ export default function CantinaPage() {
   const contextSlug = useTenantSlug()
   const { isOwner } = useUserRole()
   const [activeTab, setActiveTab] = useState<'POS' | 'ORDERS' | 'INVENTORY' | 'CUENTA_CORRIENTE'>('POS')
-  const [courtOrders, setCourtOrders] = useState<CourtOrder[]>([])
+  const [courtOrders, setCourtOrders] = useState<CourtOrder[]>(() => (tenantId ? cantinaOrdersClientCache.get(tenantId) : null) || [])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
@@ -231,7 +232,8 @@ export default function CantinaPage() {
   // Carga de Cuentas Corrientes
   const loadAccounts = useCallback(async () => {
     if (!tenantId) return
-    setAccountsLoading(true)
+    const hasCache = cantinaAccountsClientCache.has(tenantId)
+    if (!hasCache) setAccountsLoading(true)
     try {
       const data = await getCustomerAccounts(tenantId)
       const valid = data || []
@@ -239,7 +241,7 @@ export default function CantinaPage() {
       cantinaAccountsClientCache.set(tenantId, valid)
     } catch (err) {
       console.warn('[loadAccounts] Error:', err)
-      setAccounts([])
+      if (!hasCache) setAccounts([])
     } finally {
       setAccountsLoading(false)
     }
@@ -597,7 +599,8 @@ export default function CantinaPage() {
   // Carga de Productos desde Supabase
   const loadProducts = useCallback(async () => {
     if (!tenantId) return
-    setProductsLoading(true)
+    const hasCache = cantinaProductsClientCache.has(tenantId)
+    if (!hasCache) setProductsLoading(true)
     try {
       const data = await getCantinaProducts(tenantId)
       const valid = data || []
@@ -605,7 +608,7 @@ export default function CantinaPage() {
       cantinaProductsClientCache.set(tenantId, valid)
     } catch (err) {
       console.warn('[loadProducts] Error:', err)
-      setProducts([])
+      if (!hasCache) setProducts([])
     } finally {
       setProductsLoading(false)
     }
@@ -806,10 +809,13 @@ export default function CantinaPage() {
   }, [setAssignToCourt, setCart, setPaymentMethod])
 
   const loadOrders = useCallback(async (isInitial = false) => {
-    setOrdersLoading(true)
+    if (!tenantId) return
+    const hasCache = cantinaOrdersClientCache.has(tenantId)
+    if (!hasCache) setOrdersLoading(true)
     try {
-      const orders = await getDailyOrders(tenantId!)
+      const orders = await getDailyOrders(tenantId)
       setCourtOrders(orders)
+      cantinaOrdersClientCache.set(tenantId, orders)
 
       // Detectar nuevos pedidos para reproducir sonido y encolar alerta
       orders.forEach((order) => {

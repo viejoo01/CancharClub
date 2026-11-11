@@ -41,6 +41,15 @@ interface TenantLayoutSnapshot {
 const tenantLayoutCache = new Map<string, { snapshot: TenantLayoutSnapshot; expiresAt: number }>()
 const autoDebitThrottleMap = new Map<string, number>()
 
+export function invalidateTenantLayoutCache(key?: string) {
+  if (key) {
+    tenantLayoutCache.delete(key)
+    tenantLayoutCache.delete(`sa_${key}`)
+  } else {
+    tenantLayoutCache.clear()
+  }
+}
+
 function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
   const cached = tenantLayoutCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) {
@@ -52,7 +61,7 @@ function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
 function setCachedTenantLayout(userId: string, snapshot: TenantLayoutSnapshot) {
   tenantLayoutCache.set(userId, {
     snapshot,
-    expiresAt: Date.now() + 60000,
+    expiresAt: Date.now() + 300000, // 5 minutos de caché ultrarrápida
   })
 }
 
@@ -84,15 +93,23 @@ export default async function DashboardLayout({
   const isSuperadminHMAC = Boolean(saSession && saSecret && verifySuperadminSessionToken(saSession, saSecret))
   
   let isSuperadminUser = Boolean(process.env.SUPERADMIN_USER_ID && user?.id === process.env.SUPERADMIN_USER_ID)
+  const cachedUserSnap = user ? getCachedTenantLayout(user.id) : null
+
   if (!isSuperadminUser && user) {
-    const serviceClientCheck = await createServiceClient()
-    const { data: userProfile } = await serviceClientCheck
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle()
-    if (userProfile?.role === 'SUPERADMIN') {
-      isSuperadminUser = true
+    if (cachedUserSnap) {
+      if (cachedUserSnap.userRole === 'SUPERADMIN') {
+        isSuperadminUser = true
+      }
+    } else {
+      const serviceClientCheck = await createServiceClient()
+      const { data: userProfile } = await serviceClientCheck
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (userProfile?.role === 'SUPERADMIN') {
+        isSuperadminUser = true
+      }
     }
   }
 
@@ -380,7 +397,7 @@ export default async function DashboardLayout({
       planId = getHigherPlan(planId, simulatedPlan)
     }
   } else if (user) {
-    const snap = getCachedTenantLayout(user.id)
+    const snap = cachedUserSnap || getCachedTenantLayout(user.id)
     if (snap) {
       userRole = snap.userRole
       userName = snap.userName

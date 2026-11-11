@@ -235,6 +235,12 @@ export function Sidebar({
 
   const [showCustomizeModal, setShowCustomizeModal] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [navigatingHref, setNavigatingHref] = useState<string | null>(null)
+  const [currentPath, setCurrentPath] = useState(pathname)
+  if (currentPath !== pathname) {
+    setCurrentPath(pathname)
+    setNavigatingHref(null)
+  }
   const [preferences, setPreferences] = useState<SidebarNavPreferences>(() => {
     if (typeof window === 'undefined') return { order: [], hidden: [] }
     try {
@@ -435,6 +441,7 @@ export function Sidebar({
           const isActive_item = item.exact 
             ? pathname === item.href 
             : pathname.startsWith(item.href)
+          const isNavigatingThis = navigatingHref === item.href && !isActive_item
 
           const Icon = item.icon
 
@@ -442,19 +449,29 @@ export function Sidebar({
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => onClose?.()}
+              onClick={() => {
+                if (pathname !== item.href) {
+                  setNavigatingHref(item.href)
+                }
+                onClose?.()
+              }}
               prefetch={true}
               className={cn(
                 'flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150',
                 isActive_item
                   ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
+                  : isNavigatingThis
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse font-bold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
               )}
             >
               <div className="flex items-center gap-3">
-                <Icon className={cn('w-4 h-4', isActive_item ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
+                <Icon className={cn('w-4 h-4', isActive_item || isNavigatingThis ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
                 <span>{item.title}</span>
               </div>
+              {isNavigatingThis && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0 ml-2" />
+              )}
             </Link>
           )
         })}

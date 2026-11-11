@@ -44,18 +44,31 @@ interface DbTenantSelectRow {
   mp_access_token: string | null
 }
 
+const dashboardPageCache = new Map<string, { data: DashboardPageData; expiresAt: number }>()
+
+export async function invalidateDashboardPageCache(tenantId?: string) {
+  if (tenantId) {
+    for (const key of dashboardPageCache.keys()) {
+      if (key.startsWith(tenantId)) {
+        dashboardPageCache.delete(key)
+      }
+    }
+  } else {
+    dashboardPageCache.clear()
+  }
+}
+
 /**
  * Data Loader en Server Component:
  * Ejecuta todas las consultas en paralelo en el servidor (Supabase + Caché Redis)
  * para alimentar al cliente sin peticiones de red redundantes en el montaje inicial.
  */
 async function loadDashboardInitialData(requestedDate?: string): Promise<DashboardPageData> {
-  const supabase = await createClient()
   const initialDate = requestedDate || getArgentinaTodayIso()
-
   const cookieStore = await cookies()
   const activeVenueId = cookieStore.get('canchar_active_venue_id')?.value || 'venue-main'
 
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   let rawTenantId: string | null = null
 
@@ -84,6 +97,13 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
       bookings: [],
       priceRules: [],
     }
+  }
+
+  // Si existe en caché reciente de servidor (25s), retornar de inmediato (0ms de latencia)
+  const cacheKey = `${effectiveTenantId}_${initialDate}_${activeVenueId}`
+  const cached = dashboardPageCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data
   }
 
   // Carga paralela de alto rendimiento en el servidor
@@ -121,7 +141,7 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
   const tenantName = tenant?.name || 'Mi Club'
   const hasBankConfigured = Boolean(tenant?.bank_alias || tenant?.bank_cbu || tenant?.mp_access_token)
 
-  return {
+  const pageData: DashboardPageData = {
     tenantId: effectiveTenantId,
     tenantSlug,
     tenantName,
@@ -133,6 +153,9 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
     schedule: scheduleData || undefined,
     priceRules: (priceRulesData || []) as unknown as QuickBookingPriceRule[],
   }
+
+  dashboardPageCache.set(cacheKey, { data: pageData, expiresAt: Date.now() + 25000 })
+  return pageData
 }
 
 export default async function DashboardPage(props: {

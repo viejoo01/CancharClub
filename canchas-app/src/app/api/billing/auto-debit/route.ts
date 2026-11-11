@@ -81,20 +81,36 @@ export async function POST(request: NextRequest) {
 
     const results: Array<{ tenantId: string; invoiceId: string; status: string; success: boolean }> = []
 
-    for (const inv of unpaidInvoices || []) {
-      const { data: tenant } = await serviceClient
+    // Optimización N+1: Consultar todos los tenants involucrados en una única petición por lotes
+    const rawTenantIds = (unpaidInvoices || []).map((inv) => inv.tenant_id).filter(Boolean) as string[]
+    const distinctTenantIds = Array.from(new Set(rawTenantIds))
+
+    const tenantMap = new Map<string, { id: string; mp_preapproval_id: string | null; description: string | null }>()
+
+    if (distinctTenantIds.length > 0) {
+      const { data: tenantsList } = await serviceClient
         .from('tenants')
         .select('id, mp_preapproval_id, description')
-        .eq('id', inv.tenant_id)
-        .maybeSingle()
+        .in('id', distinctTenantIds)
+
+      if (tenantsList) {
+        for (const t of tenantsList) {
+          tenantMap.set(t.id, t)
+        }
+      }
+    }
+
+    for (const inv of unpaidInvoices || []) {
+      const tenant = tenantMap.get(inv.tenant_id)
+      if (!tenant) continue
 
       let meta: Record<string, unknown> = {}
-      if (tenant?.description) {
+      if (tenant.description) {
         try { meta = JSON.parse(tenant.description) } catch {}
       }
 
-      const hasCard = Boolean(tenant?.mp_preapproval_id) || Boolean(meta.card_linked)
-      if (hasCard && tenant) {
+      const hasCard = Boolean(tenant.mp_preapproval_id) || Boolean(meta.card_linked)
+      if (hasCard) {
         const debitRes = await executeTenantAutoDebit({
           tenantId: tenant.id,
           invoiceId: inv.id,

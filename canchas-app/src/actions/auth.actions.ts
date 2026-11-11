@@ -117,7 +117,7 @@ export async function loginWithEmail(formData: FormData) {
     })
 
     // Si hay error en el inicio de sesión por email no confirmado, confirmar y reintentar autenticación
-    if (error && (error.message?.toLowerCase().includes('confirm') || error.message?.toLowerCase().includes('email'))) {
+    if (error && (error.message?.toLowerCase().includes('email not confirmed') || error.message?.toLowerCase().includes('not confirmed') || error.message?.toLowerCase().includes('confirm_email'))) {
       try {
         const serviceClient = await createServiceClient()
         const { data: usersData } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })

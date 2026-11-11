@@ -378,6 +378,7 @@ export async function deleteRecurringSlot(
         .eq('recurring_slot_id', slotId)
         .neq('status', 'cancelled')
 
+      const slotBookingIdsToCancel: string[] = []
       for (const b of slotBookings || []) {
         const bookedAtStr = String(b.booked_at || '')
         const dateMatch = bookedAtStr.match(/\d{4}-\d{2}-\d{2}/)
@@ -386,13 +387,17 @@ export async function deleteRecurringSlot(
         if (bookingDate && bookingDate < todayIso) {
           continue
         }
+        slotBookingIdsToCancel.push(b.id)
+      }
+
+      if (slotBookingIdsToCancel.length > 0) {
         await serviceClient
           .from('bookings')
           .update({
             status: 'cancelled',
             staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
           })
-          .eq('id', b.id)
+          .in('id', slotBookingIdsToCancel)
       }
 
       // También cancelar reservas futuras asociadas identificadas por notas
@@ -405,6 +410,7 @@ export async function deleteRecurringSlot(
           .ilike('staff_notes', `%ABONO FIJO: ${slotCustomerName}%`)
           .neq('status', 'cancelled')
 
+        const noteBookingIdsToCancel: string[] = []
         for (const b of noteBookings || []) {
           const bookedAtStr = String(b.booked_at || '')
           const dateMatch = bookedAtStr.match(/\d{4}-\d{2}-\d{2}/)
@@ -412,13 +418,17 @@ export async function deleteRecurringSlot(
           if (bookingDate && bookingDate < todayIso) {
             continue
           }
+          noteBookingIdsToCancel.push(b.id)
+        }
+
+        if (noteBookingIdsToCancel.length > 0) {
           await serviceClient
             .from('bookings')
             .update({
               status: 'cancelled',
               staff_notes: 'Turno cancelado por eliminación del abono fijo recurrente',
             })
-            .eq('id', b.id)
+            .in('id', noteBookingIdsToCancel)
         }
       }
     }

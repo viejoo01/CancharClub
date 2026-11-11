@@ -517,10 +517,31 @@ export async function deleteCourt(
   }
 }
 
-// ─── CALENDARIO & TURNOS DEL DÍA ──────────────────────────────────────────────
+export interface CalendarBookingItem {
+  id: string
+  court_id: string
+  customer_name: string
+  customer_phone?: string | null
+  customer_email?: string | null
+  starts_at: string
+  ends_at: string
+  status: string
+  origin: string
+  total_amount_ars: number
+  deposit_amount_ars: number
+  total_paid: number
+  balance_due: number
+  is_abono: boolean
+  recurring_slot_id: string | null
+  internal_notes: string | null
+  courts: {
+    name: string
+    sport: string
+    slot_duration: string
+  }
+}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const calendarBookingsCache = new Map<string, { data: any[]; expiresAt: number }>()
+const calendarBookingsCache = new Map<string, { data: CalendarBookingItem[]; expiresAt: number }>()
 
 export async function invalidateCalendarBookingsCache(tenantId?: string | null, dateIso?: string | null) {
   if (!tenantId) {
@@ -538,7 +559,7 @@ export async function invalidateCalendarBookingsCache(tenantId?: string | null, 
   }
 }
 
-export async function getCalendarBookings(tenantId: string | null | undefined, dateIso: string) {
+export async function getCalendarBookings(tenantId: string | null | undefined, dateIso: string): Promise<CalendarBookingItem[]> {
   try {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId)
     if (!effectiveTenantId) return []

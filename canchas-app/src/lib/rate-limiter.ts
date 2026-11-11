@@ -24,7 +24,7 @@ if (
   } catch (err) {
     console.warn('[RateLimiter] Error initializing Redis client, using in-memory store:', err)
   }
-} else if (process.env.NODE_ENV === 'production') {
+} else if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build') {
   console.warn(
     '[RateLimiter] ADVERTENCIA DE SEGURIDAD: Upstash Redis no está configurado en producción. ' +
     'El rate limiting opera en memoria local por instancia. Para protección distribuida completa en serverless, ' +
@@ -41,7 +41,7 @@ const memoryStore = new Map<string, MemoryRecord>()
 
 // Limpiar periódicamente registros expirados de memoria para evitar fugas de RAM
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const now = Date.now()
     for (const [key, val] of memoryStore.entries()) {
       if (now > val.resetAt) {
@@ -49,6 +49,11 @@ if (typeof setInterval !== 'undefined') {
       }
     }
   }, 60_000)
+
+  // Evitar retener procesos en Node.js / tests / Next.js workers
+  if (typeof cleanupTimer === 'object' && cleanupTimer && 'unref' in cleanupTimer) {
+    (cleanupTimer as { unref: () => void }).unref()
+  }
 }
 
 export interface RateLimitResult {

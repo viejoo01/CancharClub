@@ -170,13 +170,59 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   let trialForfeitedAt: string | null = null
   let tenantRow: { id: string; name?: string | null; slug?: string | null; base_slots_plan?: number | null; subscription_status?: TenantSubscriptionStatus | null; is_active?: boolean | null; created_at?: string | null; description?: string | null; plan_id?: string | null } | null = null
 
+  // 1. Obtener datos del club, canchas, reglas de precio, facturas y suscripción en paralelo (0ms roundtrips concurrentes)
+  let dbInvoicesRaw: unknown[] | null = null
+  let dbSubRaw: Record<string, unknown> | null = null
+  let dbPriceRulesRaw: Array<{ name: string; price_cents: number; is_active: boolean }> | null = null
+  let realCourtsCount = 0
+
   if (targetTenantId) {
-    const { data: tenant } = await serviceClient
-      .from('tenants')
-      .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at, description, plan_id')
-      .eq('id', targetTenantId)
-      .maybeSingle()
+    const [
+      tenantRes,
+      courtsRes,
+      priceRulesRes,
+      invoicesRes,
+      subRes,
+    ] = await Promise.all([
+      serviceClient
+        .from('tenants')
+        .select('id, name, slug, base_slots_plan, subscription_status, is_active, created_at, description, plan_id')
+        .eq('id', targetTenantId)
+        .maybeSingle(),
+      serviceClient
+        .from('courts')
+        .select('id')
+        .eq('tenant_id', targetTenantId)
+        .eq('is_active', true),
+      serviceClient
+        .from('price_rules')
+        .select('name, price_cents, is_active')
+        .eq('tenant_id', targetTenantId),
+      serviceClient
+        .from('tenant_invoices')
+        .select('*')
+        .eq('tenant_id', targetTenantId)
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .order('created_at', { ascending: false }),
+      serviceClient
+        .from('saas_subscriptions')
+        .select('*')
+        .eq('tenant_id', targetTenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    const tenant = tenantRes.data
     tenantRow = tenant
+
+    if (courtsRes.data && courtsRes.data.length > 0) {
+      realCourtsCount = courtsRes.data.length
+    }
+    dbPriceRulesRaw = priceRulesRes.data as Array<{ name: string; price_cents: number; is_active: boolean }> | null
+    dbInvoicesRaw = invoicesRes.data
+    dbSubRaw = subRes.data as Record<string, unknown> | null
 
     if (tenant?.description) {
       tenantDescription = tenant.description
@@ -235,19 +281,6 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
     }
   }
 
-  // 1. Determinar canchas asignadas
-  let realCourtsCount = 0
-  if (targetTenantId) {
-    const { data: courts } = await serviceClient
-      .from('courts')
-      .select('id')
-      .eq('tenant_id', targetTenantId)
-      .eq('is_active', true)
-    if (courts && courts.length > 0) {
-      realCourtsCount = courts.length
-    }
-  }
-
   // 2. Determinar el plan SaaS de forma jerárquica y blindada (nunca se degrada)
   let resolvedPlanId: SaaSPlanId | undefined = undefined
 
@@ -292,51 +325,44 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
   // 3. Obtener el valor de turno más alto para la tarifa proporcional (siempre el mayor entre todas las tarifas)
   let highestPriceArs = 0
   let hasPriceConfigured = false
-  if (targetTenantId) {
-    const { data: priceRules } = await serviceClient
-      .from('price_rules')
-      .select('name, price_cents, is_active')
-      .eq('tenant_id', targetTenantId)
+  if (dbPriceRulesRaw && dbPriceRulesRaw.length > 0) {
+    // Filtrar reglas activas con precio válido y omitir semillas automáticas ficticias si no se configuraron datos
+    const activeRules = dbPriceRulesRaw.filter(r => {
+      if (r.is_active === false) return false
+      const cents = Number(r.price_cents) || 0
+      if (cents <= 0) return false
+      const isDummySeed = Boolean(r.name && r.name.startsWith('Tarifa Estándar') && cents === 3000000)
+      const isNewClub = tenantRow?.is_active === false || tenantRow?.subscription_status === 'PAYMENT_PENDING' || cookieStore.get('new_club_pending_activation')?.value === 'true'
+      if (isDummySeed && isNewClub) {
+        return false
+      }
+      return true
+    })
 
-    if (priceRules && priceRules.length > 0) {
-      // Filtrar reglas activas con precio válido y omitir semillas automáticas ficticias si no se configuraron datos
-      const activeRules = priceRules.filter(r => {
-        if (r.is_active === false) return false
-        const cents = Number(r.price_cents) || 0
-        if (cents <= 0) return false
-        const isDummySeed = Boolean(r.name && r.name.startsWith('Tarifa Estándar') && cents === 3000000)
-        const isNewClub = tenantRow?.is_active === false || tenantRow?.subscription_status === 'PAYMENT_PENDING' || cookieStore.get('new_club_pending_activation')?.value === 'true'
-        if (isDummySeed && isNewClub) {
-          return false
-        }
-        return true
-      })
+    if (activeRules.length > 0) {
+      const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
+      
+      // Antifraude High-Water Mark: evaluar el precio más alto del ciclo de facturación
+      let cycleMaxCents = maxCents
+      if (tenantDescription) {
+        try {
+          const descObj = JSON.parse(tenantDescription)
+          const savedHwm = Number(descObj.billing_cycle_max_price_cents) || 0
+          if (savedHwm > cycleMaxCents) {
+            cycleMaxCents = savedHwm
+          } else if (maxCents > savedHwm && targetTenantId) {
+            descObj.billing_cycle_max_price_cents = maxCents
+            void serviceClient
+              .from('tenants')
+              .update({ description: JSON.stringify(descObj) })
+              .eq('id', targetTenantId)
+          }
+        } catch {}
+      }
 
-      if (activeRules.length > 0) {
-        const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
-        
-        // Antifraude High-Water Mark: evaluar el precio más alto del ciclo de facturación
-        let cycleMaxCents = maxCents
-        if (tenantDescription) {
-          try {
-            const descObj = JSON.parse(tenantDescription)
-            const savedHwm = Number(descObj.billing_cycle_max_price_cents) || 0
-            if (savedHwm > cycleMaxCents) {
-              cycleMaxCents = savedHwm
-            } else if (maxCents > savedHwm && targetTenantId) {
-              descObj.billing_cycle_max_price_cents = maxCents
-              void serviceClient
-                .from('tenants')
-                .update({ description: JSON.stringify(descObj) })
-                .eq('id', targetTenantId)
-            }
-          } catch {}
-        }
-
-        if (cycleMaxCents > 0) {
-          highestPriceArs = Math.round(cycleMaxCents / 100)
-          hasPriceConfigured = true
-        }
+      if (cycleMaxCents > 0) {
+        highestPriceArs = Math.round(cycleMaxCents / 100)
+        hasPriceConfigured = true
       }
     }
   }
@@ -355,40 +381,23 @@ export async function getClubPlanDetails(tenantIdParam?: string): Promise<ClubPl
       .eq('id', targetTenantId)
   }
 
-  // 3. Obtener facturas reales emitidas desde la base de datos
+  // 4. Procesar facturas reales emitidas desde la base de datos
   let invoices: TenantInvoice[] = []
-  if (targetTenantId) {
-    const { data: dbInvoices } = await serviceClient
-      .from('tenant_invoices')
-      .select('*')
-      .eq('tenant_id', targetTenantId)
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    if (dbInvoices) {
-      invoices = dbInvoices as TenantInvoice[]
-    }
+  if (dbInvoicesRaw) {
+    invoices = dbInvoicesRaw as TenantInvoice[]
   }
 
-  // 4. Verificar si tiene débito automático activo o tarjeta guardada
+  // 5. Verificar si tiene débito automático activo o tarjeta guardada
   let hasAutoDebit = false
   let cardInfo: { last4?: string; brand?: string; holder?: string } | null = null
 
-  if (targetTenantId) {
-    const { data: sub } = await serviceClient
-      .from('saas_subscriptions')
-      .select('*')
-      .eq('tenant_id', targetTenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (sub && sub.payment_notes && (sub.payment_notes.toLowerCase().includes('tarjeta') || sub.payment_notes.toLowerCase().includes('card'))) {
+  if (dbSubRaw) {
+    const paymentNotes = (dbSubRaw.payment_notes as string) || ''
+    if (paymentNotes && (paymentNotes.toLowerCase().includes('tarjeta') || paymentNotes.toLowerCase().includes('card'))) {
       hasAutoDebit = true
-      const brandMatch = sub.payment_notes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
-      const last4Match = sub.payment_notes.match(/terminada\s+en\s+([0-9]{4})/i)
-      const holderMatch = sub.payment_notes.match(/Titular:\s*([^.]+)/i)
+      const brandMatch = paymentNotes.match(/Tarjeta\s+([A-Za-z0-9_/-]+)/i)
+      const last4Match = paymentNotes.match(/terminada\s+en\s+([0-9]{4})/i)
+      const holderMatch = paymentNotes.match(/Titular:\s*([^.]+)/i)
       let parsedBrand = brandMatch ? brandMatch[1] : undefined
       if (parsedBrand && (parsedBrand.toLowerCase() === 'de' || parsedBrand.toLowerCase() === 'del')) {
         parsedBrand = 'Débito/Crédito'

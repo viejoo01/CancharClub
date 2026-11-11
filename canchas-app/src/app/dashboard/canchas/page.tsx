@@ -187,6 +187,7 @@ export default function CanchasPage() {
   const [editHasLighting, setEditHasLighting] = useState(true)
   const [editIsActive, setEditIsActive] = useState(true)
   const [editLoading, setEditLoading] = useState(false)
+  const [deletingCourtId, setDeletingCourtId] = useState<string | null>(null)
 
   const handleOpenEditModal = (court: Court) => {
     setEditingCourt(court)
@@ -394,9 +395,10 @@ export default function CanchasPage() {
   }
 
   const handleDeleteCourt = async (courtId: string, courtName: string) => {
-    if (!tenantId) return
+    if (!tenantId || deletingCourtId) return
     if (!confirm(`¿Estás seguro de que querés eliminar la cancha "${courtName}"? Esta acción no se puede deshacer.`)) return
 
+    setDeletingCourtId(courtId)
     try {
       const res = await deleteCourt(courtId, tenantId)
       if (!res.success) {
@@ -407,7 +409,11 @@ export default function CanchasPage() {
           if (proceed) {
             const forceRes = await deleteCourt(courtId, tenantId, { force: true })
             if (forceRes.success) {
-              setCourts(prev => prev.filter(c => c.id !== courtId))
+              setCourts(prev => {
+                const updated = prev.filter(c => c.id !== courtId)
+                if (tenantId) cachedCourtsMap.set(tenantId, updated)
+                return updated
+              })
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
               }
@@ -422,7 +428,11 @@ export default function CanchasPage() {
           toast.error(res.error || 'Error al eliminar cancha')
         }
       } else {
-        setCourts(prev => prev.filter(c => c.id !== courtId))
+        setCourts(prev => {
+          const updated = prev.filter(c => c.id !== courtId)
+          if (tenantId) cachedCourtsMap.set(tenantId, updated)
+          return updated
+        })
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('canchar:courts-changed'))
         }
@@ -430,6 +440,8 @@ export default function CanchasPage() {
       }
     } catch {
       toast.error('Error de conexión al eliminar cancha')
+    } finally {
+      setDeletingCourtId(null)
     }
   }
 
@@ -827,11 +839,21 @@ export default function CanchasPage() {
                     size="sm"
                     variant="ghost"
                     onClick={() => handleDeleteCourt(court.id, court.name)}
-                    className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2"
+                    disabled={Boolean(deletingCourtId)}
+                    className="h-7 text-xs text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 gap-1 px-2 disabled:opacity-50"
                     title="Eliminar cancha"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Eliminar</span>
+                    {deletingCourtId === court.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Eliminando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Eliminar</span>
+                      </>
+                    )}
                   </Button>
 
                   <Button

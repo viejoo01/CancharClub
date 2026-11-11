@@ -435,68 +435,34 @@ export async function deleteCourt(
       }
     }
 
-    // 2. Desvincular pedidos de cantina asociados a la cancha si existen
-    try {
-      await supabase
-        .from('court_orders')
-        .update({ court_id: null })
-        .eq('court_id', courtId)
-    } catch {}
+    // 2. Limpiar dependencias relacionales de la cancha en paralelo (1 sola ronda de red en vez de 6 secuenciales)
+    await Promise.all([
+      supabase.from('court_orders').update({ court_id: null }).eq('court_id', courtId),
+      supabase.from('court_blocks').delete().eq('court_id', courtId),
+      supabase.from('recurring_slots').delete().eq('court_id', courtId),
+      supabase.from('waitlists').delete().eq('court_id', courtId),
+      supabase.from('price_rules').delete().eq('court_id', courtId),
+      (async () => {
+        try {
+          const { data: courtBookings } = await supabase
+            .from('bookings')
+            .select('id')
+            .eq('court_id', courtId)
 
-    // 3. Eliminar bloqueos de cancha (court_blocks) si existen
-    try {
-      await supabase
-        .from('court_blocks')
-        .delete()
-        .eq('court_id', courtId)
-    } catch {}
+          if (courtBookings && courtBookings.length > 0) {
+            const bIds = courtBookings.map(b => b.id)
+            await supabase
+              .from('booking_payments')
+              .delete()
+              .in('booking_id', bIds)
+          }
+        } catch (payCleanupErr) {
+          console.warn('[deleteCourt] Notice cleaning booking_payments:', payCleanupErr)
+        }
+      })()
+    ])
 
-    // 4. Eliminar turnos fijos (recurring_slots) si existen
-    try {
-      await supabase
-        .from('recurring_slots')
-        .delete()
-        .eq('court_id', courtId)
-    } catch {}
-
-    // 5. Eliminar listas de espera (waitlists) si existen
-    try {
-      await supabase
-        .from('waitlists')
-        .delete()
-        .eq('court_id', courtId)
-    } catch {}
-
-    // 6. Eliminar reglas de precio asociadas a esta cancha
-    try {
-      await supabase
-        .from('price_rules')
-        .delete()
-        .eq('court_id', courtId)
-    } catch (prErr: unknown) {
-      console.warn('[deleteCourt] Warning deleting price rules:', prErr)
-    }
-
-    // 6.5 Limpiar pagos relacionales asociados a las reservas de esta cancha (evita violación de FK 23503)
-    try {
-      const { data: courtBookings } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('court_id', courtId)
-
-      if (courtBookings && courtBookings.length > 0) {
-        const bIds = courtBookings.map(b => b.id)
-        await supabase
-          .from('booking_payments')
-          .delete()
-          .in('booking_id', bIds)
-      }
-    } catch (payCleanupErr) {
-      console.warn('[deleteCourt] Notice cleaning booking_payments:', payCleanupErr)
-    }
-
-    // 7. Eliminar TODAS las reservas asociadas a esta cancha
-    // (Crucial: evita la violación de FK "bookings_court_id_fkey" en PostgreSQL)
+    // 3. Eliminar reservas asociadas a esta cancha
     const { error: bookingsErr } = await supabase
       .from('bookings')
       .delete()
@@ -507,7 +473,7 @@ export async function deleteCourt(
       return { success: false, error: 'No se pudieron limpiar las reservas asociadas a la cancha: ' + bookingsErr.message }
     }
 
-    // 8. Eliminar la cancha de la tabla courts
+    // 4. Eliminar la cancha de la tabla courts
     const { error: courtErr } = await supabase
       .from('courts')
       .delete()
@@ -519,33 +485,30 @@ export async function deleteCourt(
       return { success: false, error: courtErr.message }
     }
 
-    // Sincronizar automáticamente base_slots_plan tras eliminar una cancha (sin alterar plan_id)
-    try {
-      const { data: allCourts } = await supabase
-        .from('courts')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('is_active', true)
+    // 5. Invalidar caché en memoria de inmediato para reflejo instantáneo (0ms)
+    await invalidateClubCourtsCache(tenantId)
 
-      const activeCount = allCourts?.length || 1
-      await supabase
-        .from('tenants')
-        .update({
-          base_slots_plan: activeCount,
-        })
-        .eq('id', tenantId)
-    } catch (syncErr) {
-      console.warn('[deleteCourt] Error syncing base_slots_plan:', syncErr)
-    }
+    // 6. Sincronizar en segundo plano base_slots_plan y Mercado Pago sin demorar la respuesta al usuario
+    void (async () => {
+      try {
+        const { data: allCourts } = await supabase
+          .from('courts')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('is_active', true)
 
-    // Sincronizar cuota en Mercado Pago tras eliminar cancha
-    try {
-      syncPreapprovalAmountIfNeeded(tenantId).catch(syncErr => {
-        console.warn('[deleteCourt] Error syncing preapproval amount:', syncErr)
-      })
-    } catch {}
+        const activeCount = allCourts?.length || 1
+        await supabase
+          .from('tenants')
+          .update({ base_slots_plan: activeCount })
+          .eq('id', tenantId)
 
-    invalidateClubCourtsCache(tenantId)
+        await syncPreapprovalAmountIfNeeded(tenantId)
+      } catch (syncErr) {
+        console.warn('[deleteCourt] Background sync notice:', syncErr)
+      }
+    })()
+
     revalidatePath('/dashboard/canchas')
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/precios')

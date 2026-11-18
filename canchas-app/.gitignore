@@ -47,3 +47,7 @@ scratch/
 
 .vercel
 .env*
+ 
+# cloudflare
+.open-next/
+.wrangler/

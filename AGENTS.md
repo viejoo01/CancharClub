@@ -76,3 +76,8 @@ El agente tiene TERMINANTEMENTE PROHIBIDO inventar flujos de guardado de tarjeta
    - **Arquitectura Fail-Closed**: Ante la falta de credenciales, tokens nulos, IDs inexistentes (`mp_preapproval_id === null`) o errores de pasarela, el sistema DEBE abortar la operación, lanzar una excepción o devolver `{ success: false, error: ... }`.
    - **Cero Simulación**: Queda terminantemente prohibido escribir banderas simuladas (ej: `let hasFunds = true`, `const isApproved = true`), IDs sintéticos (ej: `deb_saas_${...}`) o alterar estados en base de datos (`status: 'PAID'`, `ACTIVE`) sin la confirmación HTTP sincrónica o Webhook con `status === 'approved'` y `status_detail === 'accredited'` de la API de Mercado Pago.
    - Si un club no tiene un contrato de débito recurrente válido al momento del vencimiento, la función de cobro debe registrar el fallo, mantener la factura como `UNPAID` y activar el botón de cobro manual vía Mercado Pago Checkout Pro.
+
+---
+
+## 6. Cloudflare CLI y Herramientas
+- When interacting with Cloudflare, use the cf CLI unless the project has a Wrangler configuration file.

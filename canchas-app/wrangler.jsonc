@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cancharclub",
+  "main": "worker-entry.js",
+  "compatibility_date": "2026-11-18",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "cancharclub"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 4 * * *",
+      "0 6 * * *",
+      "0 10 * * *",
+      "0 12 * * *",
+      "0 18 * * *"
+    ]
+  },
+  "vars": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://nmihhlzbpjonmjsmmred.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5taWhobHpicGpvbm1qc21tcmVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNTU4MTYsImV4cCI6MjEwNDYzMTgxNn0.ycfvBwERdoORtvT-QWfjey0SVjjBcWCukXse3nTXlL4",
+    "NEXT_PUBLIC_MP_PUBLIC_KEY": "APP_USR-15af94d7-19e7-4be6-8e64-d9139c4ffb4e",
+    "MP_PUBLIC_KEY": "APP_USR-15af94d7-19e7-4be6-8e64-d9139c4ffb4e",
+    "MP_CLIENT_ID": "3674151516054628",
+    "NEXT_PUBLIC_APP_URL": "https://www.cancharclub.com.ar",
+    "NEXT_PUBLIC_APP_NAME": "CancharClub",
+    "NEXT_PUBLIC_WHATSAPP_DEFAULT": "+543816839320",
+    "BOOKING_LOCK_TTL_SECONDS": "420",
+    "SUPERADMIN_USER_ID": "4c99cd23-4c21-435c-ac2c-bb42b6f9421f",
+    "SUPERADMIN_USERNAME": "EliteColonial"
+  }
+}

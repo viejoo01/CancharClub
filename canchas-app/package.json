@@ -13,7 +13,10 @@
     "db:backup:ps": "powershell -ExecutionPolicy Bypass -File scripts/backup-supabase.ps1",
     "db:backup:task": "powershell -ExecutionPolicy Bypass -File scripts/register-weekly-backup-task.ps1",
     "db:restore": "powershell -ExecutionPolicy Bypass -File scripts/restore-supabase.ps1",
-    "db:ping": "node scripts/keep-alive-ping.mjs"
+    "db:ping": "node scripts/keep-alive-ping.mjs",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "preview:cloudflare": "opennextjs-cloudflare preview",
+    "deploy:cloudflare": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.6",
@@ -36,7 +39,7 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.42.0",
     "mercadopago": "^3.6.0",
-    "next": "16.3.4",
+    "next": "^16.4.6",
     "next-themes": "^0.4.6",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -46,15 +49,17 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.17",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "^16.4.6",
     "playwright": "^1.65.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.164.0"
   }
 }

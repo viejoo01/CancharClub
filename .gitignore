@@ -35,4 +35,7 @@ Thumbs.db
 .vscode/
 .idea/
 .vercel/
+.cloudflare/
+.open-next/
+.wrangler/
 

@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Bell,
   SlidersHorizontal,
+  ChevronDown,
   Smartphone,
   PanelLeftClose,
   Loader2
@@ -317,6 +318,27 @@ export function Sidebar({
     return () => window.removeEventListener('canchar-sidebar-prefs-changed', handler)
   }, [effectiveTenantId])
 
+    // Estado para colapsar/desplegar secciones (con persistencia en localStorage)
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = localStorage.getItem('canchar_sidebar_collapsed_sections')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  const toggleSectionCollapse = (sectionId: string) => {
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [sectionId]: !prev[sectionId] }
+      try {
+        localStorage.setItem('canchar_sidebar_collapsed_sections', JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
   const handleSavePreferences = (newPrefs: SidebarNavPreferences) => {
     setPreferences(newPrefs)
     if (effectiveTenantId) {
@@ -355,7 +377,7 @@ export function Sidebar({
   const SECTIONS: { id: NavSectionKey; title: string }[] = [
     {
       id: 'operaciones',
-      title: isStaff ? 'Operaciones de Encargado' : 'Operaciones del Día',
+      title: isStaff ? 'Operaciones de Encargado' : 'Operaciones',
     },
     {
       id: 'finanzas',
@@ -470,65 +492,90 @@ export function Sidebar({
           </Link>
         )}
 
-        {groupedNavSections.map((group, groupIdx) => (
-          <div key={group.id} className={cn("space-y-0.5", groupIdx > 0 && "pt-3.5")}>
-            <div className="flex items-center justify-between px-3 pb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                {group.title}
-              </span>
-              {groupIdx === 0 && !isStaff && (
+        {groupedNavSections.map((group, groupIdx) => {
+          const isCollapsed = !!collapsedSections[group.id]
+
+          return (
+            <div key={group.id} className={cn("space-y-0.5", groupIdx > 0 && "pt-2.5")}>
+              <div className="flex items-center justify-between px-2.5 pb-1">
                 <button
                   type="button"
-                  onClick={() => setShowCustomizeModal(true)}
-                  className="text-[10px] text-slate-500 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 cursor-pointer font-semibold"
-                  title="Personalizar orden y visibilidad del menú"
+                  onClick={() => toggleSectionCollapse(group.id)}
+                  className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300 transition-colors cursor-pointer select-none truncate"
+                  title={isCollapsed ? `Desplegar ${group.title}` : `Colapsar ${group.title}`}
                 >
-                  <SlidersHorizontal className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>Editar menú</span>
+                  <ChevronDown
+                    className={cn(
+                      "w-3 h-3 text-slate-400 transition-transform duration-200 shrink-0",
+                      isCollapsed && "-rotate-90 text-slate-500"
+                    )}
+                  />
+                  <span className="truncate">{group.title}</span>
+                  {isCollapsed && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800 text-slate-500 font-mono font-medium">
+                      {group.items.length}
+                    </span>
+                  )}
                 </button>
+
+                {groupIdx === 0 && !isStaff && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomizeModal(true)}
+                    className="text-[10px] text-slate-500 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 cursor-pointer font-semibold shrink-0"
+                    title="Personalizar orden y visibilidad del menú"
+                  >
+                    <SlidersHorizontal className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    <span>Editar</span>
+                  </button>
+                )}
+              </div>
+
+              {!isCollapsed && (
+                <div className="space-y-0.5">
+                  {group.items.map((item) => {
+                    const isActive_item = item.exact 
+                      ? pathname === item.href 
+                      : pathname.startsWith(item.href)
+                    const isNavigatingThis = navigatingHref === item.href && !isActive_item
+
+                    const Icon = item.icon
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => {
+                          if (pathname !== item.href) {
+                            setNavigatingHref(item.href)
+                          }
+                          onClose?.()
+                        }}
+                        prefetch={true}
+                        className={cn(
+                          'flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
+                          isActive_item
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
+                            : isNavigatingThis
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse font-bold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Icon className={cn('w-4 h-4 shrink-0', isActive_item || isNavigatingThis ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
+                          <span className="truncate">{item.title}</span>
+                        </div>
+                        {isNavigatingThis && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0 ml-1.5" />
+                        )}
+                      </Link>
+                    )
+                  })}
+                </div>
               )}
             </div>
-
-            {group.items.map((item) => {
-              const isActive_item = item.exact 
-                ? pathname === item.href 
-                : pathname.startsWith(item.href)
-              const isNavigatingThis = navigatingHref === item.href && !isActive_item
-
-              const Icon = item.icon
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => {
-                    if (pathname !== item.href) {
-                      setNavigatingHref(item.href)
-                    }
-                    onClose?.()
-                  }}
-                  prefetch={true}
-                  className={cn(
-                    'flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150',
-                    isActive_item
-                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
-                      : isNavigatingThis
-                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon className={cn('w-4 h-4', isActive_item || isNavigatingThis ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
-                    <span>{item.title}</span>
-                  </div>
-                  {isNavigatingThis && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0 ml-2" />
-                  )}
-                </Link>
-              )
-            })}
-          </div>
-        ))}
+          )
+        })}
 
         {!(!isActive && !isSuperadmin) && (
           <>
@@ -540,7 +587,7 @@ export function Sidebar({
               href={`/club/${tenantSlug}`}
               target="_blank"
               onClick={() => onClose?.()}
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition-colors group"
+              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition-colors group"
             >
               <div className="flex items-center gap-3">
                 <ExternalLink className="w-4 h-4 text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
@@ -578,7 +625,7 @@ export function Sidebar({
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-pwa-install-dialog'))
           }}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 dark:text-emerald-400/90 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors cursor-pointer group"
+          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-400/90 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors cursor-pointer group"
           title="Instalar CancharClub en pantalla de inicio"
         >
           <div className="flex items-center gap-3">
@@ -596,7 +643,7 @@ export function Sidebar({
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-social-links-modal'))
           }}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors cursor-pointer"
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors cursor-pointer"
         >
           <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400/80" />
           <span>Redes Sociales</span>
@@ -608,7 +655,7 @@ export function Sidebar({
             onClose?.()
             window.dispatchEvent(new CustomEvent('open-change-password-modal'))
           }}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
         >
           <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400/80" />
           <span>Cambiar Contraseña</span>
@@ -626,7 +673,7 @@ export function Sidebar({
           <button
             type="submit"
             disabled={isLoggingOut}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isLoggingOut ? (
               <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400 shrink-0" />

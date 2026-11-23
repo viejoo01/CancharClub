@@ -39,6 +39,8 @@ import { CustomizeMenuModal } from './customize-menu-modal'
 import { getClubSidebarPreferences, type SidebarNavPreferences } from '@/actions/club.actions'
 import { clearClientSensitiveStorage } from '@/lib/storage-cleanup'
 
+export type NavSectionKey = 'operaciones' | 'finanzas' | 'configuracion' | 'gestion'
+
 interface NavItem {
   title: string
   href: string
@@ -47,6 +49,7 @@ interface NavItem {
   roles: string[]
   requiredFeature?: SaaSFeatureKey   // qué feature del plan habilita este ítem
   staffVisible?: boolean              // si el canchero siempre lo ve (independiente del plan)
+  section?: NavSectionKey
 }
 
 interface SidebarProps {
@@ -83,6 +86,7 @@ export function Sidebar({
   const pathname = usePathname()
 
   const navItems: NavItem[] = [
+    // --- 1. Operaciones del Día ---
     {
       title: 'Calendario de Turnos',
       href: '/dashboard',
@@ -90,6 +94,7 @@ export function Sidebar({
       exact: true,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Notificaciones',
@@ -97,6 +102,7 @@ export function Sidebar({
       icon: Bell,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Turnos Fijos',
@@ -105,6 +111,7 @@ export function Sidebar({
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'turnos_fijos',
       staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Cantina',
@@ -113,13 +120,7 @@ export function Sidebar({
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'cantina_kiosco',
       staffVisible: true,
-    },
-    {
-      title: 'Caja Diaria',
-      href: '/dashboard/caja',
-      icon: Wallet,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
-      staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Control de Luces',
@@ -128,6 +129,7 @@ export function Sidebar({
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'control_luces',
       staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Torneos y Cuadros',
@@ -136,6 +138,7 @@ export function Sidebar({
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       requiredFeature: 'torneos_expres',
       staffVisible: true,
+      section: 'operaciones',
     },
     {
       title: 'Reputación de Jugadores',
@@ -143,13 +146,17 @@ export function Sidebar({
       icon: Users,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
       staffVisible: true,
+      section: 'operaciones',
     },
+
+    // --- 2. Caja & Finanzas ---
     {
-      title: 'Equipo',
-      href: '/dashboard/equipo',
-      icon: UserCheck,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
-      requiredFeature: 'multiusuario',
+      title: 'Caja Diaria',
+      href: '/dashboard/caja',
+      icon: Wallet,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'TENANT_STAFF', 'ADMIN'],
+      staffVisible: true,
+      section: 'finanzas',
     },
     {
       title: 'Cuentas de Cobro',
@@ -157,6 +164,7 @@ export function Sidebar({
       icon: Landmark,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
       requiredFeature: 'mercadopago_deposits',
+      section: 'finanzas',
     },
     {
       title: 'Facturación AFIP / ARCA',
@@ -164,37 +172,55 @@ export function Sidebar({
       icon: Receipt,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
       requiredFeature: 'facturacion_afip',
+      section: 'finanzas',
     },
-    {
-      title: 'Bot WhatsApp',
-      href: '/dashboard/whatsapp',
-      icon: MessageSquare,
-      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
-    },
+
+    // --- 3. Configuración del Club ---
     {
       title: 'Canchas',
       href: '/dashboard/canchas',
       icon: Layers,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      section: 'configuracion',
     },
     {
       title: 'Reglas de Precios',
       href: '/dashboard/precios',
       icon: DollarSign,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      section: 'configuracion',
     },
+    {
+      title: 'Bot WhatsApp',
+      href: '/dashboard/whatsapp',
+      icon: MessageSquare,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      section: 'configuracion',
+    },
+    {
+      title: 'Equipo',
+      href: '/dashboard/equipo',
+      icon: UserCheck,
+      roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      requiredFeature: 'multiusuario',
+      section: 'configuracion',
+    },
+
+    // --- 4. Gestión & Plan ---
     {
       title: 'Reportes de Ocupación',
       href: '/dashboard/reportes',
       icon: BarChart3,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
       requiredFeature: 'reportes_ocupacion',
+      section: 'gestion',
     },
     {
       title: 'Mi plan',
       href: '/dashboard/plan',
       icon: CreditCard,
       roles: ['SUPERADMIN', 'TENANT_ADMIN', 'ADMIN'],
+      section: 'gestion',
     },
   ]
 
@@ -326,6 +352,30 @@ export function Sidebar({
   // Si por alguna razón se ocultaron todos, mantener los permitidos
   const displayedNavItems = finalNavItems.length > 0 ? finalNavItems : filteredNavItems
 
+  const SECTIONS: { id: NavSectionKey; title: string }[] = [
+    {
+      id: 'operaciones',
+      title: isStaff ? 'Operaciones de Encargado' : 'Operaciones del Día',
+    },
+    {
+      id: 'finanzas',
+      title: 'Caja & Finanzas',
+    },
+    {
+      id: 'configuracion',
+      title: 'Configuración del Club',
+    },
+    {
+      id: 'gestion',
+      title: 'Gestión & Plan',
+    },
+  ]
+
+  const groupedNavSections = SECTIONS.map((section) => ({
+    ...section,
+    items: displayedNavItems.filter((item) => (item.section || 'operaciones') === section.id),
+  })).filter((section) => section.items.length > 0)
+
   return (
     <aside 
       className={cn(
@@ -420,61 +470,65 @@ export function Sidebar({
           </Link>
         )}
 
-        <div className="flex items-center justify-between px-3 pb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            {isStaff ? 'Operaciones de Encargado' : 'Operaciones'}
-          </span>
-          {!isStaff && (
-            <button
-              type="button"
-              onClick={() => setShowCustomizeModal(true)}
-              className="text-[10px] text-slate-500 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 cursor-pointer font-semibold"
-              title="Personalizar orden y visibilidad del menú"
-            >
-              <SlidersHorizontal className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-              <span>Editar menú</span>
-            </button>
-          )}
-        </div>
-
-        {displayedNavItems.map((item) => {
-          const isActive_item = item.exact 
-            ? pathname === item.href 
-            : pathname.startsWith(item.href)
-          const isNavigatingThis = navigatingHref === item.href && !isActive_item
-
-          const Icon = item.icon
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => {
-                if (pathname !== item.href) {
-                  setNavigatingHref(item.href)
-                }
-                onClose?.()
-              }}
-              prefetch={true}
-              className={cn(
-                'flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150',
-                isActive_item
-                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
-                  : isNavigatingThis
-                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
+        {groupedNavSections.map((group, groupIdx) => (
+          <div key={group.id} className={cn("space-y-0.5", groupIdx > 0 && "pt-3.5")}>
+            <div className="flex items-center justify-between px-3 pb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                {group.title}
+              </span>
+              {groupIdx === 0 && !isStaff && (
+                <button
+                  type="button"
+                  onClick={() => setShowCustomizeModal(true)}
+                  className="text-[10px] text-slate-500 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 cursor-pointer font-semibold"
+                  title="Personalizar orden y visibilidad del menú"
+                >
+                  <SlidersHorizontal className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  <span>Editar menú</span>
+                </button>
               )}
-            >
-              <div className="flex items-center gap-3">
-                <Icon className={cn('w-4 h-4', isActive_item || isNavigatingThis ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
-                <span>{item.title}</span>
-              </div>
-              {isNavigatingThis && (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0 ml-2" />
-              )}
-            </Link>
-          )
-        })}
+            </div>
+
+            {group.items.map((item) => {
+              const isActive_item = item.exact 
+                ? pathname === item.href 
+                : pathname.startsWith(item.href)
+              const isNavigatingThis = navigatingHref === item.href && !isActive_item
+
+              const Icon = item.icon
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => {
+                    if (pathname !== item.href) {
+                      setNavigatingHref(item.href)
+                    }
+                    onClose?.()
+                  }}
+                  prefetch={true}
+                  className={cn(
+                    'flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-150',
+                    isActive_item
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shadow-2xs font-bold'
+                      : isNavigatingThis
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-white/[0.04]'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={cn('w-4 h-4', isActive_item || isNavigatingThis ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400')} />
+                    <span>{item.title}</span>
+                  </div>
+                  {isNavigatingThis && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0 ml-2" />
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
 
         {!(!isActive && !isSuperadmin) && (
           <>

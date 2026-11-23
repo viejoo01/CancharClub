@@ -268,20 +268,21 @@ export function Sidebar({
     setCurrentPath(pathname)
     setNavigatingHref(null)
   }
-  const [preferences, setPreferences] = useState<SidebarNavPreferences>(() => {
-    if (typeof window === 'undefined') return { order: [], hidden: [] }
+  const [preferences, setPreferences] = useState<SidebarNavPreferences>({ order: [], hidden: [] })
+
+  // Cargar preferencias locales tras el montaje para evitar Hydration Mismatch
+  useEffect(() => {
     try {
-      const raw = localStorage.getItem(`canchar_sidebar_nav_prefs_${effectiveTenantId || 'default'}`)
+      const raw = localStorage.getItem('canchar_sidebar_nav_prefs_' + (effectiveTenantId || 'default'))
       if (raw) {
         const parsed = JSON.parse(raw)
-        return {
+        setPreferences({
           order: Array.isArray(parsed.order) ? parsed.order : [],
           hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
-        }
+        })
       }
     } catch {}
-    return { order: [], hidden: [] }
-  })
+  }, [effectiveTenantId])
 
   // Sincronizar con el servidor
   useEffect(() => {
@@ -319,15 +320,17 @@ export function Sidebar({
   }, [effectiveTenantId])
 
     // Estado para colapsar/desplegar secciones (con persistencia en localStorage)
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') return {}
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+
+  // Cargar secciones colapsadas tras el montaje para evitar Hydration Mismatch
+  useEffect(() => {
     try {
       const raw = localStorage.getItem('canchar_sidebar_collapsed_sections')
-      return raw ? JSON.parse(raw) : {}
-    } catch {
-      return {}
-    }
-  })
+      if (raw) {
+        setCollapsedSections(JSON.parse(raw))
+      }
+    } catch {}
+  }, [])
 
   const toggleSectionCollapse = (sectionId: string) => {
     setCollapsedSections((prev) => {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { 
   CalendarDays, 
   Layers, 
@@ -85,6 +85,7 @@ export function Sidebar({
   isCollapsed,
 }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
 
   const navItems: NavItem[] = [
     // --- 1. Operaciones del Día ---
@@ -548,6 +549,11 @@ export function Sidebar({
                       <Link
                         key={item.href}
                         href={item.href}
+                        onMouseEnter={() => {
+                          try {
+                            router.prefetch(item.href)
+                          } catch {}
+                        }}
                         onClick={() => {
                           if (pathname !== item.href) {
                             setNavigatingHref(item.href)

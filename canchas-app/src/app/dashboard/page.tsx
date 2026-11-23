@@ -7,6 +7,7 @@ import { getCalendarBookings, getClubSchedule, getClubPriceRules } from '@/actio
 import { resolveEffectiveTenantId } from '@/lib/auth-security'
 import { getArgentinaTodayIso } from '@/lib/utils'
 import { cookies } from 'next/headers'
+import { getCachedTenantLayout } from './layout'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -73,13 +74,18 @@ async function loadDashboardInitialData(requestedDate?: string): Promise<Dashboa
   let rawTenantId: string | null = null
 
   if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .maybeSingle()
-    if (profile?.tenant_id) {
-      rawTenantId = profile.tenant_id
+    const cachedSnap = getCachedTenantLayout(user.id)
+    if (cachedSnap?.tenantId) {
+      rawTenantId = cachedSnap.tenantId
+    } else {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profile?.tenant_id) {
+        rawTenantId = profile.tenant_id
+      }
     }
   }
 

@@ -50,7 +50,7 @@ export function invalidateTenantLayoutCache(key?: string) {
   }
 }
 
-function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
+export function getCachedTenantLayout(userId: string): TenantLayoutSnapshot | null {
   const cached = tenantLayoutCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) {
     return cached.snapshot
@@ -344,227 +344,22 @@ export default async function DashboardLayout({
         hasCard = true
       }
 
-      // Si el club tiene tarjeta y factura impaga, procesar cobro automático con throttle de 5 min para evitar lentitud
+            // Cobro automático en segundo plano para que NUNCA bloquee la navegación entre menús
       if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
-        try {
-          const autoRes = await executeTenantAutoDebit({
-            tenantId,
-            invoiceId: unpaidInvoiceId,
-          })
-          if (autoRes.success && autoRes.status === 'PAID') {
-            unpaidInvoiceId = null
-            unpaidInvoiceDueDate = null
-            unpaidInvoiceAmount = null
-            subscriptionStatus = 'ACTIVE'
-            isActive = true
-          }
-        } catch (autoErr) {
-          console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
-        }
-      }
-
-      setCachedTenantLayout(saCacheKey, {
-        userRole,
-        userName,
-        tenantId,
-        tenantName,
-        tenantSlug,
-        mpConnected,
-        tenantCreatedAt,
-        isActive,
-        subscriptionStatus,
-        planId: planId || 'MEDIANO_2',
-        initialCourtsCount,
-        initialSports,
-        highestPriceArs,
-        hasPriceConfigured,
-        hasCard,
-        trialEndsAt,
-        trialForfeited,
-        cancellationEffectiveDate,
-        unpaidInvoiceDueDate,
-        unpaidInvoiceId,
-        unpaidInvoiceAmount,
-      })
-    }
-
-    const simulatedRole = cookieStore.get('demo_user_role')?.value
-    if (simulatedRole === 'TENANT_STAFF' || simulatedRole === 'TENANT_ADMIN') {
-      userRole = simulatedRole
-    }
-    const simulatedPlan = cookieStore.get('demo_plan_id')?.value as SaaSPlanId | undefined
-    if (simulatedPlan && ['CHICO_1', 'MEDIANO_2', 'CONSOLIDADO_3_4', 'GRANDE_5_PLUS'].includes(simulatedPlan)) {
-      planId = getHigherPlan(planId, simulatedPlan)
-    }
-  } else if (user) {
-    const snap = cachedUserSnap || getCachedTenantLayout(user.id)
-    if (snap) {
-      userRole = snap.userRole
-      userName = snap.userName
-      tenantId = snap.tenantId
-      tenantName = snap.tenantName
-      tenantSlug = snap.tenantSlug
-      mpConnected = snap.mpConnected
-      tenantCreatedAt = snap.tenantCreatedAt
-      isActive = snap.isActive
-      subscriptionStatus = snap.subscriptionStatus
-      planId = snap.planId
-      initialCourtsCount = snap.initialCourtsCount
-      initialSports = snap.initialSports
-      highestPriceArs = snap.highestPriceArs
-      hasPriceConfigured = snap.hasPriceConfigured
-      hasCard = snap.hasCard
-      trialEndsAt = snap.trialEndsAt
-      trialForfeited = snap.trialForfeited
-      cancellationEffectiveDate = snap.cancellationEffectiveDate
-      unpaidInvoiceDueDate = snap.unpaidInvoiceDueDate || null
-      unpaidInvoiceId = snap.unpaidInvoiceId || null
-      unpaidInvoiceAmount = snap.unpaidInvoiceAmount || null
-    } else {
-      const { data: profile } = await serviceClient
-        .from('profiles')
-        .select('role, full_name, tenant_id')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!profile || !profile.tenant_id) {
-        console.warn('[SEGURIDAD] Acceso sin club: ' + user.email)
-        await supabase.auth.signOut()
-        redirect('/auth/login?error=no_club_assigned')
-      }
-
-      userRole = profile.role || 'TENANT_ADMIN'
-      userName = profile.full_name || user.email?.split('@')[0] || 'Dueno del Club'
-
-      const [tenantResult, courtsResult, subResult, priceRulesResult, unpaidInvoiceResult] = await Promise.all([
-        serviceClient
-          .from('tenants')
-          .select('id, name, slug, mp_access_token, subscription_status, is_active, base_slots_plan, created_at, description, plan_id')
-          .eq('id', profile.tenant_id)
-          .maybeSingle(),
-        serviceClient
-          .from('courts')
-          .select('id, sport, is_active')
-          .eq('tenant_id', profile.tenant_id),
-        serviceClient
-          .from('saas_subscriptions')
-          .select('payment_notes, status')
-          .eq('tenant_id', profile.tenant_id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        serviceClient
-          .from('price_rules')
-          .select('price_cents, is_active')
-          .eq('tenant_id', profile.tenant_id),
-        serviceClient
-          .from('tenant_invoices')
-          .select('id, due_date, amount, status')
-          .eq('tenant_id', profile.tenant_id)
-          .in('status', ['UNPAID', 'DRAFT'])
-          .order('due_date', { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-      ])
-
-      if (unpaidInvoiceResult?.data) {
-        unpaidInvoiceDueDate = unpaidInvoiceResult.data.due_date
-        unpaidInvoiceId = unpaidInvoiceResult.data.id
-        unpaidInvoiceAmount = Number(unpaidInvoiceResult.data.amount) || null
-      }
-
-      const courtsData = courtsResult.data
-      if (courtsData && courtsData.length > 0) {
-        initialCourtsCount = courtsData.length
-        initialSports = Array.from(new Set(courtsData.map(c => c.sport).filter(Boolean))).map(mapSport)
-      }
-
-      const t = tenantResult.data
-      if (!t) {
-        console.warn('[SEGURIDAD] Club no encontrado para ' + profile.tenant_id)
-        await supabase.auth.signOut()
-        redirect('/auth/login?error=club_not_found')
-      }
-
-      tenantId = t.id
-      tenantName = t.name || tenantName
-      tenantSlug = t.slug || tenantSlug
-      mpConnected = checkMpConnected(t)
-      if (t.created_at) tenantCreatedAt = t.created_at
-      parseTenantMeta(t.description || null)
-      if (typeof t.is_active === 'boolean') isActive = t.is_active
-      if (t.subscription_status) subscriptionStatus = t.subscription_status
-      planId = resolvePlanId(t.plan_id, t.base_slots_plan, t.description, initialCourtsCount)
-
-      // Auto-reparar la base de datos si el plan registrado era inferior
-      if (t.id && (t.plan_id !== planId || Number(t.base_slots_plan) < (initialCourtsCount || 1))) {
-        void serviceClient
-          .from('tenants')
-          .update({
-            plan_id: planId,
-            base_slots_plan: Math.max(Number(t.base_slots_plan) || 1, initialCourtsCount || 1)
-          })
-          .eq('id', t.id)
-      }
-
-      if (priceRulesResult?.data && priceRulesResult.data.length > 0) {
-        const activeRules = priceRulesResult.data.filter(r => r.is_active !== false && Number(r.price_cents) > 0)
-        if (activeRules.length > 0) {
-          const maxCents = Math.max(...activeRules.map(r => Number(r.price_cents) || 0))
-          if (maxCents > 0) {
-            highestPriceArs = Math.round(maxCents / 100)
-            hasPriceConfigured = true
-          }
-        }
-      }
-
-      const subData = subResult.data
-      if (subData?.payment_notes && (subData.payment_notes.includes('Tarjeta') || subData.payment_notes.includes('card'))) {
-        hasCard = true
-      }
-      if (!hasCard) {
-        const cookieHas = cookieStore.get('demo_has_card')?.value === 'true'
-        const cookieLast4 = cookieStore.get('demo_card_last4')?.value
-        if (cookieHas && cookieLast4) hasCard = true
-      }
-
-      // Si el club tiene tarjeta y factura impaga, procesar cobro automático con throttle de 5 min para evitar lentitud
-      if (unpaidInvoiceId && hasCard && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
-        try {
-          const autoRes = await executeTenantAutoDebit({
-            tenantId,
-            invoiceId: unpaidInvoiceId,
-          })
-          if (autoRes.success && autoRes.status === 'PAID') {
-            unpaidInvoiceId = null
-            unpaidInvoiceDueDate = null
-            unpaidInvoiceAmount = null
-            subscriptionStatus = 'ACTIVE'
-            isActive = true
-          }
-        } catch (autoErr) {
-          console.warn('[Dashboard Layout] Error en cobro automático de factura:', autoErr)
-        }
+        void executeTenantAutoDebit({
+          tenantId,
+          invoiceId: unpaidInvoiceId,
+        }).catch((autoErr) => {
+          console.warn('[Dashboard Layout Background] Error en cobro automático de factura:', autoErr)
+        })
       } else if (!unpaidInvoiceId && trialEndsAt && new Date() >= new Date(trialEndsAt) && tenantId && !tenantId.startsWith('demo-') && !shouldThrottleAutoDebit(tenantId)) {
-        try {
-          const ensureRes = await ensureTenantCurrentInvoiceAndAutoDebit(tenantId)
-          if (ensureRes.paid) {
-            unpaidInvoiceId = null
-            unpaidInvoiceDueDate = null
-            unpaidInvoiceAmount = null
-            subscriptionStatus = 'ACTIVE'
-            isActive = true
-          } else if (ensureRes.invoiceCreated) {
-            unpaidInvoiceId = ensureRes.invoiceId || null
-            unpaidInvoiceDueDate = getArgentinaTodayIso()
-            unpaidInvoiceAmount = ensureRes.amount || null
-          }
-        } catch (ensureErr) {
-          console.warn('[Dashboard Layout] Error asegurando factura y cobro automático:', ensureErr)
-        }
+        void ensureTenantCurrentInvoiceAndAutoDebit(tenantId).catch((ensureErr) => {
+          console.warn('[Dashboard Layout Background] Error asegurando factura y cobro automático:', ensureErr)
+        })
       }
 
-      setCachedTenantLayout(user.id, {
+      if (user) {
+        setCachedTenantLayout(user.id, {
         userRole,
         userName,
         tenantId,
@@ -586,7 +381,8 @@ export default async function DashboardLayout({
         unpaidInvoiceDueDate,
         unpaidInvoiceId,
         unpaidInvoiceAmount,
-      })
+        })
+      }
     }
   }
 

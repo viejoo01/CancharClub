@@ -39,7 +39,7 @@ import { DEFAULT_CLUB_SCHEDULE, type ClubScheduleConfig } from '@/lib/time-slots
 import { toast } from 'sonner'
 import type { SportType, SlotDuration, CourtSurface } from '@/types/database'
 import { useTenantId, useTenantPlan } from '@/hooks/use-tenant-id'
-import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE } from '@/config/saas-plans'
+import { getMaxCourtsAllowedForPlan, COURT_LIMIT_EXCEEDED_MESSAGE, SAAS_PLANS } from '@/config/saas-plans'
 
 interface Court {
   id: string
@@ -127,7 +127,7 @@ const defaultServicesLocation: ClubServicesAndLocationData = {
 export default function CanchasPage() {
   const tenantId = useTenantId()
   const router = useRouter()
-  const { planId, plan } = useTenantPlan()
+  const { planId: contextPlanId, plan: contextPlan } = useTenantPlan()
   const initialCourts = tenantId ? (cachedCourtsMap.get(tenantId) || []) : []
   const initialSchedule = tenantId ? (cachedScheduleMap.get(tenantId) || DEFAULT_CLUB_SCHEDULE) : DEFAULT_CLUB_SCHEDULE
   const initialHighlight = tenantId ? (cachedHighlightMap.get(tenantId) || defaultHighlight) : defaultHighlight
@@ -136,8 +136,18 @@ export default function CanchasPage() {
 
   const [courts, setCourts] = useState<Court[]>(() => initialCourts)
   const [courtsLoading, setCourtsLoading] = useState(() => !tenantId || !cachedCourtsMap.has(tenantId))
-  const maxCourts = getMaxCourtsAllowedForPlan(planId)
   const totalCourtsCount = courts.length
+
+  // Sincronización robusta: Si el club tiene plan GRANDE_5_PLUS o 5+ canchas, garantizar acceso sin límite
+  const planId = useMemo(() => {
+    if (contextPlanId === 'GRANDE_5_PLUS') return 'GRANDE_5_PLUS'
+    if (totalCourtsCount >= 5) return 'GRANDE_5_PLUS'
+    if (totalCourtsCount >= 3 && (contextPlanId === 'MEDIANO_2' || contextPlanId === 'CHICO_1')) return 'CONSOLIDADO_3_4'
+    return contextPlanId
+  }, [contextPlanId, totalCourtsCount])
+  const plan = SAAS_PLANS[planId] || contextPlan
+
+  const maxCourts = getMaxCourtsAllowedForPlan(planId)
   const isLimitReached = maxCourts !== null && totalCourtsCount >= maxCourts
   const [clubSlug, setClubSlug] = useState('club')
   const [schedule, setSchedule] = useState<ClubScheduleConfig>(() => initialSchedule)

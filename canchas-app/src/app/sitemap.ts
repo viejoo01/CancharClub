@@ -1,7 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { createServiceClient } from '@/lib/supabase/server'
 
-export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidar cada 1 hora en producción
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

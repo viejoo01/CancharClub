@@ -21,7 +21,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/((?!_next/static|_next/image|api/availability|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        // Rutas privadas/dinamicas: nunca cachear en CDN ni browser
+        source: '/(dashboard|superadmin|api)/:path*',
         headers: [
           {
             key: 'Cache-Control',
@@ -34,6 +35,16 @@ const nextConfig: NextConfig = {
           {
             key: 'Expires',
             value: '0',
+          },
+        ],
+      },
+      {
+        // Landing y paginas publicas: permitir cache en Edge CDN de Cloudflare (s-maxage) mitigando CPU limit 1102
+        source: '/((?!dashboard|superadmin|api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
           },
         ],
       },

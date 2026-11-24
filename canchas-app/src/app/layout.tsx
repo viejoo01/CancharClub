@@ -9,9 +9,6 @@ import { AppAutoUpdater } from '@/components/shared/app-auto-updater'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
 const outfit = Outfit({ subsets: ['latin'], variable: '--font-outfit', display: 'swap' })
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-
 export const viewport: Viewport = {
   themeColor: '#020617',
   width: 'device-width',
